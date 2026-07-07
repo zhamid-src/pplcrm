@@ -44,9 +44,9 @@ describe('MergeSummaryComponent', () => {
     expect(button.disabled).toBe(false);
   });
 
-  it('should emit onMerge when the merge button is clicked', () => {
+  it('should emit merge when the merge button is clicked', () => {
     const handler = vi.fn();
-    component.onMerge.subscribe(handler);
+    component.merge.subscribe(handler);
     fixture.componentRef.setInput('hasSelections', true);
     fixture.detectChanges();
 
@@ -91,7 +91,7 @@ describe('DuplicatePageShellComponent', () => {
     fixture.componentRef.setInput('isEmpty', true);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Clean Database!');
+    expect(fixture.nativeElement.textContent).toContain('No duplicates waiting');
     const link: HTMLAnchorElement = fixture.nativeElement.querySelector('a.btn-primary');
     expect(link.getAttribute('href')).toBe('/people');
   });
@@ -112,11 +112,11 @@ describe('DuplicatePageShellComponent', () => {
     expect(nextBtn.disabled).toBe(false);
   });
 
-  it('should emit onNext and onPrev when pagination buttons are clicked', () => {
+  it('should emit next and prev when pagination buttons are clicked', () => {
     const nextHandler = vi.fn();
     const prevHandler = vi.fn();
-    component.onNext.subscribe(nextHandler);
-    component.onPrev.subscribe(prevHandler);
+    component.next.subscribe(nextHandler);
+    component.prev.subscribe(prevHandler);
 
     fixture.componentRef.setInput('currentPage', 2);
     fixture.componentRef.setInput('totalPages', 3);

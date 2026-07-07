@@ -45,7 +45,9 @@ apps/
       app/
         _migrations/
           0001_baseline.ts
+          2026-07-07-b-dismissed-duplicate-groups.ts
           2026-07-07-record-slugs.ts
+          2026-07-07-tasks-status-normalization.ts
           2026-07-08-import-wizard-stats.ts
           schema.sql
         config/
@@ -146,6 +148,11 @@ apps/
               pledges.repo.ts
             routes/
               donations-webhook.route.ts
+            controller.ts
+            trpc.router.ts
+          duplicates/
+            repositories/
+              duplicates.repo.ts
             controller.ts
             trpc.router.ts
           emails/
@@ -340,72 +347,6 @@ apps/
 ```
 
 # Files
-
-## File: apps/backend/src/app/_migrations/0001_baseline.ts
-````typescript
-// tsco: ignore
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // Read the schema_dump.sql file from the same directory
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  const rawSql = fs.readFileSync(schemaPath, 'utf8');
-
-  // Strip psql meta-commands (\restrict etc.) and PG17-only SET params that
-  // don't exist on older servers (transaction_timeout added in PG17).
-  const pg17OnlyParams = new Set(['transaction_timeout']);
-
-  // Kysely's migrator creates and manages its own bookkeeping tables
-  // (kysely_migration / kysely_migration_lock) before any migration runs.
-  // pg_dump captures those tables into the schema dump, so executing them
-  // here would collide ("relation already exists"). Skip any DDL block that
-  // targets them. A block starts at a CREATE/ALTER TABLE referencing the
-  // table and continues until the statement-terminating ';'.
-  const kyselyBlockStart = /^(CREATE TABLE|ALTER TABLE(\s+ONLY)?)\s+(public\.)?kysely_migration(_lock)?\b/i;
-  let skippingKyselyBlock = false;
-
-  const schemaSql = rawSql
-    .split('\n')
-    .filter((line) => {
-      const t = line.trimStart();
-      if (t.startsWith('\\')) return false;
-      // pg_dump empties the session search_path; if left in, every subsequent
-      // unqualified statement on this connection (including Kysely's own INSERT
-      // into kysely_migration) fails with "relation does not exist".
-      if (/^SELECT\s+pg_catalog\.set_config\(\s*'search_path'/i.test(t)) return false;
-      const setMatch = t.match(/^SET\s+(\w+)\s*=/i);
-      if (setMatch && setMatch[1] && pg17OnlyParams.has(setMatch[1].toLowerCase())) return false;
-
-      if (skippingKyselyBlock) {
-        // Drop lines until we reach the end of the current statement.
-        if (t.endsWith(';')) skippingKyselyBlock = false;
-        return false;
-      }
-      if (kyselyBlockStart.test(t)) {
-        // Single-line statement ends immediately; otherwise keep skipping.
-        skippingKyselyBlock = !t.endsWith(';');
-        return false;
-      }
-      return true;
-    })
-    .join('\n');
-
-  await sql.raw(schemaSql).execute(db);
-}
-
-export async function down(_db: Kysely<any>): Promise<void> {
-  // A squashed baseline migration generally shouldn't be rolled back,
-  // as dropping the entire public schema is highly destructive.
-  // We throw an error here to prevent accidental database wiping.
-  throw new Error('This is a baseline migration and cannot be safely rolled back.');
-}
-````
 
 ## File: apps/backend/src/app/config/email-folders.config.ts
 ````typescript
@@ -6340,251 +6281,6 @@ export const ImportsRouter = router({
 });
 ````
 
-## File: apps/backend/src/app/modules/lists/repositories/lists.repo.ts
-````typescript
-import type { SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class ListsRepo extends BaseRepository<'lists'> {
-  constructor() {
-    super('lists');
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .leftJoin('map_lists_persons', 'map_lists_persons.list_id', 'lists.id')
-        .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')
-        .leftJoin('authusers', 'authusers.id', 'lists.createdby_id')
-        .where('lists.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-              LOWER(lists.name) LIKE ${text} OR
-              LOWER(lists.description) LIKE ${text} OR
-              LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
-              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
-              LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
-            )`,
-          );
-        })
-        // Column filters
-        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
-        )
-        .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
-          const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
-          const v = String(raw || '')
-            .trim()
-            .toLowerCase();
-          if (!v) return q;
-          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as 'people' | 'households');
-          return q.where('lists.object', '=', v as 'people' | 'households');
-        })
-        .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
-          const raw: unknown = filterModel['created_by']?.value ?? filterModel['created_by'];
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql<boolean>`(
-                COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
-                lists.createdby_id = ${Number(val)}
-              )`,
-            );
-          }
-          return q.where(
-            sql<boolean>`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}`,
-          );
-        })
-        .$if(!!filterModel['updated_at']?.value, (q) =>
-          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
-        );
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT lists.id`).as('total')])
-      .execute();
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rowsRaw = await applyFilters(this.getSelect(trx))
-      .select(() => [
-        'lists.id',
-        'lists.name',
-        'lists.description',
-        'lists.object',
-        'lists.is_dynamic',
-        'lists.updated_at',
-        'lists.last_refreshed_at',
-        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
-        sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
-        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
-      ])
-      .groupBy([
-        'lists.id',
-        'lists.name',
-        'lists.description',
-        'lists.object',
-        'lists.is_dynamic',
-        'lists.updated_at',
-        'lists.last_refreshed_at',
-        'authusers.first_name',
-        'authusers.last_name',
-      ])
-      .$if(!!options.sortModel?.length, (qb) => {
-        const sorts = options.sortModel ?? [];
-        const createdSort = sorts.find((s) => s.colId === 'created_by');
-        const listSizeSort = sorts.find((s) => s.colId === 'list_size');
-        const usedInSort = sorts.find((s) => s.colId === 'used_in');
-        const others = sorts.filter(
-          (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
-        );
-        let acc = qb;
-        // created_by sort: sort by full name of creator
-        if (createdSort) {
-          acc = acc.orderBy(sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`, createdSort.sort);
-        }
-        // list_size sort: derived from people_count vs household_count
-        if (listSizeSort) {
-          acc = acc.orderBy(
-            sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
-            listSizeSort.sort,
-          );
-        }
-        // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
-        if (usedInSort) {
-          acc = acc.orderBy('lists.updated_at', usedInSort.sort);
-        }
-        for (const s of others) acc = acc.orderBy(s.colId, s.sort);
-        return acc;
-      })
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const rows = rowsRaw.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      object: r.object,
-      is_dynamic: r.is_dynamic,
-      updated_at: r.updated_at,
-      last_refreshed_at: r.last_refreshed_at,
-      list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
-      used_in: 0,
-      created_by: r.created_by,
-    }));
-
-    return { rows, count };
-  }
-
-  public async getHouseholdsByListId(
-    input: { tenant_id: string; list_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const qb = this.getSelect(trx)
-      .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
-      .innerJoin('households', 'households.id', 'mlh.household_id')
-      .where('lists.tenant_id', '=', input.tenant_id)
-      .where('lists.id', '=', input.list_id);
-
-    const countResult = await qb
-      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
-      .executeTakeFirst();
-    const total = countResult?.total;
-
-    const rows = await qb
-      .select([
-        'households.id',
-        'households.street1',
-        'households.street_num',
-        'households.city',
-        'households.state',
-        'households.zip',
-      ])
-      .groupBy([
-        'households.id',
-        'households.street1',
-        'households.street_num',
-        'households.city',
-        'households.state',
-        'households.zip',
-      ])
-      .execute();
-
-    return { rows, count: Number(total || 0) };
-  }
-
-  public async getPersonsByListId(
-    input: { tenant_id: string; list_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const qb = this.getSelect(trx)
-      .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
-      .innerJoin('persons', 'persons.id', 'mlp.person_id')
-      .leftJoin('households', 'households.id', 'persons.household_id')
-      .where('lists.tenant_id', '=', input.tenant_id)
-      .where('lists.id', '=', input.list_id);
-
-    const countResult2 = await qb
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .executeTakeFirst();
-    const total = countResult2?.total;
-
-    const rows = await qb
-      .select([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.household_id',
-        'households.city',
-        'households.state',
-        'households.street1',
-        'households.street_num',
-        'households.zip',
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.household_id',
-        'households.city',
-        'households.state',
-        'households.street1',
-        'households.street_num',
-        'households.zip',
-      ])
-      .execute();
-
-    return { rows, count: Number(total || 0) };
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/lists/repositories/map-lists-households.repo.ts
 ````typescript
 import { BaseRepository } from '../../../lib/base.repo';
@@ -6616,44 +6312,6 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
     return Number(res?.numDeletedRows ?? 0);
   }
 }
-````
-
-## File: apps/backend/src/app/modules/lists/trpc.router.ts
-````typescript
-import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { ListsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const lists = new ListsController();
-
-const crud = createCrudRouter(lists, AddListObj, UpdateListObj);
-
-export const ListsRouter = router({
-  ...crud,
-
-  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
-
-  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateListObj }))
-    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
-
-  getMembersHouseholds: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
-
-  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
-
-  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
-
-  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
-
-  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
-});
 ````
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
@@ -7475,6 +7133,45 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 export default newslettersWebhookRoute;
 ````
 
+## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
+````typescript
+import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { NewslettersController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const newsletters = new NewslettersController();
+
+const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+
+const sendTestSchema = z.object({
+  subject: z.string(),
+  html: z.string(),
+  text: z.string().optional(),
+  to: z.email(),
+  fromName: z.string().optional(),
+  fromEmail: z.string().optional(),
+});
+
+export const NewslettersRouter = router({
+  ...crud,
+
+  getEngagementStats: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
+
+  send: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  sendTest: authProcedure
+    .input(sendTestSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
+});
+````
+
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
 ````typescript
 import { BaseRepository } from '../../../lib/base.repo';
@@ -7868,291 +7565,6 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/persons/services/duplicate-maintenance.service.ts
-````typescript
-import { sql } from 'kysely';
-import { PersonsRepo } from '../repositories/persons.repo';
-
-export class DuplicateMaintenanceService {
-  private readonly personsRepo = new PersonsRepo();
-
-  public async recomputeAllDuplicates(tenantId: string): Promise<void> {
-    const db = this.personsRepo.db;
-
-    // 1. Delete all potential duplicates for the tenant
-    await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
-
-    // 2. Fetch the placeholder household id
-    const tenantRow = await db
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', tenantId)
-      .executeTakeFirst();
-    const placeholderHhId = tenantRow?.placeholder_household_id;
-
-    // 3. Find duplicates using bulk queries (equivalent to the old findPotentialDuplicates logic)
-    // Email duplicates
-    const duplicateEmails = await db
-      .selectFrom('persons')
-      .select([sql<string>`lower(email)`.as('email_lower')])
-      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
-      .where('tenant_id', '=', tenantId)
-      .where('email', 'is not', null)
-      .where(sql`trim(email)`, '!=', '')
-      .groupBy(sql`lower(email)`)
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    // Household name duplicates
-    const duplicateNamesInSameHousehold = await db
-      .selectFrom('persons')
-      .select([
-        sql<string>`lower(first_name)`.as('first_name_lower'),
-        sql<string>`lower(last_name)`.as('last_name_lower'),
-        'household_id',
-      ])
-      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
-      .where('tenant_id', '=', tenantId)
-      .where('first_name', 'is not', null)
-      .where('last_name', 'is not', null)
-      .where(sql`trim(first_name)`, '!=', '')
-      .where(sql`trim(last_name)`, '!=', '')
-      .where('household_id', 'is not', null)
-      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId as string))
-      .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    // Address name duplicates
-    const duplicateNamesInSameAddress = await db
-      .selectFrom('persons')
-      .innerJoin('households', 'persons.household_id', 'households.id')
-      .select([
-        sql<string>`lower(persons.first_name)`.as('first_name_lower'),
-        sql<string>`lower(persons.last_name)`.as('last_name_lower'),
-        'households.address_fp_full',
-      ])
-      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
-      .where('persons.tenant_id', '=', tenantId)
-      .where('persons.first_name', 'is not', null)
-      .where('persons.last_name', 'is not', null)
-      .where(sql`trim(persons.first_name)`, '!=', '')
-      .where(sql`trim(persons.last_name)`, '!=', '')
-      .where('households.address_fp_full', 'is not', null)
-      .where(sql`trim(households.address_fp_full)`, '!=', '')
-      .groupBy([sql`lower(persons.first_name)`, sql`lower(persons.last_name)`, 'households.address_fp_full'])
-      .having(sql`count(persons.id)`, '>', 1)
-      .execute();
-
-    // 4. Collect names of people to construct friendly reasons
-    const allMatchingPersonIds = new Set<string>();
-    const collectIds = (groups: Array<{ ids: string[] }>) => {
-      for (const g of groups) {
-        if (Array.isArray(g.ids)) {
-          g.ids.forEach((id) => allMatchingPersonIds.add(String(id)));
-        }
-      }
-    };
-    collectIds(duplicateEmails);
-    collectIds(duplicateNamesInSameHousehold);
-    collectIds(duplicateNamesInSameAddress);
-
-    const personsMap = new Map<string, { first_name: string | null; last_name: string | null }>();
-    if (allMatchingPersonIds.size > 0) {
-      const dbRows = await db
-        .selectFrom('persons')
-        .select(['id', 'first_name', 'last_name'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', 'in', Array.from(allMatchingPersonIds))
-        .execute();
-      for (const row of dbRows) {
-        personsMap.set(String(row.id), { first_name: row.first_name, last_name: row.last_name });
-      }
-    }
-
-    const inserts: any[] = [];
-
-    // Email duplicates
-    for (const group of duplicateEmails) {
-      const email = group.email_lower;
-      const key = `email:${email}`;
-      const reason = `Matching Email: "${email}"`;
-      for (const id of group.ids) {
-        inserts.push({
-          tenant_id: tenantId,
-          group_key: key,
-          person_id: String(id),
-          reason,
-        });
-      }
-    }
-
-    // Household name duplicates
-    for (const group of duplicateNamesInSameHousehold) {
-      const key = `household:${group.household_id}:${group.first_name_lower}:${group.last_name_lower}`;
-      const firstPerson = personsMap.get(String(group.ids[0]));
-      const reason =
-        `Matching Name at Same Household: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
-          .replace(/\s{2,}/g, ' ')
-          .trim();
-      for (const id of group.ids) {
-        inserts.push({
-          tenant_id: tenantId,
-          group_key: key,
-          person_id: String(id),
-          reason,
-        });
-      }
-    }
-
-    // Address name duplicates
-    for (const group of duplicateNamesInSameAddress) {
-      const key = `address:${group.address_fp_full}:${group.first_name_lower}:${group.last_name_lower}`;
-      const firstPerson = personsMap.get(String(group.ids[0]));
-      const reason = `Matching Name at Same Address: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
-        .replace(/\s{2,}/g, ' ')
-        .trim();
-      for (const id of group.ids) {
-        inserts.push({
-          tenant_id: tenantId,
-          group_key: key,
-          person_id: String(id),
-          reason,
-        });
-      }
-    }
-    // --- HOUSEHOLDS DUPLICATES ---
-    const duplicateAddresses = await db
-      .selectFrom('households')
-      .select(['address_fp_full'])
-      .select((eb) => [
-        eb.fn.count('households.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
-      ])
-      .where('tenant_id', '=', tenantId)
-      .where('address_fp_full', 'is not', null)
-      .where(sql`trim(address_fp_full)`, '!=', '')
-      .$if(!!placeholderHhId, (qb) => qb.where('id', '!=', placeholderHhId as string))
-      .groupBy('address_fp_full')
-      .having(sql`count(households.id)`, '>', 1)
-      .execute();
-
-    const hhIds = new Set<string>();
-    for (const group of duplicateAddresses) {
-      if (Array.isArray(group.ids)) {
-        group.ids.forEach((id) => hhIds.add(String(id)));
-      }
-    }
-
-    if (hhIds.size > 0) {
-      const dbRows = await db
-        .selectFrom('households')
-        .select(['id', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'apt'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', 'in', Array.from(hhIds))
-        .execute();
-
-      const hhMap = new Map<string, Record<string, unknown>>();
-      for (const row of dbRows) {
-        hhMap.set(String(row.id), row);
-      }
-
-      for (const group of duplicateAddresses) {
-        const groupHouseholds = group.ids
-          .map((id) => hhMap.get(String(id)))
-          .filter((x): x is Record<string, unknown> => !!x);
-
-        if (groupHouseholds.length > 1) {
-          const first = groupHouseholds[0];
-          const addrStr = [first?.street_num, first?.street1, first?.apt, first?.city, first?.state, first?.zip]
-            .filter(Boolean)
-            .join(' ');
-          const reason = `Matching Address: "${addrStr}"`;
-          const key = `household:fp:${group.address_fp_full}`;
-
-          for (const hh of groupHouseholds) {
-            inserts.push({
-              tenant_id: tenantId,
-              group_key: key,
-              household_id: String(hh.id),
-              person_id: null,
-              reason,
-            });
-          }
-        }
-      }
-    }
-
-    // --- COMPANIES DUPLICATES ---
-    const duplicateNames = await db
-      .selectFrom('companies')
-      .select([sql<string>`lower(trim(name))`.as('name_lower')])
-      .select((eb) => [
-        eb.fn.count('companies.id').as('match_count'),
-        eb.fn.agg<string[]>('array_agg', ['companies.id']).as('ids'),
-      ])
-      .where('tenant_id', '=', tenantId)
-      .where('name', 'is not', null)
-      .where(sql`trim(name)`, '!=', '')
-      .groupBy(sql`lower(trim(name))`)
-      .having(sql`count(companies.id)`, '>', 1)
-      .execute();
-
-    const companyIds = new Set<string>();
-    for (const group of duplicateNames) {
-      if (Array.isArray(group.ids)) {
-        group.ids.forEach((id) => companyIds.add(String(id)));
-      }
-    }
-
-    if (companyIds.size > 0) {
-      const dbRows = await db
-        .selectFrom('companies')
-        .select(['id', 'name'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', 'in', Array.from(companyIds))
-        .execute();
-
-      const companyMap = new Map<string, Record<string, unknown>>();
-      for (const row of dbRows) {
-        companyMap.set(String(row.id), row);
-      }
-
-      for (const group of duplicateNames) {
-        const groupCompanies = group.ids
-          .map((id) => companyMap.get(String(id)))
-          .filter((x): x is Record<string, unknown> => !!x);
-
-        if (groupCompanies.length > 1) {
-          const first = groupCompanies[0];
-          const reason = `Matching Company Name: "${first?.name}"`;
-          const key = `company:name:${group.name_lower}`;
-
-          for (const c of groupCompanies) {
-            inserts.push({
-              tenant_id: tenantId,
-              group_key: key,
-              company_id: String(c.id),
-              person_id: null,
-              reason,
-            });
-          }
-        }
-      }
-    }
-
-    if (inserts.length > 0) {
-      // Use chunked inserts just in case the list is very large
-      const chunkSize = 1000;
-      for (let i = 0; i < inserts.length; i += chunkSize) {
-        const chunk = inserts.slice(i, i + chunkSize);
-        await db.insertInto('potential_duplicates').values(chunk).execute();
-      }
-    }
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/settings/repositories/settings.repo.ts
 ````typescript
 import type { Insertable, OperandValueExpressionOrList } from 'kysely';
@@ -8240,363 +7652,6 @@ export const SettingsRouter = router({
 });
 ````
 
-## File: apps/backend/src/app/modules/tags/repositories/tags.repo.ts
-````typescript
-import type { ReferenceExpression, SelectQueryBuilder, Transaction, Selectable } from 'kysely';
-import { sql } from 'kysely';
-
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTenantId,
-} from '../../../../../../../libs/common/src/lib/kysely.models';
-import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
-
-export class TagsRepo extends BaseRepository<'tags'> {
-  constructor() {
-    super('tags');
-  }
-
-  private lowercaseRow<R extends OperationDataType<'tags', 'insert' | 'update'>>(row: R): R {
-    if (row && typeof row.name === 'string') {
-      return {
-        ...row,
-        name: row.name.toLowerCase().trim(),
-      };
-    }
-    return row;
-  }
-
-  public override async add(input: { row: OperationDataType<'tags', 'insert'> }, trx?: Transaction<Models>) {
-    return super.add({ row: this.lowercaseRow(input.row) }, trx);
-  }
-
-  public override async addMany(input: { rows: OperationDataType<'tags', 'insert'>[] }, trx?: Transaction<Models>) {
-    return super.addMany({ rows: input.rows.map((row) => this.lowercaseRow(row)) }, trx);
-  }
-
-  public override async addOrGet<K extends keyof Models['tags'] & string>(
-    input: {
-      row: OperationDataType<'tags', 'insert'>;
-      onConflictColumn: K;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<Selectable<Models['tags']> | undefined> {
-    const row = this.lowercaseRow(input.row);
-    const type = row.type ?? 'tag';
-    const insertResult = await this.getInsert(trx)
-      .values(row)
-      .onConflict((oc) => oc.columns(['tenant_id', 'name', 'type']).doNothing())
-      .returningAll()
-      .executeTakeFirst();
-
-    if (insertResult) return insertResult as unknown as Selectable<Models['tags']>;
-
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', row.tenant_id)
-      .where('name', '=', row.name)
-      .where('type', '=', type)
-      .executeTakeFirst();
-  }
-
-  public override async update(
-    input: {
-      tenant_id: TypeTenantId<'tags'>;
-      id: TypeId<'tags'>;
-      row: OperationDataType<'tags', 'update'>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return super.update(
-      {
-        tenant_id: input.tenant_id,
-        id: input.id,
-        row: this.lowercaseRow(input.row),
-      },
-      trx,
-    );
-  }
-
-  public override getAll(
-    input: {
-      tenant_id: TypeTenantId<'tags'>;
-      options?: QueryParams<'tags'> & { type?: 'tag' | 'issue' };
-    },
-    trx?: Transaction<Models>,
-  ) {
-    let query = this.getSelectWithColumns(input.options, trx);
-    query = query.where('tenant_id', '=', input.tenant_id);
-    const type = input.options?.type;
-    if (type) {
-      query = query.where('type', '=', type);
-    }
-    return query.execute();
-  }
-
-  public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'>[] }) {
-    return await this.transaction().execute(async (trx) => {
-      if (!input.ids.length) return false;
-
-      const deletableRows = await trx
-        .selectFrom(this.table)
-        .select(['id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('id', 'in', input.ids)
-        .where('deletable', '=', true)
-        .execute();
-
-      if (!deletableRows.length) return false;
-
-      const deletableIds = deletableRows.map((row) => row.id);
-
-      await trx
-        .deleteFrom('map_households_tags')
-        .where('tag_id', 'in', deletableIds)
-        .where('tenant_id', '=', input.tenant_id)
-        .execute();
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tag_id', 'in', deletableIds)
-        .where('tenant_id', '=', input.tenant_id)
-        .execute();
-
-      // Fix: Nullify the tag association on past imports before deleting the tag
-      await trx
-        .updateTable('data_imports')
-        .set({ tag_id: null })
-        .where('tag_id', 'in', deletableIds)
-        .where('tenant_id', '=', input.tenant_id)
-        .execute();
-
-      const result = await trx
-        .deleteFrom(this.table)
-        .where('id', 'in', deletableIds)
-        .where('tenant_id', '=', input.tenant_id)
-        .executeTakeFirst();
-
-      return Number(result?.numDeletedRows ?? 0) > 0;
-    });
-  }
-
-  public async ensureSystemTags(input: { tenant_id: string; user_id: string }, trx?: Transaction<Models>) {
-    for (const seed of SYSTEM_TAG_SEED_DATA) {
-      const existing = await this.getSelect(trx)
-        .select(['id', 'deletable', 'color'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('name', '=', seed.name)
-        .where('type', '=', 'tag')
-        .executeTakeFirst();
-
-      if (!existing) {
-        const row = {
-          tenant_id: input.tenant_id,
-          name: seed.name,
-          description: seed.description,
-          color: seed.color ?? null,
-          deletable: false,
-          type: 'tag',
-          createdby_id: input.user_id,
-          updatedby_id: input.user_id,
-        } as OperationDataType<'tags', 'insert'>;
-
-        await this.add({ row }, trx);
-        continue;
-      }
-
-      const desiredColor = seed.color ?? null;
-      const needsDeletableUpdate = existing.deletable !== false;
-      const needsColorUpdate = existing.color !== desiredColor;
-      if (needsDeletableUpdate || needsColorUpdate) {
-        const updateRow: OperationDataType<'tags', 'update'> = {
-          updatedby_id: input.user_id,
-          ...(needsDeletableUpdate ? { deletable: false } : {}),
-          ...(needsColorUpdate ? { color: desiredColor } : {}),
-        };
-
-        await this.update(
-          {
-            tenant_id: input.tenant_id,
-            id: String(existing.id),
-            row: updateRow,
-          },
-          trx,
-        );
-      }
-    }
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'> & {
-        type?: 'tag' | 'issue';
-      };
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { type?: 'tag' | 'issue' } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-    const type = options.type;
-
-    // Pagination defaults
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    // Shared filter/search logic for both queries
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
-        .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
-        .where('tags.tenant_id', '=', tenantId)
-        .$if(!!type, (qb) => qb.where('tags.type', '=', type ?? 'tag'))
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(tags.name) LIKE ${text} OR
-            LOWER(tags.description) LIKE ${text}
-          )`,
-          );
-        })
-        .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name']?.value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('tags.description', 'ilike', `%${filterModel['description']?.value}%`),
-        )
-        .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
-          const raw = filterModel['deletable']?.value ?? filterModel['deletable'];
-          const v = String(raw || '')
-            .trim()
-            .toLowerCase();
-          if (v === 'true' || v === '1' || v === 'yes') return q.where('tags.deletable', '=', true);
-          if (v === 'false' || v === '0' || v === 'no') return q.where('tags.deletable', '=', false);
-          return q;
-        });
-
-    // Count query (with filters/search)
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT tags.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query (with filters/search, sorting, pagination)
-    const rows = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [
-        'tags.id',
-        'tags.name',
-        'tags.description',
-        'tags.color',
-        'tags.deletable',
-        'tags.type',
-        fn.count('map_peoples_tags.person_id').as('use_count_people'),
-        fn.count('map_households_tags.household_id').as('use_count_households'),
-      ])
-      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
-          qb,
-        ),
-      )
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    return {
-      rows,
-      count,
-    };
-  }
-
-  public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
-    let q = this.getSelect(trx)
-      .select('id')
-      .where('name', '=', input.name.toLowerCase().trim())
-      .where('tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('type', '=', input.type);
-    }
-    return q.executeTakeFirst();
-  }
-
-  public findByNameAndType(
-    input: { tenant_id: string; name: string; type: 'tag' | 'issue' },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelect(trx)
-      .select(['name'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('name', 'ilike', input.name + '%')
-      .where('type', '=', input.type)
-      .limit(3)
-      .execute();
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/tags/controller.ts
-````typescript
-import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
-
-import { ConflictError } from '../../errors/app-errors';
-import { BaseController } from '../../lib/base.controller';
-import { TagsRepo } from './repositories/tags.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export class TagsController extends BaseController<'tags', TagsRepo> {
-  constructor() {
-    super(new TagsRepo());
-  }
-
-  public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description,
-      color: payload.color ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type: payload.type ?? 'tag',
-    };
-    try {
-      return await this.add(row as OperationDataType<'tags', 'insert'>);
-    } catch (err) {
-      if ((err as { code?: string })?.code === '23505') {
-        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
-      }
-      throw err;
-    }
-  }
-
-  public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
-    const type = input.type ?? 'tag';
-    return this.getRepo().findByNameAndType({
-      tenant_id: auth.tenant_id,
-      name: input.name,
-      type,
-    });
-  }
-
-  public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    };
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: rowWithUpdatedBy as OperationDataType<'tags', 'update'>,
-    });
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/tags/system-tags.ts
 ````typescript
 export const SYSTEM_TAG_NAMES = [
@@ -8648,35 +7703,6 @@ export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
 }));
 ````
 
-## File: apps/backend/src/app/modules/tags/trpc.router.ts
-````typescript
-import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { TagsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const tags = new TagsController();
-
-const crud = createCrudRouter(tags, AddTagObj, UpdateTagObj);
-
-export const TagsRouter = router({
-  ...crud,
-
-  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth)),
-
-  findByName: authProcedure
-    .input(
-      z.object({
-        name: z.string().trim().max(100, 'Search term too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
-});
-````
-
 ## File: apps/backend/src/app/modules/tasks/repositories/task-attachments.repo.ts
 ````typescript
 import { BaseRepository } from '../../../lib/base.repo';
@@ -8706,212 +7732,6 @@ import { BaseRepository } from '../../../lib/base.repo';
 export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
   constructor() {
     super('task_subtasks');
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/tasks/repositories/tasks.repo.ts
-````typescript
-import type { RawBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-type TaskStatus = NonNullable<Models['tasks']['status']>;
-type TaskPriority = NonNullable<Models['tasks']['priority']>;
-
-export class TasksRepo extends BaseRepository<'tasks'> {
-  constructor() {
-    super('tasks');
-  }
-
-  public async countArchived(tenant_id: string) {
-    const res = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('tasks.tenant_id', '=', tenant_id)
-      .where('tasks.status', '=', 'archived')
-      .execute();
-    const total = res?.[0]?.['total'] as unknown as number;
-    return Number(total || 0);
-  }
-
-  public async countExcludingArchived(tenant_id: string) {
-    const res = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', '!=', 'archived')
-      .execute();
-    const total = res?.[0]?.['total'] as unknown as number;
-    return Number(total || 0);
-  }
-
-  private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
-    const text = this.normalizeSearch(options?.searchStr);
-    const filterModel: Record<string, any> = options?.filterModel ?? {};
-    // Extract priority/assigned_to sort to apply custom ordering
-    const pri = options?.sortModel?.find((s) => s.colId === 'priority');
-    const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
-
-    const rest = {
-      ...(options || {}),
-      sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
-    } as QueryParams<'tasks'>;
-
-    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
-    const hasCreatedFilter =
-      !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
-    const joinAssign = !!ass || !!text || hasAssignedFilter;
-    const joinCreator = !!text || hasCreatedFilter;
-
-    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
-      qb
-        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
-        .$if(!!filterModel?.['status']?.value, (q) => {
-          const raw = filterModel['status'].value;
-          const vals = Array.isArray(raw) ? raw : [raw];
-          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
-          return norm.length ? q.where('tasks.status', 'in', norm as TaskStatus[]) : q;
-        })
-        .$if(!!filterModel?.['priority']?.value, (q) => {
-          const raw = filterModel['priority'].value;
-          const vals = Array.isArray(raw) ? raw : [raw];
-          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
-          return norm.length ? q.where('tasks.priority', 'in', norm as TaskPriority[]) : q;
-        })
-        .$if(!!filterModel?.['due_at']?.value, (q) =>
-          q.where(sql<boolean>`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}`),
-        )
-        .$if(!!hasAssignedFilter, (q) => {
-          const raw = filterModel['assigned_to']?.value ?? filterModel['assigned_to'];
-          const arr = Array.isArray(raw) ? raw : [raw];
-          const parts = arr
-            .map((v) => String(v || '').trim())
-            .filter(Boolean)
-            .map((val): RawBuilder<boolean> | null => {
-              const low = val.toLowerCase();
-              if (low === 'not assigned' || low === 'unassigned') return sql<boolean>`tasks.assigned_to IS NULL`;
-              const isNumeric = /^\d+$/.test(val);
-              if (isNumeric)
-                return sql<boolean>`(
-                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
-                  tasks.assigned_to = ${Number(val)}
-                )`;
-              return sql<boolean>`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}`;
-            })
-            .filter((p): p is RawBuilder<boolean> => p !== null);
-          if (!parts.length) return q;
-          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
-          return q.where(sql<boolean>`(${orExpr})`);
-        })
-        .$if(!!hasCreatedFilter, (q) => {
-          const raw = filterModel['createdby_id']?.value ?? filterModel['createdby_id'];
-          const arr = Array.isArray(raw) ? raw : [raw];
-          const parts = arr
-            .map((v) => String(v || '').trim())
-            .filter(Boolean)
-            .map((val): RawBuilder<boolean> | null => {
-              const isNumeric = /^\d+$/.test(val);
-              if (isNumeric)
-                return sql<boolean>`(
-                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
-                  tasks.createdby_id = ${Number(val)}
-                )`;
-              return sql<boolean>`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}`;
-            })
-            .filter((p): p is RawBuilder<boolean> => p !== null);
-          if (!parts.length) return q;
-          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
-          return q.where(sql<boolean>`(${orExpr})`);
-        })
-        .$if(!!filterModel?.['team_id']?.value, (q) =>
-          q.where('tasks.team_id', '=', filterModel['team_id'].value as string),
-        );
-
-    return applyGridFilters(this.getSelectWithColumns(rest))
-      .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
-      .$if(joinCreator, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
-      .leftJoin('teams', 'teams.id', 'tasks.team_id')
-      .select('teams.name as team_name')
-      .where('tasks.tenant_id', '=', tenant_id)
-      .where('tasks.status', isArchived ? '=' : '!=', 'archived')
-      .$if(!!text, (qb) =>
-        qb.where(
-          sql<boolean>`(
-            LOWER(tasks.name) LIKE ${text} OR
-            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
-            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
-            LOWER(COALESCE(tasks.priority, '')) LIKE ${text} OR
-            LOWER(COALESCE(teams.name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_assign.first_name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_assign.last_name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_created.first_name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_created.last_name, '')) LIKE ${text} OR
-            LOWER(COALESCE(au_created.first_name || ' ' || au_created.last_name, '')) LIKE ${text}
-          )`,
-        ),
-      )
-      .$if(!!pri, (qb) =>
-        qb.orderBy(
-          sql`CASE tasks.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END`,
-          pri?.sort,
-        ),
-      )
-      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, ass?.sort));
-  }
-
-  public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
-    return this.buildTasksQueryBuilder(tenant_id, true, options).execute();
-  }
-
-  public async getAllArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
-    const rows = (await this.buildTasksQueryBuilder(tenant_id, true, options)
-      .select(() => [sql<number>`count(*) over()`.as('total')])
-      .execute()) as Array<Record<string, unknown> & { total: number }>;
-    const count = Number(rows[0]?.total ?? 0);
-    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
-  }
-
-  public async getAllExcludingArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
-    return this.buildTasksQueryBuilder(tenant_id, false, options).execute();
-  }
-
-  public async getAllExcludingArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
-    const rows = (await this.buildTasksQueryBuilder(tenant_id, false, options)
-      .select(() => [sql<number>`count(*) over()`.as('total')])
-      .execute()) as Array<Record<string, unknown> & { total: number }>;
-    const count = Number(rows[0]?.total ?? 0);
-    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: new Date(),
-        updatedby_id: input.user_id,
-      } as OperationDataType<'tasks', 'update'>)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
   }
 }
 ````
@@ -9069,160 +7889,6 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
   }
 }
-````
-
-## File: apps/backend/src/app/modules/tasks/trpc.router.ts
-````typescript
-import {
-  AddTaskObj,
-  UpdateTaskObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { TasksController } from './controller';
-import { TaskCommentsController } from './comments.controller';
-import { TaskAttachmentsController } from './attachments.controller';
-import { TaskSubtasksController } from './subtasks.controller';
-
-const tasks = new TasksController();
-
-export const TasksRouter = router({
-  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(
-          z.object({
-            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
-            details: z.string().trim().max(10000).optional().nullable(),
-            status: z.string().trim().max(50).optional().nullable(),
-            priority: z.string().trim().max(50).optional().nullable(),
-            due_at: z.string().trim().max(50).optional().nullable(),
-            assigned_to: z.string().trim().max(50).optional().nullable(),
-          }),
-        ),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return tasks.importRows(input, ctx.auth);
-    }),
-
-  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
-  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
-  exportCsv: authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
-    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
-  getComments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addComment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskCommentsController().add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        author_id: ctx.auth.user_id,
-        comment: input.comment,
-      } as any),
-    ),
-  getAttachments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addAttachment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
-        url: z.string().url('Invalid URL format').optional(),
-        content_type: z.string().trim().max(100).optional(),
-        size_bytes: z.number().int().nonnegative().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      (new TaskAttachmentsController() as any).add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        filename: input.filename,
-        url: input.url,
-        content_type: input.content_type,
-        size_bytes: (input.size_bytes as any) ?? null,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-  getSubtasks: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addSubtask: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      (new TaskSubtasksController() as any).add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        name: input.name,
-        status: 'todo',
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-  updateSubtask: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        data: z.object({
-          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
-          status: z.string().trim().max(50).optional(),
-          position: z.number().int().optional(),
-        }),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskSubtasksController().updateSubtask({
-        tenant_id: ctx.auth.tenant_id,
-        id: input.id,
-        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as any,
-      }),
-    ),
-});
 ````
 
 ## File: apps/backend/src/app/modules/teams/repositories/map-teams-lists.repo.ts
@@ -11110,125 +9776,6 @@ export const WorkflowsRouter = router({
 });
 ````
 
-## File: apps/backend/src/app/modules/trpc.ts
-````typescript
-import { router } from '../../trpc';
-import { AuthRouter } from './auth/trpc.router';
-import { EmailsRouter } from './emails/trpc.router';
-import { HouseholdsRouter } from './households/trpc.router';
-import { ListsRouter } from './lists/trpc.router';
-import { NewslettersRouter } from './newsletters/trpc.router';
-import { PersonsRouter } from './persons/trpc.router';
-import { TagsRouter } from './tags/trpc.router';
-import { TasksRouter } from './tasks/trpc.router';
-import { UserProfilesRouter } from './userprofiles/trpc.router';
-import { TeamsRouter } from './teams/trpc.router';
-import { SettingsRouter } from './settings/trpc.router';
-import { ImportsRouter } from './imports/trpc.router';
-import { MsSyncRouter } from './ms-sync/trpc.router';
-import { GoogleSyncRouter } from './google-sync/trpc.router';
-import { CompaniesRouter } from './companies/trpc.router';
-import { ActivityRouter } from './activity/trpc.router';
-import { FilesRouter } from './files/trpc.router';
-import { DashboardRouter } from './dashboard/trpc.router';
-import { NotificationsRouter } from './notifications/trpc.router';
-import { VolunteerRouter } from './volunteer-events/trpc.router';
-import { WebFormsRouter } from './web-forms/trpc.router';
-import { BillingRouter } from './billing/trpc.router';
-import { WorkflowsRouter } from './workflows/trpc.router';
-import { DonationsRouter } from './donations/trpc.router';
-import { ExportsRouter } from './exports/trpc.router';
-import { UsersRouter } from './users/trpc.router';
-import { EventsRouter } from './events/trpc.router';
-import { PersonConnectionsRouter } from './person-connections/trpc.router';
-import { ZapierRouter } from './zapier/zapier.trpc.router';
-
-export type TRPCRouter = typeof trpcRouter;
-
-export const trpcRouter = router({
-  auth: AuthRouter,
-  authusers: AuthRouter,
-  userProfiles: UserProfilesRouter,
-  households: HouseholdsRouter,
-  persons: PersonsRouter,
-  tags: TagsRouter,
-  lists: ListsRouter,
-  tasks: TasksRouter,
-  emails: EmailsRouter,
-  newsletters: NewslettersRouter,
-  teams: TeamsRouter,
-  settings: SettingsRouter,
-  imports: ImportsRouter,
-  msSync: MsSyncRouter,
-  googleSync: GoogleSyncRouter,
-  companies: CompaniesRouter,
-  activity: ActivityRouter,
-  files: FilesRouter,
-  dashboard: DashboardRouter,
-  notifications: NotificationsRouter,
-  volunteer: VolunteerRouter,
-  webForms: WebFormsRouter,
-  billing: BillingRouter,
-  donations: DonationsRouter,
-  workflows: WorkflowsRouter,
-  exports: ExportsRouter,
-  users: UsersRouter,
-  events: EventsRouter,
-  connections: PersonConnectionsRouter,
-  zapier: ZapierRouter,
-});
-
-// Re-export individual routers for convenience.
-export { AuthRouter } from './auth/trpc.router';
-
-export { HouseholdsRouter } from './households/trpc.router';
-
-export { PersonsRouter } from './persons/trpc.router';
-
-export { TagsRouter } from './tags/trpc.router';
-
-export { UserProfilesRouter } from './userprofiles/trpc.router';
-
-export { EmailsRouter } from './emails/trpc.router';
-
-export { ListsRouter } from './lists/trpc.router';
-
-export { TasksRouter } from './tasks/trpc.router';
-
-export { NewslettersRouter } from './newsletters/trpc.router';
-
-export { TeamsRouter } from './teams/trpc.router';
-
-export { SettingsRouter } from './settings/trpc.router';
-
-export { ImportsRouter } from './imports/trpc.router';
-
-export { MsSyncRouter } from './ms-sync/trpc.router';
-export { GoogleSyncRouter } from './google-sync/trpc.router';
-
-export { CompaniesRouter } from './companies/trpc.router';
-
-export { ActivityRouter } from './activity/trpc.router';
-
-export { FilesRouter } from './files/trpc.router';
-
-export { DashboardRouter } from './dashboard/trpc.router';
-
-export { NotificationsRouter } from './notifications/trpc.router';
-
-export { VolunteerRouter } from './volunteer-events/trpc.router';
-
-export { WebFormsRouter } from './web-forms/trpc.router';
-
-export { BillingRouter } from './billing/trpc.router';
-export { DonationsRouter } from './donations/trpc.router';
-export { WorkflowsRouter } from './workflows/trpc.router';
-export { ExportsRouter } from './exports/trpc.router';
-export { UsersRouter } from './users/trpc.router';
-export { EventsRouter } from './events/trpc.router';
-export { PersonConnectionsRouter } from './person-connections/trpc.router';
-````
-
 ## File: apps/backend/src/app/plugins/jsend-error-handler.plugin.ts
 ````typescript
 import { jsend } from '../../../../../libs/common/src';
@@ -11864,6 +10411,137 @@ SQL
 echo "pplcrm_test provisioned. Schema is built on the next 'nx test backend' run."
 ````
 
+## File: apps/backend/src/app/_migrations/0001_baseline.ts
+````typescript
+// tsco: ignore
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export async function up(db: Kysely<any>): Promise<void> {
+  // Read the schema_dump.sql file from the same directory
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const rawSql = fs.readFileSync(schemaPath, 'utf8');
+
+  // Strip psql meta-commands (\restrict etc.) and PG17-only SET params that
+  // don't exist on older servers (transaction_timeout added in PG17).
+  const pg17OnlyParams = new Set(['transaction_timeout']);
+
+  // Kysely's migrator creates and manages its own bookkeeping tables
+  // (kysely_migration / kysely_migration_lock) before any migration runs.
+  // pg_dump captures those tables into the schema dump, so executing them
+  // here would collide ("relation already exists"). Skip any DDL block that
+  // targets them. A block starts at a CREATE/ALTER TABLE referencing the
+  // table and continues until the statement-terminating ';'.
+  const kyselyBlockStart = /^(CREATE TABLE|ALTER TABLE(\s+ONLY)?)\s+(public\.)?kysely_migration(_lock)?\b/i;
+  let skippingKyselyBlock = false;
+
+  const schemaSql = rawSql
+    .split('\n')
+    .filter((line) => {
+      const t = line.trimStart();
+      if (t.startsWith('\\')) return false;
+      // pg_dump empties the session search_path; if left in, every subsequent
+      // unqualified statement on this connection (including Kysely's own INSERT
+      // into kysely_migration) fails with "relation does not exist".
+      if (/^SELECT\s+pg_catalog\.set_config\(\s*'search_path'/i.test(t)) return false;
+      // pg_dump's `SET row_security = off` leaks forward through Kysely's single
+      // migration session. Combined with a table's FORCE ROW LEVEL SECURITY it
+      // makes Postgres REJECT even policy-permitted writes (SQLSTATE 42501)
+      // instead of applying the policy — so any later migration that backfills
+      // data on an RLS table rolls the whole batch back, and no fresh database
+      // (CI, new dev) can bootstrap. Drop it: the default `row_security = on`
+      // lets the tenant policy apply, and with no `app.tenant_id` GUC set the
+      // policy's `NULLIF(...) IS NULL` escape permits every row, so migration
+      // backfills work without per-migration RLS toggles.
+      if (/^SET\s+row_security\b/i.test(t)) return false;
+      const setMatch = t.match(/^SET\s+(\w+)\s*=/i);
+      if (setMatch && setMatch[1] && pg17OnlyParams.has(setMatch[1].toLowerCase())) return false;
+
+      if (skippingKyselyBlock) {
+        // Drop lines until we reach the end of the current statement.
+        if (t.endsWith(';')) skippingKyselyBlock = false;
+        return false;
+      }
+      if (kyselyBlockStart.test(t)) {
+        // Single-line statement ends immediately; otherwise keep skipping.
+        skippingKyselyBlock = !t.endsWith(';');
+        return false;
+      }
+      return true;
+    })
+    .join('\n');
+
+  await sql.raw(schemaSql).execute(db);
+}
+
+export async function down(_db: Kysely<any>): Promise<void> {
+  // A squashed baseline migration generally shouldn't be rolled back,
+  // as dropping the entire public schema is highly destructive.
+  // We throw an error here to prevent accidental database wiping.
+  throw new Error('This is a baseline migration and cannot be safely rolled back.');
+}
+````
+
+## File: apps/backend/src/app/_migrations/2026-07-07-b-dismissed-duplicate-groups.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+// Spec §9.3 Duplicates: "'Not duplicates' remembered so the pair isn't re-flagged." The nightly
+// sweep (`DuplicateMaintenanceService.recomputeAllDuplicates`) fully deletes and reinserts
+// `potential_duplicates` every run, so persisting a dismissal has to live outside that table.
+// One row per dismissed `group_key` per tenant; `recomputeAllDuplicates` anti-joins against this
+// table so a dismissed pair is never reinserted into the queue.
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE TABLE public.dismissed_duplicate_groups (
+      tenant_id bigint NOT NULL,
+      group_key text NOT NULL,
+      dismissed_by_id bigint NOT NULL,
+      dismissed_at timestamp with time zone DEFAULT now() NOT NULL,
+      PRIMARY KEY (tenant_id, group_key)
+    )
+  `.execute(db);
+
+  await sql`ALTER TABLE public.dismissed_duplicate_groups OWNER TO pplcrm_owner`.execute(db);
+
+  await sql`
+    ALTER TABLE public.dismissed_duplicate_groups
+      ADD CONSTRAINT fk_dismissed_duplicate_groups_tenant_id
+      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE
+  `.execute(db);
+
+  await sql`CREATE INDEX idx_dismissed_duplicate_groups_tenant ON public.dismissed_duplicate_groups USING btree (tenant_id)`.execute(
+    db,
+  );
+
+  // Same tenant-isolation policy shape as every other tenant_id table (S-1).
+  await sql`ALTER TABLE public.dismissed_duplicate_groups ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE ONLY public.dismissed_duplicate_groups FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql`
+    CREATE POLICY tenant_isolation ON public.dismissed_duplicate_groups
+    USING (
+      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
+      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
+    )
+    WITH CHECK (
+      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
+      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
+    )
+  `.execute(db);
+  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.dismissed_duplicate_groups TO pplcrm_app`.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.dismissed_duplicate_groups`.execute(db);
+}
+````
+
 ## File: apps/backend/src/app/_migrations/2026-07-08-import-wizard-stats.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -12378,264 +11056,6 @@ function getEntityFilterValues(entityFilter: string): string[] {
 }
 ````
 
-## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
-import { geocodeAndMapHousehold } from '../../gis/geocoding';
-import { logger } from '../../../logger';
-import { ActivityController } from '../../../modules/activity/controller';
-import { ListsController } from '../../../modules/lists/controller';
-import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
-  const listsController = new ListsController();
-  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
-}
-
-export async function handleEnrichCompanyGoogle(
-  payload: JobPayloadOf<'enrich_company_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
-}
-
-export async function handleRefreshCompaniesGoogle(
-  payload: JobPayloadOf<'refresh_companies_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
-
-  // Only the global (cron-style) run reschedules itself.
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
-  }
-}
-
-export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
-  const activityController = new ActivityController();
-  await activityController.deleteOldActivities();
-
-  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
-}
-
-// P-3 (schema review 2026-07-06, §5): retention for the append-mostly tables
-// that otherwise grow without bound. user_activity and newsletter_events already
-// have their own prune jobs (cleanup_activities / prune_newsletter_events); this
-// covers the remaining three. Deletes run in bounded batches so a large backlog
-// never takes a long lock or a huge WAL spike.
-const RETENTION_BATCH = 5000;
-const COMPLETED_JOBS_RETENTION_DAYS = 30;
-const WEBHOOK_EVENTS_RETENTION_DAYS = 90;
-const EXPIRED_SESSION_GRACE_DAYS = 30;
-
-async function deleteInBatches(runOnce: () => Promise<bigint>): Promise<bigint> {
-  let total = 0n;
-  for (;;) {
-    const deleted = await runOnce();
-    total += deleted;
-    if (deleted < BigInt(RETENTION_BATCH)) break;
-  }
-  return total;
-}
-
-export async function handlePruneRetention(db: Kysely<Models>): Promise<void> {
-  // Completed/failed background jobs older than the retention window. The
-  // currently-'processing' retention job itself is never matched.
-  const prunedJobs = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM background_jobs
-      WHERE ctid IN (
-        SELECT ctid FROM background_jobs
-        WHERE status IN ('completed', 'failed')
-          AND updated_at < now() - make_interval(days => ${COMPLETED_JOBS_RETENTION_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  // Processed Stripe/webhook events past their retention window.
-  const prunedWebhooks = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM webhook_events
-      WHERE ctid IN (
-        SELECT ctid FROM webhook_events
-        WHERE status = 'processed'
-          AND processed_at < now() - make_interval(days => ${WEBHOOK_EVENTS_RETENTION_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  // Long-expired sessions (revocation/sign-out handles the live ones; this sweeps
-  // the rows that just linger). NULL expires_at means non-expiring — left alone.
-  const prunedSessions = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM sessions
-      WHERE ctid IN (
-        SELECT ctid FROM sessions
-        WHERE expires_at IS NOT NULL
-          AND expires_at < now() - make_interval(days => ${EXPIRED_SESSION_GRACE_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  logger.info(
-    {
-      prunedJobs: prunedJobs.toString(),
-      prunedWebhooks: prunedWebhooks.toString(),
-      prunedSessions: prunedSessions.toString(),
-    },
-    'Retention prune complete',
-  );
-
-  await scheduleNextRun(db, 'prune_retention', DAY_MS);
-}
-
-export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
-  const lastJob = await db
-    .selectFrom('background_jobs')
-    .select(['updated_at'])
-    .where('status', '=', 'completed')
-    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-    .orderBy('updated_at', 'desc')
-    .limit(1)
-    .executeTakeFirst();
-
-  const tenants = await db.selectFrom('tenants').select('id').execute();
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
-
-  for (const tenant of tenants) {
-    try {
-      let shouldRecompute = true;
-
-      if (lastRunTime) {
-        const personChanged = await db
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const householdChanged = await db
-          .selectFrom('households')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const companyChanged = await db
-          .selectFrom('companies')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (!personChanged && !householdChanged && !companyChanged) {
-          shouldRecompute = false;
-        }
-      }
-
-      if (shouldRecompute) {
-        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
-      }
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
-    }
-  }
-
-  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
-}
-
-export async function handleRecomputeAddressFingerprints(
-  payload: JobPayloadOf<'recompute_address_fingerprints'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const tenantIds: string[] = [];
-  if (payload.tenant_id) {
-    tenantIds.push(payload.tenant_id);
-  } else {
-    const tenants = await db.selectFrom('tenants').select('id').execute();
-    for (const tenant of tenants) {
-      tenantIds.push(String(tenant.id));
-    }
-  }
-
-  for (const tenantId of tenantIds) {
-    try {
-      await recomputeTenantAddressFingerprints(tenantId, db);
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
-    }
-  }
-
-  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
-  }
-}
-
-export async function handleGeocodeHousehold(
-  payload: JobPayloadOf<'geocode_household'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
-}
-
-async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
-  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
-
-  for (const hh of households) {
-    const fp_street = fingerprintStreet({
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: hh.apt,
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-      city: hh.city,
-      state: hh.state,
-      zip: hh.zip,
-      country: hh.country,
-    });
-
-    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
-      await db
-        .updateTable('households')
-        .set({
-          address_fp_street: fp_street,
-          address_fp_full: fp_full,
-          updated_at: new Date(),
-        })
-        .where('id', '=', hh.id)
-        .where('tenant_id', '=', tenantId)
-        .execute();
-    }
-  }
-
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  await maintenanceSvc.recomputeAllDuplicates(tenantId);
-}
-````
-
 ## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
 ````typescript
 import type { ExpressionBuilder, Kysely } from 'kysely';
@@ -13029,434 +11449,6 @@ function buildNewsletterFooter(address?: string, disclaimer?: string): { html: s
   const text = `\n\n----\n${textParts.join('\n')}`;
 
   return { html, text };
-}
-````
-
-## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { notificationEnabled } from '../../profile-preferences';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-
-export async function handleSendFormNotifications(
-  payload: JobPayloadOf<'send-form-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const event = await db
-    .selectFrom('volunteer_events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_signup_confirmation',
-      'send_volunteer_alert',
-    ])
-    .where('id', '=', payload.eventId)
-    .executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (event.send_signup_confirmation !== false) {
-    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
-    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
-
-    const coordEmailHtml = event.contact_email
-      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
-      : '';
-    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
-
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Volunteer Signup Confirmation: ${event.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
-  if (event.send_volunteer_alert !== false) {
-    let alertRecipient = event.contact_email || null;
-
-    if (!alertRecipient) {
-      const admin = await db
-        .selectFrom('authusers')
-        .select('email')
-        .where('tenant_id', '=', payload.tenantId)
-        .limit(1)
-        .executeTakeFirst();
-      if (admin && admin.email) {
-        alertRecipient = admin.email;
-      }
-    }
-
-    if (alertRecipient) {
-      await mailService.sendMail({
-        to: alertRecipient,
-        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendShiftReminder(
-  payload: JobPayloadOf<'send-shift-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const shift = await db
-    .selectFrom('volunteer_shifts')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.shiftId)
-    .executeTakeFirst();
-
-  if (!shift) {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
-    return;
-  }
-
-  // Covers cancelled and no-show shifts as well.
-  if (shift.status !== 'signed_up') {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
-    return;
-  }
-
-  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
-    return;
-  }
-
-  if (event.send_reminder === false) {
-    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
-    return;
-  }
-
-  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
-
-  if (!person) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
-    return;
-  }
-
-  if (!person.email) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
-
-  const subject = `Volunteer Shift Reminder: ${event.name}`;
-  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-
-  const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
-  <p>Hi ${person.first_name || 'there'},</p>
-  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
-  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
-    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
-    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
-    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
-  </div>
-  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
-</div>`;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject,
-    text,
-    html,
-  });
-
-  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
-}
-
-export async function handleSendWebformNotifications(
-  payload: JobPayloadOf<'send-webform-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const form = await db
-    .selectFrom('web_forms')
-    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-    .where('id', '=', payload.formId)
-    .executeTakeFirst();
-
-  if (!form) {
-    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
-    return;
-  }
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (form.send_confirmation !== false) {
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Thank you for your submission to ${form.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Tenant Admin (if enabled)
-  if (form.send_alert !== false) {
-    const admin = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', form.tenant_id)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `[ALERT] New Lead Submission on ${form.name}`,
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
-        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendEventRegistrationConfirmation(
-  payload: JobPayloadOf<'send-event-registration-confirmation'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status === 'cancelled') {
-    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
-    return;
-  }
-
-  const event = await db
-    .selectFrom('events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_registration_confirmation',
-    ])
-    .where('id', '=', registration.event_id)
-    .executeTakeFirst();
-
-  if (!event || event.send_registration_confirmation === false) {
-    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const coordLine = [
-    event.contact_email ? `Email: ${event.contact_email}` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const coordHtml = [
-    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('<br>');
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Registration Confirmed: ${event.name}`,
-    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
-  });
-
-  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendEventReminder(
-  payload: JobPayloadOf<'send-event-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status !== 'registered') {
-    logger.info(
-      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
-    );
-    return;
-  }
-
-  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
-
-  if (!event || event.send_reminder === false) {
-    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Reminder: ${event.name} is tomorrow`,
-    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
-  });
-
-  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
-  await mailService.sendMail({
-    to: payload.to,
-    subject: payload.subject ?? '',
-    text: payload.text ?? '',
-    html: payload.html ?? '',
-  });
-}
-
-export async function handleSendSubscriptionConfirmation(
-  payload: JobPayloadOf<'send-subscription-confirmation'>,
-): Promise<void> {
-  await mailService.sendMail({
-    to: payload.email,
-    subject: 'Please confirm your subscription',
-    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
-    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
-  });
-}
-
-export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
-  await checkDueTasks(db);
-
-  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
-}
-
-export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  try {
-    const dueTasks = await db
-      .selectFrom('tasks')
-      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select([
-        'tasks.id as task_id',
-        'tasks.name as task_name',
-        'tasks.due_at',
-        'tasks.details',
-        'authusers.id as user_id',
-        'authusers.email as user_email',
-        'authusers.first_name',
-        'profiles.preferences as profile_preferences',
-      ])
-      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
-      .where('tasks.due_at', '<=', now)
-      .orderBy('tasks.due_at', 'asc')
-      .execute();
-
-    if (dueTasks.length === 0) return;
-
-    const userTasksMap = new Map<string, typeof dueTasks>();
-    for (const row of dueTasks) {
-      const userId = String(row.user_id);
-      let userTasks = userTasksMap.get(userId);
-      if (!userTasks) {
-        userTasks = [];
-        userTasksMap.set(userId, userTasks);
-      }
-      userTasks.push(row);
-    }
-
-    for (const [, tasks] of userTasksMap.entries()) {
-      const firstRow = tasks[0];
-      if (!firstRow) continue;
-      const userEmail = firstRow.user_email;
-      const firstName = firstRow.first_name;
-      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
-
-      if (optedIn && userEmail) {
-        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
-        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
-
-        for (const t of tasks) {
-          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
-        }
-
-        htmlContent += `</ul>`;
-
-        await mailService.sendMail({
-          to: userEmail,
-          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
-          text: textContent,
-          html: htmlContent,
-        });
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check and notify due tasks');
-  }
 }
 ````
 
@@ -16025,218 +14017,70 @@ export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<v
 }
 ````
 
-## File: apps/backend/src/app/modules/companies/services/companies-enrichment.service.ts
+## File: apps/backend/src/app/modules/donations/repositories/pledges.repo.ts
 ````typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
+import type { Selectable } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../../env';
-import { logger } from '../../../logger';
+import { BaseRepository } from '../../../lib/base.repo';
 
-export class CompaniesEnrichmentService {
-  constructor(private readonly db: Kysely<Models>) {}
+export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
+  constructor() {
+    super('donation_pledges');
+  }
 
-  public async enrichCompany(companyId: string, tenantId: string): Promise<void> {
-    const company = await this.db
-      .selectFrom('companies')
-      .selectAll()
-      .where('id', '=', companyId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!company) {
-      logger.warn(`Company enrichment skipped: Company ${companyId} not found.`);
-      return;
-    }
-
-    // Check if already enriched
-    let currentEnrichment: any = {};
-    if (company.enrichment) {
-      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
-    }
-    if (currentEnrichment?.google_enriched) {
-      logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
-      return;
-    }
-
-    const apiKey = env.googleMapsApiKey;
-    const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
-
-    let description: string | null = null;
-    let website: string | null = null;
-    let phone: string | null = null;
-    let industry: string | null = null;
-    let rawResult: any = null;
-
-    if (!isMockOrTest) {
-      try {
-        // Step 1: Text Search to find the Place ID
-        const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(company.name)}&key=${apiKey}`;
-        const searchRes = await fetch(searchUrl);
-        if (!searchRes.ok) {
-          throw new Error(`Google Places Text Search returned status ${searchRes.status}`);
-        }
-        const searchData: any = await searchRes.json();
-
-        if (searchData.status === 'OK' && searchData.results && searchData.results.length > 0) {
-          const firstResult = searchData.results[0];
-          const placeId = firstResult.place_id;
-
-          // Step 2: Fetch Place Details for that Place ID
-          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,website,international_phone_number,formatted_phone_number,editorial_summary,types&key=${apiKey}`;
-          const detailsRes = await fetch(detailsUrl);
-          if (!detailsRes.ok) {
-            throw new Error(`Google Places Details returned status ${detailsRes.status}`);
-          }
-          const detailsData: any = await detailsRes.json();
-
-          if (detailsData.status === 'OK' && detailsData.result) {
-            const res = detailsData.result;
-            rawResult = res;
-            website = res.website || null;
-            phone = res.formatted_phone_number || res.international_phone_number || null;
-            description = res.editorial_summary?.overview || null;
-
-            if (res.types && res.types.length > 0) {
-              const rawType = res.types[0];
-              industry = rawType
-                .replace(/_/g, ' ')
-                .split(' ')
-                .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, `Google Places API enrichment failed for company ${companyId}`);
-        throw err;
-      }
-    } else {
-      // Mock enrichment for testing/dev
-      const cleanName = company.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      website = `https://www.${cleanName || 'company'}.com`;
-      phone = '+1 555-0199';
-      description = `Mock description for ${company.name} from Google Places.`;
-      industry = company.industry || 'Technology';
-      rawResult = { mock: true };
-      logger.info(`Mock Google enrichment completed for company ${companyId}`);
-    }
-
-    const updatedEnrichment = {
-      ...currentEnrichment,
-      google_enriched: true,
-      place_details: rawResult,
-    };
-
-    const updatePayload: any = {
-      enrichment: JSON.stringify(updatedEnrichment),
-      updated_at: new Date(),
-    };
-
-    if (!company.website || company.website.trim() === '') {
-      updatePayload.website = website;
-    }
-    if (!company.phone || company.phone.trim() === '') {
-      updatePayload.phone = phone;
-    }
-    if (!company.description || company.description.trim() === '') {
-      updatePayload.description = description;
-    }
-    if (!company.industry || company.industry.trim() === '') {
-      updatePayload.industry = industry;
-    }
-
-    await this.db
-      .updateTable('companies')
-      .set(updatePayload)
-      .where('id', '=', companyId)
-      .where('tenant_id', '=', tenantId)
+  public async getAllForTenant(tenantId: string) {
+    return this.db
+      .selectFrom('donation_pledges')
+      .leftJoin('persons', 'persons.id', 'donation_pledges.person_id')
+      .select([
+        'donation_pledges.id',
+        'donation_pledges.tenant_id',
+        'donation_pledges.person_id',
+        'donation_pledges.stripe_subscription_id',
+        'donation_pledges.stripe_customer_id',
+        'donation_pledges.monthly_amount',
+        'donation_pledges.status',
+        'donation_pledges.started_at',
+        'donation_pledges.cancelled_at',
+        'donation_pledges.next_billing_date',
+        'donation_pledges.state',
+        'donation_pledges.country',
+        'donation_pledges.created_at',
+        this.db.fn.coalesce('persons.first_name', 'donation_pledges.first_name').as('person_first_name'),
+        this.db.fn.coalesce('persons.last_name', 'donation_pledges.last_name').as('person_last_name'),
+        this.db.fn.coalesce('persons.email', 'donation_pledges.email').as('person_email'),
+      ])
+      .where('donation_pledges.tenant_id', '=', tenantId)
+      .orderBy('donation_pledges.created_at', 'desc')
       .execute();
   }
 
-  public async queueUnenrichedCompanies(tenantId?: string): Promise<number> {
-    let query = this.db
-      .selectFrom('companies')
-      .select(['id', 'tenant_id'])
-      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
+  public async getForPerson(tenantId: string, personId: string): Promise<Selectable<Models['donation_pledges']>[]> {
+    return this.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
 
-    if (tenantId) {
-      query = query.where('tenant_id', '=', tenantId);
-    }
+  /**
+   * Sum of monthly_amount for all active pledges for a person.
+   * Used for conservative limit enforcement: counts committed future payments.
+   */
+  public async getActivePledgeMonthlyTotal(tenantId: string, personId: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('donation_pledges')
+      .select(({ fn }) => [fn.sum<string | number>('monthly_amount').as('total')])
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
 
-    const unenriched = await query.execute();
-    if (unenriched.length === 0) return 0;
-
-    const values = unenriched.map((c) => ({
-      tenant_id: c.tenant_id,
-      queue: 'default',
-      status: 'pending',
-      payload: JSON.stringify({
-        type: 'enrich_company_google',
-        company_id: String(c.id),
-        tenant_id: String(c.tenant_id),
-      }),
-      run_at: new Date(),
-      max_attempts: 3,
-    }));
-
-    await this.db.insertInto('background_jobs').values(values).execute();
-
-    return unenriched.length;
+    return Number(result?.total || 0);
   }
 }
-````
-
-## File: apps/backend/src/app/modules/companies/trpc.router.ts
-````typescript
-import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { CompaniesController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const companies = new CompaniesController();
-
-const CompanyInputSchema = CompanyInputObj;
-
-const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
-
-export const CompaniesRouter = router({
-  ...crud,
-
-  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
-  getBySlug: authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(CompanyInputSchema),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return companies.importRows(input, ctx.auth);
-    }),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeCompanies: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
-});
 ````
 
 ## File: apps/backend/src/app/modules/donations/trpc.router.ts
@@ -16412,6 +14256,134 @@ export const DonationsRouter = router({
   regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
     controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
   ),
+});
+````
+
+## File: apps/backend/src/app/modules/duplicates/repositories/duplicates.repo.ts
+````typescript
+import { sql } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+
+/** Cross-entity duplicate-admin concerns that don't belong to persons/households/companies
+ * individually: the unified queue-size count (sidebar badge + §9.3 sentence), the nightly-sweep
+ * timestamp, and "Not duplicates" dismissals. See `pplcrm-migrations` for the
+ * `dismissed_duplicate_groups` table this repo owns half of (the other half —
+ * `recomputeAllDuplicates` skipping dismissed groups — lives in
+ * `persons/services/duplicate-maintenance.service.ts`). */
+export class DuplicatesRepo extends BaseRepository<'potential_duplicates'> {
+  constructor() {
+    super('potential_duplicates');
+  }
+
+  /** Number of duplicate GROUPS (not raw rows) waiting across every entity kind — a group_key
+   * with more than one row is "a pair (or cluster) waiting for review". */
+  public async countQueue(tenant_id: string): Promise<number> {
+    const rows = await this.getSelect()
+      .select('group_key')
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('group_key')
+      .having(sql`count(id)`, '>', 1)
+      .execute();
+    return rows.length;
+  }
+
+  /** When the nightly sweep (`recompute_all_duplicates`) last completed. Same instant for every
+   * tenant — it's one cron loop over all tenants (`handleRecomputeAllDuplicates` in
+   * `lib/jobs/handlers/maintenance.handlers.ts`), so there is no tenant_id to scope this by. */
+  public async getLastSweepAt(): Promise<Date | null> {
+    // NOTE: unscoped by design — this is the completion timestamp of the single global cron
+    // run that sweeps every tenant in one job, not tenant-specific data.
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const lastJob = await this.db
+      .selectFrom('background_jobs')
+      .select(['updated_at'])
+      .where('status', '=', 'completed')
+      .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+  }
+
+  /** Record a "Not duplicates" verdict and drop the pair from today's already-computed queue
+   * immediately (the nightly sweep will also honor it on every future run). */
+  public async dismissGroup(input: { tenant_id: string; group_key: string; user_id: string }): Promise<void> {
+    await this.db
+      .insertInto('dismissed_duplicate_groups')
+      .values({ tenant_id: input.tenant_id, group_key: input.group_key, dismissed_by_id: input.user_id })
+      .onConflict((oc) => oc.columns(['tenant_id', 'group_key']).doNothing())
+      .execute();
+
+    await this.db
+      .deleteFrom('potential_duplicates')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('group_key', '=', input.group_key)
+      .execute();
+  }
+
+  /** The set of group_keys this tenant has already said "not duplicates" about — consumed by
+   * `DuplicateMaintenanceService.recomputeAllDuplicates` so the sweep doesn't re-flag them. */
+  public async getDismissedGroupKeys(tenant_id: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('dismissed_duplicate_groups')
+      .select('group_key')
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+    return new Set(rows.map((r) => r.group_key));
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/duplicates/controller.ts
+````typescript
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { DuplicatesRepo } from './repositories/duplicates.repo';
+
+export interface DuplicatesSweepInfo {
+  lastSweepAt: string | null;
+  queueCount: number;
+}
+
+export class DuplicatesController {
+  private readonly repo = new DuplicatesRepo();
+
+  /** Sidebar Duplicates badge (spec §9.3 TODO `duplicates.countQueue`) and the admin sentence's
+   * lead number both want this same total. */
+  public countQueue(auth: IAuthKeyPayload): Promise<number> {
+    return this.repo.countQueue(auth.tenant_id);
+  }
+
+  /** The "found by the nightly sweep — ... last sweep 3:04 AM" sentence and the empty-state
+   * copy both need the sweep timestamp; bundled with the count so the page fetches once. */
+  public async getSweepInfo(auth: IAuthKeyPayload): Promise<DuplicatesSweepInfo> {
+    const [lastSweepAt, queueCount] = await Promise.all([this.repo.getLastSweepAt(), this.countQueue(auth)]);
+    return { lastSweepAt: lastSweepAt ? lastSweepAt.toISOString() : null, queueCount };
+  }
+
+  public async dismissGroup(groupKey: string, auth: IAuthKeyPayload): Promise<void> {
+    await this.repo.dismissGroup({ tenant_id: auth.tenant_id, group_key: groupKey, user_id: auth.user_id });
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/duplicates/trpc.router.ts
+````typescript
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { DuplicatesController } from './controller';
+
+const duplicates = new DuplicatesController();
+
+export const DuplicatesRouter = router({
+  countQueue: authProcedure.query(({ ctx }) => duplicates.countQueue(ctx.auth)),
+
+  getSweepInfo: authProcedure.query(({ ctx }) => duplicates.getSweepInfo(ctx.auth)),
+
+  dismissGroup: authProcedure
+    .input(z.object({ groupKey: z.string().trim().min(1).max(500) }))
+    .mutation(({ input, ctx }) => duplicates.dismissGroup(input.groupKey, ctx.auth)),
 });
 ````
 
@@ -16628,6 +14600,793 @@ export const EmailsRouter = router({
   hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
   getAttachmentsByEmailId: getAttachmentsByEmailId(),
 });
+````
+
+## File: apps/backend/src/app/modules/events/controller.ts
+````typescript
+import { TRPCError } from '@trpc/server';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { publicOrgName } from '../../lib/public-tenant';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  constructor() {
+    super(new EventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
+  }
+
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
+          .values({
+            tenant_id: tenantId,
+            event_id: String(event.id) as any,
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
+          }
+        }
+
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
+        }
+      });
+
+    return { success: true };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
@@ -17362,497 +16121,49 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
 }
 ````
 
-## File: apps/backend/src/app/modules/lists/controller.ts
+## File: apps/backend/src/app/modules/lists/trpc.router.ts
 ````typescript
-import type {
-  AddListType,
-  IAuthKeyPayload,
-  UpdateListType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
+import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
 
-import { BaseController } from '../../lib/base.controller';
-import { HouseholdsController } from '../households/controller';
-import { PersonsController } from '../persons/controller';
-import { ListsRepo } from './repositories/lists.repo';
-import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
-import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import { logger } from '../../logger';
+import { authProcedure, router } from '../../../trpc';
+import { ListsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
 
-export class ListsController extends BaseController<'lists', ListsRepo> {
-  private householdsController = new HouseholdsController();
-  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-  private personsController = new PersonsController();
+const lists = new ListsController();
 
-  constructor() {
-    super(new ListsRepo());
-  }
+const crud = createCrudRouter(lists, AddListObj, UpdateListObj);
 
-  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
-    // Enforce unique list names per tenant
-    const existing = await this.getRepo().getOneBy('name', {
-      tenant_id: auth.tenant_id,
-      value: payload.name,
-    });
-    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
+export const ListsRouter = router({
+  ...crud,
 
-    const row = {
-      name: payload.name,
-      description: payload.description,
-      object: payload.object,
-      is_dynamic: payload.is_dynamic ?? false,
-      definition: payload.definition ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
-    };
+  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
 
-    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
+  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
 
-    // For dynamic lists, trigger an immediate initial refresh via background job
-    if (row.is_dynamic) {
-      await this.getRepo()
-        .db.insertInto('background_jobs')
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: list.id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        })
-        .execute();
-    } else {
-      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
-      const ids = payload.member_ids ?? [];
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateListObj }))
+    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
 
-      if (ids.length && payload.object === 'people') {
-        const rows = ids.map((person_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          person_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
-        try {
-          const workflowsController = new WorkflowsController();
-          for (const person_id of ids) {
-            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger list_joined workflow in addList (explicit IDs)');
-        }
-      } else if (ids.length && payload.object === 'households') {
-        const rows = ids.map((household_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          household_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsHouseholdsRepo.addMany({
-          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-        });
-      } else if (payload.definition) {
-        if (payload.object === 'people') {
-          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
-          const rows = result.rows.map((p) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            person_id: String(p['id']),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsPersonsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-            });
-            try {
-              const workflowsController = new WorkflowsController();
-              for (const r of rows) {
-                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
-              }
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in addList (definition)');
-            }
-          }
-        } else if (payload.object === 'households') {
-          const result = await this.householdsController.getAllWithPeopleCount(
-            auth,
-            payload.definition as getAllOptionsType,
-          );
-          const rows = result.rows.map((h) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            household_id: h['id'],
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsHouseholdsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-            });
-          }
-        }
-      }
-    }
+  getMembersHouseholds: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
 
-    return list;
-  }
+  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
 
-  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
+  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
 
-    // Set list status to refreshing
-    await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        status: 'refreshing',
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      } as any,
-    });
+  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
 
-    // Queue background job
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'refresh_list',
-          list_id: id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
+  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
 
-    return { ...list, status: 'refreshing' };
-  }
+  // Live membership (smart = re-run rules, static = saved snapshot). Reused by
+  // turf cutting (§13), automations (§16) and CSV import (§17).
+  getCurrentMembers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getCurrentMembers(ctx.auth, input)),
 
-  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
-    const auth: IAuthKeyPayload = {
-      tenant_id,
-      user_id,
-      name: 'System Worker',
-      session_id: 'worker-session',
-    };
-
-    const list = (await this.getOneById({ tenant_id, id })) as any;
-    if (!list) {
-      throw new Error(`List ${id} not found`);
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
-
-    const definition = list.definition as getAllOptionsType;
-    if (!definition) {
-      // Set back to idle if no definition
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      return list;
-    }
-
-    try {
-      if (list.object === 'people') {
-        // Clear current mappings
-        await this.mapListsPersonsRepo.db
-          .deleteFrom('map_lists_persons')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.personsController.getAllWithAddress(auth, definition);
-        const rows = result.rows.map((p) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          person_id: p['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsPersonsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-          });
-        }
-      } else if (list.object === 'households') {
-        // Clear current mappings
-        await this.mapListsHouseholdsRepo.db
-          .deleteFrom('map_lists_households')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
-        const rows = result.rows.map((h) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          household_id: h['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsHouseholdsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-          });
-        }
-      }
-
-      // Update refreshed timestamp and status back to idle
-      const updated = await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          last_refreshed_at: new Date(),
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-
-      return updated;
-    } catch (error) {
-      // Set status to failed
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'failed',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      throw error;
-    }
-  }
-
-  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-
-    // Sent newsletters that targeted this list — an indexed join on
-    // map_newsletters_lists (FK-backed), instead of the old fetch-everything
-    // JS filter over the legacy JSONB target_lists document.
-    const targetedNewsletters = await this.getRepo()
-      .db.selectFrom('newsletters')
-      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
-      .selectAll('newsletters')
-      .where('newsletters.tenant_id', '=', auth.tenant_id)
-      .where('newsletters.status', '=', 'sent')
-      .where('map_newsletters_lists.tenant_id', '=', auth.tenant_id)
-      .where('map_newsletters_lists.list_id', '=', id)
-      .where('map_newsletters_lists.mode', '=', 'include')
-      .execute();
-
-    // Compute aggregated metrics
-    const totalNewsletters = targetedNewsletters.length;
-    let totalDelivered = 0;
-    let totalOpens = 0;
-    let totalClicks = 0;
-
-    for (const n of targetedNewsletters) {
-      totalDelivered += Number(n.delivered_count ?? 0);
-      totalOpens += Number(n.unique_opens ?? 0);
-      totalClicks += Number(n.unique_clicks ?? 0);
-    }
-
-    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
-    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
-
-    return {
-      totalNewsletters,
-      totalDelivered,
-      avgOpenRate,
-      avgClickRate,
-      newsletters: targetedNewsletters.map((n) => ({
-        id: n.id,
-        name: n.name,
-        subject: n.subject,
-        send_date: n.send_date,
-        total_recipients: n.total_recipients,
-        delivered_count: n.delivered_count,
-        open_rate: n.open_rate,
-        click_rate: n.click_rate,
-      })),
-    };
-  }
-
-  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) return 0;
-    if (list.is_dynamic && list.definition) {
-      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
-      if (list.object === 'people') {
-        const data = await this.personsController.getAllWithAddress(auth, opts);
-        return data.count;
-      } else {
-        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
-        return data.count;
-      }
-    } else {
-      if (list.object === 'people') {
-        const result = await this.mapListsPersonsRepo.db
-          .selectFrom('map_lists_persons')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('list_id', '=', id)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      } else {
-        const result = await this.mapListsHouseholdsRepo.db
-          .selectFrom('map_lists_households')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('list_id', '=', id)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      }
-    }
-  }
-
-  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    };
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
-    });
-
-    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
-      // Update status to refreshing
-      await this.update({
-        tenant_id: auth.tenant_id,
-        id,
-        row: {
-          status: 'refreshing',
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-
-      await this.getRepo()
-        .db.insertInto('background_jobs')
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        })
-        .execute();
-    }
-
-    return result;
-  }
-
-  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id)
-      .where('list_id', '=', idToDelete)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id)
-      .where('list_id', '=', idToDelete)
-      .execute();
-
-    return super.delete(tenant_id as any, idToDelete, userId);
-  }
-
-  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
-    if (idsToDelete.length === 0) return false;
-
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    return super.deleteMany(tenant_id as any, idsToDelete);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const list = (await super.getOneById(input)) as any;
-    if (list && list.is_dynamic) {
-      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
-      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
-        if (list.status !== 'refreshing') {
-          // Lazily trigger refresh in background
-          const mockAuth: IAuthKeyPayload = {
-            tenant_id: input.tenant_id,
-            user_id: list.createdby_id,
-            name: 'System Worker',
-            session_id: 'lazy-refresh',
-          };
-          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
-            logger.error({ err }, `Failed to lazily queue refresh for list ${input.id}`),
-          );
-          (this as any)._lastLazyRefreshPromise = promise;
-        }
-      }
-    }
-    if (!list) return list;
-    return this.resolveCreatorAndUpdater(input.tenant_id, list);
-  }
-}
+  // Consumers (newsletters/forms/turfs) — for LAST USED IN and delete confirms.
+  getConsumers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getConsumers(ctx.auth, input)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
@@ -18084,43 +16395,445 @@ export class MsOAuthService {
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
+## File: apps/backend/src/app/modules/newsletters/controller.ts
 ````typescript
-import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
+import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { authProcedure, router } from '../../../trpc';
-import { NewslettersController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
+import { BaseController } from '../../lib/base.controller';
+import { NewslettersRepo } from './repositories/newsletters.repo';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 
-const newsletters = new NewslettersController();
+const DEFAULT_FROM_NAME = 'PeopleCRM Team';
+const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
 
-const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+export interface SendTestEmailInput {
+  subject: string;
+  html: string;
+  text?: string;
+  to: string;
+  fromName?: string;
+  fromEmail?: string;
+}
 
-const sendTestSchema = z.object({
-  subject: z.string(),
-  html: z.string(),
-  text: z.string().optional(),
-  to: z.email(),
-  fromName: z.string().optional(),
-  fromEmail: z.string().optional(),
-});
+export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  constructor() {
+    super(new NewslettersRepo());
+  }
 
-export const NewslettersRouter = router({
-  ...crud,
+  /**
+   * map_newsletters_lists is the source of truth for list targeting (the
+   * legacy JSONB target_lists column is still dual-written by callers during
+   * the transition, but nothing reads it for behavior anymore).
+   */
+  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    const result = await super.add(row, trx);
+    const rowObj = row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        String(rowObj['tenant_id']),
+        String(resultObj['id']),
+        rowObj['target_lists'],
+        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
+        trx,
+      );
+    }
+    return result;
+  }
 
-  getEngagementStats: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'newsletters', 'update'>;
+  }) {
+    const result = await super.update(input);
+    const rowObj = input.row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        input.tenant_id,
+        input.id,
+        rowObj['target_lists'],
+        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
+      );
+    }
+    return result;
+  }
 
-  send: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
+  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      const raw = parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return {
+          include: raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          exclude: [],
+        };
+      }
+    }
+    if (Array.isArray(parsed)) {
+      return { include: parsed.map((v) => String(v)), exclude: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
 
-  sendTest: authProcedure
-    .input(sendTestSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
-});
+  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
+  private async syncTargetLists(
+    tenant_id: string,
+    newsletterId: string,
+    rawTargetLists: unknown,
+    actorId: string,
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const db = trx ?? this.getRepo().db;
+    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+
+    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
+    let liveIds = new Set<string>();
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = new Set(rows.map((r) => String(r.id)));
+    }
+
+    await db
+      .deleteFrom('map_newsletters_lists')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+
+    const values = [
+      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
+      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
+    ].map((v) => ({
+      tenant_id,
+      newsletter_id: newsletterId,
+      list_id: v.list_id,
+      mode: v.mode,
+      createdby_id: actorId,
+      updatedby_id: actorId,
+    }));
+    if (values.length > 0) {
+      await db.insertInto('map_newsletters_lists').values(values).execute();
+    }
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'newsletters',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  public async buildRecipientQuery(tenant_id: string, newsletter: any): Promise<any> {
+    let includeTags: string[] = [];
+    let excludeTags: string[] = [];
+
+    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
+    const listRows = await this.getRepo()
+      .db.selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', String(newsletter.id))
+      .execute();
+    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
+    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
+
+    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // It stays JSONB deliberately: it holds tag *names*, not ids.
+    const parseJsonField = (value: unknown): unknown => {
+      if (value == null) return null;
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value; // already parsed object from jsonb column
+    };
+
+    const segmentsObj = parseJsonField(newsletter.segments);
+    if (Array.isArray(segmentsObj)) {
+      includeTags = segmentsObj as string[];
+    } else if (segmentsObj && typeof segmentsObj === 'object') {
+      const obj = segmentsObj as Record<string, unknown>;
+      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof segmentsObj === 'string' && segmentsObj) {
+      includeTags = (segmentsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const db = this.getRepo().db;
+    let query = db
+      .selectFrom('persons')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.email', 'is not', null)
+      .where('persons.email', '!=', '')
+      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
+      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
+
+    query = query.where((eb) => {
+      const conditions = [];
+      if (includeListIds.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', includeListIds),
+          ),
+        );
+      }
+      if (includeTags.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', includeTags),
+          ),
+        );
+      }
+
+      if (conditions.length === 0) {
+        return eb.val(false);
+      }
+      return eb.or(conditions);
+    });
+
+    if (excludeListIds.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', excludeListIds),
+          ),
+        ),
+      );
+    }
+
+    if (excludeTags.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', excludeTags),
+          ),
+        ),
+      );
+    }
+
+    return query;
+  }
+
+  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
+    if (!newsletter) {
+      throw new NotFoundError('Newsletter not found');
+    }
+    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
+    }
+
+    const db = this.getRepo().db;
+    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
+
+    // Get total count of unique recipients using a distinct count query
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number((countResult as any)?.count || 0);
+
+    if (totalRecipients === 0) {
+      throw new BadRequestError('No recipients found for the selected lists or tags');
+    }
+
+    const updated = await this.update({
+      tenant_id,
+      id,
+      row: {
+        status: 'queuing',
+        total_recipients: totalRecipients,
+        delivered_count: 0,
+        updatedby_id: userId,
+        updated_at: new Date(),
+      },
+    });
+
+    await db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenant_id,
+          userId: userId,
+          offset: 0,
+          deliveredCount: 0,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return updated;
+  }
+
+  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    const db = this.getRepo().db;
+
+    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
+    // from name/email, otherwise fall back to the workspace Communications settings.
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+        'communications.reply_to',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
+    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
+    const replyTo = settingsMap['communications.reply_to'] || undefined;
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+
+    const mailSvc = new NewsletterEmailService();
+    const delivered = await mailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: [input.to],
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      sendgridApiKey,
+      subuserUsername,
+    });
+
+    return { to: input.to, delivered };
+  }
+
+  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
+    const db = this.getRepo().db;
+
+    // 1. Fetch recent events (limit 100)
+    const activities = await db
+      .selectFrom('newsletter_events')
+      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    // 2. Fetch timeline data grouped by date/hour
+    const timeline = await db
+      .selectFrom('newsletter_events')
+      .select([
+        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+      ])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', 'in', ['open', 'click'])
+      .groupBy('time_bucket')
+      .orderBy('time_bucket', 'asc')
+      .execute();
+
+    return {
+      activities: activities.map((a) => ({
+        email: a.email,
+        event_type: a.event_type,
+        timestamp: a.timestamp,
+        url: a.url,
+        ip: a.ip,
+        user_agent: a.user_agent,
+      })),
+      timeline: timeline.map((t) => ({
+        time: t.time_bucket,
+        opens: Number(t.opens),
+        clicks: Number(t.clicks),
+      })),
+    };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
@@ -18194,6 +16907,300 @@ export const update = {
     response: { 201: person },
   },
 };
+````
+
+## File: apps/backend/src/app/modules/persons/services/duplicate-maintenance.service.ts
+````typescript
+import { sql } from 'kysely';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { DuplicatesRepo } from '../../duplicates/repositories/duplicates.repo';
+
+export class DuplicateMaintenanceService {
+  private readonly personsRepo = new PersonsRepo();
+  private readonly duplicatesRepo = new DuplicatesRepo();
+
+  public async recomputeAllDuplicates(tenantId: string): Promise<void> {
+    const db = this.personsRepo.db;
+
+    // §9.3 rule: "'Not duplicates' remembered so the pair isn't re-flagged." Read the
+    // tenant's dismissals up front and filter every candidate group against it below.
+    const dismissedGroupKeys = await this.duplicatesRepo.getDismissedGroupKeys(tenantId);
+
+    // 1. Delete all potential duplicates for the tenant
+    await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
+
+    // 2. Fetch the placeholder household id
+    const tenantRow = await db
+      .selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const placeholderHhId = tenantRow?.placeholder_household_id;
+
+    // 3. Find duplicates using bulk queries (equivalent to the old findPotentialDuplicates logic)
+    // Email duplicates
+    const duplicateEmails = await db
+      .selectFrom('persons')
+      .select([sql<string>`lower(email)`.as('email_lower')])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
+      .where('tenant_id', '=', tenantId)
+      .where('email', 'is not', null)
+      .where(sql`trim(email)`, '!=', '')
+      .groupBy(sql`lower(email)`)
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    // Household name duplicates
+    const duplicateNamesInSameHousehold = await db
+      .selectFrom('persons')
+      .select([
+        sql<string>`lower(first_name)`.as('first_name_lower'),
+        sql<string>`lower(last_name)`.as('last_name_lower'),
+        'household_id',
+      ])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
+      .where('tenant_id', '=', tenantId)
+      .where('first_name', 'is not', null)
+      .where('last_name', 'is not', null)
+      .where(sql`trim(first_name)`, '!=', '')
+      .where(sql`trim(last_name)`, '!=', '')
+      .where('household_id', 'is not', null)
+      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId as string))
+      .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    // Address name duplicates
+    const duplicateNamesInSameAddress = await db
+      .selectFrom('persons')
+      .innerJoin('households', 'persons.household_id', 'households.id')
+      .select([
+        sql<string>`lower(persons.first_name)`.as('first_name_lower'),
+        sql<string>`lower(persons.last_name)`.as('last_name_lower'),
+        'households.address_fp_full',
+      ])
+      .select((eb) => [eb.fn.agg<string[]>('array_agg', ['persons.id']).as('ids')])
+      .where('persons.tenant_id', '=', tenantId)
+      .where('persons.first_name', 'is not', null)
+      .where('persons.last_name', 'is not', null)
+      .where(sql`trim(persons.first_name)`, '!=', '')
+      .where(sql`trim(persons.last_name)`, '!=', '')
+      .where('households.address_fp_full', 'is not', null)
+      .where(sql`trim(households.address_fp_full)`, '!=', '')
+      .groupBy([sql`lower(persons.first_name)`, sql`lower(persons.last_name)`, 'households.address_fp_full'])
+      .having(sql`count(persons.id)`, '>', 1)
+      .execute();
+
+    // 4. Collect names of people to construct friendly reasons
+    const allMatchingPersonIds = new Set<string>();
+    const collectIds = (groups: Array<{ ids: string[] }>) => {
+      for (const g of groups) {
+        if (Array.isArray(g.ids)) {
+          g.ids.forEach((id) => allMatchingPersonIds.add(String(id)));
+        }
+      }
+    };
+    collectIds(duplicateEmails);
+    collectIds(duplicateNamesInSameHousehold);
+    collectIds(duplicateNamesInSameAddress);
+
+    const personsMap = new Map<string, { first_name: string | null; last_name: string | null }>();
+    if (allMatchingPersonIds.size > 0) {
+      const dbRows = await db
+        .selectFrom('persons')
+        .select(['id', 'first_name', 'last_name'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', 'in', Array.from(allMatchingPersonIds))
+        .execute();
+      for (const row of dbRows) {
+        personsMap.set(String(row.id), { first_name: row.first_name, last_name: row.last_name });
+      }
+    }
+
+    const inserts: any[] = [];
+
+    // Email duplicates
+    for (const group of duplicateEmails) {
+      const email = group.email_lower;
+      const key = `email:${email}`;
+      const reason = `Matching Email: "${email}"`;
+      for (const id of group.ids) {
+        inserts.push({
+          tenant_id: tenantId,
+          group_key: key,
+          person_id: String(id),
+          reason,
+        });
+      }
+    }
+
+    // Household name duplicates
+    for (const group of duplicateNamesInSameHousehold) {
+      const key = `household:${group.household_id}:${group.first_name_lower}:${group.last_name_lower}`;
+      const firstPerson = personsMap.get(String(group.ids[0]));
+      const reason =
+        `Matching Name at Same Household: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+      for (const id of group.ids) {
+        inserts.push({
+          tenant_id: tenantId,
+          group_key: key,
+          person_id: String(id),
+          reason,
+        });
+      }
+    }
+
+    // Address name duplicates
+    for (const group of duplicateNamesInSameAddress) {
+      const key = `address:${group.address_fp_full}:${group.first_name_lower}:${group.last_name_lower}`;
+      const firstPerson = personsMap.get(String(group.ids[0]));
+      const reason = `Matching Name at Same Address: "${firstPerson?.first_name || ''} ${firstPerson?.last_name || ''}"`
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      for (const id of group.ids) {
+        inserts.push({
+          tenant_id: tenantId,
+          group_key: key,
+          person_id: String(id),
+          reason,
+        });
+      }
+    }
+    // --- HOUSEHOLDS DUPLICATES ---
+    const duplicateAddresses = await db
+      .selectFrom('households')
+      .select(['address_fp_full'])
+      .select((eb) => [
+        eb.fn.count('households.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['households.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenantId)
+      .where('address_fp_full', 'is not', null)
+      .where(sql`trim(address_fp_full)`, '!=', '')
+      .$if(!!placeholderHhId, (qb) => qb.where('id', '!=', placeholderHhId as string))
+      .groupBy('address_fp_full')
+      .having(sql`count(households.id)`, '>', 1)
+      .execute();
+
+    const hhIds = new Set<string>();
+    for (const group of duplicateAddresses) {
+      if (Array.isArray(group.ids)) {
+        group.ids.forEach((id) => hhIds.add(String(id)));
+      }
+    }
+
+    if (hhIds.size > 0) {
+      const dbRows = await db
+        .selectFrom('households')
+        .select(['id', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country', 'apt'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', 'in', Array.from(hhIds))
+        .execute();
+
+      const hhMap = new Map<string, Record<string, unknown>>();
+      for (const row of dbRows) {
+        hhMap.set(String(row.id), row);
+      }
+
+      for (const group of duplicateAddresses) {
+        const groupHouseholds = group.ids
+          .map((id) => hhMap.get(String(id)))
+          .filter((x): x is Record<string, unknown> => !!x);
+
+        if (groupHouseholds.length > 1) {
+          const first = groupHouseholds[0];
+          const addrStr = [first?.street_num, first?.street1, first?.apt, first?.city, first?.state, first?.zip]
+            .filter(Boolean)
+            .join(' ');
+          const reason = `Matching Address: "${addrStr}"`;
+          const key = `household:fp:${group.address_fp_full}`;
+
+          for (const hh of groupHouseholds) {
+            inserts.push({
+              tenant_id: tenantId,
+              group_key: key,
+              household_id: String(hh.id),
+              person_id: null,
+              reason,
+            });
+          }
+        }
+      }
+    }
+
+    // --- COMPANIES DUPLICATES ---
+    const duplicateNames = await db
+      .selectFrom('companies')
+      .select([sql<string>`lower(trim(name))`.as('name_lower')])
+      .select((eb) => [
+        eb.fn.count('companies.id').as('match_count'),
+        eb.fn.agg<string[]>('array_agg', ['companies.id']).as('ids'),
+      ])
+      .where('tenant_id', '=', tenantId)
+      .where('name', 'is not', null)
+      .where(sql`trim(name)`, '!=', '')
+      .groupBy(sql`lower(trim(name))`)
+      .having(sql`count(companies.id)`, '>', 1)
+      .execute();
+
+    const companyIds = new Set<string>();
+    for (const group of duplicateNames) {
+      if (Array.isArray(group.ids)) {
+        group.ids.forEach((id) => companyIds.add(String(id)));
+      }
+    }
+
+    if (companyIds.size > 0) {
+      const dbRows = await db
+        .selectFrom('companies')
+        .select(['id', 'name'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', 'in', Array.from(companyIds))
+        .execute();
+
+      const companyMap = new Map<string, Record<string, unknown>>();
+      for (const row of dbRows) {
+        companyMap.set(String(row.id), row);
+      }
+
+      for (const group of duplicateNames) {
+        const groupCompanies = group.ids
+          .map((id) => companyMap.get(String(id)))
+          .filter((x): x is Record<string, unknown> => !!x);
+
+        if (groupCompanies.length > 1) {
+          const first = groupCompanies[0];
+          const reason = `Matching Company Name: "${first?.name}"`;
+          const key = `company:name:${group.name_lower}`;
+
+          for (const c of groupCompanies) {
+            inserts.push({
+              tenant_id: tenantId,
+              group_key: key,
+              company_id: String(c.id),
+              person_id: null,
+              reason,
+            });
+          }
+        }
+      }
+    }
+
+    const keptInserts =
+      dismissedGroupKeys.size > 0 ? inserts.filter((row) => !dismissedGroupKeys.has(String(row.group_key))) : inserts;
+
+    if (keptInserts.length > 0) {
+      // Use chunked inserts just in case the list is very large
+      const chunkSize = 1000;
+      for (let i = 0; i < keptInserts.length; i += chunkSize) {
+        const chunk = keptInserts.slice(i, i + chunkSize);
+        await db.insertInto('potential_duplicates').values(chunk).execute();
+      }
+    }
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
@@ -18863,426 +17870,2182 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 }
 ````
 
-## File: apps/backend/src/app/modules/tasks/controller.ts
+## File: apps/backend/src/app/modules/tags/repositories/tags.repo.ts
 ````typescript
-import type {
-  AddTaskType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTaskType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
+import type { ReferenceExpression, SelectQueryBuilder, Transaction, Selectable } from 'kysely';
+import { sql } from 'kysely';
 
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-
-import { TasksRepo } from './repositories/tasks.repo';
-import type { Selectable } from 'kysely';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 import type {
   Models,
   OperationDataType,
   TypeId,
   TypeTenantId,
-} from '../../../../../../libs/common/src/lib/kysely.models';
-import type { QueryParams } from '../../lib/base.repo';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { notificationEnabled } from '../../lib/profile-preferences';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
+} from '../../../../../../../libs/common/src/lib/kysely.models';
+import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
-export class TasksController extends BaseController<'tasks', TasksRepo> {
-  private mailService = new TransactionalEmailService();
+/** Row shape for the §9.1/§9.2 admin pages (Tags admin / Issues admin). Not paginated —
+ * tag/issue vocabularies are small (dozens, not thousands), so the admin page fetches
+ * the whole list in one round trip and does its own client-side sentence/callout math. */
+export interface TagAdminRow {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  deletable: boolean;
+  type: 'tag' | 'issue';
+  created_at: Date;
+  created_by_name: string | null;
+  use_count_people: number;
+  use_count_households: number;
+  last_applied_at: Date | null;
+  /** New applications (person or household) in the trailing 30 days. Always >= 0 — there is
+   * no removal-history table, so this approximates "trend" as new activity only. See
+   * pplcrm-forms/pplcrm-trpc-backend skills note on `user_activity` if that ever changes. */
+  recent_applications_30d: number;
+  top_ward: string | null;
+}
 
+export class TagsRepo extends BaseRepository<'tags'> {
   constructor() {
-    super(new TasksRepo());
+    super('tags');
   }
 
-  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
+  private lowercaseRow<R extends OperationDataType<'tags', 'insert' | 'update'>>(row: R): R {
+    if (row && typeof row.name === 'string') {
+      return {
+        ...row,
+        name: row.name.toLowerCase().trim(),
+      };
+    }
+    return row;
+  }
+
+  public override async add(input: { row: OperationDataType<'tags', 'insert'> }, trx?: Transaction<Models>) {
+    return super.add({ row: this.lowercaseRow(input.row) }, trx);
+  }
+
+  public override async addMany(input: { rows: OperationDataType<'tags', 'insert'>[] }, trx?: Transaction<Models>) {
+    return super.addMany({ rows: input.rows.map((row) => this.lowercaseRow(row)) }, trx);
+  }
+
+  public override async addOrGet<K extends keyof Models['tags'] & string>(
+    input: {
+      row: OperationDataType<'tags', 'insert'>;
+      onConflictColumn: K;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<Selectable<Models['tags']> | undefined> {
+    const row = this.lowercaseRow(input.row);
+    const type = row.type ?? 'tag';
+    const insertResult = await this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) => oc.columns(['tenant_id', 'name', 'type']).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) return insertResult as unknown as Selectable<Models['tags']>;
+
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', row.tenant_id)
+      .where('name', '=', row.name)
+      .where('type', '=', type)
+      .executeTakeFirst();
+  }
+
+  public override async update(
+    input: {
+      tenant_id: TypeTenantId<'tags'>;
+      id: TypeId<'tags'>;
+      row: OperationDataType<'tags', 'update'>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return super.update(
+      {
+        tenant_id: input.tenant_id,
+        id: input.id,
+        row: this.lowercaseRow(input.row),
+      },
+      trx,
+    );
+  }
+
+  public override getAll(
+    input: {
+      tenant_id: TypeTenantId<'tags'>;
+      options?: QueryParams<'tags'> & { type?: 'tag' | 'issue' };
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx);
+    query = query.where('tenant_id', '=', input.tenant_id);
+    const type = input.options?.type;
+    if (type) {
+      query = query.where('type', '=', type);
+    }
+    return query.execute();
+  }
+
+  public override async deleteMany(input: { tenant_id: TypeTenantId<'tags'>; ids: TypeId<'tags'>[] }) {
+    return await this.transaction().execute(async (trx) => {
+      if (!input.ids.length) return false;
+
+      const deletableRows = await trx
+        .selectFrom(this.table)
+        .select(['id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('id', 'in', input.ids)
+        .where('deletable', '=', true)
+        .execute();
+
+      if (!deletableRows.length) return false;
+
+      const deletableIds = deletableRows.map((row) => row.id);
+
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+
+      // Fix: Nullify the tag association on past imports before deleting the tag
+      await trx
+        .updateTable('data_imports')
+        .set({ tag_id: null })
+        .where('tag_id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+
+      const result = await trx
+        .deleteFrom(this.table)
+        .where('id', 'in', deletableIds)
+        .where('tenant_id', '=', input.tenant_id)
+        .executeTakeFirst();
+
+      return Number(result?.numDeletedRows ?? 0) > 0;
+    });
+  }
+
+  public async ensureSystemTags(input: { tenant_id: string; user_id: string }, trx?: Transaction<Models>) {
+    for (const seed of SYSTEM_TAG_SEED_DATA) {
+      const existing = await this.getSelect(trx)
+        .select(['id', 'deletable', 'color'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('name', '=', seed.name)
+        .where('type', '=', 'tag')
+        .executeTakeFirst();
+
+      if (!existing) {
+        const row = {
+          tenant_id: input.tenant_id,
+          name: seed.name,
+          description: seed.description,
+          color: seed.color ?? null,
+          deletable: false,
+          type: 'tag',
+          createdby_id: input.user_id,
+          updatedby_id: input.user_id,
+        } as OperationDataType<'tags', 'insert'>;
+
+        await this.add({ row }, trx);
+        continue;
+      }
+
+      const desiredColor = seed.color ?? null;
+      const needsDeletableUpdate = existing.deletable !== false;
+      const needsColorUpdate = existing.color !== desiredColor;
+      if (needsDeletableUpdate || needsColorUpdate) {
+        const updateRow: OperationDataType<'tags', 'update'> = {
+          updatedby_id: input.user_id,
+          ...(needsDeletableUpdate ? { deletable: false } : {}),
+          ...(needsColorUpdate ? { color: desiredColor } : {}),
+        };
+
+        await this.update(
+          {
+            tenant_id: input.tenant_id,
+            id: String(existing.id),
+            row: updateRow,
+          },
+          trx,
+        );
+      }
+    }
+  }
+
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags' | 'map_households_tags'> & {
+        type?: 'tag' | 'issue';
+      };
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { type?: 'tag' | 'issue' } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
+    const type = options.type;
+
+    // Pagination defaults
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
+
+    // Shared filter/search logic for both queries
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
+        .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
+        .where('tags.tenant_id', '=', tenantId)
+        .$if(!!type, (qb) => qb.where('tags.type', '=', type ?? 'tag'))
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(tags.name) LIKE ${text} OR
+            LOWER(tags.description) LIKE ${text}
+          )`,
+          );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name']?.value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('tags.description', 'ilike', `%${filterModel['description']?.value}%`),
+        )
+        .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
+          const raw = filterModel['deletable']?.value ?? filterModel['deletable'];
+          const v = String(raw || '')
+            .trim()
+            .toLowerCase();
+          if (v === 'true' || v === '1' || v === 'yes') return q.where('tags.deletable', '=', true);
+          if (v === 'false' || v === '0' || v === 'no') return q.where('tags.deletable', '=', false);
+          return q;
+        });
+
+    // Count query (with filters/search)
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT tags.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query (with filters/search, sorting, pagination)
+    const rows = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [
+        'tags.id',
+        'tags.name',
+        'tags.description',
+        'tags.color',
+        'tags.deletable',
+        'tags.type',
+        fn.count('map_peoples_tags.person_id').as('use_count_people'),
+        fn.count('map_households_tags.household_id').as('use_count_households'),
+      ])
+      .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
+
+    return {
+      rows,
+      count,
+    };
+  }
+
+  public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
+    let q = this.getSelect(trx)
+      .select('id')
+      .where('name', '=', input.name.toLowerCase().trim())
+      .where('tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('type', '=', input.type);
+    }
+    return q.executeTakeFirst();
+  }
+
+  public findByNameAndType(
+    input: { tenant_id: string; name: string; type: 'tag' | 'issue' },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelect(trx)
+      .select(['name'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('name', 'ilike', input.name + '%')
+      .where('type', '=', input.type)
+      .limit(3)
+      .execute();
+  }
+
+  /**
+   * The full §9.1 (Tags admin) / §9.2 (Issues admin) list: one round trip with counts,
+   * last-applied timestamp, creator name, 30-day new-application count (the "trend" proxy —
+   * see `TagAdminRow.recent_applications_30d`), and the top ward among tagged people's
+   * households. CTEs over raw SQL rather than the query builder because of the window
+   * function (top ward) and multi-table aggregation; every branch is tenant-scoped.
+   */
+  public async getAdminList(input: { tenant_id: string; type: 'tag' | 'issue' }): Promise<TagAdminRow[]> {
+    const rows = await sql<{
+      id: string;
+      name: string;
+      description: string | null;
+      color: string | null;
+      deletable: boolean;
+      type: 'tag' | 'issue';
+      created_at: Date;
+      created_by_name: string | null;
+      use_count_people: string | number;
+      use_count_households: string | number;
+      last_applied_at: Date | null;
+      recent_applications_30d: string | number;
+      top_ward: string | null;
+    }>`
+      WITH base AS (
+        SELECT t.id, t.name, t.description, t.color, t.deletable, t.type, t.created_at,
+               NULLIF(TRIM(CONCAT_WS(' ', au.first_name, au.last_name)), '') AS created_by_name
+        FROM tags t
+        LEFT JOIN authusers au ON au.id = t.createdby_id
+        WHERE t.tenant_id = ${input.tenant_id} AND t.type = ${input.type}
+      ),
+      people_counts AS (
+        SELECT tag_id, count(*) AS cnt, max(created_at) AS last_applied
+        FROM map_peoples_tags WHERE tenant_id = ${input.tenant_id} GROUP BY tag_id
+      ),
+      household_counts AS (
+        SELECT tag_id, count(*) AS cnt, max(created_at) AS last_applied
+        FROM map_households_tags WHERE tenant_id = ${input.tenant_id} GROUP BY tag_id
+      ),
+      recent_30d AS (
+        SELECT tag_id, count(*) AS cnt FROM (
+          SELECT tag_id, created_at FROM map_peoples_tags WHERE tenant_id = ${input.tenant_id}
+          UNION ALL
+          SELECT tag_id, created_at FROM map_households_tags WHERE tenant_id = ${input.tenant_id}
+        ) recent
+        WHERE created_at >= now() - interval '30 days'
+        GROUP BY tag_id
+      ),
+      ranked_ward AS (
+        SELECT mpt.tag_id, h.ward, count(*) AS cnt,
+               row_number() OVER (PARTITION BY mpt.tag_id ORDER BY count(*) DESC, h.ward) AS rn
+        FROM map_peoples_tags mpt
+        JOIN persons p ON p.id = mpt.person_id AND p.tenant_id = mpt.tenant_id
+        JOIN households h ON h.id = p.household_id AND h.tenant_id = p.tenant_id
+        WHERE mpt.tenant_id = ${input.tenant_id} AND h.ward IS NOT NULL AND h.ward <> ''
+        GROUP BY mpt.tag_id, h.ward
+      ),
+      top_ward AS (
+        SELECT tag_id, ward FROM ranked_ward WHERE rn = 1
+      )
+      SELECT
+        base.id, base.name, base.description, base.color, base.deletable, base.type, base.created_at,
+        base.created_by_name,
+        COALESCE(people_counts.cnt, 0) AS use_count_people,
+        COALESCE(household_counts.cnt, 0) AS use_count_households,
+        GREATEST(people_counts.last_applied, household_counts.last_applied) AS last_applied_at,
+        COALESCE(recent_30d.cnt, 0) AS recent_applications_30d,
+        top_ward.ward AS top_ward
+      FROM base
+      LEFT JOIN people_counts ON people_counts.tag_id = base.id
+      LEFT JOIN household_counts ON household_counts.tag_id = base.id
+      LEFT JOIN recent_30d ON recent_30d.tag_id = base.id
+      LEFT JOIN top_ward ON top_ward.tag_id = base.id
+      ORDER BY COALESCE(people_counts.cnt, 0) DESC, base.name ASC
+    `.execute(this.db);
+
+    return rows.rows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      description: r.description,
+      color: r.color,
+      deletable: r.deletable,
+      type: r.type,
+      created_at: r.created_at,
+      created_by_name: r.created_by_name,
+      use_count_people: Number(r.use_count_people),
+      use_count_households: Number(r.use_count_households),
+      last_applied_at: r.last_applied_at,
+      recent_applications_30d: Number(r.recent_applications_30d),
+      top_ward: r.top_ward,
+    }));
+  }
+
+  /** §9.2 Issues admin sentence wants unique PEOPLE, not total applications ("2,148 people
+   * shared what they care about" — a person with 3 issues counts once, unlike the Tags admin
+   * sentence's "applications" total which counts every application). */
+  public async countDistinctPeople(input: { tenant_id: string; type: 'tag' | 'issue' }): Promise<number> {
+    const result = await this.db
+      .selectFrom('map_peoples_tags')
+      .innerJoin('tags', (join) =>
+        join
+          .onRef('tags.id', '=', 'map_peoples_tags.tag_id')
+          .onRef('tags.tenant_id', '=', 'map_peoples_tags.tenant_id'),
+      )
+      .select(({ fn }) => [fn.count(sql`DISTINCT map_peoples_tags.person_id`).as('cnt')])
+      .where('map_peoples_tags.tenant_id', '=', input.tenant_id)
+      .where('tags.type', '=', input.type)
+      .executeTakeFirst();
+    return Number(result?.cnt ?? 0);
+  }
+
+  /**
+   * Rename a tag/issue in place and propagate the new name everywhere it's referenced by
+   * value rather than by id: `web_forms.target_tags` (tags only — forms don't target issues)
+   * and `lists.definition` (the dynamic-list query-builder options; tags live under `.tags`,
+   * issues under `.issues`). Footer contract (spec §9.1): "Renames and merges apply everywhere
+   * a tag is referenced — people, lists, automations and forms — in one pass." `map_peoples_tags`
+   * / `map_households_tags` reference tags by id already, so they need no propagation on rename.
+   * Automations (`workflows`/`workflow_steps`) have no tag/issue reference column in the current
+   * schema — nothing to propagate there today; see the Track D report for this deferral.
+   */
+  public async renameTag(input: {
+    tenant_id: string;
+    id: string;
+    new_name: string;
+    user_id: string;
+  }): Promise<Selectable<Models['tags']> | undefined> {
+    return this.transaction().execute(async (trx) => {
+      const existing = await this.getSelect(trx)
+        .selectAll()
+        .where('tenant_id', '=', input.tenant_id)
+        .where('id', '=', input.id)
+        .executeTakeFirst();
+      if (!existing) return undefined;
+
+      const newName = input.new_name.toLowerCase().trim();
+      if (newName === existing.name) return existing;
+
+      const updated = await this.update(
+        {
+          tenant_id: input.tenant_id as TypeTenantId<'tags'>,
+          id: input.id as TypeId<'tags'>,
+          row: { name: newName, updatedby_id: input.user_id } as OperationDataType<'tags', 'update'>,
+        },
+        trx,
+      );
+
+      // `tags.type` is a `text` column (no DB CHECK constraint); every write path (AddTagObj/
+      // UpdateTagObj) restricts it to 'tag' | 'issue', so this narrowing reflects that invariant.
+      await this.propagateNameChange(trx, input.tenant_id, existing.type as 'tag' | 'issue', existing.name, newName);
+
+      // `update()` returns `0` only when the row is empty (base.repo.ts) — never here, since we
+      // always pass `name`/`updatedby_id`. Narrow it away so the return type stays honest.
+      return typeof updated === 'number' ? undefined : updated;
+    });
+  }
+
+  /**
+   * Merge `source_id` into `target_id` (spec §9.1 "Move everyone to"): every person/household
+   * carrying the source tag ends up carrying the target tag instead (fills, never duplicates —
+   * a record that already has both just keeps one row), the source's name is replaced by the
+   * target's name everywhere it was referenced by value, and the source tag row is deleted.
+   * Both tags must be the same `type` and the source must be `deletable` (protects seeded
+   * system tags/issues from being merged away, same guard as delete).
+   */
+  public async mergeTags(input: {
+    tenant_id: string;
+    source_id: string;
+    target_id: string;
+    user_id: string;
+  }): Promise<Selectable<Models['tags']> | undefined> {
+    if (input.source_id === input.target_id) {
+      throw new Error('Cannot merge a tag into itself.');
+    }
+
+    return this.transaction().execute(async (trx) => {
+      const [source, target] = await Promise.all([
+        this.getSelect(trx)
+          .selectAll()
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', input.source_id)
+          .executeTakeFirst(),
+        this.getSelect(trx)
+          .selectAll()
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', input.target_id)
+          .executeTakeFirst(),
+      ]);
+
+      if (!source || !target) {
+        throw new Error('Source or target tag not found.');
+      }
+      if (source.type !== target.type) {
+        throw new Error('Cannot merge a tag into an issue (or vice versa).');
+      }
+      if (!source.deletable) {
+        throw new Error('This tag is protected and cannot be merged away.');
+      }
+
+      // Re-point people/households that only have the source tag; the ones that already carry
+      // the target tag just drop the now-redundant source row. Fetch-diff-insert-delete (not a
+      // correlated subquery) to match the `mergePersons` shape in persons.repo.ts.
+      const targetPeopleIds = new Set(
+        (
+          await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('tag_id', '=', input.target_id)
+            .execute()
+        ).map((r) => String(r.person_id)),
+      );
+      const sourcePeople = await trx
+        .selectFrom('map_peoples_tags')
+        .select('person_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+      for (const row of sourcePeople) {
+        if (!targetPeopleIds.has(String(row.person_id))) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: row.person_id,
+              tag_id: input.target_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+
+      const targetHouseholdIds = new Set(
+        (
+          await trx
+            .selectFrom('map_households_tags')
+            .select('household_id')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('tag_id', '=', input.target_id)
+            .execute()
+        ).map((r) => String(r.household_id)),
+      );
+      const sourceHouseholds = await trx
+        .selectFrom('map_households_tags')
+        .select('household_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+      for (const row of sourceHouseholds) {
+        if (!targetHouseholdIds.has(String(row.household_id))) {
+          await trx
+            .insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: row.household_id,
+              tag_id: input.target_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+
+      // Historical imports still labeled by the source tag now point at the survivor.
+      await trx
+        .updateTable('data_imports')
+        .set({ tag_id: input.target_id })
+        .where('tag_id', '=', input.source_id)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+
+      // Same invariant as renameTag() above — `type` is enum-shaped by the write paths, not the column.
+      await this.propagateNameChange(trx, input.tenant_id, source.type as 'tag' | 'issue', source.name, target.name);
+
+      await trx.deleteFrom('tags').where('tenant_id', '=', input.tenant_id).where('id', '=', input.source_id).execute();
+
+      return target;
+    });
+  }
+
+  /** Replace `oldName` with `newName` inside the JSON-by-value reference points. De-duplicates
+   * the array in the same pass (a merge can otherwise leave `[donor, donor]` if a record already
+   * had the target name spelled the same way as the renamed source). */
+  private async propagateNameChange(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    type: 'tag' | 'issue',
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    if (type === 'tag') {
+      await sql`
+        UPDATE web_forms
+        SET target_tags = (
+          SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN value = ${oldName} THEN ${newName} ELSE value END AS elem
+            FROM jsonb_array_elements_text(target_tags)
+          ) sub
+        )
+        WHERE tenant_id = ${tenant_id} AND target_tags @> to_jsonb(${oldName}::text)
+      `.execute(trx);
+    }
+
+    const definitionKey = type === 'tag' ? 'tags' : 'issues';
+    await sql`
+      UPDATE lists
+      SET definition = jsonb_set(
+        definition,
+        ARRAY[${definitionKey}]::text[],
+        (
+          SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN value = ${oldName} THEN ${newName} ELSE value END AS elem
+            FROM jsonb_array_elements_text(definition -> ${definitionKey})
+          ) sub
+        )
+      )
+      WHERE tenant_id = ${tenant_id}
+        AND definition -> ${definitionKey} @> to_jsonb(${oldName}::text)
+    `.execute(trx);
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/tags/controller.ts
+````typescript
+import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
+
+import { BadRequestError, ConflictError, NotFoundError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { TagsRepo, type TagAdminRow } from './repositories/tags.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export class TagsController extends BaseController<'tags', TagsRepo> {
+  constructor() {
+    super(new TagsRepo());
+  }
+
+  public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
-      details: payload.details,
-      due_at: payload.due_at ?? null,
-      status: payload.status ?? 'todo',
-      priority: payload.priority ?? null,
-      completed_at: payload.completed_at ?? null,
-      position: payload.position ?? 0,
-      assigned_to: payload.assigned_to ?? null,
-      team_id: payload.team_id ?? null,
+      description: payload.description,
+      color: payload.color ?? null,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
-    } as OperationDataType<'tasks', 'insert'>;
-    const task = await this.add(row);
-    if (task && payload.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: payload.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${payload.name}"`,
-          type: 'task',
-          link: `/tasks/${task.id}`,
-        });
+      type: payload.type ?? 'tag',
+    };
+    try {
+      return await this.add(row as OperationDataType<'tags', 'insert'>);
+    } catch (err) {
+      if ((err as { code?: string })?.code === '23505') {
+        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
+      }
+      throw err;
+    }
+  }
 
-        const assignedTo = payload.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New Task Assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
-              });
+  public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
+    const type = input.type ?? 'tag';
+    return this.getRepo().findByNameAndType({
+      tenant_id: auth.tenant_id,
+      name: input.name,
+      type,
+    });
+  }
+
+  public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    };
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy as OperationDataType<'tags', 'update'>,
+    });
+  }
+
+  /** §9.1 Tags admin / §9.2 Issues admin: the full, unpaginated list with counts, last-applied,
+   * creator, trend and top-ward — see `TagsRepo.getAdminList`. */
+  public getAdminList(type: 'tag' | 'issue', auth: IAuthKeyPayload): Promise<TagAdminRow[]> {
+    return this.getRepo().getAdminList({ tenant_id: auth.tenant_id, type });
+  }
+
+  /** §9.2 Issues admin sentence: "N people shared what they care about". */
+  public countDistinctPeople(type: 'tag' | 'issue', auth: IAuthKeyPayload): Promise<number> {
+    return this.getRepo().countDistinctPeople({ tenant_id: auth.tenant_id, type });
+  }
+
+  /** §9.1 footer contract: "Renames and merges apply everywhere a tag is referenced — people,
+   * lists, automations and forms — in one pass." See `TagsRepo.renameTag` for what "everywhere"
+   * covers today. */
+  public async renameTag(id: string, newName: string, auth: IAuthKeyPayload) {
+    try {
+      const updated = await this.getRepo().renameTag({
+        tenant_id: auth.tenant_id,
+        id,
+        new_name: newName,
+        user_id: auth.user_id,
+      });
+      if (!updated) throw new NotFoundError('Tag not found.');
+      return updated;
+    } catch (err) {
+      if ((err as { code?: string })?.code === '23505') {
+        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
+      }
+      throw err;
+    }
+  }
+
+  /** §9.1 "Move everyone to" — merge `sourceId` into `targetId`. */
+  public async mergeTags(sourceId: string, targetId: string, auth: IAuthKeyPayload) {
+    try {
+      return await this.getRepo().mergeTags({
+        tenant_id: auth.tenant_id,
+        source_id: sourceId,
+        target_id: targetId,
+        user_id: auth.user_id,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Merge failed.';
+      if (message === 'Source or target tag not found.') {
+        throw new NotFoundError(message, undefined, { cause: err });
+      }
+      throw new BadRequestError(message, undefined, { cause: err });
+    }
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/tags/trpc.router.ts
+````typescript
+import { AddTagObj, UpdateTagObj, idSchema, nameSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { TagsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const tags = new TagsController();
+
+const crud = createCrudRouter(tags, AddTagObj, UpdateTagObj);
+
+export const TagsRouter = router({
+  ...crud,
+
+  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth)),
+
+  findByName: authProcedure
+    .input(
+      z.object({
+        name: z.string().trim().max(100, 'Search term too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
+
+  // §9.1 Tags admin / §9.2 Issues admin
+  getAdminList: authProcedure
+    .input(z.object({ type: z.enum(['tag', 'issue']) }))
+    .query(({ input, ctx }) => tags.getAdminList(input.type, ctx.auth)),
+
+  countDistinctPeople: authProcedure
+    .input(z.object({ type: z.enum(['tag', 'issue']) }))
+    .query(({ input, ctx }) => tags.countDistinctPeople(input.type, ctx.auth)),
+
+  rename: authProcedure
+    .input(z.object({ id: idSchema, newName: nameSchema('Tag name', 50) }))
+    .mutation(({ input, ctx }) => tags.renameTag(input.id, input.newName, ctx.auth)),
+
+  merge: authProcedure
+    .input(z.object({ sourceId: idSchema, targetId: idSchema }))
+    .mutation(({ input, ctx }) => tags.mergeTags(input.sourceId, input.targetId, ctx.auth)),
+});
+````
+
+## File: apps/backend/src/app/modules/tasks/repositories/tasks.repo.ts
+````typescript
+import type { RawBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { TASK_OPEN_STATUSES } from '../../../../../../../libs/common/src';
+
+type TaskStatus = NonNullable<Models['tasks']['status']>;
+type TaskPriority = NonNullable<Models['tasks']['priority']>;
+
+/** A task open enough to count toward SLA-breach / count-sentence math (spec §4). */
+export interface OpenTaskForSla {
+  assigned_to: string | null;
+  created_at: Date;
+  id: string;
+}
+
+export class TasksRepo extends BaseRepository<'tasks'> {
+  constructor() {
+    super('tasks');
+  }
+
+  public async countArchived(tenant_id: string) {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tasks.tenant_id', '=', tenant_id)
+      .where('tasks.status', '=', 'archived')
+      .execute();
+    const total = res?.[0]?.['total'] as unknown as number;
+    return Number(total || 0);
+  }
+
+  public async countExcludingArchived(tenant_id: string) {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '!=', 'archived')
+      .execute();
+    const total = res?.[0]?.['total'] as unknown as number;
+    return Number(total || 0);
+  }
+
+  /** Open tasks (todo/in_progress/waiting) with just enough columns to compute SLA breach. */
+  public async getOpenForSla(tenant_id: string): Promise<OpenTaskForSla[]> {
+    const rows = await this.getSelect()
+      .select(['id', 'created_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return rows.map((r) => ({
+      id: String(r.id),
+      created_at: r.created_at,
+      assigned_to: r.assigned_to == null ? null : String(r.assigned_to),
+    }));
+  }
+
+  public async countOpen(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenUnassigned(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', 'is', null)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenAssignedTo(tenant_id: string, user_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', '=', user_id)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
+    const text = this.normalizeSearch(options?.searchStr);
+    const filterModel: Record<string, any> = options?.filterModel ?? {};
+    // Extract priority/assigned_to sort to apply custom ordering
+    const pri = options?.sortModel?.find((s) => s.colId === 'priority');
+    const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
+
+    const rest = {
+      ...(options || {}),
+      sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
+    } as QueryParams<'tasks'>;
+
+    const hasAssignedFilter = !!filterModel?.['assigned_to']?.value || typeof filterModel?.['assigned_to'] === 'string';
+    const hasCreatedFilter =
+      !!filterModel?.['createdby_id']?.value || typeof filterModel?.['createdby_id'] === 'string';
+    const joinAssign = !!ass || !!text || hasAssignedFilter;
+    const joinCreator = !!text || hasCreatedFilter;
+
+    const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
+      qb
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['status']?.value, (q) => {
+          const raw = filterModel['status'].value;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+          return norm.length ? q.where('tasks.status', 'in', norm as TaskStatus[]) : q;
+        })
+        .$if(!!filterModel?.['priority']?.value, (q) => {
+          const raw = filterModel['priority'].value;
+          const vals = Array.isArray(raw) ? raw : [raw];
+          const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+          return norm.length ? q.where('tasks.priority', 'in', norm as TaskPriority[]) : q;
+        })
+        .$if(!!filterModel?.['due_at']?.value, (q) =>
+          q.where(sql<boolean>`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}`),
+        )
+        .$if(!!hasAssignedFilter, (q) => {
+          const raw = filterModel['assigned_to']?.value ?? filterModel['assigned_to'];
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val): RawBuilder<boolean> | null => {
+              const low = val.toLowerCase();
+              if (low === 'not assigned' || low === 'unassigned') return sql<boolean>`tasks.assigned_to IS NULL`;
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql<boolean>`(
+                  COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.assigned_to = ${Number(val)}
+                )`;
+              return sql<boolean>`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}`;
+            })
+            .filter((p): p is RawBuilder<boolean> => p !== null);
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
+          return q.where(sql<boolean>`(${orExpr})`);
+        })
+        .$if(!!hasCreatedFilter, (q) => {
+          const raw = filterModel['createdby_id']?.value ?? filterModel['createdby_id'];
+          const arr = Array.isArray(raw) ? raw : [raw];
+          const parts = arr
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((val): RawBuilder<boolean> | null => {
+              const isNumeric = /^\d+$/.test(val);
+              if (isNumeric)
+                return sql<boolean>`(
+                  COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
+                  tasks.createdby_id = ${Number(val)}
+                )`;
+              return sql<boolean>`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}`;
+            })
+            .filter((p): p is RawBuilder<boolean> => p !== null);
+          if (!parts.length) return q;
+          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
+          return q.where(sql<boolean>`(${orExpr})`);
+        })
+        .$if(!!filterModel?.['team_id']?.value, (q) =>
+          q.where('tasks.team_id', '=', filterModel['team_id'].value as string),
+        );
+
+    return applyGridFilters(this.getSelectWithColumns(rest))
+      .$if(joinAssign, (qb) => qb.leftJoin('authusers as au_assign', 'au_assign.id', 'tasks.assigned_to'))
+      .$if(joinCreator, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
+      .leftJoin('teams', 'teams.id', 'tasks.team_id')
+      .select('teams.name as team_name')
+      .where('tasks.tenant_id', '=', tenant_id)
+      .where('tasks.status', isArchived ? '=' : '!=', 'archived')
+      .$if(!!text, (qb) =>
+        qb.where(
+          sql<boolean>`(
+            LOWER(tasks.name) LIKE ${text} OR
+            LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
+            LOWER(COALESCE(tasks.priority, '')) LIKE ${text} OR
+            LOWER(COALESCE(teams.name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_assign.first_name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_assign.last_name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_created.first_name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_created.last_name, '')) LIKE ${text} OR
+            LOWER(COALESCE(au_created.first_name || ' ' || au_created.last_name, '')) LIKE ${text}
+          )`,
+        ),
+      )
+      .$if(!!pri, (qb) =>
+        qb.orderBy(
+          sql`CASE tasks.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END`,
+          pri?.sort,
+        ),
+      )
+      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, ass?.sort));
+  }
+
+  public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
+    return this.buildTasksQueryBuilder(tenant_id, true, options).execute();
+  }
+
+  public async getAllArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const rows = (await this.buildTasksQueryBuilder(tenant_id, true, options)
+      .select(() => [sql<number>`count(*) over()`.as('total')])
+      .execute()) as Array<Record<string, unknown> & { total: number }>;
+    const count = Number(rows[0]?.total ?? 0);
+    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
+  }
+
+  public async getAllExcludingArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
+    return this.buildTasksQueryBuilder(tenant_id, false, options).execute();
+  }
+
+  public async getAllExcludingArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
+    const rows = (await this.buildTasksQueryBuilder(tenant_id, false, options)
+      .select(() => [sql<number>`count(*) over()`.as('total')])
+      .execute()) as Array<Record<string, unknown> & { total: number }>;
+    const count = Number(rows[0]?.total ?? 0);
+    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: new Date(),
+        updatedby_id: input.user_id,
+      } as OperationDataType<'tasks', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/tasks/trpc.router.ts
+````typescript
+import {
+  AddTaskObj,
+  UpdateTaskObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { TasksController } from './controller';
+import { TaskCommentsController } from './comments.controller';
+import { TaskAttachmentsController } from './attachments.controller';
+import { TaskSubtasksController } from './subtasks.controller';
+
+const tasks = new TasksController();
+
+export const TasksRouter = router({
+  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
+            details: z.string().trim().max(10000).optional().nullable(),
+            status: z.string().trim().max(50).optional().nullable(),
+            priority: z.string().trim().max(50).optional().nullable(),
+            due_at: z.string().trim().max(50).optional().nullable(),
+            assigned_to: z.string().trim().max(50).optional().nullable(),
+          }),
+        ),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return tasks.importRows(input, ctx.auth);
+    }),
+
+  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
+  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
+  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
+  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
+    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
+  getComments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addComment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskCommentsController().add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        author_id: ctx.auth.user_id,
+        comment: input.comment,
+      } as any),
+    ),
+  getAttachments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addAttachment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
+        url: z.string().url('Invalid URL format').optional(),
+        content_type: z.string().trim().max(100).optional(),
+        size_bytes: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      (new TaskAttachmentsController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        filename: input.filename,
+        url: input.url,
+        content_type: input.content_type,
+        size_bytes: (input.size_bytes as any) ?? null,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+  getSubtasks: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addSubtask: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      (new TaskSubtasksController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        name: input.name,
+        status: 'todo',
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+  updateSubtask: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        data: z.object({
+          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
+          status: z.string().trim().max(50).optional(),
+          position: z.number().int().optional(),
+        }),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().updateSubtask({
+        tenant_id: ctx.auth.tenant_id,
+        id: input.id,
+        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as any,
+      }),
+    ),
+});
+````
+
+## File: apps/backend/src/app/modules/volunteer-events/controller.ts
+````typescript
+import { BaseController } from '../../lib/base.controller';
+import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { publicOrgName } from '../../lib/public-tenant';
+import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipSignupTimestamps = new Map<string, number[]>();
+const SIGNUP_RATE_LIMIT_MAX = 5;
+const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
+  constructor() {
+    super(new VolunteerEventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({
+      tenant_id: auth.tenant_id,
+      options,
+    });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      is_private: payload.is_private ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_signup_confirmation: payload.send_signup_confirmation ?? true,
+      send_volunteer_alert: payload.send_volunteer_alert ?? true,
+      slug: payload.slug,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'volunteer_events', 'insert'>;
+    return this.add(row);
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', _auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('volunteer_events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
+    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
+    // ARRAY literal (see addEvent() above for the full explanation).
+    const { fields, ...restPayload } = payload;
+    const row = {
+      ...restPayload,
+      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'volunteer_events', 'update'>;
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        // Fetch all signed up shifts for this event
+        const shifts = await this.getRepo()
+          .db.selectFrom('volunteer_shifts')
+          .select(['id', 'person_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('event_id', '=', id)
+          .where('status', '=', 'signed_up')
+          .execute();
+
+        // Fetch event start time
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            for (const shift of shifts) {
+              // Delete existing pending reminder for safety
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
+                .execute();
+
+              // Queue new reminder
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(shift.id),
+                    eventId: String(id),
+                    personId: String(shift.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
             }
           }
         }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
       }
     }
-    return task;
+
+    return result;
   }
 
-  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getShiftsForEvent({
+      tenant_id: auth.tenant_id,
+      event_id,
+    });
   }
 
-  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
-  }
+  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().signupVolunteer({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      status: payload.status,
+      hours_worked: payload.hours_worked,
+      notes: payload.notes,
+      user_id: auth.user_id,
+    });
 
-  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
-      | Selectable<Models['tasks']>
-      | undefined;
-    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-
-    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
+    if (result && result.status === 'signed_up') {
       try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: row.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${updated.name}"`,
-          type: 'task',
-          link: `/tasks/${id}`,
-        });
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time', 'send_reminder'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', payload.event_id)
+          .executeTakeFirst();
 
-        const assignedTo = row.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `Task Assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
-              });
-            }
+        if (event && event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
           }
         }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      } catch (err) {
+        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
+      }
+
+      // Trigger volunteer signup workflows
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerVolunteerSignup(
+              auth.tenant_id,
+              String(payload.person_id),
+              String(payload.event_id),
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
       }
     }
-    return updated;
-  }
 
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
-      const result = includeArchived
-        ? await this.getArchivedTasks(auth, input?.options)
-        : await this.getAllTasks(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
+    if (result && result.status) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerWorkflow(
+              auth.tenant_id,
+              String(payload.person_id),
+              'volunteer_shift_status',
+              result.status,
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
+      }
+    }
+
+    try {
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
-        activity: 'export',
-        entity: includeArchived ? 'tasks_archived' : 'tasks',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-          include_archived: includeArchived,
-        },
+        activity: 'assign',
+        entity: 'volunteer_shifts',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
       });
-      return response;
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift signup activity');
     }
-    return super.exportCsv(input, auth);
+
+    return result;
   }
 
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        details?: string | null;
-        status?: string | null;
-        priority?: string | null;
-        due_at?: string | null;
-        assigned_to?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
+  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateShift({
       tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'tasks',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    };
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({
-        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
-        id: importRecordId as TypeId<'data_imports'>,
-      });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      },
+      id,
+      row: payload,
+      user_id: auth.user_id,
     });
 
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'tasks',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    // Parse status and priority to validate choices
-    const normalize = (v?: string) =>
-      (v || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[_\s-]+/g, '');
-    const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-    const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-    // Map names to users for assigned_to
-    const users = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name', 'email'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      const idStr = String(u.id);
-      userMap.set(idStr, idStr);
-      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
-      if (u.first_name) {
-        userMap.set(u.first_name.toLowerCase().trim(), idStr);
-        if (u.last_name) {
-          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
-        }
-      }
-    }
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Normalize and filter valid rows upfront
-      const taskRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw['name'] || !raw['name'].trim()) {
-          results.skipped += 1;
-          continue;
-        }
-
-        let status: string = 'todo';
-        if (raw['status']) {
-          const normStatus = normalize(raw['status']);
-          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
-          if (matchedStatus) status = matchedStatus;
-        }
-
-        let priority: string | null = null;
-        if (raw['priority']) {
-          const normPriority = normalize(raw['priority']);
-          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
-          if (matchedPriority) priority = matchedPriority;
-        }
-
-        let assigned_to: string | null = null;
-        if (raw['assigned_to']) {
-          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
-        }
-
-        let due_at: Date | null = null;
-        if (raw['due_at']) {
-          const parsedDate = new Date(raw['due_at']);
-          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
-        }
-
-        taskRows.push({
-          tenant_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-          name: raw['name'].trim(),
-          details: raw['details'] ?? null,
-          status,
-          priority,
-          assigned_to,
-          due_at,
-          file_id: import_id,
-        });
-      }
-
-      if (taskRows.length > 0) {
+    if (result) {
+      // Trigger volunteer shift status workflows
+      if (payload.status) {
         try {
+          const workflowsController = new WorkflowsController();
           await this.getRepo()
             .transaction()
             .execute(async (trx) => {
-              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
-              const CHUNK_SIZE = 2000;
-              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
-                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
-                await trx
-                  .insertInto('tasks')
-                  .values(chunk)
-                  .returningAll() // Adheres to repository rules
-                  .execute();
-              }
+              await workflowsController.triggerWorkflow(
+                auth.tenant_id,
+                String(result.person_id),
+                'volunteer_shift_status',
+                payload.status,
+                trx,
+              );
             });
-          results.inserted += taskRows.length;
-        } catch (err: unknown) {
-          results.errors += taskRows.length;
-          errorMessages.push(err instanceof Error ? err.message : String(err));
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
         }
       }
 
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        },
+      try {
+        if (payload.status && payload.status !== 'signed_up') {
+          // Cancel/remove pending reminder
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+        } else if (payload.status === 'signed_up') {
+          // Remove existing pending reminders first
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+
+          // Fetch event to check if we should schedule a new reminder
+          const event = await this.getRepo()
+            .db.selectFrom('volunteer_events')
+            .select(['start_time', 'send_reminder'])
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', result.event_id)
+            .executeTakeFirst();
+
+          if (event && event.send_reminder !== false) {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(id),
+                    eventId: String(result.event_id),
+                    personId: String(result.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to update shift reminder job status');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteShift(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteShift({
+      tenant_id: auth.tenant_id,
+      id,
+    });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'shiftId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to delete pending shift reminder job');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'delete',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift delete activity');
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getVolunteerStats({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getTenantPublic(tenantId: string) {
+    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
+  }
+
+  public async getUpcomingEventsPublic(tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.end_time', '>=', new Date())
+      .where('volunteer_events.is_private', '=', false)
+      .orderBy('volunteer_events.start_time', 'asc')
+      .execute();
+  }
+
+  /**
+   * Public signup-page lookup. Tenant-scoped by slug: volunteer-event slugs are unique per tenant,
+   * and the tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventPublic(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+        'volunteer_events.fields',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.slug', '=', slug)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /v/:slug SPA page renders in one payload: the event, live signup count,
+   * and the org name. Unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventPublic(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const orgName = await publicOrgName(tenantId);
+    const volunteersCount = Number(event.volunteers_count || 0);
+    const isPast = new Date(event.end_time) < new Date();
+    const isFull = event.capacity !== null && volunteersCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - volunteersCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        is_private: !!event.is_private,
+        fields,
+      },
+      volunteersCount,
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  /** Upcoming public volunteer events for the tenant's /volunteer listing page. */
+  public async getPublicEventListing(tenantId: string) {
+    const [orgName, events] = await Promise.all([publicOrgName(tenantId), this.getUpcomingEventsPublic(tenantId)]);
+    return {
+      orgName,
+      events: events.map((ev) => {
+        const volunteersCount = Number(ev.volunteers_count || 0);
+        const remaining = ev.capacity !== null ? Math.max(0, ev.capacity - volunteersCount) : null;
+        return {
+          slug: String(ev.slug),
+          name: String(ev.name),
+          description: ev.description ?? null,
+          location_address: ev.location_address ?? null,
+          start_time: ev.start_time,
+          end_time: ev.end_time,
+          capacity: ev.capacity ?? null,
+          isFull: ev.capacity !== null && volunteersCount >= ev.capacity,
+          remaining,
+        };
+      }),
+    };
+  }
+
+  public async signupVolunteerPublic(
+    tenantId: string,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+  ) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSignupTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
+    if (timestamps.length > 0) {
+      ipSignupTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSignupTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch the event — tenant-scoped by slug
+    const event = await this.getEventPublic(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Event not found.',
       });
     }
 
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
+      return { success: true }; // Silent mock success
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // 5. Check capacity limit
+    const currentCount = Number(event.volunteers_count || 0);
+    if (event.capacity !== null && currentCount >= event.capacity) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This event is already at full capacity.',
+      });
+    }
+
+    const firstName = payload['first_name'] || payload['firstName'] || null;
+    const lastName = payload['last_name'] || payload['lastName'] || null;
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    // 6. Transaction to find/create person, tags, and shift
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+        if (!creatorId) {
+          throw new Error('Tenant admin_id is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
+          }
+        }
+
+        // Check if shift already exists
+        const existingShift = await trx
+          .selectFrom('volunteer_shifts')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', event.id)
+          .where('person_id', '=', personId)
+          .executeTakeFirst();
+
+        if (existingShift) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'You are already signed up for this event.',
+          });
+        }
+
+        const workflowsController = new WorkflowsController();
+
+        // Add tag "volunteer" and "event: <event name>"
+        const allTagsToApply = ['volunteer', `event: ${event.name}`];
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            try {
+              const insertTagRes = await trx
+                .insertInto('tags')
+                .values({
+                  tenant_id: tenantId,
+                  name: normalizedTagName,
+                  type: 'tag',
+                  deletable: true,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .returning('id')
+                .executeTakeFirst();
+              if (insertTagRes) {
+                tag = { id: insertTagRes.id };
+              }
+            } catch (insertErr) {
+              // Concurrent insert fallback: fetch the tag that was just inserted
+              tag = await trx
+                .selectFrom('tags')
+                .select('id')
+                .where('tenant_id', '=', tenantId)
+                .where('name', '=', normalizedTagName)
+                .where('type', '=', 'tag')
+                .executeTakeFirst();
+              if (!tag) throw insertErr;
+            }
+          }
+
+          if (tag) {
+            const mapExists = await trx
+              .selectFrom('map_peoples_tags')
+              .select('person_id')
+              .where('tenant_id', '=', tenantId)
+              .where('person_id', '=', personId)
+              .where('tag_id', '=', tag.id)
+              .executeTakeFirst();
+
+            if (!mapExists) {
+              await trx
+                .insertInto('map_peoples_tags')
+                .values({
+                  tenant_id: tenantId,
+                  person_id: personId,
+                  tag_id: tag.id,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
+                .execute();
+
+              // Trigger tag_added and specialized subscriber workflows
+              try {
+                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
+              }
+            }
+          }
+        }
+
+        // Insert Shift
+        const shiftResult = await trx
+          .insertInto('volunteer_shifts')
+          .values({
+            tenant_id: tenantId,
+            event_id: event.id,
+            person_id: personId,
+            status: 'signed_up',
+            notes: notes,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const shiftId = shiftResult.id;
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'signup',
+            entity: 'volunteer_events',
+            entity_id: String(event.id),
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-form-notifications',
+              eventId: String(event.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+
+        // Queue shift reminder email if enabled
+        if (event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(shiftId),
+                  eventId: String(event.id),
+                  personId: String(personId),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+
+        // Trigger volunteer signup workflows
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
+        }
+      });
+
+    return { success: true };
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
   }
 }
 ````
@@ -19769,6 +20532,127 @@ export const ZapierRouter = router({
 });
 ````
 
+## File: apps/backend/src/app/modules/trpc.ts
+````typescript
+import { router } from '../../trpc';
+import { AuthRouter } from './auth/trpc.router';
+import { EmailsRouter } from './emails/trpc.router';
+import { HouseholdsRouter } from './households/trpc.router';
+import { ListsRouter } from './lists/trpc.router';
+import { NewslettersRouter } from './newsletters/trpc.router';
+import { PersonsRouter } from './persons/trpc.router';
+import { TagsRouter } from './tags/trpc.router';
+import { TasksRouter } from './tasks/trpc.router';
+import { UserProfilesRouter } from './userprofiles/trpc.router';
+import { TeamsRouter } from './teams/trpc.router';
+import { SettingsRouter } from './settings/trpc.router';
+import { ImportsRouter } from './imports/trpc.router';
+import { MsSyncRouter } from './ms-sync/trpc.router';
+import { GoogleSyncRouter } from './google-sync/trpc.router';
+import { CompaniesRouter } from './companies/trpc.router';
+import { ActivityRouter } from './activity/trpc.router';
+import { FilesRouter } from './files/trpc.router';
+import { DashboardRouter } from './dashboard/trpc.router';
+import { NotificationsRouter } from './notifications/trpc.router';
+import { VolunteerRouter } from './volunteer-events/trpc.router';
+import { WebFormsRouter } from './web-forms/trpc.router';
+import { BillingRouter } from './billing/trpc.router';
+import { WorkflowsRouter } from './workflows/trpc.router';
+import { DonationsRouter } from './donations/trpc.router';
+import { ExportsRouter } from './exports/trpc.router';
+import { UsersRouter } from './users/trpc.router';
+import { EventsRouter } from './events/trpc.router';
+import { PersonConnectionsRouter } from './person-connections/trpc.router';
+import { ZapierRouter } from './zapier/zapier.trpc.router';
+import { DuplicatesRouter } from './duplicates/trpc.router';
+
+export type TRPCRouter = typeof trpcRouter;
+
+export const trpcRouter = router({
+  auth: AuthRouter,
+  authusers: AuthRouter,
+  userProfiles: UserProfilesRouter,
+  households: HouseholdsRouter,
+  persons: PersonsRouter,
+  tags: TagsRouter,
+  lists: ListsRouter,
+  tasks: TasksRouter,
+  emails: EmailsRouter,
+  newsletters: NewslettersRouter,
+  teams: TeamsRouter,
+  settings: SettingsRouter,
+  imports: ImportsRouter,
+  msSync: MsSyncRouter,
+  googleSync: GoogleSyncRouter,
+  companies: CompaniesRouter,
+  activity: ActivityRouter,
+  files: FilesRouter,
+  dashboard: DashboardRouter,
+  notifications: NotificationsRouter,
+  volunteer: VolunteerRouter,
+  webForms: WebFormsRouter,
+  billing: BillingRouter,
+  donations: DonationsRouter,
+  workflows: WorkflowsRouter,
+  exports: ExportsRouter,
+  users: UsersRouter,
+  events: EventsRouter,
+  connections: PersonConnectionsRouter,
+  zapier: ZapierRouter,
+  duplicates: DuplicatesRouter,
+});
+
+// Re-export individual routers for convenience.
+export { AuthRouter } from './auth/trpc.router';
+
+export { HouseholdsRouter } from './households/trpc.router';
+
+export { PersonsRouter } from './persons/trpc.router';
+
+export { TagsRouter } from './tags/trpc.router';
+
+export { UserProfilesRouter } from './userprofiles/trpc.router';
+
+export { EmailsRouter } from './emails/trpc.router';
+
+export { ListsRouter } from './lists/trpc.router';
+
+export { TasksRouter } from './tasks/trpc.router';
+
+export { NewslettersRouter } from './newsletters/trpc.router';
+
+export { TeamsRouter } from './teams/trpc.router';
+
+export { SettingsRouter } from './settings/trpc.router';
+
+export { ImportsRouter } from './imports/trpc.router';
+
+export { MsSyncRouter } from './ms-sync/trpc.router';
+export { GoogleSyncRouter } from './google-sync/trpc.router';
+
+export { CompaniesRouter } from './companies/trpc.router';
+
+export { ActivityRouter } from './activity/trpc.router';
+
+export { FilesRouter } from './files/trpc.router';
+
+export { DashboardRouter } from './dashboard/trpc.router';
+
+export { NotificationsRouter } from './notifications/trpc.router';
+
+export { VolunteerRouter } from './volunteer-events/trpc.router';
+
+export { WebFormsRouter } from './web-forms/trpc.router';
+
+export { BillingRouter } from './billing/trpc.router';
+export { DonationsRouter } from './donations/trpc.router';
+export { WorkflowsRouter } from './workflows/trpc.router';
+export { ExportsRouter } from './exports/trpc.router';
+export { UsersRouter } from './users/trpc.router';
+export { EventsRouter } from './events/trpc.router';
+export { PersonConnectionsRouter } from './person-connections/trpc.router';
+````
+
 ## File: apps/backend/src/app/plugins/security-headers.ts
 ````typescript
 import type { FastifyHelmetOptions } from '@fastify/helmet';
@@ -20140,6 +21024,69 @@ onShutdown(async () => {
 });
 ````
 
+## File: apps/backend/vite.config.ts
+````typescript
+/// <reference types='vitest' />
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
+
+// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
+// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
+// see apps/backend/src/env.ts for the full schema). CI/production set these as real
+// env vars instead, so loading the file is best-effort only.
+const envTestPath = resolve(__dirname, '../../.env.test');
+if (existsSync(envTestPath)) {
+  process.loadEnvFile(envTestPath);
+}
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/backend',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'backend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    // Runs once before any worker: guardrails the target DB, migrates it to
+    // latest, and truncates it to a clean slate. Keeps the whole suite on the
+    // disposable pplcrm_test database so specs can never touch real data.
+    globalSetup: ['./src/test-setup/global-setup.ts'],
+    env: {
+      DB_USER: process.env['DB_USER'] ?? '',
+      DB_NAME: process.env['DB_NAME'] ?? '',
+      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
+      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
+      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
+      DB_PORT: process.env['DB_PORT'] ?? '5432',
+      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
+      DB_SSL: process.env['DB_SSL'] ?? 'false',
+    },
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/backend',
+      provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 45,
+        branches: 32,
+        functions: 54,
+        lines: 46,
+      },
+    },
+  },
+}));
+````
+
 ## File: apps/backend/scripts/setup-db-roles.sql
 ````sql
 -- =============================================================================
@@ -20225,105 +21172,688 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO pplcrm_app;
 ````
 
-## File: apps/backend/src/app/_migrations/2026-07-07-record-slugs.ts
+## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
 ````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
+import { geocodeAndMapHousehold } from '../../gis/geocoding';
+import { logger } from '../../../logger';
+import { ActivityController } from '../../../modules/activity/controller';
+import { ListsController } from '../../../modules/lists/controller';
+import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
 
-/**
- * Record slugs for persons, households and companies (spec §1 security surface:
- * routes use record slugs — /people/amira-hassan — never internal IDs).
- *
- * Follows the existing slug shape used by events/web_forms/volunteer_events:
- * a `slug text` column with a `UNIQUE (tenant_id, slug)` btree index (compare
- * `events_tenant_slug_unique`). Generation on create/rename lives in the app
- * layer (`apps/backend/src/app/lib/slug.ts`, generalized from the web-forms
- * `uniqueSlug` pattern); this migration only adds the columns, backfills every
- * existing row with collision suffixes (-2, -3, … per tenant), and enforces
- * uniqueness.
- *
- * Slug sources: persons = first+last name (fallback "person"), households =
- * street number + street (fallback "household"), companies = name (fallback
- * "company"). An all-digit slug gets the fallback prefixed so a slug can never
- * be mistaken for a numeric-ID URL, which the frontend still accepts and
- * redirects. Pattern notes for later waves: docs/RECORD-SLUGS.md.
- */
+export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
+  const listsController = new ListsController();
+  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+}
 
-const TABLES = [
-  { table: 'persons', fallback: 'person', source: `coalesce(first_name, '') || ' ' || coalesce(last_name, '')` },
-  { table: 'households', fallback: 'household', source: `coalesce(street_num, '') || ' ' || coalesce(street1, '')` },
-  { table: 'companies', fallback: 'company', source: `coalesce(name, '')` },
-] as const;
+export async function handleEnrichCompanyGoogle(
+  payload: JobPayloadOf<'enrich_company_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id, payload.force ?? false);
+}
 
-export async function up(db: Kysely<any>): Promise<void> {
-  for (const { table, fallback, source } of TABLES) {
-    await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
+export async function handleRefreshCompaniesGoogle(
+  payload: JobPayloadOf<'refresh_companies_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
 
-    // persons/households/companies run with FORCE ROW LEVEL SECURITY (S-1 tenant
-    // backstop), which also applies to the table owner. A migration connection
-    // sets no tenant GUC, so the UPDATE backfills below would be rejected
-    // (42501) on a from-scratch bootstrap. Lift RLS for just this backfill.
-    await sql`ALTER TABLE ${sql.table(table)} NO FORCE ROW LEVEL SECURITY`.execute(db);
-
-    // Backfill: slugify the source, guard all-digit results, dedupe per tenant
-    // with -2, -3… suffixes (deterministic by id).
-    await sql`
-      WITH base AS (
-        SELECT id, tenant_id,
-          left(btrim(regexp_replace(lower(${sql.raw(source)}), '[^a-z0-9]+', '-', 'g'), '-'), 80) AS b
-        FROM ${sql.table(table)}
-        WHERE slug IS NULL
-      ),
-      named AS (
-        SELECT id, tenant_id,
-          CASE
-            WHEN b = '' THEN ${fallback}
-            WHEN b ~ '^[0-9]+$' THEN ${fallback} || '-' || b
-            ELSE b
-          END AS b
-        FROM base
-      ),
-      deduped AS (
-        SELECT id, b, row_number() OVER (PARTITION BY tenant_id, b ORDER BY id) AS rn
-        FROM named
-      )
-      UPDATE ${sql.table(table)} t
-      SET slug = CASE WHEN d.rn = 1 THEN d.b ELSE d.b || '-' || d.rn END
-      FROM deduped d
-      WHERE t.id = d.id
-    `.execute(db);
-
-    // Residual duplicates are possible when a real name slugifies to an
-    // already-suffixed value (e.g. a person literally named "Amira Hassan 2").
-    // Disambiguate those rare rows with the row id, which is always unique.
-    await sql`
-      UPDATE ${sql.table(table)} t
-      SET slug = t.slug || '-' || t.id
-      FROM (
-        SELECT id, row_number() OVER (PARTITION BY tenant_id, slug ORDER BY id) AS rn
-        FROM ${sql.table(table)}
-      ) d
-      WHERE t.id = d.id AND d.rn > 1
-    `.execute(db);
-
-    // Restore the tenant backstop before the unique index (DDL, unaffected by
-    // RLS, but leaving the table permanently unprotected would be a real gap).
-    await sql`ALTER TABLE ${sql.table(table)} FORCE ROW LEVEL SECURITY`.execute(db);
-
-    // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
-    // not-yet-backfilled bulk row can exist mid-import without tripping it.
-    await sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}
-      ON ${sql.table(table)} USING btree (tenant_id, slug)
-      WHERE (slug IS NOT NULL)
-    `.execute(db);
+  // Only the global (cron-style) run reschedules itself.
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
   }
 }
 
-export async function down(db: Kysely<any>): Promise<void> {
-  for (const { table } of TABLES) {
-    await sql`DROP INDEX IF EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}`.execute(db);
-    await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
+export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
+  const activityController = new ActivityController();
+  await activityController.deleteOldActivities();
+
+  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
+}
+
+// P-3 (schema review 2026-07-06, §5): retention for the append-mostly tables
+// that otherwise grow without bound. user_activity and newsletter_events already
+// have their own prune jobs (cleanup_activities / prune_newsletter_events); this
+// covers the remaining three. Deletes run in bounded batches so a large backlog
+// never takes a long lock or a huge WAL spike.
+const RETENTION_BATCH = 5000;
+const COMPLETED_JOBS_RETENTION_DAYS = 30;
+const WEBHOOK_EVENTS_RETENTION_DAYS = 90;
+const EXPIRED_SESSION_GRACE_DAYS = 30;
+
+async function deleteInBatches(runOnce: () => Promise<bigint>): Promise<bigint> {
+  let total = 0n;
+  for (;;) {
+    const deleted = await runOnce();
+    total += deleted;
+    if (deleted < BigInt(RETENTION_BATCH)) break;
+  }
+  return total;
+}
+
+export async function handlePruneRetention(db: Kysely<Models>): Promise<void> {
+  // Completed/failed background jobs older than the retention window. The
+  // currently-'processing' retention job itself is never matched.
+  const prunedJobs = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM background_jobs
+      WHERE ctid IN (
+        SELECT ctid FROM background_jobs
+        WHERE status IN ('completed', 'failed')
+          AND updated_at < now() - make_interval(days => ${COMPLETED_JOBS_RETENTION_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  // Processed Stripe/webhook events past their retention window.
+  const prunedWebhooks = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM webhook_events
+      WHERE ctid IN (
+        SELECT ctid FROM webhook_events
+        WHERE status = 'processed'
+          AND processed_at < now() - make_interval(days => ${WEBHOOK_EVENTS_RETENTION_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  // Long-expired sessions (revocation/sign-out handles the live ones; this sweeps
+  // the rows that just linger). NULL expires_at means non-expiring — left alone.
+  const prunedSessions = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM sessions
+      WHERE ctid IN (
+        SELECT ctid FROM sessions
+        WHERE expires_at IS NOT NULL
+          AND expires_at < now() - make_interval(days => ${EXPIRED_SESSION_GRACE_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  logger.info(
+    {
+      prunedJobs: prunedJobs.toString(),
+      prunedWebhooks: prunedWebhooks.toString(),
+      prunedSessions: prunedSessions.toString(),
+    },
+    'Retention prune complete',
+  );
+
+  await scheduleNextRun(db, 'prune_retention', DAY_MS);
+}
+
+export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
+  const lastJob = await db
+    .selectFrom('background_jobs')
+    .select(['updated_at'])
+    .where('status', '=', 'completed')
+    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+    .orderBy('updated_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+
+  const tenants = await db.selectFrom('tenants').select('id').execute();
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+
+  for (const tenant of tenants) {
+    try {
+      let shouldRecompute = true;
+
+      if (lastRunTime) {
+        const personChanged = await db
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const householdChanged = await db
+          .selectFrom('households')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const companyChanged = await db
+          .selectFrom('companies')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!personChanged && !householdChanged && !companyChanged) {
+          shouldRecompute = false;
+        }
+      }
+
+      if (shouldRecompute) {
+        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+      }
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
+    }
+  }
+
+  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
+}
+
+export async function handleRecomputeAddressFingerprints(
+  payload: JobPayloadOf<'recompute_address_fingerprints'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const tenantIds: string[] = [];
+  if (payload.tenant_id) {
+    tenantIds.push(payload.tenant_id);
+  } else {
+    const tenants = await db.selectFrom('tenants').select('id').execute();
+    for (const tenant of tenants) {
+      tenantIds.push(String(tenant.id));
+    }
+  }
+
+  for (const tenantId of tenantIds) {
+    try {
+      await recomputeTenantAddressFingerprints(tenantId, db);
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
+    }
+  }
+
+  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
+  }
+}
+
+export async function handleGeocodeHousehold(
+  payload: JobPayloadOf<'geocode_household'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
+}
+
+async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
+  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
+
+  for (const hh of households) {
+    const fp_street = fingerprintStreet({
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: hh.apt,
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+      city: hh.city,
+      state: hh.state,
+      zip: hh.zip,
+      country: hh.country,
+    });
+
+    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
+      await db
+        .updateTable('households')
+        .set({
+          address_fp_street: fp_street,
+          address_fp_full: fp_full,
+          updated_at: new Date(),
+        })
+        .where('id', '=', hh.id)
+        .where('tenant_id', '=', tenantId)
+        .execute();
+    }
+  }
+
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  await maintenanceSvc.recomputeAllDuplicates(tenantId);
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { notificationEnabled } from '../../profile-preferences';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+export async function handleSendFormNotifications(
+  payload: JobPayloadOf<'send-form-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const event = await db
+    .selectFrom('volunteer_events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_signup_confirmation',
+      'send_volunteer_alert',
+    ])
+    .where('id', '=', payload.eventId)
+    .executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (event.send_signup_confirmation !== false) {
+    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
+
+    const coordEmailHtml = event.contact_email
+      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+      : '';
+    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
+
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Volunteer Signup Confirmation: ${event.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+  if (event.send_volunteer_alert !== false) {
+    let alertRecipient = event.contact_email || null;
+
+    if (!alertRecipient) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select('email')
+        .where('tenant_id', '=', payload.tenantId)
+        .limit(1)
+        .executeTakeFirst();
+      if (admin && admin.email) {
+        alertRecipient = admin.email;
+      }
+    }
+
+    if (alertRecipient) {
+      await mailService.sendMail({
+        to: alertRecipient,
+        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendShiftReminder(
+  payload: JobPayloadOf<'send-shift-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const shift = await db
+    .selectFrom('volunteer_shifts')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.shiftId)
+    .executeTakeFirst();
+
+  if (!shift) {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+    return;
+  }
+
+  // Covers cancelled and no-show shifts as well.
+  if (shift.status !== 'signed_up') {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+    return;
+  }
+
+  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
+    return;
+  }
+
+  if (event.send_reminder === false) {
+    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+    return;
+  }
+
+  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
+
+  if (!person) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
+    return;
+  }
+
+  if (!person.email) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
+  const subject = `Volunteer Shift Reminder: ${event.name}`;
+  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+  const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject,
+    text,
+    html,
+  });
+
+  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+}
+
+export async function handleSendWebformNotifications(
+  payload: JobPayloadOf<'send-webform-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const form = await db
+    .selectFrom('web_forms')
+    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+    .where('id', '=', payload.formId)
+    .executeTakeFirst();
+
+  if (!form) {
+    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
+    return;
+  }
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (form.send_confirmation !== false) {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Thank you for your submission to ${form.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Tenant Admin (if enabled)
+  if (form.send_alert !== false) {
+    const admin = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', form.tenant_id)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `[ALERT] New Lead Submission on ${form.name}`,
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendEventRegistrationConfirmation(
+  payload: JobPayloadOf<'send-event-registration-confirmation'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status === 'cancelled') {
+    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+    return;
+  }
+
+  const event = await db
+    .selectFrom('events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_registration_confirmation',
+    ])
+    .where('id', '=', registration.event_id)
+    .executeTakeFirst();
+
+  if (!event || event.send_registration_confirmation === false) {
+    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const coordLine = [
+    event.contact_email ? `Email: ${event.contact_email}` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const coordHtml = [
+    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Registration Confirmed: ${event.name}`,
+    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+  });
+
+  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendEventReminder(
+  payload: JobPayloadOf<'send-event-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status !== 'registered') {
+    logger.info(
+      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+    );
+    return;
+  }
+
+  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
+
+  if (!event || event.send_reminder === false) {
+    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Reminder: ${event.name} is tomorrow`,
+    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+  });
+
+  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
+  await mailService.sendMail({
+    to: payload.to,
+    subject: payload.subject ?? '',
+    text: payload.text ?? '',
+    html: payload.html ?? '',
+  });
+}
+
+export async function handleSendSubscriptionConfirmation(
+  payload: JobPayloadOf<'send-subscription-confirmation'>,
+): Promise<void> {
+  await mailService.sendMail({
+    to: payload.email,
+    subject: 'Please confirm your subscription',
+    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+  });
+}
+
+export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
+  await checkDueTasks(db);
+
+  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
+}
+
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
+      .where('tasks.status', 'not in', ['done', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, typeof dueTasks>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
+      }
+      userTasks.push(row);
+    }
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      if (!firstRow) continue;
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check and notify due tasks');
   }
 }
 ````
@@ -21871,7 +23401,10 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
 
     return { groups: sortedGroups, total };
@@ -21961,1076 +23494,224 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/companies/controller.ts
+## File: apps/backend/src/app/modules/companies/services/companies-enrichment.service.ts
 ````typescript
-import { BaseController } from '../../lib/base.controller';
-import { CompaniesRepo } from './repositories/companies.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { slugifyRecordName } from '../../../../../../libs/common/src';
-import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-
-export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
-  constructor() {
-    super(new CompaniesRepo());
-  }
-
-  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
-  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
-    const rowObj = row as Record<string, unknown>;
-    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
-      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
-      );
-    }
-    return super.add(row, trx);
-  }
-
-  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'companies', 'update'>;
-  }) {
-    const row = input.row as Record<string, unknown>;
-    if ('name' in row) {
-      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
-      );
-    }
-    return super.update(input);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
-    const company = (await super.getOneById(input)) as any;
-    if (company) {
-      let enrichment: any = {};
-      if (company.enrichment) {
-        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
-      }
-      if (!enrichment || !enrichment.google_enriched) {
-        await this.getRepo()
-          .db.insertInto('background_jobs')
-          .values({
-            tenant_id: input.tenant_id,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'enrich_company_google',
-              company_id: String(company.id),
-              tenant_id: String(input.tenant_id),
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute()
-          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
-      }
-    }
-    return company;
-  }
-
-  public addCompany(payload: any, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description ?? null,
-      website: payload.website ?? null,
-      email: payload.email ?? null,
-      phone: payload.phone ?? null,
-      industry: payload.industry ?? null,
-      notes: payload.notes ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'insert'>;
-    return this.add(row);
-  }
-
-  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'update'>;
-    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-  }
-
-  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
-    return this.getAllWithCounts(auth.tenant_id, options);
-  }
-
-  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeCompanies({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        description?: string | null;
-        website?: string | null;
-        email?: string | null;
-        phone?: string | null;
-        industry?: string | null;
-        notes?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'companies',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'companies',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    } as any;
-  }
-
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Filter valid rows upfront
-      const validRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
-          results.skipped += 1;
-        } else {
-          validRows.push(raw);
-        }
-      }
-
-      if (validRows.length > 0) {
-        try {
-          // 2. Batch insert all valid company rows in one statement
-          const companyRows = validRows.map((raw) => ({
-            tenant_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            name: raw.name.trim(),
-            description: raw.description ?? null,
-            website: raw.website ?? null,
-            email: raw.email ?? null,
-            phone: raw.phone ?? null,
-            industry: raw.industry ?? null,
-            notes: raw.notes ?? null,
-            file_id: import_id,
-          }));
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await (trx as any).insertInto('companies').values(companyRows).execute();
-            });
-          results.inserted += validRows.length;
-        } catch (err) {
-          results.errors += validRows.length;
-          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
-    try {
-      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill company slugs after import');
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/dashboard/controller.ts
-````typescript
-import { BaseRepository } from '../../lib/base.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../../env';
+import { logger } from '../../../logger';
 
-export class DashboardController {
-  private get db() {
-    return (BaseRepository as any)['_db'];
-  }
+export class CompaniesEnrichmentService {
+  constructor(private readonly db: Kysely<Models>) {}
 
-  public async getStats(auth: IAuthKeyPayload) {
-    const tenant_id = auth.tenant_id;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // 1. Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
-    const inboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .execute();
-
-    // 2.3 Fetch all tasks for this tenant
-    const tasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
-    const closeActivities = await this.db
-      .selectFrom('user_activity')
-      .select(['entity_id', 'user_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('activity', '=', 'close')
-      .where('entity', 'in', ['email', 'emails'])
-      .orderBy('created_at', 'asc')
-      .execute();
-
-    const closerMap = new Map<string, string>();
-    for (const act of closeActivities) {
-      if (act.entity_id) {
-        closerMap.set(String(act.entity_id), String(act.user_id));
-      }
-    }
-
-    // 3. Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
-    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
-    const sentRecipients = await this.db
-      .selectFrom('email_recipients')
-      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
-      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
-      .where('email_recipients.tenant_id', '=', tenant_id)
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('email_recipients.kind', '=', 'to')
-      .where('emails.folder_id', '=', '3')
-      .orderBy('emails.created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentRecipients) {
-      const e = String(sent.email).toLowerCase().trim();
-      if (!e) continue;
-      let list = sentMap.get(e);
-      if (!list) {
-        list = [];
-        sentMap.set(e, list);
-      }
-      list.push(new Date(sent.created_at).getTime());
-    }
-
-    // Initialize user stats map
-    const userStatsMap: Record<
-      string,
-      {
-        user_id: string;
-        first_name: string;
-        last_name: string;
-        openCount: number;
-        closedCount: number;
-        totalResponseTimeMs: number;
-        responseCount: number;
-        totalTimeToCloseMs: number;
-        timeToCloseCount: number;
-        slaBreaches: number;
-        emailSlaBreaches: number;
-        taskSlaBreaches: number;
-      }
-    > = {};
-
-    for (const u of users) {
-      userStatsMap[u.id] = {
-        user_id: u.id,
-        first_name: u.first_name || '',
-        last_name: u.last_name || '',
-        openCount: 0,
-        closedCount: 0,
-        totalResponseTimeMs: 0,
-        responseCount: 0,
-        totalTimeToCloseMs: 0,
-        timeToCloseCount: 0,
-        slaBreaches: 0,
-        emailSlaBreaches: 0,
-        taskSlaBreaches: 0,
-      };
-    }
-
-    let globalTotalResponseTimeMs = 0;
-    let globalResponseCount = 0;
-    let globalTotalTimeToCloseMs = 0;
-    let globalTimeToCloseCount = 0;
-    let unassignedCount = 0;
-    let unassignedSlaBreaches = 0;
-    let unassignedEmailSlaBreaches = 0;
-    let unassignedTaskSlaBreaches = 0;
-
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const email of inboxEmails) {
-      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
-
-      // Determine who closed the email (with fallback to assignee)
-      const closerId =
-        email.status === 'closed'
-          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
-          : null;
-      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
-
-      // Track open/closed counts
-      if (email.status === 'open') {
-        if (assignedUser) {
-          assignedUser.openCount++;
-        } else {
-          unassignedCount++;
-        }
-      } else if (email.status === 'closed') {
-        if (closerUser) {
-          closerUser.closedCount++;
-        }
-      }
-
-      // Time to close calculation
-      if (email.status === 'closed') {
-        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
-        if (closeDiff > 0) {
-          globalTotalTimeToCloseMs += closeDiff;
-          globalTimeToCloseCount++;
-          if (closerUser) {
-            closerUser.totalTimeToCloseMs += closeDiff;
-            closerUser.timeToCloseCount++;
-          }
-        }
-      }
-
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
-          }
-        }
-      }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      if (firstResponseTime) {
-        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
-        if (respDiff > 0) {
-          globalTotalResponseTimeMs += respDiff;
-          globalResponseCount++;
-          if (assignedUser) {
-            assignedUser.totalResponseTimeMs += respDiff;
-            assignedUser.responseCount++;
-          }
-        }
-      }
-
-      // SLA Breach calculation: Open inbox email older than target in working hours
-      if (email.status === 'open') {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(email.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-          if (assignedUser) {
-            assignedUser.emailSlaBreaches++;
-            assignedUser.slaBreaches++; // for backward compatibility
-          } else {
-            unassignedEmailSlaBreaches++;
-            unassignedSlaBreaches++; // for backward compatibility
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedEmailsList.push({
-            id: String(email.id),
-            from_email: email.from_email,
-            subject: email.subject || null,
-            created_at: email.created_at,
-            assigned_to: email.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    // Calculate Task SLA Breaches
-    for (const task of tasks) {
-      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
-      if (isOpenTask) {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(task.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > taskSlaMs) {
-          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
-          if (assignedUser) {
-            assignedUser.taskSlaBreaches++;
-          } else {
-            unassignedTaskSlaBreaches++;
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedTasksList.push({
-            id: String(task.id),
-            name: task.name,
-            created_at: task.created_at,
-            assigned_to: task.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    const avgFirstResponseHours =
-      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
-    const avgTimeToCloseHours =
-      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
-
-    // 5. Contacts Growth (Last 30 days)
-    const growthRows = await this.db
-      .selectFrom('persons')
-      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .where('created_at', '>=', sql`now() - interval '30 days'`)
-      .groupBy(sql`date_trunc('day', created_at)`)
-      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
-      .execute();
-
-    const contactsGrowth = growthRows.map((r: any) => ({
-      date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
-      count: Number(r.count || 0),
-    }));
-
-    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
-    // (age since arrival + how long until the first-response SLA is due, in working time).
-    let oldestUnassignedCreatedAt: Date | null = null;
-    for (const email of inboxEmails) {
-      if (email.status === 'open' && email.assigned_to == null) {
-        const created = new Date(email.created_at);
-        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
-          oldestUnassignedCreatedAt = created;
-        }
-      }
-    }
-    let oldestUnassignedAgeHours: number | null = null;
-    let firstResponseDueHours: number | null = null;
-    if (oldestUnassignedCreatedAt) {
-      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
-      const workedMs = calculateWorkingTimeMs(
-        oldestUnassignedCreatedAt,
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
-    }
-
-    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
-    const draftRow = await this.db
-      .selectFrom('newsletters')
-      .select(['id', 'name', 'total_recipients'])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', '=', 'pending')
-      .orderBy('updated_at', 'desc')
-      .limit(1)
+  public async enrichCompany(companyId: string, tenantId: string, force = false): Promise<void> {
+    const company = await this.db
+      .selectFrom('companies')
+      .selectAll()
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
-    const draftNewsletter = draftRow
-      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
-      : null;
 
-    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
-    const upcomingRows = await this.db
-      .selectFrom('volunteer_events')
-      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
-      .where('tenant_id', '=', tenant_id)
-      .where('start_time', '>=', new Date(nowMs))
-      .orderBy('start_time', 'asc')
-      .limit(3)
-      .execute();
-    const upcomingEvents = upcomingRows.map((e: any) => ({
-      id: String(e.id),
-      name: e.name,
-      start_time: e.start_time,
-      capacity: e.capacity == null ? null : Number(e.capacity),
-      location_address: e.location_address ?? null,
-    }));
-
-    // Build backward-compatible emailsAssigned
-    const emailsAssigned = Object.values(userStatsMap)
-      .filter((u) => u.openCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.openCount,
-      }));
-
-    // Build backward-compatible emailsClosed
-    const emailsClosed = Object.values(userStatsMap)
-      .filter((u) => u.closedCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.closedCount,
-      }));
-
-    // Map user stats for representative stats table
-    const userStats = Object.values(userStatsMap).map((u) => {
-      const totalHandled = u.openCount + u.closedCount;
-      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
-      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
-      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
-
-      return {
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        openCount: u.openCount,
-        closedCount: u.closedCount,
-        resolutionRate,
-        avgFirstResponseHours: avgFirstResponse,
-        avgTimeToCloseHours: avgTimeToClose,
-        slaBreaches: u.slaBreaches,
-        emailSlaBreaches: u.emailSlaBreaches,
-        taskSlaBreaches: u.taskSlaBreaches,
-      };
-    });
-
-    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
-
-    return {
-      avgFirstResponseHours,
-      avgTimeToCloseHours,
-      emailsAssigned,
-      emailsClosed,
-      contactsGrowth,
-      unassignedCount,
-      totalOpenCount,
-      userStats,
-      oldestUnassignedAgeHours,
-      firstResponseDueHours,
-      draftNewsletter,
-      upcomingEvents,
-      unassignedSlaBreaches,
-      unassignedEmailSlaBreaches,
-      unassignedTaskSlaBreaches,
-      breachedEmailsList: [],
-      breachedTasksList: [],
-      taskSlaHours,
-      emailSlaHours,
-      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
-      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
-      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
-      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
-    };
-  }
-
-  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    if (!company) {
+      logger.warn(`Company enrichment skipped: Company ${companyId} not found.`);
+      return;
     }
 
-    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
-    const openInboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .where('status', '=', 'open')
-      .execute();
-
-    // Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
-    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
-    const sentRecipients = await this.db
-      .selectFrom('email_recipients')
-      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
-      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
-      .where('email_recipients.tenant_id', '=', tenant_id)
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('email_recipients.kind', '=', 'to')
-      .where('emails.folder_id', '=', '3')
-      .orderBy('emails.created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentRecipients) {
-      const e = String(sent.email).toLowerCase().trim();
-      if (!e) continue;
-      let list = sentMap.get(e);
-      if (!list) {
-        list = [];
-        sentMap.set(e, list);
-      }
-      list.push(new Date(sent.created_at).getTime());
+    // Check if already enriched. A user-triggered "Re-check Google" (force)
+    // re-runs the lookup; the first-load auto-queue does not.
+    let currentEnrichment: any = {};
+    if (company.enrichment) {
+      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
+    }
+    if (!force && currentEnrichment?.google_enriched) {
+      logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
+      return;
     }
 
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
+    const apiKey = env.googleMapsApiKey;
+    const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
 
-    const nowMs = Date.now();
+    let description: string | null = null;
+    let website: string | null = null;
+    let phone: string | null = null;
+    let industry: string | null = null;
+    let rawResult: any = null;
 
-    for (const email of openInboxEmails) {
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
+    if (!isMockOrTest) {
+      try {
+        // Step 1: Text Search to find the Place ID
+        const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(company.name)}&key=${apiKey}`;
+        const searchRes = await fetch(searchUrl);
+        if (!searchRes.ok) {
+          throw new Error(`Google Places Text Search returned status ${searchRes.status}`);
+        }
+        const searchData: any = await searchRes.json();
+
+        if (searchData.status === 'OK' && searchData.results && searchData.results.length > 0) {
+          const firstResult = searchData.results[0];
+          const placeId = firstResult.place_id;
+
+          // Step 2: Fetch Place Details for that Place ID
+          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,website,international_phone_number,formatted_phone_number,editorial_summary,types&key=${apiKey}`;
+          const detailsRes = await fetch(detailsUrl);
+          if (!detailsRes.ok) {
+            throw new Error(`Google Places Details returned status ${detailsRes.status}`);
+          }
+          const detailsData: any = await detailsRes.json();
+
+          if (detailsData.status === 'OK' && detailsData.result) {
+            const res = detailsData.result;
+            rawResult = res;
+            website = res.website || null;
+            phone = res.formatted_phone_number || res.international_phone_number || null;
+            description = res.editorial_summary?.overview || null;
+
+            if (res.types && res.types.length > 0) {
+              const rawType = res.types[0];
+              industry = rawType
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+            }
           }
         }
+      } catch (err) {
+        logger.error({ err }, `Google Places API enrichment failed for company ${companyId}`);
+        throw err;
       }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(email.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-
-      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
-        breachedEmailsList.push({
-          id: String(email.id),
-          from_email: email.from_email,
-          subject: email.subject || null,
-          created_at: email.created_at,
-          assigned_to: email.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
+    } else {
+      // Mock enrichment for testing/dev
+      const cleanName = company.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      website = `https://www.${cleanName || 'company'}.com`;
+      phone = '+1 555-0199';
+      description = `Mock description for ${company.name} from Google Places.`;
+      industry = company.industry || 'Technology';
+      rawResult = { mock: true };
+      logger.info(`Mock Google enrichment completed for company ${companyId}`);
     }
 
-    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedEmailsList.length;
-    const items = breachedEmailsList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
+    const updatedEnrichment = {
+      ...currentEnrichment,
+      google_enriched: true,
+      place_details: rawResult,
     };
+
+    const updatePayload: any = {
+      enrichment: JSON.stringify(updatedEnrichment),
+      updated_at: new Date(),
+    };
+
+    if (!company.website || company.website.trim() === '') {
+      updatePayload.website = website;
+    }
+    if (!company.phone || company.phone.trim() === '') {
+      updatePayload.phone = phone;
+    }
+    if (!company.description || company.description.trim() === '') {
+      updatePayload.description = description;
+    }
+    if (!company.industry || company.industry.trim() === '') {
+      updatePayload.industry = industry;
+    }
+
+    await this.db
+      .updateTable('companies')
+      .set(updatePayload)
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
+      .execute();
   }
 
-  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
+  public async queueUnenrichedCompanies(tenantId?: string): Promise<number> {
+    let query = this.db
+      .selectFrom('companies')
+      .select(['id', 'tenant_id'])
+      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
 
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    if (tenantId) {
+      query = query.where('tenant_id', '=', tenantId);
     }
 
-    // Fetch open tasks for this tenant
-    const openTasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
-      .execute();
+    const unenriched = await query.execute();
+    if (unenriched.length === 0) return 0;
 
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
+    const values = unenriched.map((c) => ({
+      tenant_id: c.tenant_id,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({
+        type: 'enrich_company_google',
+        company_id: String(c.id),
+        tenant_id: String(c.tenant_id),
+      }),
+      run_at: new Date(),
+      max_attempts: 3,
+    }));
 
-    const nowMs = Date.now();
+    await this.db.insertInto('background_jobs').values(values).execute();
 
-    for (const task of openTasks) {
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(task.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      if (workingTimeMs > taskSlaMs) {
-        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
-        breachedTasksList.push({
-          id: String(task.id),
-          name: task.name,
-          created_at: task.created_at,
-          assigned_to: task.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
-    }
-
-    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedTasksList.length;
-    const items = breachedTasksList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
-    };
+    return unenriched.length;
   }
 }
 ````
 
-## File: apps/backend/src/app/modules/donations/repositories/pledges.repo.ts
+## File: apps/backend/src/app/modules/companies/trpc.router.ts
 ````typescript
-import type { Selectable } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
 
-export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
-  constructor() {
-    super('donation_pledges');
-  }
+const companies = new CompaniesController();
 
-  public async getAllForTenant(tenantId: string) {
-    return this.db
-      .selectFrom('donation_pledges')
-      .leftJoin('persons', 'persons.id', 'donation_pledges.person_id')
-      .select([
-        'donation_pledges.id',
-        'donation_pledges.tenant_id',
-        'donation_pledges.person_id',
-        'donation_pledges.stripe_subscription_id',
-        'donation_pledges.stripe_customer_id',
-        'donation_pledges.monthly_amount',
-        'donation_pledges.status',
-        'donation_pledges.started_at',
-        'donation_pledges.cancelled_at',
-        'donation_pledges.next_billing_date',
-        'donation_pledges.state',
-        'donation_pledges.country',
-        'donation_pledges.created_at',
-        this.db.fn.coalesce('persons.first_name', 'donation_pledges.first_name').as('person_first_name'),
-        this.db.fn.coalesce('persons.last_name', 'donation_pledges.last_name').as('person_last_name'),
-        this.db.fn.coalesce('persons.email', 'donation_pledges.email').as('person_email'),
-      ])
-      .where('donation_pledges.tenant_id', '=', tenantId)
-      .orderBy('donation_pledges.created_at', 'desc')
-      .execute();
-  }
+const CompanyInputSchema = CompanyInputObj;
 
-  public async getForPerson(tenantId: string, personId: string): Promise<Selectable<Models['donation_pledges']>[]> {
-    return this.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .orderBy('created_at', 'desc')
-      .execute();
-  }
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
 
-  /**
-   * Sum of monthly_amount for all active pledges for a person.
-   * Used for conservative limit enforcement: counts committed future payments.
-   */
-  public async getActivePledgeMonthlyTotal(tenantId: string, personId: string): Promise<number> {
-    const result = await this.db
-      .selectFrom('donation_pledges')
-      .select(({ fn }) => [fn.sum<string | number>('monthly_amount').as('total')])
-      .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .where('status', '=', 'active')
-      .executeTakeFirst();
+export const CompaniesRouter = router({
+  ...crud,
 
-    return Number(result?.total || 0);
-  }
-}
+  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+
+  // §7 "Enrich" / "Re-check Google" — queues a Google Places lookup job.
+  enrich: authProcedure
+    .input(z.object({ id: idSchema, force: z.boolean().optional() }))
+    .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
@@ -24532,793 +25213,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 }
 ````
 
-## File: apps/backend/src/app/modules/events/controller.ts
-````typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseController } from '../../lib/base.controller';
-import { publicOrgName } from '../../lib/public-tenant';
-import { logger } from '../../logger';
-import { WorkflowsController } from '../workflows/controller';
-import { EventsRepo } from './repositories/events.repo';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
-   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventBySlug(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
-   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const eventId = String(event.id);
-    const [orgName, tickets, regCount] = await Promise.all([
-      publicOrgName(tenantId),
-      this.getTicketTypesByEventId(eventId, tenantId),
-      this.getRegistrationCountForEvent(eventId, tenantId),
-    ]);
-
-    const now = new Date();
-    const isPast = new Date(event.end_time) < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        fields,
-      },
-      tickets: tickets.map((t) => ({
-        name: String(t.name),
-        description: t.description ?? null,
-        price_cents: t.price_cents ?? null,
-        capacity: t.capacity ?? null,
-      })),
-      isPast,
-      isFull,
-      remaining,
-    };
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
-      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
-      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
-          // (there is no "campaign-less" person). `persons` also has no address columns
-          // (street1/city/state/zip/country live on `households`, not `persons`), so those
-          // RSVP fields are intentionally not persisted here.
-          const campaignRow = await trx
-            .selectFrom('campaigns')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!campaignRow) {
-            throw new Error('Tenant configuration is incomplete.');
-          }
-          const campaignId = String(campaignRow.id);
-
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-          };
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/households/controller.ts
 ````typescript
 import type {
@@ -26069,443 +25963,280 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/controller.ts
+## File: apps/backend/src/app/modules/lists/repositories/lists.repo.ts
 ````typescript
-import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
-import { BaseController } from '../../lib/base.controller';
-import { NewslettersRepo } from './repositories/newsletters.repo';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-const DEFAULT_FROM_NAME = 'PeopleCRM Team';
-const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
-
-export interface SendTestEmailInput {
-  subject: string;
-  html: string;
-  text?: string;
-  to: string;
-  fromName?: string;
-  fromEmail?: string;
-}
-
-export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+export class ListsRepo extends BaseRepository<'lists'> {
   constructor() {
-    super(new NewslettersRepo());
+    super('lists');
   }
 
-  /**
-   * map_newsletters_lists is the source of truth for list targeting (the
-   * legacy JSONB target_lists column is still dual-written by callers during
-   * the transition, but nothing reads it for behavior anymore).
-   */
-  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
-    const result = await super.add(row, trx);
-    const rowObj = row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        String(rowObj['tenant_id']),
-        String(resultObj['id']),
-        rowObj['target_lists'],
-        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
-        trx,
-      );
-    }
-    return result;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'newsletters', 'update'>;
-  }) {
-    const result = await super.update(input);
-    const rowObj = input.row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        input.tenant_id,
-        input.id,
-        rowObj['target_lists'],
-        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
-      );
-    }
-    return result;
-  }
-
-  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
-  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
-    let parsed: unknown = value;
-    if (typeof parsed === 'string') {
-      const raw = parsed;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return {
-          include: raw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-          exclude: [],
-        };
-      }
-    }
-    if (Array.isArray(parsed)) {
-      return { include: parsed.map((v) => String(v)), exclude: [] };
-    }
-    if (parsed && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>;
-      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
-      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
-    }
-    return { include: [], exclude: [] };
-  }
-
-  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
-  private async syncTargetLists(
-    tenant_id: string,
-    newsletterId: string,
-    rawTargetLists: unknown,
-    actorId: string,
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
+    },
     trx?: Transaction<Models>,
-  ): Promise<void> {
-    const db = trx ?? this.getRepo().db;
-    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
 
-    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
-    let liveIds = new Set<string>();
-    if (candidates.length > 0) {
-      const rows = await db
-        .selectFrom('lists')
-        .select('id')
-        .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', candidates)
-        .execute();
-      liveIds = new Set(rows.map((r) => String(r.id)));
-    }
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    await db
-      .deleteFrom('map_newsletters_lists')
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', newsletterId)
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('map_lists_persons', 'map_lists_persons.list_id', 'lists.id')
+        .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')
+        .leftJoin('authusers', 'authusers.id', 'lists.createdby_id')
+        .where('lists.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+              LOWER(lists.name) LIKE ${text} OR
+              LOWER(lists.description) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
+            )`,
+          );
+        })
+        // Column filters
+        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
+        )
+        .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
+          const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
+          const v = String(raw || '')
+            .trim()
+            .toLowerCase();
+          if (!v) return q;
+          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as 'people' | 'households');
+          return q.where('lists.object', '=', v as 'people' | 'households');
+        })
+        .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
+          const raw: unknown = filterModel['created_by']?.value ?? filterModel['created_by'];
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql<boolean>`(
+                COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
+                lists.createdby_id = ${Number(val)}
+              )`,
+            );
+          }
+          return q.where(
+            sql<boolean>`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}`,
+          );
+        })
+        .$if(!!filterModel['updated_at']?.value, (q) =>
+          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
+        );
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT lists.id`).as('total')])
       .execute();
+    const count = Number(countResult[0]?.['total'] || 0);
 
-    const values = [
-      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
-      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
-    ].map((v) => ({
-      tenant_id,
-      newsletter_id: newsletterId,
-      list_id: v.list_id,
-      mode: v.mode,
-      createdby_id: actorId,
-      updatedby_id: actorId,
-    }));
-    if (values.length > 0) {
-      await db.insertInto('map_newsletters_lists').values(values).execute();
-    }
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'newsletters',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  public async buildRecipientQuery(tenant_id: string, newsletter: any): Promise<any> {
-    let includeTags: string[] = [];
-    let excludeTags: string[] = [];
-
-    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
-    const listRows = await this.getRepo()
-      .db.selectFrom('map_newsletters_lists')
-      .select(['list_id', 'mode'])
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', String(newsletter.id))
-      .execute();
-    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
-    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
-
-    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
-    // It stays JSONB deliberately: it holds tag *names*, not ids.
-    const parseJsonField = (value: unknown): unknown => {
-      if (value == null) return null;
-      if (typeof value === 'string') {
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
+    const rowsRaw = await applyFilters(this.getSelect(trx))
+      .select(() => [
+        'lists.id',
+        'lists.name',
+        'lists.description',
+        'lists.object',
+        'lists.is_dynamic',
+        'lists.updated_at',
+        'lists.last_refreshed_at',
+        // The stored rule definition — the frontend renders it as the human
+        // "DEFINITION" sentence. Selectable alongside the aggregate because
+        // lists.id (the PK) is in GROUP BY, so all lists.* are functionally
+        // dependent and need no explicit grouping.
+        'lists.definition',
+        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
+        sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
+        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
+        // "LAST USED IN": the most recently created consumer that references
+        // this list. Newsletters, forms and teams each link through their own
+        // FK-backed junction table. Each arm is tenant-scoped to lists.tenant_id;
+        // the outer query is already filtered to this tenant.
+        sql<string | null>`(
+          SELECT c.label FROM (
+            SELECT nl.name AS label, nl.created_at AS ts
+              FROM public.map_newsletters_lists mnl
+              JOIN public.newsletters nl ON nl.id = mnl.newsletter_id
+              WHERE mnl.list_id = lists.id AND mnl.tenant_id = lists.tenant_id
+            UNION ALL
+            SELECT wf.name AS label, wf.created_at AS ts
+              FROM public.map_web_forms_lists mwl
+              JOIN public.web_forms wf ON wf.id = mwl.web_form_id
+              WHERE mwl.list_id = lists.id AND mwl.tenant_id = lists.tenant_id
+            UNION ALL
+            SELECT t.name AS label, t.created_at AS ts
+              FROM public.map_teams_lists mtl
+              JOIN public.teams t ON t.id = mtl.team_id
+              WHERE mtl.list_id = lists.id AND mtl.tenant_id = lists.tenant_id
+          ) c
+          ORDER BY c.ts DESC
+          LIMIT 1
+        )`.as('last_used_in'),
+      ])
+      .groupBy([
+        'lists.id',
+        'lists.name',
+        'lists.description',
+        'lists.object',
+        'lists.is_dynamic',
+        'lists.updated_at',
+        'lists.last_refreshed_at',
+        'authusers.first_name',
+        'authusers.last_name',
+      ])
+      .$if(!!options.sortModel?.length, (qb) => {
+        const sorts = options.sortModel ?? [];
+        const createdSort = sorts.find((s) => s.colId === 'created_by');
+        const listSizeSort = sorts.find((s) => s.colId === 'list_size');
+        const usedInSort = sorts.find((s) => s.colId === 'used_in');
+        const others = sorts.filter(
+          (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
+        );
+        let acc = qb;
+        // created_by sort: sort by full name of creator
+        if (createdSort) {
+          acc = acc.orderBy(sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`, createdSort.sort);
         }
-      }
-      return value; // already parsed object from jsonb column
-    };
-
-    const segmentsObj = parseJsonField(newsletter.segments);
-    if (Array.isArray(segmentsObj)) {
-      includeTags = segmentsObj as string[];
-    } else if (segmentsObj && typeof segmentsObj === 'object') {
-      const obj = segmentsObj as Record<string, unknown>;
-      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof segmentsObj === 'string' && segmentsObj) {
-      includeTags = (segmentsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    const db = this.getRepo().db;
-    let query = db
-      .selectFrom('persons')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '')
-      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
-      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
-
-    query = query.where((eb) => {
-      const conditions = [];
-      if (includeListIds.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', includeListIds),
-          ),
-        );
-      }
-      if (includeTags.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', includeTags),
-          ),
-        );
-      }
-
-      if (conditions.length === 0) {
-        return eb.val(false);
-      }
-      return eb.or(conditions);
-    });
-
-    if (excludeListIds.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', excludeListIds),
-          ),
-        ),
-      );
-    }
-
-    if (excludeTags.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', excludeTags),
-          ),
-        ),
-      );
-    }
-
-    return query;
-  }
-
-  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
-    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
-    if (!newsletter) {
-      throw new NotFoundError('Newsletter not found');
-    }
-    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
-      throw new BadRequestError('Newsletter has already been sent or is currently sending');
-    }
-
-    const db = this.getRepo().db;
-    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
-
-    // Get total count of unique recipients using a distinct count query
-    const countResult = await baseQuery
-      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
-      .executeTakeFirst();
-    const totalRecipients = Number((countResult as any)?.count || 0);
-
-    if (totalRecipients === 0) {
-      throw new BadRequestError('No recipients found for the selected lists or tags');
-    }
-
-    const updated = await this.update({
-      tenant_id,
-      id,
-      row: {
-        status: 'queuing',
-        total_recipients: totalRecipients,
-        delivered_count: 0,
-        updatedby_id: userId,
-        updated_at: new Date(),
-      },
-    });
-
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-newsletter',
-          newsletterId: id,
-          tenantId: tenant_id,
-          userId: userId,
-          offset: 0,
-          deliveredCount: 0,
-        }),
-        run_at: new Date(),
+        // list_size sort: derived from people_count vs household_count
+        if (listSizeSort) {
+          acc = acc.orderBy(
+            sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
+            listSizeSort.sort,
+          );
+        }
+        // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
+        if (usedInSort) {
+          acc = acc.orderBy('lists.updated_at', usedInSort.sort);
+        }
+        for (const s of others) acc = acc.orderBy(s.colId, s.sort);
+        return acc;
       })
+      .offset(startRow)
+      .limit(endRow - startRow)
       .execute();
 
-    return updated;
+    const rows = rowsRaw.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      object: r.object,
+      is_dynamic: r.is_dynamic,
+      updated_at: r.updated_at,
+      last_refreshed_at: r.last_refreshed_at,
+      definition: r.definition,
+      // MEMBERS: the real snapshot/refreshed member count, tabular for both
+      // smart and static lists (smart lists persist members after each refresh).
+      list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
+      last_used_in: r.last_used_in ?? null,
+      used_in: 0,
+      created_by: r.created_by,
+    }));
+
+    return { rows, count };
   }
 
-  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
-    const db = this.getRepo().db;
+  public async getHouseholdsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
+      .innerJoin('households', 'households.id', 'mlh.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
 
-    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
-    // from name/email, otherwise fall back to the workspace Communications settings.
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.default_from_name',
-        'communications.default_from_email',
-        'communications.reply_to',
-      ])
-      .execute();
+    const countResult = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult?.total;
 
-    const settingsMap: Record<string, string> = {};
-    for (const row of settingsRows) {
-      if (typeof row.value === 'string') {
-        settingsMap[row.key] = row.value;
-      }
-    }
-
-    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
-    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
-    const replyTo = settingsMap['communications.reply_to'] || undefined;
-    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-
-    const mailSvc = new NewsletterEmailService();
-    const delivered = await mailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients: [input.to],
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-      sendgridApiKey,
-      subuserUsername,
-    });
-
-    return { to: input.to, delivered };
-  }
-
-  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
-    const db = this.getRepo().db;
-
-    // 1. Fetch recent events (limit 100)
-    const activities = await db
-      .selectFrom('newsletter_events')
-      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
-      .orderBy('timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    // 2. Fetch timeline data grouped by date/hour
-    const timeline = await db
-      .selectFrom('newsletter_events')
+    const rows = await qb
       .select([
-        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
       ])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', 'in', ['open', 'click'])
-      .groupBy('time_bucket')
-      .orderBy('time_bucket', 'asc')
+      .groupBy([
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
+      ])
       .execute();
 
-    return {
-      activities: activities.map((a) => ({
-        email: a.email,
-        event_type: a.event_type,
-        timestamp: a.timestamp,
-        url: a.url,
-        ip: a.ip,
-        user_agent: a.user_agent,
-      })),
-      timeline: timeline.map((t) => ({
-        time: t.time_bucket,
-        opens: Number(t.opens),
-        clicks: Number(t.clicks),
-      })),
-    };
+    return { rows, count: Number(total || 0) };
+  }
+
+  public async getPersonsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
+      .innerJoin('persons', 'persons.id', 'mlp.person_id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
+
+    const countResult2 = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult2?.total;
+
+    const rows = await qb
+      .select([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .execute();
+
+    return { rows, count: Number(total || 0) };
   }
 }
 ````
@@ -26760,1026 +26491,546 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 }
 ````
 
-## File: apps/backend/src/app/modules/volunteer-events/controller.ts
+## File: apps/backend/src/app/modules/tasks/controller.ts
 ````typescript
-import { BaseController } from '../../lib/base.controller';
-import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
+import type {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+
+import { TasksRepo } from './repositories/tasks.repo';
+import type { Selectable } from 'kysely';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../lib/base.repo';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
-import { publicOrgName } from '../../lib/public-tenant';
-import { WorkflowsController } from '../workflows/controller';
 import { logger } from '../../logger';
+import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
 
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+export class TasksController extends BaseController<'tasks', TasksRepo> {
+  private mailService = new TransactionalEmailService();
 
-const ipSignupTimestamps = new Map<string, number[]>();
-const SIGNUP_RATE_LIMIT_MAX = 5;
-const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
   constructor() {
-    super(new VolunteerEventsRepo());
+    super(new TasksRepo());
   }
 
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({
-      tenant_id: auth.tenant_id,
-      options,
-    });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-    }
-
+  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
     const row = {
+      name: payload.name,
+      details: payload.details,
+      due_at: payload.due_at ?? null,
+      status: payload.status ?? 'todo',
+      priority: payload.priority ?? null,
+      completed_at: payload.completed_at ?? null,
+      position: payload.position ?? 0,
+      assigned_to: payload.assigned_to ?? null,
+      team_id: payload.team_id ?? null,
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      is_private: payload.is_private ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_signup_confirmation: payload.send_signup_confirmation ?? true,
-      send_volunteer_alert: payload.send_volunteer_alert ?? true,
-      slug: payload.slug,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'volunteer_events', 'insert'>;
-    return this.add(row);
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select('id')
-      .where('tenant_id', '=', _auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('volunteer_events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
+    } as OperationDataType<'tasks', 'insert'>;
+    const task = await this.add(row);
+    if (task && payload.assigned_to) {
+      try {
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: payload.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${payload.name}"`,
+          type: 'task',
+          link: `/tasks/${task.id}`,
         });
-      }
-    }
 
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-    }
-
-    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
-    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
-    // ARRAY literal (see addEvent() above for the full explanation).
-    const { fields, ...restPayload } = payload;
-    const row = {
-      ...restPayload,
-      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'volunteer_events', 'update'>;
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        // Fetch all signed up shifts for this event
-        const shifts = await this.getRepo()
-          .db.selectFrom('volunteer_shifts')
-          .select(['id', 'person_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('event_id', '=', id)
-          .where('status', '=', 'signed_up')
-          .execute();
-
-        // Fetch event start time
-        const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            for (const shift of shifts) {
-              // Delete existing pending reminder for safety
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
-                .execute();
-
-              // Queue new reminder
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(shift.id),
-                    eventId: String(id),
-                    personId: String(shift.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
+        const assignedTo = payload.assigned_to;
+        if (assignedTo) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', assignedTo)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New Task Assigned: ${payload.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
+              });
             }
           }
         }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
       }
     }
-
-    return result;
+    return task;
   }
 
-  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getShiftsForEvent({
-      tenant_id: auth.tenant_id,
-      event_id,
-    });
+  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
   }
 
-  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().signupVolunteer({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      status: payload.status,
-      hours_worked: payload.hours_worked,
-      notes: payload.notes,
-      user_id: auth.user_id,
-    });
+  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
 
-    if (result && result.status === 'signed_up') {
+  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
+  private async loadSlaConfig(tenant_id: string): Promise<{
+    taskSlaHours: number;
+    workingDays: number[];
+    workingHoursStart: string;
+    workingHoursEnd: string;
+  }> {
+    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    return {
+      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+      workingDays: workingDaysStr
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !isNaN(n)),
+      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+    };
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
+  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
+    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(auth.tenant_id);
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const now = new Date();
+
+    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
+    return openTasks.reduce((count, task) => {
+      const workingMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        now,
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      return workingMs > taskSlaMs ? count + 1 : count;
+    }, 0);
+  }
+
+  /**
+   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
+   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
+   */
+  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    const repo = this.getRepo();
+    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
+      repo.countOpen(auth.tenant_id),
+      repo.countOpenUnassigned(auth.tenant_id),
+      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
+      this.countSlaBreaches(auth),
+    ]);
+    return { openTotal, unassigned, assignedToMe, slaBreaches };
+  }
+
+  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
+      | Selectable<Models['tasks']>
+      | undefined;
+    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+
+    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
       try {
-        const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
-          .select(['start_time', 'send_reminder'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', payload.event_id)
-          .executeTakeFirst();
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: row.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${updated.name}"`,
+          type: 'task',
+          link: `/tasks/${id}`,
+        });
 
-        if (event && event.send_reminder !== false) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
+        const assignedTo = row.assigned_to;
+        if (assignedTo) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', assignedTo)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `Task Assigned: ${updated.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
+              });
+            }
           }
         }
-      } catch (err) {
-        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
-      }
-
-      // Trigger volunteer signup workflows
-      try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerVolunteerSignup(
-              auth.tenant_id,
-              String(payload.person_id),
-              String(payload.event_id),
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
       }
     }
+    return updated;
+  }
 
-    if (result && result.status) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerWorkflow(
-              auth.tenant_id,
-              String(payload.person_id),
-              'volunteer_shift_status',
-              result.status,
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
-      }
-    }
-
-    try {
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
+      const result = includeArchived
+        ? await this.getArchivedTasks(auth, input?.options)
+        : await this.getAllTasks(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
-        activity: 'assign',
-        entity: 'volunteer_shifts',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
+        activity: 'export',
+        entity: includeArchived ? 'tasks_archived' : 'tasks',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+          include_archived: includeArchived,
+        },
       });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift signup activity');
+      return response;
     }
-
-    return result;
+    return super.exportCsv(input, auth);
   }
 
-  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateShift({
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        details?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        due_at?: string | null;
+        assigned_to?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
       tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'tasks',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    };
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      },
     });
 
-    if (result) {
-      // Trigger volunteer shift status workflows
-      if (payload.status) {
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'tasks',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    // Parse status and priority to validate choices
+    const normalize = (v?: string) =>
+      (v || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s-]+/g, '');
+    const validStatuses: readonly string[] = TASK_STATUSES;
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+    // Map names to users for assigned_to
+    const users = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name', 'email'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      const idStr = String(u.id);
+      userMap.set(idStr, idStr);
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
+      if (u.first_name) {
+        userMap.set(u.first_name.toLowerCase().trim(), idStr);
+        if (u.last_name) {
+          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
+        }
+      }
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Normalize and filter valid rows upfront
+      const taskRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw['name'] || !raw['name'].trim()) {
+          results.skipped += 1;
+          continue;
+        }
+
+        let status: string = 'todo';
+        if (raw['status']) {
+          const normStatus = normalize(raw['status']);
+          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
+          if (matchedStatus) status = matchedStatus;
+        }
+
+        let priority: string | null = null;
+        if (raw['priority']) {
+          const normPriority = normalize(raw['priority']);
+          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
+          if (matchedPriority) priority = matchedPriority;
+        }
+
+        let assigned_to: string | null = null;
+        if (raw['assigned_to']) {
+          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
+        }
+
+        let due_at: Date | null = null;
+        if (raw['due_at']) {
+          const parsedDate = new Date(raw['due_at']);
+          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
+        }
+
+        taskRows.push({
+          tenant_id,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+          name: raw['name'].trim(),
+          details: raw['details'] ?? null,
+          status,
+          priority,
+          assigned_to,
+          due_at,
+          file_id: import_id,
+        });
+      }
+
+      if (taskRows.length > 0) {
         try {
-          const workflowsController = new WorkflowsController();
           await this.getRepo()
             .transaction()
             .execute(async (trx) => {
-              await workflowsController.triggerWorkflow(
-                auth.tenant_id,
-                String(result.person_id),
-                'volunteer_shift_status',
-                payload.status,
-                trx,
-              );
+              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
+              const CHUNK_SIZE = 2000;
+              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
+                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
+                await trx
+                  .insertInto('tasks')
+                  .values(chunk)
+                  .returningAll() // Adheres to repository rules
+                  .execute();
+              }
             });
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
+          results.inserted += taskRows.length;
+        } catch (err: unknown) {
+          results.errors += taskRows.length;
+          errorMessages.push(err instanceof Error ? err.message : String(err));
         }
       }
 
-      try {
-        if (payload.status && payload.status !== 'signed_up') {
-          // Cancel/remove pending reminder
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-        } else if (payload.status === 'signed_up') {
-          // Remove existing pending reminders first
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-
-          // Fetch event to check if we should schedule a new reminder
-          const event = await this.getRepo()
-            .db.selectFrom('volunteer_events')
-            .select(['start_time', 'send_reminder'])
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', result.event_id)
-            .executeTakeFirst();
-
-          if (event && event.send_reminder !== false) {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(id),
-                    eventId: String(result.event_id),
-                    personId: String(result.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to update shift reminder job status');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'volunteer_shifts',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        },
       });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift update activity');
     }
-
-    return result;
-  }
-
-  public async deleteShift(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteShift({
-      tenant_id: auth.tenant_id,
-      id,
-    });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-          .where(sql`payload->>'shiftId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to delete pending shift reminder job');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'delete',
-        entity: 'volunteer_shifts',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift delete activity');
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
-  }
-
-  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getVolunteerStats({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
-  }
-
-  public async getTenantPublic(tenantId: string) {
-    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
-  }
-
-  public async getUpcomingEventsPublic(tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ])
-      .where('volunteer_events.tenant_id', '=', tenantId)
-      .where('volunteer_events.end_time', '>=', new Date())
-      .where('volunteer_events.is_private', '=', false)
-      .orderBy('volunteer_events.start_time', 'asc')
-      .execute();
-  }
-
-  /**
-   * Public signup-page lookup. Tenant-scoped by slug: volunteer-event slugs are unique per tenant,
-   * and the tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventPublic(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-        'volunteer_events.fields',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ])
-      .where('volunteer_events.tenant_id', '=', tenantId)
-      .where('volunteer_events.slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /v/:slug SPA page renders in one payload: the event, live signup count,
-   * and the org name. Unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventPublic(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const orgName = await publicOrgName(tenantId);
-    const volunteersCount = Number(event.volunteers_count || 0);
-    const isPast = new Date(event.end_time) < new Date();
-    const isFull = event.capacity !== null && volunteersCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - volunteersCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
     return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        is_private: !!event.is_private,
-        fields,
-      },
-      volunteersCount,
-      isPast,
-      isFull,
-      remaining,
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
     };
-  }
-
-  /** Upcoming public volunteer events for the tenant's /volunteer listing page. */
-  public async getPublicEventListing(tenantId: string) {
-    const [orgName, events] = await Promise.all([publicOrgName(tenantId), this.getUpcomingEventsPublic(tenantId)]);
-    return {
-      orgName,
-      events: events.map((ev) => {
-        const volunteersCount = Number(ev.volunteers_count || 0);
-        const remaining = ev.capacity !== null ? Math.max(0, ev.capacity - volunteersCount) : null;
-        return {
-          slug: String(ev.slug),
-          name: String(ev.name),
-          description: ev.description ?? null,
-          location_address: ev.location_address ?? null,
-          start_time: ev.start_time,
-          end_time: ev.end_time,
-          capacity: ev.capacity ?? null,
-          isFull: ev.capacity !== null && volunteersCount >= ev.capacity,
-          remaining,
-        };
-      }),
-    };
-  }
-
-  public async signupVolunteerPublic(
-    tenantId: string,
-    slug: string,
-    payload: Record<string, string>,
-    clientIp: string,
-  ) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSignupTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
-    if (timestamps.length > 0) {
-      ipSignupTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSignupTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch the event — tenant-scoped by slug
-    const event = await this.getEventPublic(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Event not found.',
-      });
-    }
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
-      return { success: true }; // Silent mock success
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // 5. Check capacity limit
-    const currentCount = Number(event.volunteers_count || 0);
-    if (event.capacity !== null && currentCount >= event.capacity) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This event is already at full capacity.',
-      });
-    }
-
-    const firstName = payload['first_name'] || payload['firstName'] || null;
-    const lastName = payload['last_name'] || payload['lastName'] || null;
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    // 6. Transaction to find/create person, tags, and shift
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-        if (!creatorId) {
-          throw new Error('Tenant admin_id is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
-          }
-        }
-
-        // Check if shift already exists
-        const existingShift = await trx
-          .selectFrom('volunteer_shifts')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', event.id)
-          .where('person_id', '=', personId)
-          .executeTakeFirst();
-
-        if (existingShift) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'You are already signed up for this event.',
-          });
-        }
-
-        const workflowsController = new WorkflowsController();
-
-        // Add tag "volunteer" and "event: <event name>"
-        const allTagsToApply = ['volunteer', `event: ${event.name}`];
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            try {
-              const insertTagRes = await trx
-                .insertInto('tags')
-                .values({
-                  tenant_id: tenantId,
-                  name: normalizedTagName,
-                  type: 'tag',
-                  deletable: true,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .returning('id')
-                .executeTakeFirst();
-              if (insertTagRes) {
-                tag = { id: insertTagRes.id };
-              }
-            } catch (insertErr) {
-              // Concurrent insert fallback: fetch the tag that was just inserted
-              tag = await trx
-                .selectFrom('tags')
-                .select('id')
-                .where('tenant_id', '=', tenantId)
-                .where('name', '=', normalizedTagName)
-                .where('type', '=', 'tag')
-                .executeTakeFirst();
-              if (!tag) throw insertErr;
-            }
-          }
-
-          if (tag) {
-            const mapExists = await trx
-              .selectFrom('map_peoples_tags')
-              .select('person_id')
-              .where('tenant_id', '=', tenantId)
-              .where('person_id', '=', personId)
-              .where('tag_id', '=', tag.id)
-              .executeTakeFirst();
-
-            if (!mapExists) {
-              await trx
-                .insertInto('map_peoples_tags')
-                .values({
-                  tenant_id: tenantId,
-                  person_id: personId,
-                  tag_id: tag.id,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
-                .execute();
-
-              // Trigger tag_added and specialized subscriber workflows
-              try {
-                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
-              }
-            }
-          }
-        }
-
-        // Insert Shift
-        const shiftResult = await trx
-          .insertInto('volunteer_shifts')
-          .values({
-            tenant_id: tenantId,
-            event_id: event.id,
-            person_id: personId,
-            status: 'signed_up',
-            notes: notes,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        const shiftId = shiftResult.id;
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'signup',
-            entity: 'volunteer_events',
-            entity_id: String(event.id),
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-form-notifications',
-              eventId: String(event.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-
-        // Queue shift reminder email if enabled
-        if (event.send_reminder !== false) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(shiftId),
-                  eventId: String(event.id),
-                  personId: String(personId),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        }
-
-        // Trigger volunteer signup workflows
-        try {
-          const workflowsController = new WorkflowsController();
-          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
-        }
-      });
-
-    return { success: true };
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
   }
 }
 ````
 
-## File: apps/backend/vite.config.ts
+## File: apps/backend/src/app/_migrations/2026-07-07-tasks-status-normalization.ts
 ````typescript
-/// <reference types='vitest' />
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
 
-// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
-// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
-// see apps/backend/src/env.ts for the full schema). CI/production set these as real
-// env vars instead, so loading the file is best-effort only.
-const envTestPath = resolve(__dirname, '../../.env.test');
-if (existsSync(envTestPath)) {
-  process.loadEnvFile(envTestPath);
+/**
+ * Reconciles `tasks.status` to the spec §4 canonical vocabulary: todo, in_progress,
+ * waiting, done, archived. Two renames:
+ *
+ * - `blocked` -> `waiting` (matches the board's "Waiting" column and the card/row's
+ *   optional waiting-reason line).
+ * - `canceled` -> `archived` (this app already has exactly one "hidden, not coming
+ *   back to it" state — archived — reachable via the grid's Archived toggle; a
+ *   canceled task is that state in practice, so this collapses a second one that the
+ *   spec never asked for).
+ *
+ * Pre-ship: no production data to preserve (see pplcrm-migrations skill), so a data
+ * backfill + constraint swap in one migration is safe.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  // These backfills run under tasks/task_subtasks' FORCE ROW LEVEL SECURITY;
+  // with no `app.tenant_id` GUC set the tenant policy's `NULLIF(...) IS NULL`
+  // escape permits every row (see the row_security strip in 0001_baseline.ts),
+  // so no per-migration RLS toggle is needed.
+  await sql`UPDATE public.tasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
+  await sql`UPDATE public.tasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
+
+  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
+  await sql`
+    ALTER TABLE public.tasks
+    ADD CONSTRAINT chk_tasks_status
+    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'waiting'::text, 'done'::text, 'archived'::text]))
+  `.execute(db);
 }
 
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/backend',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'backend',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    // Runs once before any worker: guardrails the target DB, migrates it to
-    // latest, and truncates it to a clean slate. Keeps the whole suite on the
-    // disposable pplcrm_test database so specs can never touch real data.
-    globalSetup: ['./src/test-setup/global-setup.ts'],
-    env: {
-      DB_USER: process.env['DB_USER'] ?? '',
-      DB_NAME: process.env['DB_NAME'] ?? '',
-      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
-      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
-      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
-      DB_PORT: process.env['DB_PORT'] ?? '5432',
-      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
-      DB_SSL: process.env['DB_SSL'] ?? 'false',
-    },
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/backend',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 45,
-        branches: 32,
-        functions: 54,
-        lines: 46,
-      },
-    },
-  },
-}));
+export async function down(db: Kysely<any>): Promise<void> {
+  // Best-effort only: `canceled` merged into `archived` and cannot be distinguished
+  // back out, so the down migration restores the old constraint and the `waiting` ->
+  // `blocked` rename, but archived rows stay archived rather than un-collapsing.
+  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
+  await sql`
+    ALTER TABLE public.tasks
+    ADD CONSTRAINT chk_tasks_status
+    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text]))
+  `.execute(db);
+  await sql`UPDATE public.tasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
+}
 ````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
@@ -27907,197 +27158,1048 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
 }
 ````
 
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+## File: apps/backend/src/app/modules/companies/controller.ts
 ````typescript
-import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+import { BaseController } from '../../lib/base.controller';
+import { CompaniesRepo } from './repositories/companies.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
-/**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
- */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
+export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
+  constructor() {
+    super(new CompaniesRepo());
+  }
 
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
 
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
+  }
 
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
+  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
+    const company = (await super.getOneById(input)) as any;
+    if (company) {
+      let enrichment: any = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
+      }
+      if (!enrichment || !enrichment.google_enriched) {
+        await this.getRepo()
+          .db.insertInto('background_jobs')
+          .values({
+            tenant_id: input.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'enrich_company_google',
+              company_id: String(company.id),
+              tenant_id: String(input.tenant_id),
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute()
+          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
+      }
+    }
+    return company;
+  }
 
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('prune_retention') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
+  /**
+   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
+   * "Re-check Google" button). Transactional-outbox: verify the company is in
+   * the tenant, then insert the background job. `force` re-runs even if the
+   * company was already enriched.
+   */
+  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
+    const company = await this.getRepo()
+      .db.selectFrom('companies')
+      .select('id')
+      .where('id', '=', id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
 
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
+    if (!company) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
+    }
 
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'enrich_company_google',
+          company_id: String(id),
+          tenant_id: String(auth.tenant_id),
+          force,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
 
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
+    return { queued: true };
+  }
 
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
+  public addCompany(payload: any, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      description: payload.description ?? null,
+      website: payload.website ?? null,
+      email: payload.email ?? null,
+      phone: payload.phone ?? null,
+      industry: payload.industry ?? null,
+      notes: payload.notes ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'insert'>;
+    return this.add(row);
+  }
 
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
+  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'update'>;
+    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+  }
 
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
+  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
+    return this.getAllWithCounts(auth.tenant_id, options);
+  }
 
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
 
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
-  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
-  list_name: z.string().nullish(),
-  client_skip_reasons: z
-    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
-    .nullish(),
-});
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
 
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeCompanies({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        description?: string | null;
+        website?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        industry?: string | null;
+        notes?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'companies',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'companies',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    } as any;
+  }
+
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Filter valid rows upfront
+      const validRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw.name || !raw.name.trim()) {
+          results.skipped += 1;
+        } else {
+          validRows.push(raw);
+        }
+      }
+
+      if (validRows.length > 0) {
+        try {
+          // 2. Batch insert all valid company rows in one statement
+          const companyRows = validRows.map((raw) => ({
+            tenant_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            name: raw.name.trim(),
+            description: raw.description ?? null,
+            website: raw.website ?? null,
+            email: raw.email ?? null,
+            phone: raw.phone ?? null,
+            industry: raw.industry ?? null,
+            notes: raw.notes ?? null,
+            file_id: import_id,
+          }));
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await (trx as any).insertInto('companies').values(companyRows).execute();
+            });
+          results.inserted += validRows.length;
+        } catch (err) {
+          results.errors += validRows.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/dashboard/controller.ts
+````typescript
+import { BaseRepository } from '../../lib/base.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { sql } from 'kysely';
+import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export class DashboardController {
+  private get db() {
+    return (BaseRepository as any)['_db'];
+  }
+
+  public async getStats(auth: IAuthKeyPayload) {
+    const tenant_id = auth.tenant_id;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // 1. Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
+    const inboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .execute();
+
+    // 2.3 Fetch all tasks for this tenant
+    const tasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
+    const closeActivities = await this.db
+      .selectFrom('user_activity')
+      .select(['entity_id', 'user_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('activity', '=', 'close')
+      .where('entity', 'in', ['email', 'emails'])
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const closerMap = new Map<string, string>();
+    for (const act of closeActivities) {
+      if (act.entity_id) {
+        closerMap.set(String(act.entity_id), String(act.user_id));
+      }
+    }
+
+    // 3. Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c: any) => c.email_id && c.earliest_comment_at)
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
+      }
+      list.push(new Date(sent.created_at).getTime());
+    }
+
+    // Initialize user stats map
+    const userStatsMap: Record<
+      string,
+      {
+        user_id: string;
+        first_name: string;
+        last_name: string;
+        openCount: number;
+        closedCount: number;
+        totalResponseTimeMs: number;
+        responseCount: number;
+        totalTimeToCloseMs: number;
+        timeToCloseCount: number;
+        slaBreaches: number;
+        emailSlaBreaches: number;
+        taskSlaBreaches: number;
+      }
+    > = {};
+
+    for (const u of users) {
+      userStatsMap[u.id] = {
+        user_id: u.id,
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        openCount: 0,
+        closedCount: 0,
+        totalResponseTimeMs: 0,
+        responseCount: 0,
+        totalTimeToCloseMs: 0,
+        timeToCloseCount: 0,
+        slaBreaches: 0,
+        emailSlaBreaches: 0,
+        taskSlaBreaches: 0,
+      };
+    }
+
+    let globalTotalResponseTimeMs = 0;
+    let globalResponseCount = 0;
+    let globalTotalTimeToCloseMs = 0;
+    let globalTimeToCloseCount = 0;
+    let unassignedCount = 0;
+    let unassignedSlaBreaches = 0;
+    let unassignedEmailSlaBreaches = 0;
+    let unassignedTaskSlaBreaches = 0;
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of inboxEmails) {
+      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
+
+      // Determine who closed the email (with fallback to assignee)
+      const closerId =
+        email.status === 'closed'
+          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
+          : null;
+      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
+
+      // Track open/closed counts
+      if (email.status === 'open') {
+        if (assignedUser) {
+          assignedUser.openCount++;
+        } else {
+          unassignedCount++;
+        }
+      } else if (email.status === 'closed') {
+        if (closerUser) {
+          closerUser.closedCount++;
+        }
+      }
+
+      // Time to close calculation
+      if (email.status === 'closed') {
+        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
+        if (closeDiff > 0) {
+          globalTotalTimeToCloseMs += closeDiff;
+          globalTimeToCloseCount++;
+          if (closerUser) {
+            closerUser.totalTimeToCloseMs += closeDiff;
+            closerUser.timeToCloseCount++;
+          }
+        }
+      }
+
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      if (firstResponseTime) {
+        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
+        if (respDiff > 0) {
+          globalTotalResponseTimeMs += respDiff;
+          globalResponseCount++;
+          if (assignedUser) {
+            assignedUser.totalResponseTimeMs += respDiff;
+            assignedUser.responseCount++;
+          }
+        }
+      }
+
+      // SLA Breach calculation: Open inbox email older than target in working hours
+      if (email.status === 'open') {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(email.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+          if (assignedUser) {
+            assignedUser.emailSlaBreaches++;
+            assignedUser.slaBreaches++; // for backward compatibility
+          } else {
+            unassignedEmailSlaBreaches++;
+            unassignedSlaBreaches++; // for backward compatibility
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedEmailsList.push({
+            id: String(email.id),
+            from_email: email.from_email,
+            subject: email.subject || null,
+            created_at: email.created_at,
+            assigned_to: email.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    // Calculate Task SLA Breaches
+    for (const task of tasks) {
+      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
+      if (isOpenTask) {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > taskSlaMs) {
+          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
+          if (assignedUser) {
+            assignedUser.taskSlaBreaches++;
+          } else {
+            unassignedTaskSlaBreaches++;
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedTasksList.push({
+            id: String(task.id),
+            name: task.name,
+            created_at: task.created_at,
+            assigned_to: task.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    const avgFirstResponseHours =
+      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
+    const avgTimeToCloseHours =
+      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
+
+    // 5. Contacts Growth (Last 30 days)
+    const growthRows = await this.db
+      .selectFrom('persons')
+      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('created_at', '>=', sql`now() - interval '30 days'`)
+      .groupBy(sql`date_trunc('day', created_at)`)
+      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
+      .execute();
+
+    const contactsGrowth = growthRows.map((r: any) => ({
+      date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
+      count: Number(r.count || 0),
+    }));
+
+    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
+    // (age since arrival + how long until the first-response SLA is due, in working time).
+    let oldestUnassignedCreatedAt: Date | null = null;
+    for (const email of inboxEmails) {
+      if (email.status === 'open' && email.assigned_to == null) {
+        const created = new Date(email.created_at);
+        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
+          oldestUnassignedCreatedAt = created;
+        }
+      }
+    }
+    let oldestUnassignedAgeHours: number | null = null;
+    let firstResponseDueHours: number | null = null;
+    if (oldestUnassignedCreatedAt) {
+      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
+      const workedMs = calculateWorkingTimeMs(
+        oldestUnassignedCreatedAt,
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
+    }
+
+    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
+    const draftRow = await this.db
+      .selectFrom('newsletters')
+      .select(['id', 'name', 'total_recipients'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'pending')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const draftNewsletter = draftRow
+      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
+      : null;
+
+    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
+    const upcomingRows = await this.db
+      .selectFrom('volunteer_events')
+      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
+      .where('tenant_id', '=', tenant_id)
+      .where('start_time', '>=', new Date(nowMs))
+      .orderBy('start_time', 'asc')
+      .limit(3)
+      .execute();
+    const upcomingEvents = upcomingRows.map((e: any) => ({
+      id: String(e.id),
+      name: e.name,
+      start_time: e.start_time,
+      capacity: e.capacity == null ? null : Number(e.capacity),
+      location_address: e.location_address ?? null,
+    }));
+
+    // Build backward-compatible emailsAssigned
+    const emailsAssigned = Object.values(userStatsMap)
+      .filter((u) => u.openCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.openCount,
+      }));
+
+    // Build backward-compatible emailsClosed
+    const emailsClosed = Object.values(userStatsMap)
+      .filter((u) => u.closedCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.closedCount,
+      }));
+
+    // Map user stats for representative stats table
+    const userStats = Object.values(userStatsMap).map((u) => {
+      const totalHandled = u.openCount + u.closedCount;
+      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
+      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
+      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
+
+      return {
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        openCount: u.openCount,
+        closedCount: u.closedCount,
+        resolutionRate,
+        avgFirstResponseHours: avgFirstResponse,
+        avgTimeToCloseHours: avgTimeToClose,
+        slaBreaches: u.slaBreaches,
+        emailSlaBreaches: u.emailSlaBreaches,
+        taskSlaBreaches: u.taskSlaBreaches,
+      };
+    });
+
+    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
+
+    return {
+      avgFirstResponseHours,
+      avgTimeToCloseHours,
+      emailsAssigned,
+      emailsClosed,
+      contactsGrowth,
+      unassignedCount,
+      totalOpenCount,
+      userStats,
+      oldestUnassignedAgeHours,
+      firstResponseDueHours,
+      draftNewsletter,
+      upcomingEvents,
+      unassignedSlaBreaches,
+      unassignedEmailSlaBreaches,
+      unassignedTaskSlaBreaches,
+      breachedEmailsList: [],
+      breachedTasksList: [],
+      taskSlaHours,
+      emailSlaHours,
+      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
+      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
+      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
+      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
+    };
+  }
+
+  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
+    const openInboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .where('status', '=', 'open')
+      .execute();
+
+    // Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c: any) => c.email_id && c.earliest_comment_at)
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
+      }
+      list.push(new Date(sent.created_at).getTime());
+    }
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of openInboxEmails) {
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(email.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+
+      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
+        breachedEmailsList.push({
+          id: String(email.id),
+          from_email: email.from_email,
+          subject: email.subject || null,
+          created_at: email.created_at,
+          assigned_to: email.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedEmailsList.length;
+    const items = breachedEmailsList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+
+  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch open tasks for this tenant
+    const openTasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const task of openTasks) {
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      if (workingTimeMs > taskSlaMs) {
+        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
+        breachedTasksList.push({
+          id: String(task.id),
+          name: task.name,
+          created_at: task.created_at,
+          assigned_to: task.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedTasksList.length;
+    const items = breachedTasksList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
@@ -28915,6 +29017,661 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default eventsPublicRoute;
 ````
 
+## File: apps/backend/src/app/modules/lists/controller.ts
+````typescript
+import type {
+  AddListType,
+  IAuthKeyPayload,
+  UpdateListType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { getAllOptions } from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import { BaseController } from '../../lib/base.controller';
+import { HouseholdsController } from '../households/controller';
+import { PersonsController } from '../persons/controller';
+import { ListsRepo } from './repositories/lists.repo';
+import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
+import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
+
+/**
+ * The live membership of a list at the moment of the call.
+ *
+ * - Smart lists (`is_dynamic = true`) re-run their stored `definition` against
+ *   the tenant's people/households and return whoever matches *right now*.
+ * - Static lists read the fixed snapshot saved in `map_lists_persons` /
+ *   `map_lists_households` at creation time.
+ *
+ * Exported for downstream consumers that need "who is in this list today":
+ * canvassing turf cutting (§13, universe = a smart list), automations
+ * (§16, List-joined trigger), and CSV import add-to-static-list (§17).
+ */
+export interface ListCurrentMembers {
+  object: 'people' | 'households';
+  ids: string[];
+  count: number;
+}
+
+/** One thing that references a list (drives "LAST USED IN" and delete confirms). */
+export interface ListConsumer {
+  id: string;
+  name: string;
+  kind: 'newsletter' | 'form' | 'team';
+}
+
+/** Everything that references a list, grouped by kind. `total` is the flat count. */
+export interface ListConsumers {
+  newsletters: ListConsumer[];
+  forms: ListConsumer[];
+  teams: ListConsumer[];
+  total: number;
+}
+
+/** The subset of a list row this module reasons about (narrowed from the DB row). */
+interface ListShape {
+  id: string;
+  object: 'people' | 'households';
+  is_dynamic: boolean;
+  definition: getAllOptionsType | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Narrow a raw list row (or the resolved controller shape) to the fields this
+ * module needs, parsing the stored JSONB `definition` through its Zod schema
+ * rather than casting it — so a malformed definition surfaces as `null`, not a
+ * runtime blow-up deeper in the query pipeline.
+ */
+function toListShape(row: unknown): ListShape | null {
+  if (!isRecord(row)) return null;
+  const object = row['object'];
+  if (object !== 'people' && object !== 'households') return null;
+  const parsed = getAllOptions.safeParse(row['definition'] ?? undefined);
+  return {
+    id: String(row['id']),
+    object,
+    is_dynamic: row['is_dynamic'] === true,
+    definition: parsed.success ? (parsed.data ?? null) : null,
+  };
+}
+
+export class ListsController extends BaseController<'lists', ListsRepo> {
+  private householdsController = new HouseholdsController();
+  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private personsController = new PersonsController();
+
+  constructor() {
+    super(new ListsRepo());
+  }
+
+  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
+    // Enforce unique list names per tenant
+    const existing = await this.getRepo().getOneBy('name', {
+      tenant_id: auth.tenant_id,
+      value: payload.name,
+    });
+    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
+
+    const row = {
+      name: payload.name,
+      description: payload.description,
+      object: payload.object,
+      is_dynamic: payload.is_dynamic ?? false,
+      definition: payload.definition ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
+    };
+
+    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
+
+    // For dynamic lists, trigger an immediate initial refresh via background job
+    if (row.is_dynamic) {
+      await this.getRepo()
+        .db.insertInto('background_jobs')
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: list.id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        })
+        .execute();
+    } else {
+      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
+      const ids = payload.member_ids ?? [];
+
+      if (ids.length && payload.object === 'people') {
+        const rows = ids.map((person_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          person_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
+        try {
+          const workflowsController = new WorkflowsController();
+          for (const person_id of ids) {
+            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger list_joined workflow in addList (explicit IDs)');
+        }
+      } else if (ids.length && payload.object === 'households') {
+        const rows = ids.map((household_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          household_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsHouseholdsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+        });
+      } else if (payload.definition) {
+        if (payload.object === 'people') {
+          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
+          const rows = result.rows.map((p) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            person_id: String(p['id']),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsPersonsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+            });
+            try {
+              const workflowsController = new WorkflowsController();
+              for (const r of rows) {
+                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
+              }
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in addList (definition)');
+            }
+          }
+        } else if (payload.object === 'households') {
+          const result = await this.householdsController.getAllWithPeopleCount(
+            auth,
+            payload.definition as getAllOptionsType,
+          );
+          const rows = result.rows.map((h) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            household_id: h['id'],
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsHouseholdsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+            });
+          }
+        }
+      }
+    }
+
+    return list;
+  }
+
+  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    // Set list status to refreshing
+    await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        status: 'refreshing',
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      } as any,
+    });
+
+    // Queue background job
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'refresh_list',
+          list_id: id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return { ...list, status: 'refreshing' };
+  }
+
+  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
+    const auth: IAuthKeyPayload = {
+      tenant_id,
+      user_id,
+      name: 'System Worker',
+      session_id: 'worker-session',
+    };
+
+    const list = (await this.getOneById({ tenant_id, id })) as any;
+    if (!list) {
+      throw new Error(`List ${id} not found`);
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    const definition = list.definition as getAllOptionsType;
+    if (!definition) {
+      // Set back to idle if no definition
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      return list;
+    }
+
+    try {
+      if (list.object === 'people') {
+        // Clear current mappings
+        await this.mapListsPersonsRepo.db
+          .deleteFrom('map_lists_persons')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.personsController.getAllWithAddress(auth, definition);
+        const rows = result.rows.map((p) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          person_id: p['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsPersonsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+          });
+        }
+      } else if (list.object === 'households') {
+        // Clear current mappings
+        await this.mapListsHouseholdsRepo.db
+          .deleteFrom('map_lists_households')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
+        const rows = result.rows.map((h) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          household_id: h['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsHouseholdsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+          });
+        }
+      }
+
+      // Update refreshed timestamp and status back to idle
+      const updated = await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          last_refreshed_at: new Date(),
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+
+      return updated;
+    } catch (error) {
+      // Set status to failed
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'failed',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      throw error;
+    }
+  }
+
+  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Sent newsletters that targeted this list — an indexed join on
+    // map_newsletters_lists (FK-backed), instead of the old fetch-everything
+    // JS filter over the legacy JSONB target_lists document.
+    const targetedNewsletters = await this.getRepo()
+      .db.selectFrom('newsletters')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .selectAll('newsletters')
+      .where('newsletters.tenant_id', '=', auth.tenant_id)
+      .where('newsletters.status', '=', 'sent')
+      .where('map_newsletters_lists.tenant_id', '=', auth.tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .where('map_newsletters_lists.mode', '=', 'include')
+      .execute();
+
+    // Compute aggregated metrics
+    const totalNewsletters = targetedNewsletters.length;
+    let totalDelivered = 0;
+    let totalOpens = 0;
+    let totalClicks = 0;
+
+    for (const n of targetedNewsletters) {
+      totalDelivered += Number(n.delivered_count ?? 0);
+      totalOpens += Number(n.unique_opens ?? 0);
+      totalClicks += Number(n.unique_clicks ?? 0);
+    }
+
+    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
+    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
+
+    return {
+      totalNewsletters,
+      totalDelivered,
+      avgOpenRate,
+      avgClickRate,
+      newsletters: targetedNewsletters.map((n) => ({
+        id: n.id,
+        name: n.name,
+        subject: n.subject,
+        send_date: n.send_date,
+        total_recipients: n.total_recipients,
+        delivered_count: n.delivered_count,
+        open_rate: n.open_rate,
+        click_rate: n.click_rate,
+      })),
+    };
+  }
+
+  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) return 0;
+    if (list.is_dynamic && list.definition) {
+      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
+      if (list.object === 'people') {
+        const data = await this.personsController.getAllWithAddress(auth, opts);
+        return data.count;
+      } else {
+        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
+        return data.count;
+      }
+    } else {
+      if (list.object === 'people') {
+        const result = await this.mapListsPersonsRepo.db
+          .selectFrom('map_lists_persons')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('list_id', '=', id)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      } else {
+        const result = await this.mapListsHouseholdsRepo.db
+          .selectFrom('map_lists_households')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('list_id', '=', id)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      }
+    }
+  }
+
+  /**
+   * The live membership of a list, resolved the way §8 defines each type:
+   * smart lists re-run their stored definition; static lists read the saved
+   * snapshot. Reusable by turf cutting (§13), automations (§16) and CSV import
+   * (§17) — anything that needs "who is in this list today".
+   */
+  public async getCurrentMembers(auth: IAuthKeyPayload, id: string): Promise<ListCurrentMembers> {
+    const raw = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    const list = toListShape(raw);
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Smart list: re-run the definition against live data.
+    if (list.is_dynamic && list.definition) {
+      if (list.object === 'people') {
+        const data = await this.personsController.getAllWithAddress(auth, list.definition);
+        const ids = data.rows.map((r) => String(r['id']));
+        return { object: 'people', ids, count: data.count };
+      }
+      const data = await this.householdsController.getAllWithPeopleCount(auth, list.definition);
+      const ids = data.rows.map((r) => String(r['id']));
+      return { object: 'households', ids, count: data.count };
+    }
+
+    // Static list (or smart with no definition): read the saved snapshot.
+    if (list.object === 'people') {
+      const rows = await this.mapListsPersonsRepo.db
+        .selectFrom('map_lists_persons')
+        .select('person_id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('list_id', '=', id)
+        .execute();
+      const ids = rows.map((r) => String(r.person_id));
+      return { object: 'people', ids, count: ids.length };
+    }
+    const rows = await this.mapListsHouseholdsRepo.db
+      .selectFrom('map_lists_households')
+      .select('household_id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('list_id', '=', id)
+      .execute();
+    const ids = rows.map((r) => String(r.household_id));
+    return { object: 'households', ids, count: ids.length };
+  }
+
+  /**
+   * Everything that references a list — newsletters, forms and teams/turfs.
+   * Drives the "LAST USED IN" column and the delete-confirm body, which must
+   * name a list's consumers before it can be removed (§8).
+   */
+  public async getConsumers(auth: IAuthKeyPayload, id: string): Promise<ListConsumers> {
+    const tenant_id = auth.tenant_id;
+
+    // Newsletters, forms and teams each link to lists through their own
+    // FK-backed junction table (the source of truth after the schema
+    // remediation). Every arm is tenant-scoped on the junction row.
+    const newsletterRows = await this.getRepo()
+      .db.selectFrom('newsletters')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .select(['newsletters.id as id', 'newsletters.name as name'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .execute();
+
+    const formRows = await this.getRepo()
+      .db.selectFrom('web_forms')
+      .innerJoin('map_web_forms_lists', 'map_web_forms_lists.web_form_id', 'web_forms.id')
+      .select(['web_forms.id as id', 'web_forms.name as name'])
+      .where('map_web_forms_lists.tenant_id', '=', tenant_id)
+      .where('map_web_forms_lists.list_id', '=', id)
+      .execute();
+
+    const teamRows = await this.getRepo()
+      .db.selectFrom('teams')
+      .innerJoin('map_teams_lists', 'map_teams_lists.team_id', 'teams.id')
+      .select(['teams.id as id', 'teams.name as name'])
+      .where('map_teams_lists.tenant_id', '=', tenant_id)
+      .where('map_teams_lists.list_id', '=', id)
+      .execute();
+
+    const newsletters: ListConsumer[] = newsletterRows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      kind: 'newsletter' as const,
+    }));
+    const forms: ListConsumer[] = formRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'form' as const }));
+    const teams: ListConsumer[] = teamRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'team' as const }));
+
+    return {
+      newsletters,
+      forms,
+      teams,
+      total: newsletters.length + forms.length + teams.length,
+    };
+  }
+
+  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    };
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
+    });
+
+    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
+      // Update status to refreshing
+      await this.update({
+        tenant_id: auth.tenant_id,
+        id,
+        row: {
+          status: 'refreshing',
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+
+      await this.getRepo()
+        .db.insertInto('background_jobs')
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        })
+        .execute();
+    }
+
+    return result;
+  }
+
+  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', '=', idToDelete)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', '=', idToDelete)
+      .execute();
+
+    return super.delete(tenant_id as any, idToDelete, userId);
+  }
+
+  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
+    if (idsToDelete.length === 0) return false;
+
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    return super.deleteMany(tenant_id as any, idsToDelete);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const list = (await super.getOneById(input)) as any;
+    if (list && list.is_dynamic) {
+      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
+        if (list.status !== 'refreshing') {
+          // Lazily trigger refresh in background
+          const mockAuth: IAuthKeyPayload = {
+            tenant_id: input.tenant_id,
+            user_id: list.createdby_id,
+            name: 'System Worker',
+            session_id: 'lazy-refresh',
+          };
+          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
+            logger.error({ err }, `Failed to lazily queue refresh for list ${input.id}`),
+          );
+          (this as any)._lastLazyRefreshPromise = promise;
+        }
+      }
+    }
+    if (!list) return list;
+    return this.resolveCreatorAndUpdater(input.tenant_id, list);
+  }
+}
+````
+
 ## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
 ````typescript
 import type { FastifyPluginCallback } from 'fastify';
@@ -29015,1567 +29772,491 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 export default volunteerEventsPublicRoute;
 ````
 
-## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
+## File: apps/backend/src/trpc.ts
 ````typescript
-import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+// tsco:ignore
+//
+import { TRPCError, initTRPC } from '@trpc/server';
+import { ZodError } from 'zod';
+import type { Context } from './context';
+import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
+import superjson from 'superjson';
+import { logger } from './app/logger';
+import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
+
+const trpc = initTRPC.context<Context>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    logger.error({ err: error }, 'tRPC Error');
+    if (error.cause) {
+      logger.error({ err: error.cause }, 'tRPC Error Cause');
+    }
+    // Path may be on error.path, or on shape.data.path (or absent)
+    const errorObj = error as unknown as Record<string, unknown>;
+    const pathStr: string =
+      (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
+      (shape.data?.path as string | undefined) ??
+      '';
+
+    const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
+
+    // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
+    const isZod =
+      error.cause instanceof ZodError || Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
+
+    const isZodOrBadRequest = isZod || error.code === 'BAD_REQUEST';
+
+    // Collapse auth-ish cases
+    const isCredsProblem =
+      error.code === 'UNAUTHORIZED' ||
+      error.code === 'NOT_FOUND' ||
+      error.cause?.name === 'InvalidCredentialsError' ||
+      (error.cause as unknown as Record<string, unknown> | undefined)?.['code'] === 'USER_NOT_FOUND';
+
+    let finalShape = shape;
+    if (isZod) {
+      finalShape = {
+        ...shape,
+        data: {
+          ...shape.data,
+          code: 'BAD_REQUEST',
+          isZodError: true,
+        } as any,
+      } as any;
+    }
+
+    if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
+      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
+    }
+
+    // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
+    const causeData = (error.cause as any)?.data;
+    if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
+      return { ...finalShape, data: { ...finalShape.data, ...causeData } };
+    }
+
+    return finalShape;
+  },
+});
+
+export const middleware = trpc.middleware;
+
+const errorMappingMiddleware = middleware(async (opts) => {
+  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
+  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
+  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
+  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
+  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
+  // is kept as a safety net in case a future path throws synchronously.
+  let result: Awaited<ReturnType<typeof opts.next>>;
+  try {
+    result = await opts.next();
+  } catch (err) {
+    throw toTRPCError(err);
+  }
+
+  if (!result.ok && isAppErrorLike(result.error.cause)) {
+    throw toTRPCError(result.error.cause);
+  }
+
+  return result;
+});
+
+export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
+
+export const router = trpc.router;
+
+import { BaseRepository } from './app/lib/base.repo';
+import { runWithTenant } from './app/lib/tenant-context';
+import { hashToken } from './app/lib/token-hash';
+
+const isAuthed = middleware(async (opts) => {
+  const { ctx } = opts;
+
+  if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  // Capture the narrowed, non-null auth so the closure below keeps the narrowing.
+  const auth = ctx.auth;
+
+  // S-1 (schema review 2026-07-06 §6): bind the tenant to the async context for
+  // the remainder of the request. The runtime pool's onReserveConnection hook
+  // (base.repo.ts) reads it and sets the `app.tenant_id` GUC on every connection
+  // checkout, so Postgres RLS scopes every query — a backstop beneath the
+  // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
+  // harmless (they are already tenant-scoped) and covers all downstream resolvers.
+  return runWithTenant(auth.tenant_id, async () => {
+    let user: { role: string | null; verified: boolean } | undefined;
+    if (/^\d+$/.test(auth.user_id)) {
+      const record = await BaseRepository.dbInstance
+        .selectFrom('authusers')
+        .select(['role', 'verified'])
+        .where('id', '=', auth.user_id)
+        .where('tenant_id', '=', auth.tenant_id)
+        .executeTakeFirst();
+      if (record) {
+        user = {
+          role: record.role,
+          verified: record.verified === true || String(record.verified) === 'true',
+        };
+      }
+    }
+
+    if (!user) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    // Enforce session revocation. The access token embeds the plaintext session_id;
+    // its hash must still map to an active, unexpired row in `sessions`. Deleting the
+    // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
+    // therefore invalidates the access token immediately instead of leaving it usable
+    // until the ~30-minute JWT expiry.
+    const session = await BaseRepository.dbInstance
+      .selectFrom('sessions')
+      .select(['id', 'expires_at'])
+      .where('session_id', '=', hashToken(auth.session_id))
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+
+    if (!session) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    if (opts.type === 'mutation' && user.role === 'viewer') {
+      const isExempt =
+        opts.path === 'cancelEmailChange' ||
+        opts.path.endsWith('.cancelEmailChange') ||
+        opts.path === 'signOut' ||
+        opts.path.endsWith('.signOut');
+      if (!isExempt) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Viewers are not allowed to make changes.',
+        });
+      }
+    }
+
+    const authWithRole = {
+      ...auth,
+      role: user.role,
+    };
+
+    return opts.next({ ctx: { ...ctx, auth: authWithRole } });
+  });
+});
+
+export const authProcedure = publicProcedure.use(isAuthed);
+
+export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
+  const { ctx } = opts;
+  if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only admins or owners can perform this action.',
+    });
+  }
+  return opts.next({ ctx });
+});
+````
+
+## File: apps/backend/src/app/_migrations/2026-07-07-record-slugs.ts
+````typescript
+import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
-import { logger } from '../../../logger';
+/**
+ * Record slugs for persons, households and companies (spec §1 security surface:
+ * routes use record slugs — /people/amira-hassan — never internal IDs).
+ *
+ * Follows the existing slug shape used by events/web_forms/volunteer_events:
+ * a `slug text` column with a `UNIQUE (tenant_id, slug)` btree index (compare
+ * `events_tenant_slug_unique`). Generation on create/rename lives in the app
+ * layer (`apps/backend/src/app/lib/slug.ts`, generalized from the web-forms
+ * `uniqueSlug` pattern); this migration only adds the columns, backfills every
+ * existing row with collision suffixes (-2, -3, … per tenant), and enforces
+ * uniqueness.
+ *
+ * Slug sources: persons = first+last name (fallback "person"), households =
+ * street number + street (fallback "household"), companies = name (fallback
+ * "company"). An all-digit slug gets the fallback prefixed so a slug can never
+ * be mistaken for a numeric-ID URL, which the frontend still accepts and
+ * redirects. Pattern notes for later waves: docs/RECORD-SLUGS.md.
+ */
 
-export class HouseholdRepo extends BaseRepository<'households'> {
-  constructor() {
-    super('households');
-  }
+const TABLES = [
+  { table: 'persons', fallback: 'person', source: `coalesce(first_name, '') || ' ' || coalesce(last_name, '')` },
+  { table: 'households', fallback: 'household', source: `coalesce(street_num, '') || ' ' || coalesce(street1, '')` },
+  { table: 'companies', fallback: 'company', source: `coalesce(name, '')` },
+] as const;
 
-  public override async addMany(
-    input: { rows: OperationDataType<'households', 'insert'>[] },
-    trx?: Transaction<Models>,
-  ) {
-    const processedRows = await Promise.all(
-      input.rows.map(async (row) => {
-        const isBlank = isBlankAddress(row);
-        const isIncomplete = isIncompleteAddress(row);
+export async function up(db: Kysely<any>): Promise<void> {
+  for (const { table, fallback, source } of TABLES) {
+    await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
 
-        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
-        let district = row.district ?? null;
-        let precinct = row.precinct ?? null;
-        let ward = row.ward ?? null;
-
-        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during insert');
-          }
-        }
-
-        return {
-          ...row,
-          district,
-          precinct,
-          ward,
-          geocoding_status,
-        };
-      }),
-    );
-
-    const createdRows = await super.addMany({ rows: processedRows }, trx);
-    const db = trx || this.db;
-
-    const jobs = createdRows
-      .filter((row) => row && row.id && row.geocoding_status === 'pending')
-      .map((row) => ({
-        tenant_id: row.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'geocode_household',
-          household_id: String(row.id),
-          tenant_id: row.tenant_id,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      }));
-
-    if (jobs.length > 0) {
-      await db.insertInto('background_jobs').values(jobs).execute();
-    }
-
-    return createdRows;
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    let query = this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id);
-
-    if (input.onlyEmpty) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
-          ),
-        ),
-      );
-    }
-
-    const rows = await query.execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql<Date>`now()`,
-      } as unknown as OperationDataType<'households', 'update'>)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id)
-      .where('home_phone', 'is', null)
-      .where('apt', 'is', null)
-      .where('street_num', 'is', null)
-      .where('street1', 'is', null)
-      .where('street2', 'is', null)
-      .where('city', 'is', null)
-      .where('state', 'is', null)
-      .where('zip', 'is', null)
-      .where('country', 'is', null)
-      .where('file_id', 'is', null)
-      .where('notes', 'is', null)
-      .selectAll()
-      .limit(1)
-      .executeTakeFirst();
-  }
-
-  public async findByFingerprint(
-    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
-    trx?: Transaction<Models>,
-  ) {
-    const sel = this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id);
-
-    if (input.fp_full) {
-      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
-      if (full) return full;
-    }
-    if (input.fp_street) {
-      return await this.getSelect(trx)
-        .where('tenant_id', '=', input.tenant_id)
-        .where('campaign_id', '=', input.campaign_id)
-        .where('address_fp_street', '=', input.fp_street)
-        .selectAll()
-        .limit(1)
-        .executeTakeFirst();
-    }
-    return undefined;
-  }
-
-  public async getAllWithPeopleCount(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
-      string,
-      { value: unknown } | undefined
-    >;
-
-    // Shared where clause builder (for both queries)
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('households.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_households')
-              .select('household_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .where('households.tenant_id', '=', tenantId)
-        .where((eb) =>
-          eb.or([
-            eb('tenants.placeholder_household_id', 'is', null),
-            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
-          ]),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-              households.city ILIKE ${text} OR
-              households.street1 ILIKE ${text} OR
-              households.street2 ILIKE ${text} OR
-              households.notes ILIKE ${text} OR
-              tags.name ILIKE ${text}
-            )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street2: { col: 'households.street2' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        home_phone: { col: 'households.home_phone' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('persons')
-          .whereRef('persons.household_id', '=', 'households.id')
-          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
-          .as('persons_count'),
-        // is_placeholder: true only for the one household stored on the tenant row
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('is_placeholder'),
-      ])
-      .select(() => [
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-        'households.created_at',
-        'households.updated_at',
-        'households.campaign_id',
-        'households.createdby_id',
-        'households.updatedby_id',
-        'households.file_id',
-        'households.address_fp_street',
-        'households.address_fp_full',
-        'households.tenant_id',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const hhCols = [
-              'id',
-              'campaign_id',
-              'createdby_id',
-              'file_id',
-              'home_phone',
-              'notes',
-              'address_fp_street',
-              'address_fp_full',
-              'is_placeholder',
-              'district',
-              'precinct',
-              'ward',
-              'geocoding_status',
-              'tenant_id',
-              'updatedby_id',
-              'created_at',
-              'updated_at',
-              'country',
-              'zip',
-              'state',
-              'city',
-              'street1',
-              'street2',
-              'street_num',
-              'apt',
-            ];
-            if (hhCols.includes(col)) {
-              col = `households.${col}`;
-            }
-          }
-          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
-        }, qb),
+    // Backfill: slugify the source, guard all-digit results, dedupe per tenant
+    // with -2, -3… suffixes (deterministic by id). This runs under the table's
+    // FORCE ROW LEVEL SECURITY; with no `app.tenant_id` GUC set the tenant
+    // policy's `NULLIF(...) IS NULL` escape permits every row, so the write
+    // reaches all rows (see the row_security strip in 0001_baseline.ts).
+    await sql`
+      WITH base AS (
+        SELECT id, tenant_id,
+          left(btrim(regexp_replace(lower(${sql.raw(source)}), '[^a-z0-9]+', '-', 'g'), '-'), 80) AS b
+        FROM ${sql.table(table)}
+        WHERE slug IS NULL
+      ),
+      named AS (
+        SELECT id, tenant_id,
+          CASE
+            WHEN b = '' THEN ${fallback}
+            WHEN b ~ '^[0-9]+$' THEN ${fallback} || '-' || b
+            ELSE b
+          END AS b
+        FROM base
+      ),
+      deduped AS (
+        SELECT id, b, row_number() OVER (PARTITION BY tenant_id, b ORDER BY id) AS rn
+        FROM named
       )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
+      UPDATE ${sql.table(table)} t
+      SET slug = CASE WHEN d.rn = 1 THEN d.b ELSE d.b || '-' || d.rn END
+      FROM deduped d
+      WHERE t.id = d.id
+    `.execute(db);
 
-    return {
-      rows,
-      count,
-    };
+    // Residual duplicates are possible when a real name slugifies to an
+    // already-suffixed value (e.g. a person literally named "Amira Hassan 2").
+    // Disambiguate those rare rows with the row id, which is always unique.
+    await sql`
+      UPDATE ${sql.table(table)} t
+      SET slug = t.slug || '-' || t.id
+      FROM (
+        SELECT id, row_number() OVER (PARTITION BY tenant_id, slug ORDER BY id) AS rn
+        FROM ${sql.table(table)}
+      ) d
+      WHERE t.id = d.id AND d.rn > 1
+    `.execute(db);
+
+    // Restore the tenant-isolation backstop dropped for the backfill above.
+    await sql`ALTER TABLE ${sql.table(table)} FORCE ROW LEVEL SECURITY`.execute(db);
+
+    // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
+    // not-yet-backfilled bulk row can exist mid-import without tripping it.
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}
+      ON ${sql.table(table)} USING btree (tenant_id, slug)
+      WHERE (slug IS NOT NULL)
+    `.execute(db);
   }
+}
 
-  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
-    if (!candidates.length) return new Set();
-    const result = await this.getSelect()
-      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('households.id', 'in', candidates)
-      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
-      .select('households.id')
-      .execute();
-    return new Set(result.map((r) => String(r.id)));
-  }
-
-  /**
-   * Deletes households and reassigns their members to the tenant's placeholder
-   * household. persons.household_id is NOT NULL, so members are *moved* rather
-   * than cascade-deleted along with the household. Runs in a single transaction
-   * so persons are never orphaned. Callers must exclude the placeholder household
-   * itself from `ids` (see getPlaceholderIds).
-   */
-  public async deleteManyReassigningPersons(input: {
-    tenant_id: string;
-    ids: string[];
-    user_id: string;
-  }): Promise<boolean> {
-    if (!input.ids.length) return false;
-
-    return this.transaction().execute(async (trx) => {
-      const tenant = await trx
-        .selectFrom('tenants')
-        .select('placeholder_household_id')
-        .where('id', '=', input.tenant_id)
-        .executeTakeFirst();
-
-      const placeholderId = tenant?.placeholder_household_id;
-
-      if (placeholderId != null) {
-        await trx
-          .updateTable('persons')
-          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', 'in', input.ids)
-          .execute();
-      }
-
-      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
-    });
-  }
-
-  public async getPeopleCount(input: { tenant_id: string; id: string }) {
-    const result = await this.getSelect()
-      .leftJoin('persons', 'persons.household_id', 'households.id')
-      .where('households.id', '=', input.id)
-      .where('households.tenant_id', '=', input.tenant_id)
-      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
-      .executeTakeFirst();
-
-    return Number((result as { count?: number } | undefined)?.count ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
-  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
-  public getOneBySlug(input: { tenant_id: string; slug: string }) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('slug', '=', input.slug)
-      .executeTakeFirst();
-  }
-
-  /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
-  public async countDistinctWards(tenant_id: string): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .where('ward', 'is not', null)
-      .where('ward', '!=', '')
-      .executeTakeFirst();
-    return Number(result?.count ?? 0);
-  }
-
-  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
-    let q = this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.id', '=', id)
-      .where('households.tenant_id', '=', tenant_id);
-    if (type) {
-      q = q.where('tags.type', '=', type);
-    }
-    return q.select('tags.name').execute();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'households.id',
-        'households.street_num',
-        'households.street1',
-        'households.street2',
-        'households.city',
-        'households.state',
-        'households.zip',
-        'households.country',
-        'households.apt',
-        'households.home_phone',
-        'households.notes',
-        'households.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const hhIds = rows.map((r) => String(r.id));
-    if (hhIds.length === 0) {
-      return { groups: [], total };
-    }
-
-    const persons = await this.db
-      .selectFrom('persons')
-      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'in', hhIds)
-      .execute();
-
-    const hhToPersons = new Map<
-      string,
-      Array<{
-        id: unknown;
-        first_name: string | null;
-        last_name: string | null;
-        email: string | null;
-        household_id: unknown;
-      }>
-    >();
-    for (const p of persons) {
-      const hhId = String(p.household_id);
-      if (!hhToPersons.has(hhId)) {
-        hhToPersons.set(hhId, []);
-      }
-      hhToPersons.get(hhId)?.push(p);
-    }
-
-    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          households: [],
-        });
-      }
-      groupsMap.get(groupKey)?.households.push({
-        ...row,
-        id: String(row.id),
-        persons: hhToPersons.get(String(row.id)) || [],
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['households']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['households']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source household not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'apt',
-        'street_num',
-        'street1',
-        'street2',
-        'city',
-        'state',
-        'zip',
-        'country',
-        'home_phone',
-        'notes',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_households_tags)
-      const targetTags = await trx
-        .selectFrom('map_households_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_households_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_households_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_households_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_households)
-      const targetLists = await trx
-        .selectFrom('map_lists_households')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_households')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_households')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_households')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 4. Reassign people (persons.household_id)
-      await trx
-        .updateTable('persons')
-        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 5. Delete source household
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      return { success: true };
-    });
+export async function down(db: Kysely<any>): Promise<void> {
+  for (const { table } of TABLES) {
+    await sql`DROP INDEX IF EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}`.execute(db);
+    await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
   }
 }
 ````
 
-## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
 ````typescript
-import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
 
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
+/**
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ */
+const idSchema = z.union([z.string(), z.number()]).transform(String);
 
-export class PersonsRepo extends BaseRepository<'persons'> {
-  constructor() {
-    super('persons');
-  }
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
 
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
 
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
 
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
-    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
-    if (!ids.length) return [];
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+    // A user-triggered "Re-check Google" re-runs the lookup even when the
+    // company was already enriched; the auto-queue on first load does not.
+    force: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
 
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
 
-    let query = this.getSelect(trx)
-      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .where('persons.id', 'in', ids);
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
 
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
-    }
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
 
-    const rows = await query.execute();
-    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (!id || map.has(id)) continue;
-      map.set(id, {
-        id,
-        first_name: row.first_name ?? '',
-        last_name: row.last_name ?? '',
-        email: row.email ?? null,
-      });
-    }
-    return Array.from(map.values());
-  }
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
 
-  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('createdby_id', '=', input.user_id)
-      .executeTakeFirst();
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
 
-    return {
-      total: Number(row?.total ?? 0),
-      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
-    };
-  }
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
 
-  public async moveToNewHousehold(input: {
-    tenant_id: string;
-    person_id: string;
-    user_id: string;
-    campaign_id: string;
-  }) {
-    const households = new HouseholdRepo();
-    return this.transaction().execute(async (trx) => {
-      // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
-      let targetId = existingBlank?.id as string | undefined;
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
 
-      if (!targetId) {
-        const newHousehold = await households.add(
-          {
-            row: {
-              tenant_id: input.tenant_id,
-              campaign_id: input.campaign_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            } as OperationDataType<'households', 'insert'>,
-          },
-          trx,
-        );
-        targetId = newHousehold?.id as string | undefined;
-      }
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
+  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
+  list_name: z.string().nullish(),
+  client_skip_reasons: z
+    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
+    .nullish(),
+});
 
-      await this.update(
-        {
-          tenant_id: input.tenant_id,
-          id: input.person_id,
-          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
-        },
-        trx,
-      );
-
-      return { household_id: targetId };
-    });
-  }
-
-  public async getAllWithAddress(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-
-    // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .leftJoin('companies', 'persons.company_id', 'companies.id')
-        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
-        .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('persons.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-            persons.first_name ILIKE ${text} OR
-            persons.last_name ILIKE ${text} OR
-            persons.email ILIKE ${text} OR
-            persons.mobile ILIKE ${text} OR
-            households.city ILIKE ${text} OR
-            households.street1 ILIKE ${text} OR
-            companies.name ILIKE ${text} OR
-            tags.name ILIKE ${text}
-          )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        first_name: { col: 'persons.first_name' },
-        last_name: { col: 'persons.last_name' },
-        email: { col: 'persons.email' },
-        mobile: { col: 'persons.mobile' },
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-        company_name: { col: 'companies.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select((eb) => [
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'companies.name as company_name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('household_is_placeholder'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'persons.created_at',
-        'persons.updated_at',
-        'persons.tenant_id',
-        'persons.createdby_id',
-        'persons.updatedby_id',
-        'companies.name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const personsCols = [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'mobile',
-              'notes',
-              'household_id',
-              'company_id',
-              'created_at',
-              'updated_at',
-              'tenant_id',
-              'createdby_id',
-              'updatedby_id',
-            ];
-            if (personsCols.includes(col)) {
-              col = `persons.${col}`;
-            } else {
-              const hhCols = [
-                'country',
-                'zip',
-                'state',
-                'home_phone',
-                'city',
-                'street1',
-                'street2',
-                'street_num',
-                'apt',
-              ];
-              if (hhCols.includes(col)) {
-                col = `households.${col}`;
-              } else if (col === 'company_name') {
-                col = `companies.name`;
-              } else if (col === 'address') {
-                col = `households.street1`;
-              }
-            }
-          }
-          return acc.orderBy(col, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { count, rows };
-  }
-
-  public getByHouseholdId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('household_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public getByCompanyId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
-  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-  public getOneBySlug(input: { tenant_id: string; slug: string }) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('slug', '=', input.slug)
-      .executeTakeFirst();
-  }
-
-  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
-  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', 'is not', null)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
-    let q = this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('tags.type', '=', input.type);
-    }
-    return q.select('tags.name').execute();
-  }
-  public async findByEmail(input: { tenant_id: string; email: string }) {
-    return this.getSelect()
-      .select(['id', 'email'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
-      .executeTakeFirst();
-  }
-
-  /**
-   * Batched email-identity lookup for the CSV import wizard's Review step
-   * (spec §17) — given a set of candidate emails, return the existing person
-   * each one matches (if any), so the wizard can show "3 rows match people
-   * you already have" with a door to each matched person.
-   */
-  public async findManyByEmails(input: { tenant_id: string; emails: string[] }) {
-    const normalized = Array.from(
-      new Set(input.emails.map((email) => email.trim().toLowerCase()).filter((email) => email.length > 0)),
-    );
-    if (normalized.length === 0) return [];
-
-    return this.getSelect()
-      .select(['id', 'first_name', 'last_name', 'email', 'slug'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, 'in', normalized)
-      .execute();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.home_phone',
-        'persons.notes',
-        'persons.company_id',
-        'persons.household_id',
-        'persons.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          persons: [],
-        });
-      }
-      groupsMap.get(groupKey)?.persons.push({
-        ...row,
-        id: String(row.id),
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source person not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'first_name',
-        'middle_names',
-        'last_name',
-        'email',
-        'email2',
-        'mobile',
-        'home_phone',
-        'notes',
-        'company_id',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx
-        .selectFrom('map_lists_persons')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_persons')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select('team_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
-
-      const sourceTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select(['team_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTeams) {
-        if (!targetTeamIds.has(String(st.team_id))) {
-          await trx
-            .insertInto('map_teams_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              team_id: st.team_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_teams_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 5. Reassign captaincy if source was captain of any team
-      await trx
-        .updateTable('teams')
-        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('team_captain_id', '=', input.source_id)
-        .execute();
-      // 6. Delete source person
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      // 7. Clean up empty household if source's household is now empty
-      const sourceHhId = source.household_id;
-      if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', '=', sourceHhId)
-          .execute();
-        if (remainingHhMembers.length === 0) {
-          // Clean up orphaned household associations before deletion
-          await trx
-            .deleteFrom('map_households_tags')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('map_lists_households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('id', '=', sourceHhId)
-            .execute();
-        }
-      }
-
-      return { success: true };
-    });
-  }
-}
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ````
 
 ## File: apps/backend/src/app/modules/persons/trpc.router.ts
@@ -31157,198 +30838,6 @@ export class FastifyServer {
     }
   }
 }
-````
-
-## File: apps/backend/src/trpc.ts
-````typescript
-// tsco:ignore
-//
-import { TRPCError, initTRPC } from '@trpc/server';
-import { ZodError } from 'zod';
-import type { Context } from './context';
-import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
-import superjson from 'superjson';
-import { logger } from './app/logger';
-import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
-
-const trpc = initTRPC.context<Context>().create({
-  transformer: superjson,
-  errorFormatter({ shape, error }) {
-    logger.error({ err: error }, 'tRPC Error');
-    if (error.cause) {
-      logger.error({ err: error.cause }, 'tRPC Error Cause');
-    }
-    // Path may be on error.path, or on shape.data.path (or absent)
-    const errorObj = error as unknown as Record<string, unknown>;
-    const pathStr: string =
-      (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
-      (shape.data?.path as string | undefined) ??
-      '';
-
-    const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
-
-    // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
-    const isZod =
-      error.cause instanceof ZodError || Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
-
-    const isZodOrBadRequest = isZod || error.code === 'BAD_REQUEST';
-
-    // Collapse auth-ish cases
-    const isCredsProblem =
-      error.code === 'UNAUTHORIZED' ||
-      error.code === 'NOT_FOUND' ||
-      error.cause?.name === 'InvalidCredentialsError' ||
-      (error.cause as unknown as Record<string, unknown> | undefined)?.['code'] === 'USER_NOT_FOUND';
-
-    let finalShape = shape;
-    if (isZod) {
-      finalShape = {
-        ...shape,
-        data: {
-          ...shape.data,
-          code: 'BAD_REQUEST',
-          isZodError: true,
-        } as any,
-      } as any;
-    }
-
-    if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
-      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
-    }
-
-    // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
-    const causeData = (error.cause as any)?.data;
-    if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
-      return { ...finalShape, data: { ...finalShape.data, ...causeData } };
-    }
-
-    return finalShape;
-  },
-});
-
-export const middleware = trpc.middleware;
-
-const errorMappingMiddleware = middleware(async (opts) => {
-  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
-  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
-  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
-  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
-  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
-  // is kept as a safety net in case a future path throws synchronously.
-  let result: Awaited<ReturnType<typeof opts.next>>;
-  try {
-    result = await opts.next();
-  } catch (err) {
-    throw toTRPCError(err);
-  }
-
-  if (!result.ok && isAppErrorLike(result.error.cause)) {
-    throw toTRPCError(result.error.cause);
-  }
-
-  return result;
-});
-
-export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
-
-export const router = trpc.router;
-
-import { BaseRepository } from './app/lib/base.repo';
-import { runWithTenant } from './app/lib/tenant-context';
-import { hashToken } from './app/lib/token-hash';
-
-const isAuthed = middleware(async (opts) => {
-  const { ctx } = opts;
-
-  if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
-    throw new TRPCError({ code: 'UNAUTHORIZED' });
-  }
-  // Capture the narrowed, non-null auth so the closure below keeps the narrowing.
-  const auth = ctx.auth;
-
-  // S-1 (schema review 2026-07-06 §6): bind the tenant to the async context for
-  // the remainder of the request. The runtime pool's onReserveConnection hook
-  // (base.repo.ts) reads it and sets the `app.tenant_id` GUC on every connection
-  // checkout, so Postgres RLS scopes every query — a backstop beneath the
-  // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
-  // harmless (they are already tenant-scoped) and covers all downstream resolvers.
-  return runWithTenant(auth.tenant_id, async () => {
-    let user: { role: string | null; verified: boolean } | undefined;
-    if (/^\d+$/.test(auth.user_id)) {
-      const record = await BaseRepository.dbInstance
-        .selectFrom('authusers')
-        .select(['role', 'verified'])
-        .where('id', '=', auth.user_id)
-        .where('tenant_id', '=', auth.tenant_id)
-        .executeTakeFirst();
-      if (record) {
-        user = {
-          role: record.role,
-          verified: record.verified === true || String(record.verified) === 'true',
-        };
-      }
-    }
-
-    if (!user) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    // Enforce session revocation. The access token embeds the plaintext session_id;
-    // its hash must still map to an active, unexpired row in `sessions`. Deleting the
-    // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
-    // therefore invalidates the access token immediately instead of leaving it usable
-    // until the ~30-minute JWT expiry.
-    const session = await BaseRepository.dbInstance
-      .selectFrom('sessions')
-      .select(['id', 'expires_at'])
-      .where('session_id', '=', hashToken(auth.session_id))
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'active')
-      .executeTakeFirst();
-
-    if (!session) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    if (opts.type === 'mutation' && user.role === 'viewer') {
-      const isExempt =
-        opts.path === 'cancelEmailChange' ||
-        opts.path.endsWith('.cancelEmailChange') ||
-        opts.path === 'signOut' ||
-        opts.path.endsWith('.signOut');
-      if (!isExempt) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Viewers are not allowed to make changes.',
-        });
-      }
-    }
-
-    const authWithRole = {
-      ...auth,
-      role: user.role,
-    };
-
-    return opts.next({ ctx: { ...ctx, auth: authWithRole } });
-  });
-});
-
-export const authProcedure = publicProcedure.use(isAuthed);
-
-export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
-  const { ctx } = opts;
-  if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Only admins or owners can perform this action.',
-    });
-  }
-  return opts.next({ ctx });
-});
 ````
 
 ## File: apps/backend/src/app/_migrations/schema.sql
@@ -39473,6 +38962,1599 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 --
 
 \unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
+````
+
+## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
+````typescript
+import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
+import { logger } from '../../../logger';
+
+export class HouseholdRepo extends BaseRepository<'households'> {
+  constructor() {
+    super('households');
+  }
+
+  public override async addMany(
+    input: { rows: OperationDataType<'households', 'insert'>[] },
+    trx?: Transaction<Models>,
+  ) {
+    const processedRows = await Promise.all(
+      input.rows.map(async (row) => {
+        const isBlank = isBlankAddress(row);
+        const isIncomplete = isIncompleteAddress(row);
+
+        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
+        let district = row.district ?? null;
+        let precinct = row.precinct ?? null;
+        let ward = row.ward ?? null;
+
+        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during insert');
+          }
+        }
+
+        return {
+          ...row,
+          district,
+          precinct,
+          ward,
+          geocoding_status,
+        };
+      }),
+    );
+
+    const createdRows = await super.addMany({ rows: processedRows }, trx);
+    const db = trx || this.db;
+
+    const jobs = createdRows
+      .filter((row) => row && row.id && row.geocoding_status === 'pending')
+      .map((row) => ({
+        tenant_id: row.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'geocode_household',
+          household_id: String(row.id),
+          tenant_id: row.tenant_id,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      }));
+
+    if (jobs.length > 0) {
+      await db.insertInto('background_jobs').values(jobs).execute();
+    }
+
+    return createdRows;
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    let query = this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id);
+
+    if (input.onlyEmpty) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
+          ),
+        ),
+      );
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql<Date>`now()`,
+      } as unknown as OperationDataType<'households', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id)
+      .where('home_phone', 'is', null)
+      .where('apt', 'is', null)
+      .where('street_num', 'is', null)
+      .where('street1', 'is', null)
+      .where('street2', 'is', null)
+      .where('city', 'is', null)
+      .where('state', 'is', null)
+      .where('zip', 'is', null)
+      .where('country', 'is', null)
+      .where('file_id', 'is', null)
+      .where('notes', 'is', null)
+      .selectAll()
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  public async findByFingerprint(
+    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
+    trx?: Transaction<Models>,
+  ) {
+    const sel = this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id);
+
+    if (input.fp_full) {
+      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
+      if (full) return full;
+    }
+    if (input.fp_street) {
+      return await this.getSelect(trx)
+        .where('tenant_id', '=', input.tenant_id)
+        .where('campaign_id', '=', input.campaign_id)
+        .where('address_fp_street', '=', input.fp_street)
+        .selectAll()
+        .limit(1)
+        .executeTakeFirst();
+    }
+    return undefined;
+  }
+
+  public async getAllWithPeopleCount(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
+      string,
+      { value: unknown } | undefined
+    >;
+
+    // Shared where clause builder (for both queries)
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('households.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_households')
+              .select('household_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .where('households.tenant_id', '=', tenantId)
+        .where((eb) =>
+          eb.or([
+            eb('tenants.placeholder_household_id', 'is', null),
+            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+          ]),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+              households.city ILIKE ${text} OR
+              households.street1 ILIKE ${text} OR
+              households.street2 ILIKE ${text} OR
+              households.notes ILIKE ${text} OR
+              tags.name ILIKE ${text}
+            )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street2: { col: 'households.street2' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        home_phone: { col: 'households.home_phone' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
+          .as('persons_count'),
+        // is_placeholder: true only for the one household stored on the tenant row
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('is_placeholder'),
+      ])
+      .select(() => [
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+        'households.created_at',
+        'households.updated_at',
+        'households.campaign_id',
+        'households.createdby_id',
+        'households.updatedby_id',
+        'households.file_id',
+        'households.address_fp_street',
+        'households.address_fp_full',
+        'households.tenant_id',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const hhCols = [
+              'id',
+              'campaign_id',
+              'createdby_id',
+              'file_id',
+              'home_phone',
+              'notes',
+              'address_fp_street',
+              'address_fp_full',
+              'is_placeholder',
+              'district',
+              'precinct',
+              'ward',
+              'geocoding_status',
+              'tenant_id',
+              'updatedby_id',
+              'created_at',
+              'updated_at',
+              'country',
+              'zip',
+              'state',
+              'city',
+              'street1',
+              'street2',
+              'street_num',
+              'apt',
+            ];
+            if (hhCols.includes(col)) {
+              col = `households.${col}`;
+            }
+          }
+          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return {
+      rows,
+      count,
+    };
+  }
+
+  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
+    if (!candidates.length) return new Set();
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('households.id', 'in', candidates)
+      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
+      .select('households.id')
+      .execute();
+    return new Set(result.map((r) => String(r.id)));
+  }
+
+  /**
+   * Deletes households and reassigns their members to the tenant's placeholder
+   * household. persons.household_id is NOT NULL, so members are *moved* rather
+   * than cascade-deleted along with the household. Runs in a single transaction
+   * so persons are never orphaned. Callers must exclude the placeholder household
+   * itself from `ids` (see getPlaceholderIds).
+   */
+  public async deleteManyReassigningPersons(input: {
+    tenant_id: string;
+    ids: string[];
+    user_id: string;
+  }): Promise<boolean> {
+    if (!input.ids.length) return false;
+
+    return this.transaction().execute(async (trx) => {
+      const tenant = await trx
+        .selectFrom('tenants')
+        .select('placeholder_household_id')
+        .where('id', '=', input.tenant_id)
+        .executeTakeFirst();
+
+      const placeholderId = tenant?.placeholder_household_id;
+
+      if (placeholderId != null) {
+        await trx
+          .updateTable('persons')
+          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', 'in', input.ids)
+          .execute();
+      }
+
+      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
+    });
+  }
+
+  public async getPeopleCount(input: { tenant_id: string; id: string }) {
+    const result = await this.getSelect()
+      .leftJoin('persons', 'persons.household_id', 'households.id')
+      .where('households.id', '=', input.id)
+      .where('households.tenant_id', '=', input.tenant_id)
+      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
+      .executeTakeFirst();
+
+    return Number((result as { count?: number } | undefined)?.count ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
+  public async countDistinctWards(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('ward', 'is not', null)
+      .where('ward', '!=', '')
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
+  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
+    let q = this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.id', '=', id)
+      .where('households.tenant_id', '=', tenant_id);
+    if (type) {
+      q = q.where('tags.type', '=', type);
+    }
+    return q.select('tags.name').execute();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'households.id',
+        'households.street_num',
+        'households.street1',
+        'households.street2',
+        'households.city',
+        'households.state',
+        'households.zip',
+        'households.country',
+        'households.apt',
+        'households.home_phone',
+        'households.notes',
+        'households.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const hhIds = rows.map((r) => String(r.id));
+    if (hhIds.length === 0) {
+      return { groups: [], total };
+    }
+
+    const persons = await this.db
+      .selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', hhIds)
+      .execute();
+
+    const hhToPersons = new Map<
+      string,
+      Array<{
+        id: unknown;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        household_id: unknown;
+      }>
+    >();
+    for (const p of persons) {
+      const hhId = String(p.household_id);
+      if (!hhToPersons.has(hhId)) {
+        hhToPersons.set(hhId, []);
+      }
+      hhToPersons.get(hhId)?.push(p);
+    }
+
+    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          households: [],
+        });
+      }
+      groupsMap.get(groupKey)?.households.push({
+        ...row,
+        id: String(row.id),
+        persons: hhToPersons.get(String(row.id)) || [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['households']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['households']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source household not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'apt',
+        'street_num',
+        'street1',
+        'street2',
+        'city',
+        'state',
+        'zip',
+        'country',
+        'home_phone',
+        'notes',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_households_tags)
+      const targetTags = await trx
+        .selectFrom('map_households_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_households_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_households)
+      const targetLists = await trx
+        .selectFrom('map_lists_households')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_households')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_households')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_households')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 4. Reassign people (persons.household_id)
+      await trx
+        .updateTable('persons')
+        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 5. Delete source household
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
+````typescript
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+
+export class PersonsRepo extends BaseRepository<'persons'> {
+  constructor() {
+    super('persons');
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
+
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
+
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
+    }
+
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
+    }
+    return Array.from(map.values());
+  }
+
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
+    };
+  }
+
+  public async moveToNewHousehold(input: {
+    tenant_id: string;
+    person_id: string;
+    user_id: string;
+    campaign_id: string;
+  }) {
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
+        trx,
+      );
+      let targetId = existingBlank?.id as string | undefined;
+
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
+          },
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
+      }
+
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
+
+      return { household_id: targetId };
+    });
+  }
+
+  public async getAllWithAddress(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
+
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
+          )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select((eb) => [
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'persons.created_at',
+        'persons.updated_at',
+        'persons.tenant_id',
+        'persons.createdby_id',
+        'persons.updatedby_id',
+        'companies.name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const personsCols = [
+              'id',
+              'first_name',
+              'last_name',
+              'email',
+              'mobile',
+              'notes',
+              'household_id',
+              'company_id',
+              'created_at',
+              'updated_at',
+              'tenant_id',
+              'createdby_id',
+              'updatedby_id',
+            ];
+            if (personsCols.includes(col)) {
+              col = `persons.${col}`;
+            } else {
+              const hhCols = [
+                'country',
+                'zip',
+                'state',
+                'home_phone',
+                'city',
+                'street1',
+                'street2',
+                'street_num',
+                'apt',
+              ];
+              if (hhCols.includes(col)) {
+                col = `households.${col}`;
+              } else if (col === 'company_name') {
+                col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
+              }
+            }
+          }
+          return acc.orderBy(col, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return { count, rows };
+  }
+
+  public getByHouseholdId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
+  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', 'is not', null)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
+  }
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
+
+  /**
+   * Batched email-identity lookup for the CSV import wizard's Review step
+   * (spec §17) — given a set of candidate emails, return the existing person
+   * each one matches (if any), so the wizard can show "3 rows match people
+   * you already have" with a door to each matched person.
+   */
+  public async findManyByEmails(input: { tenant_id: string; emails: string[] }) {
+    const normalized = Array.from(
+      new Set(input.emails.map((email) => email.trim().toLowerCase()).filter((email) => email.length > 0)),
+    );
+    if (normalized.length === 0) return [];
+
+    return this.getSelect()
+      .select(['id', 'first_name', 'last_name', 'email', 'slug'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, 'in', normalized)
+      .execute();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+        'households.ward',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    // Field-grid comparison (spec §9.3 pair card) wants each person's tags too — fetched
+    // separately rather than joined in (a join would multiply the row per tag).
+    const personIds = rows.map((r) => String(r.id));
+    const tagsByPerson = new Map<string, string[]>();
+    if (personIds.length > 0) {
+      const tagRows = await this.db
+        .selectFrom('map_peoples_tags')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .select(['map_peoples_tags.person_id', 'tags.name'])
+        .where('map_peoples_tags.tenant_id', '=', tenant_id)
+        .where('map_peoples_tags.person_id', 'in', personIds)
+        .where('tags.type', '=', 'tag')
+        .execute();
+      for (const t of tagRows) {
+        const key = String(t.person_id);
+        const list = tagsByPerson.get(key) ?? [];
+        list.push(t.name);
+        tagsByPerson.set(key, list);
+      }
+    }
+
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
+        });
+      }
+      groupsMap.get(groupKey)?.persons.push({
+        ...row,
+        id: String(row.id),
+        tags: tagsByPerson.get(String(row.id)) ?? [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx
+            .insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 5. Reassign captaincy if source was captain of any team
+      await trx
+        .updateTable('teams')
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
+          .execute();
+        if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
+        }
+      }
+
+      return { success: true };
+    });
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/persons/services/persons.service.ts

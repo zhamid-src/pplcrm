@@ -531,6 +531,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const rows = await this.db
       .selectFrom('potential_duplicates')
       .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
       .select([
         'potential_duplicates.group_key',
         'potential_duplicates.reason',
@@ -544,10 +545,32 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.company_id',
         'persons.household_id',
         'persons.created_at',
+        'households.ward',
       ])
       .where('potential_duplicates.tenant_id', '=', tenant_id)
       .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
+
+    // Field-grid comparison (spec §9.3 pair card) wants each person's tags too — fetched
+    // separately rather than joined in (a join would multiply the row per tag).
+    const personIds = rows.map((r) => String(r.id));
+    const tagsByPerson = new Map<string, string[]>();
+    if (personIds.length > 0) {
+      const tagRows = await this.db
+        .selectFrom('map_peoples_tags')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .select(['map_peoples_tags.person_id', 'tags.name'])
+        .where('map_peoples_tags.tenant_id', '=', tenant_id)
+        .where('map_peoples_tags.person_id', 'in', personIds)
+        .where('tags.type', '=', 'tag')
+        .execute();
+      for (const t of tagRows) {
+        const key = String(t.person_id);
+        const list = tagsByPerson.get(key) ?? [];
+        list.push(t.name);
+        tagsByPerson.set(key, list);
+      }
+    }
 
     const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
     for (const row of rows) {
@@ -561,11 +584,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       groupsMap.get(groupKey)?.persons.push({
         ...row,
         id: String(row.id),
+        tags: tagsByPerson.get(String(row.id)) ?? [],
       });
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
 
     return { groups: sortedGroups, total };

@@ -9,6 +9,7 @@ import {
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { Tags } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
 export class TagsService extends AbstractAPIService<'tags', AddTagType> {
@@ -87,5 +88,27 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.tags.exportCsv.mutate(input);
+  }
+
+  /** §9.1 Tags admin / §9.2 Issues admin — the full unpaginated list. */
+  public getAdminList(type: 'tag' | 'issue'): Promise<RouterOutputs['tags']['getAdminList']> {
+    return this.api.tags.getAdminList.query({ type });
+  }
+
+  /** §9.2 Issues admin sentence: unique people, not total applications. */
+  public countDistinctPeople(type: 'tag' | 'issue'): Promise<RouterOutputs['tags']['countDistinctPeople']> {
+    return this.api.tags.countDistinctPeople.query({ type });
+  }
+
+  public async rename(id: string, newName: string): Promise<RouterOutputs['tags']['rename']> {
+    const res = await this.api.tags.rename.mutate({ id, newName });
+    this.triggerRefresh();
+    return res;
+  }
+
+  public async merge(sourceId: string, targetId: string): Promise<RouterOutputs['tags']['merge']> {
+    const res = await this.api.tags.merge.mutate({ sourceId, targetId });
+    this.triggerRefresh();
+    return res;
   }
 }

@@ -107,7 +107,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. The [Duplicates](/duplicates) finder hunts them down across people, households, and companies.',
+        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
       },
       { kind: 'h2', id: 'review', text: 'Review and merge' },
       {
@@ -115,13 +115,14 @@ export const DATA_ARTICLES: HelpArticle[] = [
         items: [
           { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
           {
-            title: 'Compare each group side by side',
-            detail: 'The finder surfaces likely matches; you stay the judge.',
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
           },
           {
-            title: 'Merge — or skip',
+            title: 'Merge into one — or Not duplicates',
             detail:
-              'Merging folds the duplicate into the primary record and you confirm before anything happens. Not actually the same? Skip the group.',
+              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
           },
         ],
       },

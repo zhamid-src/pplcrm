@@ -1,11 +1,17 @@
 import { sql } from 'kysely';
 import { PersonsRepo } from '../repositories/persons.repo';
+import { DuplicatesRepo } from '../../duplicates/repositories/duplicates.repo';
 
 export class DuplicateMaintenanceService {
   private readonly personsRepo = new PersonsRepo();
+  private readonly duplicatesRepo = new DuplicatesRepo();
 
   public async recomputeAllDuplicates(tenantId: string): Promise<void> {
     const db = this.personsRepo.db;
+
+    // §9.3 rule: "'Not duplicates' remembered so the pair isn't re-flagged." Read the
+    // tenant's dismissals up front and filter every candidate group against it below.
+    const dismissedGroupKeys = await this.duplicatesRepo.getDismissedGroupKeys(tenantId);
 
     // 1. Delete all potential duplicates for the tenant
     await db.deleteFrom('potential_duplicates').where('tenant_id', '=', tenantId).execute();
@@ -269,11 +275,14 @@ export class DuplicateMaintenanceService {
       }
     }
 
-    if (inserts.length > 0) {
+    const keptInserts =
+      dismissedGroupKeys.size > 0 ? inserts.filter((row) => !dismissedGroupKeys.has(String(row.group_key))) : inserts;
+
+    if (keptInserts.length > 0) {
       // Use chunked inserts just in case the list is very large
       const chunkSize = 1000;
-      for (let i = 0; i < inserts.length; i += chunkSize) {
-        const chunk = inserts.slice(i, i + chunkSize);
+      for (let i = 0; i < keptInserts.length; i += chunkSize) {
+        const chunk = keptInserts.slice(i, i + chunkSize);
         await db.insertInto('potential_duplicates').values(chunk).execute();
       }
     }

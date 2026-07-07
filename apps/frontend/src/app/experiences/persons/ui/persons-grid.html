@@ -16,6 +16,8 @@
     [disableView]="false"
     [narrowTypeOptions]="narrowTypeOptions()"
     [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
     (importCSV)="openImportDialog()"
     [plusIcon]="getPlusIcon()"
   >
