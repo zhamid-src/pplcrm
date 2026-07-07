@@ -31,13 +31,26 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
       {
         kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section — rename strays, delete stale labels, and keep the set small enough that everyone uses the same words.',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary — how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Rename** — updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
+          '**Merge into another tag/issue** ("Move everyone to…") — folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
+          '**Delete** — the confirmation names how many applications would be affected, so you never delete a label blind.',
+          'The PEOPLE / PEOPLE INTERESTED count on each row is a door — click it to open the People grid pre-filtered to that exact tag or issue.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about — not to describe who someone is, which is what tags are for.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people.',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
       },
     ],
   },
