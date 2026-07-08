@@ -6,7 +6,7 @@ import { BaseRepository } from '../../../lib/base.repo';
 import type { DeliveryRoutes } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-export interface DeliveryRouteGridRow {
+export type DeliveryRouteGridRow = {
   id: string;
   name: string;
   status: string;
@@ -18,7 +18,7 @@ export interface DeliveryRouteGridRow {
   volunteer_name: string | null;
   stops_total: number;
   stops_delivered: number;
-}
+};
 
 export class DeliveryRoutesRepo extends BaseRepository<'delivery_routes'> {
   constructor() {

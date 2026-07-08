@@ -55,6 +55,10 @@ export const appRoutes = [
       import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
   },
   {
+    path: 'r/:token',
+    loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
+  },
+  {
     path: 'verify-email',
     loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },
