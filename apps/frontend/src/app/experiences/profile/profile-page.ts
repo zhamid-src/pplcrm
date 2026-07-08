@@ -416,19 +416,19 @@ export class ProfilePage implements OnInit {
   }
 
   private setForm(user: IAuthUserDetail) {
-    const prefs = user.notification_preferences || {};
+    const prefs = user.notification_preferences;
     this.payload.set({
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name ?? '',
     });
     this.notifPrefs.set({
-      mention_in_comment: prefs.mention_in_comment ?? true,
-      task_assigned: prefs.task_assigned ?? true,
-      task_due: prefs.task_due ?? true,
-      person_assigned: prefs.person_assigned ?? true,
-      export_ready: prefs.export_ready ?? true,
-      import_summary: prefs.import_summary ?? true,
+      mention_in_comment: prefs?.mention_in_comment ?? true,
+      task_assigned: prefs?.task_assigned ?? true,
+      task_due: prefs?.task_due ?? true,
+      person_assigned: prefs?.person_assigned ?? true,
+      export_ready: prefs?.export_ready ?? true,
+      import_summary: prefs?.import_summary ?? true,
     });
   }
 
@@ -456,11 +456,18 @@ export class ProfilePage implements OnInit {
     const next: NotifPrefs = { ...previous, [key]: !previous[key] };
     this.notifPrefs.set(next);
     this.savingNotif.set(key);
+    // Profile only toggles the 6 email prefs; preserve the untouched in-app
+    // variants (and default any missing) so the full 12-field shape stays valid.
+    const fullPrefs: NonNullable<IAuthUserDetail['notification_preferences']> = {
+      ...FULL_NOTIF_DEFAULTS,
+      ...user.notification_preferences,
+      ...next,
+    };
     try {
       await this.userService.updateUserProfile(user.id, {
-        notification_preferences: { ...next },
+        notification_preferences: fullPrefs,
       } as UpdateAuthUserType);
-      this.detail.set({ ...user, notification_preferences: { ...user.notification_preferences, ...next } });
+      this.detail.set({ ...user, notification_preferences: fullPrefs });
     } catch (err) {
       // Roll the toggle back so the UI never lies about what's stored.
       this.notifPrefs.set(previous);
@@ -483,6 +490,23 @@ type NotifPrefs = {
 };
 
 type NotifKey = keyof NotifPrefs;
+
+// Complete 12-field default (email + in-app variants) so a persisted preferences
+// object always satisfies the canonical shape even when the source is undefined.
+const FULL_NOTIF_DEFAULTS: NonNullable<IAuthUserDetail['notification_preferences']> = {
+  mention_in_comment: true,
+  mention_in_comment_in_app: true,
+  task_assigned: true,
+  task_assigned_in_app: true,
+  task_due: true,
+  task_due_in_app: true,
+  person_assigned: true,
+  person_assigned_in_app: true,
+  export_ready: true,
+  export_ready_in_app: true,
+  import_summary: true,
+  import_summary_in_app: true,
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
