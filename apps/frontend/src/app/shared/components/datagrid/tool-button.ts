@@ -29,7 +29,7 @@ import { PcIconNameType } from '@icons/icons.index';
                   [name]="icon()"
                   [size]="4"
                   class="group-hover:text-primary"
-                  [class]="spinning() ? 'animate-spin inline-block' : ''"
+                  [class]="spinning() ? 'animate-spin' : ''"
                 ></pc-icon>
                 @if (badge() && badge()! > 0) {
                   <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
@@ -47,7 +47,7 @@ import { PcIconNameType } from '@icons/icons.index';
             [name]="icon()"
             [size]="4"
             class="group-hover:text-primary"
-            [class]="spinning() ? 'animate-spin inline-block' : ''"
+            [class]="spinning() ? 'animate-spin' : ''"
           ></pc-icon
         ></a>
       }
