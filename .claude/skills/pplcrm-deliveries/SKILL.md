@@ -11,8 +11,10 @@ repo-root `YARD-SIGN-ROUTES-PLAN.md` — the spec's strings win where they disag
 
 ## The data model (3 tables, all tenant-scoped + RLS)
 
-Migration: `apps/backend/src/app/_migrations/2026-07-10-deliveries.ts`. Kysely models
-(`DeliveryRequests`, `DeliveryRoutes`, `DeliveryRouteStops`) in `libs/common/src/lib/kysely.models.ts`.
+Migration: `apps/backend/src/app/_migrations/2026-07-11-deliveries.ts` (dated 07-11 so it sorts
+after the already-applied `2026-07-10-person-public-id` — Kysely forbids a new migration inserted
+before an applied one). Kysely models (`DeliveryRequests`, `DeliveryRoutes`, `DeliveryRouteStops`)
+in `libs/common/src/lib/kysely.models.ts`.
 
 - **`delivery_requests`** — one per household sign request. `status: new | approved | declined | delivered`
   (spec spelling; **no `cancelled`**). Tied to a `household_id` (coords + geocoding_status live on the
