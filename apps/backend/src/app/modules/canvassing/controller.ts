@@ -18,7 +18,7 @@ import {
   type CutPreview,
   type DoorPoint,
 } from './lib/cutting-engine';
-import { TurfHouseholdsRepo } from './repositories/turf-households.repo';
+import { TurfHouseholdsRepo, type CoverageDoorRow } from './repositories/turf-households.repo';
 import { TurfAssignmentsRepo, generateTurfToken } from './repositories/turf-assignments.repo';
 import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositories/turf-knocks.repo';
 import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
@@ -73,6 +73,43 @@ export interface CompanionTurf {
   attempted: number;
   doors: CompanionDoor[];
 }
+
+/** How a door reads on the §13.3 Coverage map, derived from its window knocks. */
+export type CoverageStatus = 'conversation' | 'attempted' | 'not_yet';
+
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export interface CoverageDoor extends LatLng {
+  status: CoverageStatus;
+}
+
+/** A turf boundary drawn as the convex hull of its doors (dashed on the map). */
+export interface CoverageTurf {
+  id: string;
+  name: string;
+  ward: string | null;
+  path: LatLng[];
+}
+
+export interface CoverageWard {
+  ward: string;
+  doors: number;
+  conversation: number;
+  attempted: number;
+  not_yet: number;
+}
+
+export interface Coverage {
+  doors: CoverageDoor[];
+  turfs: CoverageTurf[];
+  byWard: CoverageWard[];
+}
+
+const UNASSIGNED_WARD = 'Unassigned';
+const MIN_HULL_POINTS = 3;
 
 // A turf is "in the field" if a knock landed within this window.
 const IN_FIELD_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -149,6 +186,61 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
   public async getFieldReport(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<FieldReport> {
     const { from, to } = this.rangeToDates(input);
     return this.knocks.getFieldReport({ tenant_id: auth.tenant_id, from, to });
+  }
+
+  /**
+   * §13.3 Coverage — every geocoded door in a turf, coloured by whether it was
+   * talked to, knocked with no answer, or not yet reached in the window, plus a
+   * dashed boundary hull per turf and a by-ward roll-up. Unlike the report tiles
+   * this returns doors even when nothing has been knocked (a freshly-cut universe
+   * reads as an all-grey map), so the caller shows it independently of `doors`.
+   */
+  public async getCoverage(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<Coverage> {
+    const { from, to } = this.rangeToDates(input);
+    const rows = await this.turfHouseholds.getCoverageRows({ tenant_id: auth.tenant_id, from, to });
+
+    const doors: CoverageDoor[] = [];
+    const turfPoints = new Map<string, { name: string; ward: string | null; pts: LatLng[] }>();
+    const wards = new Map<string, CoverageWard>();
+
+    for (const r of rows) {
+      const status = this.coverageStatus(r);
+      const point: LatLng = { lat: r.lat, lng: r.lng };
+      doors.push({ ...point, status });
+
+      let turf = turfPoints.get(r.turf_id);
+      if (!turf) {
+        turf = { name: r.turf_name, ward: r.ward, pts: [] };
+        turfPoints.set(r.turf_id, turf);
+      }
+      turf.pts.push(point);
+
+      const wardKey = r.ward ?? UNASSIGNED_WARD;
+      let ward = wards.get(wardKey);
+      if (!ward) {
+        ward = { ward: wardKey, doors: 0, conversation: 0, attempted: 0, not_yet: 0 };
+        wards.set(wardKey, ward);
+      }
+      ward.doors += 1;
+      ward[status] += 1;
+    }
+
+    const turfs: CoverageTurf[] = [];
+    for (const [id, turf] of turfPoints) {
+      const path = convexHull(turf.pts);
+      if (path.length >= MIN_HULL_POINTS) {
+        turfs.push({ id, name: turf.name, ward: turf.ward, path });
+      }
+    }
+
+    const byWard = [...wards.values()].sort((a, b) => b.doors - a.doors);
+    return { doors, turfs, byWard };
+  }
+
+  private coverageStatus(r: CoverageDoorRow): CoverageStatus {
+    if (r.conversations > 0) return 'conversation';
+    if (r.attempts > 0) return 'attempted';
+    return 'not_yet';
   }
 
   /** "Report exported — doors, conversations and responses by team and by day (CSV)." */
@@ -576,4 +668,35 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
       }
     }
   }
+}
+
+/**
+ * Convex hull (Andrew's monotone chain) of a set of lat/lng points — the honest
+ * outer boundary of a turf's doors, used for the dashed coverage outline. Runs in
+ * O(n log n); returns the input unchanged when there are fewer than three points.
+ */
+function convexHull(points: LatLng[]): LatLng[] {
+  if (points.length < MIN_HULL_POINTS) return points;
+  const pts = [...points].sort((a, b) => a.lng - b.lng || a.lat - b.lat);
+  const cross = (o: LatLng, a: LatLng, b: LatLng): number =>
+    (a.lng - o.lng) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lng - o.lng);
+
+  // One monotone-chain half; the caller feeds the points forwards then reversed.
+  const half = (seq: LatLng[]): LatLng[] => {
+    const acc: LatLng[] = [];
+    for (const p of seq) {
+      let a = acc[acc.length - 2];
+      let b = acc[acc.length - 1];
+      while (a && b && cross(a, b, p) <= 0) {
+        acc.pop();
+        a = acc[acc.length - 2];
+        b = acc[acc.length - 1];
+      }
+      acc.push(p);
+    }
+    acc.pop(); // drop the shared endpoint
+    return acc;
+  };
+
+  return half(pts).concat(half([...pts].reverse()));
 }

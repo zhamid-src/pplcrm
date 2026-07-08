@@ -270,6 +270,46 @@ describe('CanvassingController', () => {
     expect(report.topCanvassers[0]?.name).toBe('Sam');
   });
 
+  it('maps coverage: a door per geocoded household, coloured by its knock status, with turf hulls and by-ward roll-up', async () => {
+    await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
+    const [turf] = await controller.getTurfs(auth);
+    if (!turf) throw new Error('expected a turf');
+    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
+    const companion = await controller.getCompanionTurf(token);
+    await controller.logKnock({
+      token,
+      client_knock_id: 'c1',
+      household_id: companion.doors[0]!.household_id,
+      outcome: 'conversation',
+      response: 'strong_support',
+    });
+    await controller.logKnock({
+      token,
+      client_knock_id: 'c2',
+      household_id: companion.doors[1]!.household_id,
+      outcome: 'no_answer',
+    });
+
+    const cov = await controller.getCoverage(auth, { range: 'campaign' });
+
+    // One dot per geocoded door only — the 3 ungeocoded households are excluded.
+    expect(cov.doors.length).toBe(40);
+    const byStatus = { conversation: 0, attempted: 0, not_yet: 0 };
+    for (const d of cov.doors) byStatus[d.status] += 1;
+    expect(byStatus.conversation).toBe(1);
+    expect(byStatus.attempted).toBe(1);
+    expect(byStatus.not_yet).toBe(38);
+
+    // Every turf gets a boundary hull of at least a triangle.
+    expect(cov.turfs.length).toBeGreaterThanOrEqual(1);
+    for (const t of cov.turfs) expect(t.path.length).toBeGreaterThanOrEqual(3);
+
+    // By-ward roll-up covers every mapped door exactly once.
+    const wardDoors = cov.byWard.reduce((n, w) => n + w.doors, 0);
+    expect(wardDoors).toBe(40);
+    expect(cov.byWard.map((w) => w.ward).sort()).toEqual(['W1', 'W2']);
+  });
+
   it('refreshes a turf from its list, dropping members that left (knocks preserved)', async () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);

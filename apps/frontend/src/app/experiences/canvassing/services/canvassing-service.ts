@@ -15,6 +15,7 @@ export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
 export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
 export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
 export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
+export type Coverage = RouterOutputs['canvassing']['getCoverage'];
 export type CutPreview = RouterOutputs['canvassing']['previewCut'];
 
 @Service()
@@ -37,6 +38,10 @@ export class CanvassingService extends TRPCService<unknown> {
 
   public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
     return this.api.canvassing.exportFieldReport.query(input);
+  }
+
+  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
+    return this.api.canvassing.getCoverage.query(input);
   }
 
   public previewCut(input: CutTurfsType): Promise<CutPreview> {
