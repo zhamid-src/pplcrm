@@ -351,10 +351,14 @@
     } }
   </div>
   }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+  <div
+    #scroller
+    class="flex-1 overflow-auto border border-neutral rounded relative rounded-xl"
+    (scroll)="onScroll($event)"
+  >
     <table #gridTable class="table w-full">
       <thead>
-        <tr>
+        <tr class="bg-base-100 text-sm">
           @if (enableSelection()) {
           <th
             class="border-r border-base-300 pl-2 selection-col"
@@ -373,7 +377,7 @@
           } @for (h of leafHeaders(); track h.id) {
           <th
             role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
+            class="cursor-grab border-r border-base-300 pl-2 relative text-xs uppercase font-medium"
             [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
@@ -530,7 +534,7 @@
           }
         </tr>
       </thead>
-      <tbody class="bg-base-100">
+      <tbody class="bg-base-100 text-sm">
         @if (hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
@@ -799,7 +803,7 @@
       </tbody>
     </table>
   </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
     <div class="flex items-center gap-2 whitespace-nowrap">
       <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
         >Page Size:</span
