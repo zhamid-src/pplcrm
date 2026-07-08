@@ -248,7 +248,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
   protected readonly isEmptyState = computed(
-    () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
+    () => this.hasLoaded() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
   );
 
   public readonly hasActiveFilters = computed(
@@ -449,10 +449,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return val !== undefined && val !== null && val !== '';
   }
-  // "A load has begun" comes straight from the loading gate's ungated `started`
-  // signal — true the moment begin() runs, even for a sub-300ms fetch that never
-  // trips the (delayed) spinner. No manual bookkeeping needed here.
-  public readonly hasInitiatedLoad = this._loading.started;
+  // "The first load has finished" comes straight from the loading gate's ungated
+  // `loaded` signal — set when a fetch completes (so totalCountAll is already in
+  // place), even for a sub-300ms fetch that never trips the delayed spinner.
+  public readonly hasLoaded = this._loading.loaded;
   public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
@@ -692,7 +692,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** The "43 match your filters · 5,012 people total" sentence, rendered below the filter row in grain layout. */
   public readonly countSentence = computed<string | null>(() => {
-    const count = this.hasInitiatedLoad() ? this.totalCountAll() : null;
+    const count = this.hasLoaded() ? this.totalCountAll() : null;
     const sentence = this.totalSentence();
     if (count !== null && this.anyFilterActive()) {
       const matched =

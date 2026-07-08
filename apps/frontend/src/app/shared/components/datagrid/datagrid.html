@@ -13,7 +13,7 @@
     [title]="displayTitle()!"
     [open]="showDescription()"
     [description]="description() || ''"
-    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+    [totalCount]="hasLoaded() ? totalCountAll() : null"
     [filtered]="anyFilterActive()"
     [totalSentence]="totalSentence()"
   ></pc-grid-header>
