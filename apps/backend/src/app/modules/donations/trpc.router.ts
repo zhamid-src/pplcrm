@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
+import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
 import { DonationsController } from './controller';
 
 const controller = new DonationsController();
@@ -8,6 +9,14 @@ export const DonationsRouter = router({
   // ── One-time donations ──────────────────────────────────────────────────────
 
   listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
+
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
+   * not run through the public Stripe checkout. */
+  recordDonation: authProcedure
+    .input(RecordDonationObj)
+    .mutation(({ ctx, input }) =>
+      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method),
+    ),
 
   getPersonDonationHistory: authProcedure
     .input(z.string())
