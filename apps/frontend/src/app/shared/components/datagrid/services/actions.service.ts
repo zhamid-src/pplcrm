@@ -76,6 +76,7 @@ export class DataGridActionsService {
     getRowsForExport?: () => GridRow[];
     requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
     queueFullExport?: () => Promise<void>;
+    logInstantExport?: (rowCount: number) => void;
     displayedCount?: number;
     totalCount?: number;
   }) {
@@ -146,6 +147,7 @@ export class DataGridActionsService {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      deps.logInstantExport?.(rowCount);
       deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
     } catch {
       deps.alertSvc.showError(messages.exportFailed);

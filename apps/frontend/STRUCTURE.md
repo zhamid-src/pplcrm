@@ -877,6 +877,48 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 }
 ```
 
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
+
+```html
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
+      <p class="text-sm text-neutral-300">
+        Thank you for confirming. You will now receive our newsletters. You can close this window.
+      </p>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">PplCRM</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
 ## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
 
 ```typescript
@@ -952,6 +994,56 @@ export class ConfirmSubscriptionService extends TRPCService<unknown> {
     return this.api.webForms.confirmSubscription.mutate({ token });
   }
 }
+```
+
+## File: apps/frontend/src/app/auth/new-password-page/new-password-page.html
+
+```html
+<!-- Template for setting a new password after verifying a reset code. -->
+<pc-auth-layout>
+  @if (!error()) {
+  <form (submit)="submit($event)" novalidate>
+    <div class="space-y-4">
+      <div class="space-y-0">
+        <label class="label text-neutral-100"> Please select a new password </label>
+        <label class="input w-full validator">
+          <pc-icon [size]="4" name="lock-closed" />
+          <input type="password" placeholder="Enter your password" [formField]="form.password" />
+        </label>
+        @if (passwordInBreach(password)) {
+        <span class="label-text-alt text-warning"
+          >This is not a safe password as it has been in
+          <span class="font-bold">{{ passwordBreachNumber(password) | number: '1.0-0' }}</span>
+          data breaches before. You should select a different password.</span
+        >
+        } @else if (password.dirty() && password.invalid()) {
+        <span class="label-text-alt text-warning">Your password should have at least 8 characters</span>
+        }
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg"></span>
+          } @else { Submit }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @else {
+  <label class="label text-lg font-semibold"> Password Reset Failed </label>
+  <label class="label text-base">
+    The password reset link expired or something else went wrong. Please request a password reset link again.
+  </label>
+  <button type="submit" class="btn btn-primary w-full" routerLink="/resetpassword">Reset Password</button>
+  }
+  <div class="text-center text-xs">
+    <span class="text-neutral-100">
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="PplCRM" class="link link-hover">PplCRM</a></span
+    >
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
@@ -1055,6 +1147,48 @@ export class NewPasswordPage implements OnInit {
     });
   }
 }
+```
+
+## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.html
+
+```html
+<!-- Template for requesting a password reset email. -->
+<div class="bg-image flex min-h-screen font-light" data-theme="light">
+  <div class="card card-compact glass m-auto w-96 shadow-xl">
+    <div class="card-title mb-0 shadow-lg">
+      <img class="p-5" src="assets/logo.png" />
+    </div>
+    <pc-alerts />
+    <div class="card-body">
+      @if (!emailSent()) {
+      <form (submit)="submit($event)" novalidate>
+        <div class="space-y-4">
+          <label class="label text-neutral-100"> Please enter your email to reset the password. </label>
+          <input class="input w-full" type="email" [formField]="form.email" placeholder="name@email.com" />
+
+          <button type="submit" class="btn btn-primary w-full">
+            @if (isLoading()) {
+            <span class="loading loading-dots loading-lg"></span>
+            } @else { Submit }
+          </button>
+        </div>
+      </form>
+      } @else {
+      <label class="label pb-0 text-lg font-semibold"> Email sent! </label>
+      <label class="label text-base">
+        Please check your email for a link to reset the password (don't forget to check the spam folder if you do not
+        see the email). Please keep it mind that the email may take a few minutes to arrive.
+      </label>
+      }
+      <div class="text-neutral-200 pt-4 text-center text-xs">
+        <span>
+          Copyright © 2024
+          <a title="PplCRM" class="link link-hover">PplCRM</a></span
+        >
+      </div>
+    </div>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.ts
@@ -1238,6 +1372,238 @@ export class ResumeAccountPage extends TRPCService<any> {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="PplCRM" class="link link-hover">PplCRM</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/signup-page/signup-page.html
@@ -1439,6 +1805,53 @@ export class SignUpPage {
 }
 ```
 
+## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.html
+
+```html
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Verifying your email address…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Email Verified!</h2>
+      <p class="text-sm text-neutral-300">Your email address has been verified successfully.</p>
+      <p class="text-xs text-neutral-400">You can now sign in to your account.</p>
+    </div>
+    <div class="pt-2">
+      <a class="btn btn-primary w-full" routerLink="/signin">Sign In</a>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Verification Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The verification link expired or is invalid.' }}</p>
+    </div>
+    <div class="pt-2">
+      <a class="btn btn-primary w-full" routerLink="/signin">Return to Sign In</a>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">PplCRM</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
 
 ```typescript
@@ -1499,6 +1912,58 @@ export class VerifyEmailPage implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.html
+
+```html
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Verifying email address…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Email Verified!</h2>
+      <p class="text-sm text-neutral-300">
+        The email address <strong class="text-neutral-100">{{ verifiedEmail() }}</strong> has been verified
+        successfully.
+      </p>
+      <p class="text-xs text-neutral-400">
+        You can now close this window or continue to your settings to save it as a campaign email.
+      </p>
+    </div>
+    <div class="pt-2">
+      <a class="btn btn-primary w-full" routerLink="/settings">Go to Settings</a>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Verification Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The verification link expired or is invalid.' }}</p>
+    </div>
+    <div class="pt-2">
+      <a class="btn btn-primary w-full" routerLink="/settings">Return to Settings</a>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">PplCRM</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.ts
@@ -30189,6 +30654,7 @@ import {
   ExportCsvInputType,
   ExportCsvResponseType,
   getAllOptionsType,
+  LogInstantExportInputType,
   QueueExportInputType,
 } from '../../../../../../libs/common/src';
 import { TRPCService } from './trpc-service';
@@ -30260,6 +30726,13 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
       queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
     };
     return exportsEndpoint.queue.mutate(input);
+  }
+
+  public logInstantExport(input: LogInstantExportInputType): Promise<DataExportRecordType> {
+    const exportsEndpoint = this.api.exports as {
+      logInstant: { mutate: (input: LogInstantExportInputType) => Promise<DataExportRecordType> };
+    };
+    return exportsEndpoint.logInstant.mutate(input);
   }
 }
 ```
@@ -32635,6 +33108,7 @@ export class DataGridActionsService {
     getRowsForExport?: () => GridRow[];
     requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
     queueFullExport?: () => Promise<void>;
+    logInstantExport?: (rowCount: number) => void;
     displayedCount?: number;
     totalCount?: number;
   }) {
@@ -32705,6 +33179,7 @@ export class DataGridActionsService {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      deps.logInstantExport?.(rowCount);
       deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
     } catch {
       deps.alertSvc.showError(messages.exportFailed);
@@ -36383,370 +36858,28 @@ export const environment = {
 };
 ```
 
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
+## File: apps/frontend/src/app/auth/login/login-guard.ts
 
-```html
-<pc-auth-layout>
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-6 space-y-4">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
-  </div>
-  } @else { @switch (status()) { @case ('success') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-      <pc-icon [size]="6" name="check-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
-      <p class="text-sm text-neutral-300">
-        Thank you for confirming. You will now receive our newsletters. You can close this window.
-      </p>
-    </div>
-  </div>
-  } @case ('error') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
-      <pc-icon [size]="6" name="exclamation-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
-      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
-    </div>
-  </div>
-  } } }
+```typescript
+import { inject } from '@angular/core';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
 
-  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">
-      Copyright © 2026
-      <a href="" class="link link-hover">PplCRM</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
-## File: apps/frontend/src/app/auth/new-password-page/new-password-page.html
+export const loginGuard: CanActivateFn = () => {
+  const user = inject(AuthService).getUser();
 
-```html
-<!-- Template for setting a new password after verifying a reset code. -->
-<pc-auth-layout>
-  @if (!error()) {
-  <form (submit)="submit($event)" novalidate>
-    <div class="space-y-4">
-      <div class="space-y-0">
-        <label class="label text-neutral-100"> Please select a new password </label>
-        <label class="input w-full validator">
-          <pc-icon [size]="4" name="lock-closed" />
-          <input type="password" placeholder="Enter your password" [formField]="form.password" />
-        </label>
-        @if (passwordInBreach(password)) {
-        <span class="label-text-alt text-warning"
-          >This is not a safe password as it has been in
-          <span class="font-bold">{{ passwordBreachNumber(password) | number: '1.0-0' }}</span>
-          data breaches before. You should select a different password.</span
-        >
-        } @else if (password.dirty() && password.invalid()) {
-        <span class="label-text-alt text-warning">Your password should have at least 8 characters</span>
-        }
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg"></span>
-          } @else { Submit }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @else {
-  <label class="label text-lg font-semibold"> Password Reset Failed </label>
-  <label class="label text-base">
-    The password reset link expired or something else went wrong. Please request a password reset link again.
-  </label>
-  <button type="submit" class="btn btn-primary w-full" routerLink="/resetpassword">Reset Password</button>
-  }
-  <div class="text-center text-xs">
-    <span class="text-neutral-100">
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="PplCRM" class="link link-hover">PplCRM</a></span
-    >
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.html
-
-```html
-<!-- Template for requesting a password reset email. -->
-<div class="bg-image flex min-h-screen font-light" data-theme="light">
-  <div class="card card-compact glass m-auto w-96 shadow-xl">
-    <div class="card-title mb-0 shadow-lg">
-      <img class="p-5" src="assets/logo.png" />
-    </div>
-    <pc-alerts />
-    <div class="card-body">
-      @if (!emailSent()) {
-      <form (submit)="submit($event)" novalidate>
-        <div class="space-y-4">
-          <label class="label text-neutral-100"> Please enter your email to reset the password. </label>
-          <input class="input w-full" type="email" [formField]="form.email" placeholder="name@email.com" />
-
-          <button type="submit" class="btn btn-primary w-full">
-            @if (isLoading()) {
-            <span class="loading loading-dots loading-lg"></span>
-            } @else { Submit }
-          </button>
-        </div>
-      </form>
-      } @else {
-      <label class="label pb-0 text-lg font-semibold"> Email sent! </label>
-      <label class="label text-base">
-        Please check your email for a link to reset the password (don't forget to check the spam folder if you do not
-        see the email). Please keep it mind that the email may take a few minutes to arrive.
-      </label>
-      }
-      <div class="text-neutral-200 pt-4 text-center text-xs">
-        <span>
-          Copyright © 2024
-          <a title="PplCRM" class="link link-hover">PplCRM</a></span
-        >
-      </div>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
+  // Only a fully-authenticated (verified) user belongs inside the app shell — send them to
+  // /dashboard. An unverified user must be allowed to stay on /signin to see the "verify your
+  // email" state: redirecting them to /dashboard bounces off authGuard (which kicks unverified
+  // users back to /signin) into an infinite redirect loop that hangs the page.
+  if (user?.email_verified) {
+    return inject(Router).navigateByUrl('/dashboard');
   }
 
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="PplCRM" class="link link-hover">PplCRM</a>
-    </span>
-  </div>
-</pc-auth-layout>
+  return true;
+};
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
@@ -37167,105 +37300,6 @@ function getTRPCData(err: unknown): Record<string, unknown> | undefined {
   if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
   return isRecord(err['data']) ? err['data'] : undefined;
 }
-```
-
-## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.html
-
-```html
-<pc-auth-layout>
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-6 space-y-4">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-sm font-medium text-neutral-100">Verifying your email address…</p>
-  </div>
-  } @else { @switch (status()) { @case ('success') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-      <pc-icon [size]="6" name="check-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Email Verified!</h2>
-      <p class="text-sm text-neutral-300">Your email address has been verified successfully.</p>
-      <p class="text-xs text-neutral-400">You can now sign in to your account.</p>
-    </div>
-    <div class="pt-2">
-      <a class="btn btn-primary w-full" routerLink="/signin">Sign In</a>
-    </div>
-  </div>
-  } @case ('error') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
-      <pc-icon [size]="6" name="exclamation-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Verification Failed</h2>
-      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The verification link expired or is invalid.' }}</p>
-    </div>
-    <div class="pt-2">
-      <a class="btn btn-primary w-full" routerLink="/signin">Return to Sign In</a>
-    </div>
-  </div>
-  } } }
-
-  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">
-      Copyright © 2026
-      <a href="" class="link link-hover">PplCRM</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.html
-
-```html
-<pc-auth-layout>
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-6 space-y-4">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-sm font-medium text-neutral-100">Verifying email address…</p>
-  </div>
-  } @else { @switch (status()) { @case ('success') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-      <pc-icon [size]="6" name="check-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Email Verified!</h2>
-      <p class="text-sm text-neutral-300">
-        The email address <strong class="text-neutral-100">{{ verifiedEmail() }}</strong> has been verified
-        successfully.
-      </p>
-      <p class="text-xs text-neutral-400">
-        You can now close this window or continue to your settings to save it as a campaign email.
-      </p>
-    </div>
-    <div class="pt-2">
-      <a class="btn btn-primary w-full" routerLink="/settings">Go to Settings</a>
-    </div>
-  </div>
-  } @case ('error') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
-      <pc-icon [size]="6" name="exclamation-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Verification Failed</h2>
-      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The verification link expired or is invalid.' }}</p>
-    </div>
-    <div class="pt-2">
-      <a class="btn btn-primary w-full" routerLink="/settings">Return to Settings</a>
-    </div>
-  </div>
-  } } }
-
-  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">
-      Copyright © 2026
-      <a href="" class="link link-hover">PplCRM</a>
-    </span>
-  </div>
-</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/auth-service.ts
@@ -46009,7 +46043,7 @@ export class ImportWizard {
               <div class="flex justify-end gap-1">
                 @if (job.status === 'completed') { @if (isExpired(job)) {
                 <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-                } @else {
+                } @else if (job.downloadable) {
                 <button
                   type="button"
                   class="btn btn-sm btn-circle btn-ghost text-primary"
@@ -46018,6 +46052,13 @@ export class ImportWizard {
                 >
                   <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
                 </button>
+                } @else {
+                <span
+                  class="text-xs text-base-content/40 italic mr-2"
+                  title="Downloaded directly to your device — not stored on the server"
+                >
+                  Downloaded
+                </span>
                 } }
                 <button
                   type="button"
@@ -46229,7 +46270,7 @@ export class ImportsPage {
 
   protected switchTab(tab: HistoryTab): void {
     this.tab.set(tab);
-    if (tab === 'exports' && this.exportJobs().length === 0) {
+    if (tab === 'exports') {
       void this.loadExports();
     }
   }
@@ -50286,222 +50327,6 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
-
-```html
-<div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Issues</h1>
-      @if (!loading()) {
-      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="add-issue" [size]="4"></pc-icon>
-      New issue
-    </a>
-  </div>
-
-  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-    <table class="table">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
-          <th class="w-10">#</th>
-          <th>Issue</th>
-          <th class="min-w-48">People interested</th>
-          <th>Trend</th>
-          <th>Top ward</th>
-          <th class="w-10"></th>
-        </tr>
-      </thead>
-      <tbody>
-        @if (loading()) { @for (i of skeletonRows; track i) {
-        <tr>
-          <td colspan="6"><div class="skeleton h-6 w-full"></div></td>
-        </tr>
-        } } @else if (ranked().length === 0) {
-        <tr>
-          <td colspan="6" class="py-12 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
-              <p class="text-sm text-base-content/60">No issues yet.</p>
-              <a routerLink="add" class="btn btn-sm btn-primary">New issue</a>
-            </div>
-          </td>
-        </tr>
-        } @else { @for (entry of ranked(); track entry.row.id) {
-        <tr>
-          <td class="tabular-nums text-base-content/50">{{ entry.rank }}</td>
-          <td>
-            <span class="badge badge-info badge-sm font-medium">{{ entry.row.name }}</span>
-          </td>
-          <td>
-            <div class="flex items-center gap-2">
-              <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
-                <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
-              </div>
-              <a
-                [routerLink]="'/people'"
-                [queryParams]="{ issue: entry.row.name }"
-                class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
-              >
-                {{ entry.row.use_count_people.toLocaleString() }}
-              </a>
-            </div>
-          </td>
-          <td
-            class="text-sm tabular-nums"
-            [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
-          >
-            {{ trendLabel(entry.row) }}
-          </td>
-          <td class="text-sm text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
-          <td>
-            <div class="dropdown dropdown-end dropdown-bottom">
-              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
-                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-              </label>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
-              >
-                <li>
-                  <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
-                </li>
-                <li>
-                  <a (click)="merge(entry.row)">
-                    <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue
-                  </a>
-                </li>
-                <li><hr class="my-1 border-base-300" /></li>
-                <li>
-                  <a (click)="delete(entry.row)" class="text-error">
-                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </td>
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="text-xs text-base-content/50 px-1">
-    Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
-    field from tags everywhere — this info-tinted chip is never the same as a tag's chip — because issues power
-    issue-based filtering and targeting.
-  </p>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
-
-/**
- * §9.2 Issues admin (spec Fig. 11). Ranked table with a proportional interest bar and a trend
- * column. Issues are the same `tags` table as §9.1 with `type: 'issue'` — but the two stay
- * visually and conceptually separate everywhere (info tint here vs secondary tint for Tags;
- * see `pplcrm-design-principles` §5) because issues power issue-based filtering/targeting, tags
- * power general categorization. Never merge the two concepts even though the plumbing is shared.
- */
-@Component({
-  selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink],
-  templateUrl: './issues-admin.html',
-})
-export class IssuesAdmin implements OnInit {
-  private readonly tagsSvc = inject(TagsService);
-  private readonly alertSvc = inject(AlertService);
-  protected readonly actions = inject(TagAdminActions);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly rows = signal<TagAdminRow[]>([]);
-  protected readonly peopleSharedCount = signal(0);
-  protected readonly skeletonRows = [1, 2, 3, 4, 5];
-
-  /** Ranked by PEOPLE INTERESTED, descending — `getAdminList` already returns this order. */
-  protected readonly ranked = computed(() => this.rows().map((row, i) => ({ rank: i + 1, row })));
-
-  protected readonly maxInterested = computed(() => Math.max(1, ...this.rows().map((r) => r.use_count_people)));
-
-  protected readonly sentence = computed(() => {
-    const issueCount = this.rows().length;
-    return (
-      `${issueCount.toLocaleString()} issue${issueCount === 1 ? '' : 's'} · ` +
-      `${this.peopleSharedCount().toLocaleString()} people shared what they care about — from forms, surveys and profile edits.`
-    );
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected interestedPercent(row: TagAdminRow): number {
-    return Math.round((row.use_count_people / this.maxInterested()) * 100);
-  }
-
-  protected trendLabel(row: TagAdminRow): string {
-    const n = row.recent_applications_30d;
-    return n > 0 ? `+${n} this month` : 'No new activity this month';
-  }
-
-  protected async rename(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const updated = await this.actions.rename(row, 'issue');
-    if (updated) this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, name: updated.name } : r)));
-  }
-
-  protected async merge(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const others = this.rows().filter((r) => r.id !== row.id);
-    const target = await this.actions.merge(row, others, 'issue');
-    if (target) await this.load();
-  }
-
-  protected async delete(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const deleted = await this.actions.delete(row, 'issue');
-    if (deleted) this.rows.update((rows) => rows.filter((r) => r.id !== row.id));
-  }
-
-  private blurActiveElement(): void {
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }
-
-  private async load(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [rows, peopleSharedCount] = await Promise.all([
-        this.tagsSvc.getAdminList('issue'),
-        this.tagsSvc.countDistinctPeople('issue'),
-      ]);
-      this.rows.set(rows);
-      this.peopleSharedCount.set(peopleSharedCount);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : "Couldn't load issues.");
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tags/ui/tag-admin-actions.ts
 
 ```typescript
@@ -50599,261 +50424,6 @@ export class TagAdminActions {
     } catch (err) {
       this.alertSvc.showError(err instanceof Error && err.message ? err.message : `Couldn't delete this ${noun}.`);
       return false;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
-
-```html
-<div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
-      @if (!loading()) {
-      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="add-label" [size]="4"></pc-icon>
-      New tag
-    </a>
-  </div>
-
-  @if (!loading() && unusedRows().length > 0) {
-  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
-    <div class="flex items-center gap-3">
-      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm text-base-content/80">
-        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
-        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
-      </span>
-    </div>
-    <button type="button" class="btn btn-outline btn-sm shrink-0" (click)="showUnusedOnly.set(!showUnusedOnly())">
-      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
-    </button>
-  </div>
-  }
-
-  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-    <table class="table">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
-          <th>Tag</th>
-          <th>People</th>
-          <th>Last applied</th>
-          <th>Created by</th>
-          <th class="w-10"></th>
-        </tr>
-      </thead>
-      <tbody>
-        @if (loading()) { @for (i of skeletonRows; track i) {
-        <tr>
-          <td colspan="5"><div class="skeleton h-6 w-full"></div></td>
-        </tr>
-        } } @else if (visibleRows().length === 0) {
-        <tr>
-          <td colspan="5" class="py-12 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
-              <p class="text-sm text-base-content/60">
-                {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
-              </p>
-              @if (showUnusedOnly()) {
-              <button type="button" class="btn btn-sm btn-outline" (click)="showUnusedOnly.set(false)">
-                Show all tags
-              </button>
-              } @else {
-              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
-              }
-            </div>
-          </td>
-        </tr>
-        } @else { @for (row of visibleRows(); track row.id) {
-        <tr>
-          <td>
-            <div class="flex items-center gap-2">
-              <span class="badge badge-secondary badge-sm font-medium">{{ row.name }}</span>
-              @if (isUnused(row)) {
-              <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
-              }
-            </div>
-          </td>
-          <td class="tabular-nums">
-            <a
-              [routerLink]="'/people'"
-              [queryParams]="{ tag: row.name }"
-              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-            >
-              {{ row.use_count_people.toLocaleString() }}
-            </a>
-            @if (row.use_count_households > 0) {
-            <span class="text-xs text-base-content/50">
-              · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
-            </span>
-            }
-          </td>
-          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
-          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
-          <td>
-            <div class="dropdown dropdown-end dropdown-bottom">
-              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
-                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-              </label>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
-              >
-                <li>
-                  <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
-                </li>
-                <li>
-                  <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
-                </li>
-                <li><hr class="my-1 border-base-300" /></li>
-                <li>
-                  <a (click)="delete(row)" class="text-error">
-                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </td>
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="text-xs text-base-content/50 px-1">
-    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
-  </p>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
-
-const UNUSED_DAYS = 90;
-const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
-
-/**
- * §9.1 Tags admin (spec Fig. 10). Bespoke table, not `pc-datagrid` — the sentence, unused-tags
- * callout, and rename/merge/delete idiom don't fit the grid's generic column model. Reuses
- * `TagAdminActions` (rename/merge/delete) so Issues admin (`issues-admin.ts`) can't drift from it.
- */
-@Component({
-  selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink],
-  templateUrl: './tags-admin.html',
-})
-export class TagsAdmin implements OnInit {
-  private readonly tagsSvc = inject(TagsService);
-  private readonly alertSvc = inject(AlertService);
-  protected readonly actions = inject(TagAdminActions);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly rows = signal<TagAdminRow[]>([]);
-  protected readonly showUnusedOnly = signal(false);
-  protected readonly skeletonRows = [1, 2, 3, 4, 5];
-
-  protected readonly unusedRows = computed(() => this.rows().filter((r) => this.isUnused(r)));
-
-  protected readonly visibleRows = computed(() => (this.showUnusedOnly() ? this.unusedRows() : this.rows()));
-
-  protected readonly totalApplications = computed(() =>
-    this.rows().reduce((sum, r) => sum + r.use_count_people + r.use_count_households, 0),
-  );
-
-  protected readonly sentence = computed(() => {
-    const tagCount = this.rows().length;
-    const unusedCount = this.unusedRows().length;
-    const parts = [
-      `${tagCount.toLocaleString()} tag${tagCount === 1 ? '' : 's'}`,
-      `${this.totalApplications().toLocaleString()} application${this.totalApplications() === 1 ? '' : 's'}`,
-    ];
-    if (unusedCount > 0) {
-      parts.push(`${unusedCount} unused in ${UNUSED_DAYS} days`);
-    }
-    return parts.join(' · ');
-  });
-
-  protected readonly calloutNames = computed(() =>
-    this.unusedRows()
-      .slice(0, 2)
-      .map((r) => `"${r.name}"`)
-      .join(' and '),
-  );
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected isUnused(row: TagAdminRow): boolean {
-    if (!row.last_applied_at) return true;
-    return Date.now() - new Date(row.last_applied_at).getTime() > UNUSED_MS;
-  }
-
-  protected relativeLastApplied(row: TagAdminRow): string {
-    if (!row.last_applied_at) return 'Never';
-    const ms = Date.now() - new Date(row.last_applied_at).getTime();
-    const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-    if (days <= 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 30) return `${days} days ago`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
-    const years = Math.floor(months / 12);
-    return `${years} year${years === 1 ? '' : 's'} ago`;
-  }
-
-  protected async rename(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const updated = await this.actions.rename(row, 'tag');
-    if (updated) this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, name: updated.name } : r)));
-  }
-
-  protected async merge(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const others = this.rows().filter((r) => r.id !== row.id);
-    const target = await this.actions.merge(row, others, 'tag');
-    if (target) await this.load();
-  }
-
-  protected async delete(row: TagAdminRow): Promise<void> {
-    this.blurActiveElement();
-    const deleted = await this.actions.delete(row, 'tag');
-    if (deleted) this.rows.update((rows) => rows.filter((r) => r.id !== row.id));
-  }
-
-  /** DaisyUI's CSS-only dropdown opens/closes on focus — blur the trigger so it closes before
-   * the confirm/prompt dialog opens (otherwise both float over each other). */
-  private blurActiveElement(): void {
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }
-
-  private async load(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      this.rows.set(await this.tagsSvc.getAdminList('tag'));
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : "Couldn't load tags.");
-    } finally {
-      end();
     }
   }
 }
@@ -55533,499 +55103,6 @@ export class CommandPaletteService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
-    >
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider divider-horizontal"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
-     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3 rounded-lg">
-  <ul
-    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
-  >
-    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-      [spinning]="grid.isRefreshing()"
-      [tip]="'Refresh the grid'"
-      icon="arrow-path"
-      (action)="onRefresh()"
-    />
-    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
-    <pc-grid-tool-btn
-      icon="arrows-up-down-tray"
-      tip="Import / export"
-      [hasDropdown]="true"
-      [dropdownEnd]="true"
-      [hidden]="grid.disableImport() && grid.disableExport()"
-    >
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
-      >
-        @if (!grid.disableImport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
-            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">Import from CSV…</span>
-              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
-            </span>
-          </a>
-        </li>
-        } @if (!grid.disableExport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
-            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </pc-grid-tool-btn>
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
-    <pc-grid-tool-btn
-      icon="funnel"
-      tip="Advanced Filters"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.anyFilterActive()"
-      [enabled]="!grid.hasActiveAdvancedFilters()"
-      (action)="onToggleFilters()"
-    />
-    <pc-grid-tool-btn
-      icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-      (action)="grid.openAdvancedFilterBuilder()"
-    />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-      <pc-dg-columns-dropdown [grid]="grid" />
-    </pc-grid-tool-btn>
-
-    <pc-grid-tool-btn
-      [icon]="grid.archiveIcon()"
-      [tip]="grid.archiveTip()"
-      [hidden]="!grid.showArchiveIcon()"
-      [active]="grid.archiveModeState()"
-      (action)="onToggleArchive()"
-    />
-  </ul>
-
-  <!-- + Add — a solid-primary button outside the group (spec §5). -->
-  @if (grid.addRoute()) {
-  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
-    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
-    <span>{{ addLabel() }}</span>
-  </button>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  /**
-   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
-   * count-sentence: "matching" only when a filter narrows the set, singular noun
-   * at 1, and just "Export people" before the first load resolves a count.
-   */
-  readonly exportLabel = computed<string>(() => {
-    const count = this.grid.totalCountAll();
-    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
-    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
-    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
-    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
-  });
-
-  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
-   *  grid config carries no specific entity noun. */
-  readonly addLabel = computed(() => {
-    const noun = this.grid.entityNoun;
-    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
-  });
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
-
-```typescript
-import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-grid-tool-btn',
-  template: `
-    <li
-      [class.tooltip-left]="placement() === 'left'"
-      [class.tooltip-right]="placement() === 'right'"
-      [class.tooltip-top]="placement() === 'top'"
-      [class.tooltip-bottom]="placement() === 'bottom'"
-      [class.hidden]="hidden()"
-      [class.disabled]="!enabled() || spinning()"
-      [class.cursor-not-allowed]="!enabled() || spinning()"
-      [class.text-neutral-400]="!enabled() || spinning()"
-      [class.opacity-50]="spinning()"
-      class="tooltip tooltip-accent "
-      [class.text-primary]="active()"
-      [attr.data-tip]="tip()"
-      (click)="onLiClick($event)"
-    >
-      @if (hasDropdown()) {
-        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
-            <div class="flex items-center justify-center ">
-              <a role="button" class="relative pointer-events-none ">
-                <pc-icon
-                  [name]="icon()"
-                  [size]="4"
-                  class="group-hover:text-primary"
-                  [class]="spinning() ? 'animate-spin inline-block' : ''"
-                ></pc-icon>
-                @if (badge() && badge()! > 0) {
-                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
-                    {{ badge() }}
-                  </span>
-                }
-              </a>
-            </div>
-          </summary>
-          <ng-content></ng-content>
-        </details>
-      } @else {
-        <a
-          ><pc-icon
-            [name]="icon()"
-            [size]="4"
-            class="group-hover:text-primary"
-            [class]="spinning() ? 'animate-spin inline-block' : ''"
-          ></pc-icon
-        ></a>
-      }
-    </li>
-  `,
-  imports: [Icon],
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class GridActionComponent {
-  private readonly el = inject(ElementRef);
-
-  public readonly action = output<void>();
-
-  public enabled = input(true);
-  public hidden = input(false);
-  public active = input(false);
-  public spinning = input(false);
-  public icon = input.required<PcIconNameType>();
-  public tip = input.required<string>();
-  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
-  public hasDropdown = input(false);
-  public dropdownEnd = input(true);
-  public badge = input<number | undefined>(undefined);
-
-  public emitClick() {
-    this.action.emit();
-  }
-
-  public onLiClick(_event: MouseEvent) {
-    if (this.hasDropdown()) {
-      return;
-    }
-    if (this.enabled() && !this.spinning()) {
-      this.emitClick();
-    }
-  }
-
-  public onSummaryClick(event: MouseEvent) {
-    if (!this.enabled() || this.spinning()) {
-      event.preventDefault();
-    }
-  }
-
-  @HostListener('document:click', ['$event'])
-  public onDocumentClick(event: MouseEvent) {
-    if (!this.hasDropdown()) return;
-    const detailsEl = this.el.nativeElement.querySelector('details');
-    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
-      detailsEl.removeAttribute('open');
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
 
 ```typescript
@@ -56181,30 +55258,6 @@ export const environment = {
   // Base domain tenant subdomains hang off of, for building public page URLs (`<slug>.<baseDomain>`):
   // forms, event RSVPs, volunteer signups, donations.
   publicBaseDomain: 'localhost',
-};
-```
-
-## File: apps/frontend/src/app/auth/login/login-guard.ts
-
-```typescript
-import { inject } from '@angular/core';
-import type { CanActivateFn } from '@angular/router';
-import { Router } from '@angular/router';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-export const loginGuard: CanActivateFn = () => {
-  const user = inject(AuthService).getUser();
-
-  // Only a fully-authenticated (verified) user belongs inside the app shell — send them to
-  // /dashboard. An unverified user must be allowed to stay on /signin to see the "verify your
-  // email" state: redirecting them to /dashboard bounces off authGuard (which kicks unverified
-  // users back to /signin) into an infinite redirect loop that hangs the page.
-  if (user?.email_verified) {
-    return inject(Router).navigateByUrl('/dashboard');
-  }
-
-  return true;
 };
 ```
 
@@ -59558,6 +58611,478 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
+
+```html
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-bold text-base-content">Issues</h1>
+      @if (!loading()) {
+      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
+      }
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="add-issue" [size]="4"></pc-icon>
+      New issue
+    </a>
+  </div>
+
+  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+    <table class="table">
+      <thead>
+        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+          <th class="w-10">#</th>
+          <th>Issue</th>
+          <th class="min-w-48">People interested</th>
+          <th>Trend</th>
+          <th>Top ward</th>
+          <th class="w-10"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading()) { @for (i of skeletonRows; track i) {
+        <tr>
+          <td colspan="6"><div class="skeleton h-6 w-full"></div></td>
+        </tr>
+        } } @else if (ranked().length === 0) {
+        <tr>
+          <td colspan="6" class="py-12 text-center">
+            <div class="flex flex-col items-center gap-2">
+              <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
+              <p class="text-sm text-base-content/60">No issues yet.</p>
+              <a routerLink="add" class="btn btn-sm btn-primary">New issue</a>
+            </div>
+          </td>
+        </tr>
+        } @else { @for (entry of ranked(); track entry.row.id) {
+        <tr>
+          <td class="tabular-nums text-base-content/50">{{ entry.rank }}</td>
+          <td>
+            <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
+          </td>
+          <td>
+            <div class="flex items-center gap-2">
+              <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
+                <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
+              </div>
+              <a
+                [routerLink]="'/people'"
+                [queryParams]="{ issue: entry.row.name }"
+                class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
+              >
+                {{ entry.row.use_count_people.toLocaleString() }}
+              </a>
+            </div>
+          </td>
+          <td
+            class="text-sm tabular-nums"
+            [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
+          >
+            {{ trendLabel(entry.row) }}
+          </td>
+          <td class="text-sm text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
+          <td>
+            <div class="dropdown dropdown-end dropdown-bottom">
+              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
+                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+              </label>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
+              >
+                <li>
+                  <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
+                </li>
+                <li>
+                  <a (click)="merge(entry.row)">
+                    <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue
+                  </a>
+                </li>
+                <li><hr class="my-1 border-base-300" /></li>
+                <li>
+                  <a (click)="delete(entry.row)" class="text-error">
+                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
+    field from tags everywhere because issues power issue-based filtering and targeting.
+  </p>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
+
+/**
+ * §9.2 Issues admin (spec Fig. 11). Ranked table with a proportional interest bar and a trend
+ * column. Issues are the same `tags` table as §9.1 with `type: 'issue'` — but the two stay
+ * conceptually separate everywhere (see `pplcrm-design-principles` §5) because issues power
+ * issue-based filtering/targeting, tags power general categorization. Never merge the two
+ * concepts even though the plumbing is shared. Each row's chip uses its own `color`.
+ */
+@Component({
+  selector: 'pc-issues-admin',
+  imports: [Icon, RouterLink, TagItem],
+  templateUrl: './issues-admin.html',
+})
+export class IssuesAdmin implements OnInit {
+  private readonly tagsSvc = inject(TagsService);
+  private readonly alertSvc = inject(AlertService);
+  protected readonly actions = inject(TagAdminActions);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly rows = signal<TagAdminRow[]>([]);
+  protected readonly peopleSharedCount = signal(0);
+  protected readonly skeletonRows = [1, 2, 3, 4, 5];
+
+  /** Ranked by PEOPLE INTERESTED, descending — `getAdminList` already returns this order. */
+  protected readonly ranked = computed(() => this.rows().map((row, i) => ({ rank: i + 1, row })));
+
+  protected readonly maxInterested = computed(() => Math.max(1, ...this.rows().map((r) => r.use_count_people)));
+
+  protected readonly sentence = computed(() => {
+    const issueCount = this.rows().length;
+    return (
+      `${issueCount.toLocaleString()} issue${issueCount === 1 ? '' : 's'} · ` +
+      `${this.peopleSharedCount().toLocaleString()} people shared what they care about — from forms, surveys and profile edits.`
+    );
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected interestedPercent(row: TagAdminRow): number {
+    return Math.round((row.use_count_people / this.maxInterested()) * 100);
+  }
+
+  protected trendLabel(row: TagAdminRow): string {
+    const n = row.recent_applications_30d;
+    return n > 0 ? `+${n} this month` : 'No new activity this month';
+  }
+
+  protected async rename(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const updated = await this.actions.rename(row, 'issue');
+    if (updated) this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, name: updated.name } : r)));
+  }
+
+  protected async merge(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const others = this.rows().filter((r) => r.id !== row.id);
+    const target = await this.actions.merge(row, others, 'issue');
+    if (target) await this.load();
+  }
+
+  protected async delete(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const deleted = await this.actions.delete(row, 'issue');
+    if (deleted) this.rows.update((rows) => rows.filter((r) => r.id !== row.id));
+  }
+
+  private blurActiveElement(): void {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [rows, peopleSharedCount] = await Promise.all([
+        this.tagsSvc.getAdminList('issue'),
+        this.tagsSvc.countDistinctPeople('issue'),
+      ]);
+      this.rows.set(rows);
+      this.peopleSharedCount.set(peopleSharedCount);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : "Couldn't load issues.");
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
+
+```html
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
+      @if (!loading()) {
+      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
+      }
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="add-label" [size]="4"></pc-icon>
+      New tag
+    </a>
+  </div>
+
+  @if (!loading() && unusedRows().length > 0) {
+  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
+    <div class="flex items-center gap-3">
+      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm text-base-content/80">
+        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
+        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
+      </span>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm shrink-0" (click)="showUnusedOnly.set(!showUnusedOnly())">
+      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
+    </button>
+  </div>
+  }
+
+  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+    <table class="table">
+      <thead>
+        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+          <th>Tag</th>
+          <th>People</th>
+          <th>Last applied</th>
+          <th>Created by</th>
+          <th class="w-10"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading()) { @for (i of skeletonRows; track i) {
+        <tr>
+          <td colspan="5"><div class="skeleton h-6 w-full"></div></td>
+        </tr>
+        } } @else if (visibleRows().length === 0) {
+        <tr>
+          <td colspan="5" class="py-12 text-center">
+            <div class="flex flex-col items-center gap-2">
+              <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
+              <p class="text-sm text-base-content/60">
+                {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
+              </p>
+              @if (showUnusedOnly()) {
+              <button type="button" class="btn btn-sm btn-outline" (click)="showUnusedOnly.set(false)">
+                Show all tags
+              </button>
+              } @else {
+              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
+              }
+            </div>
+          </td>
+        </tr>
+        } @else { @for (row of visibleRows(); track row.id) {
+        <tr>
+          <td>
+            <div class="flex items-center gap-2">
+              <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
+              @if (isUnused(row)) {
+              <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
+              }
+            </div>
+          </td>
+          <td class="tabular-nums">
+            <a
+              [routerLink]="'/people'"
+              [queryParams]="{ tag: row.name }"
+              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+            >
+              {{ row.use_count_people.toLocaleString() }}
+            </a>
+            @if (row.use_count_households > 0) {
+            <span class="text-xs text-base-content/50">
+              · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
+            </span>
+            }
+          </td>
+          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
+          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
+          <td>
+            <div class="dropdown dropdown-end dropdown-bottom">
+              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
+                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+              </label>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
+              >
+                <li>
+                  <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
+                </li>
+                <li>
+                  <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
+                </li>
+                <li><hr class="my-1 border-base-300" /></li>
+                <li>
+                  <a (click)="delete(row)" class="text-error">
+                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
+  </p>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
+
+const UNUSED_DAYS = 90;
+const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * §9.1 Tags admin (spec Fig. 10). Bespoke table, not `pc-datagrid` — the sentence, unused-tags
+ * callout, and rename/merge/delete idiom don't fit the grid's generic column model. Reuses
+ * `TagAdminActions` (rename/merge/delete) so Issues admin (`issues-admin.ts`) can't drift from it.
+ */
+@Component({
+  selector: 'pc-tags-admin',
+  imports: [Icon, RouterLink, TagItem],
+  templateUrl: './tags-admin.html',
+})
+export class TagsAdmin implements OnInit {
+  private readonly tagsSvc = inject(TagsService);
+  private readonly alertSvc = inject(AlertService);
+  protected readonly actions = inject(TagAdminActions);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly rows = signal<TagAdminRow[]>([]);
+  protected readonly showUnusedOnly = signal(false);
+  protected readonly skeletonRows = [1, 2, 3, 4, 5];
+
+  protected readonly unusedRows = computed(() => this.rows().filter((r) => this.isUnused(r)));
+
+  protected readonly visibleRows = computed(() => (this.showUnusedOnly() ? this.unusedRows() : this.rows()));
+
+  protected readonly totalApplications = computed(() =>
+    this.rows().reduce((sum, r) => sum + r.use_count_people + r.use_count_households, 0),
+  );
+
+  protected readonly sentence = computed(() => {
+    const tagCount = this.rows().length;
+    const unusedCount = this.unusedRows().length;
+    const parts = [
+      `${tagCount.toLocaleString()} tag${tagCount === 1 ? '' : 's'}`,
+      `${this.totalApplications().toLocaleString()} application${this.totalApplications() === 1 ? '' : 's'}`,
+    ];
+    if (unusedCount > 0) {
+      parts.push(`${unusedCount} unused in ${UNUSED_DAYS} days`);
+    }
+    return parts.join(' · ');
+  });
+
+  protected readonly calloutNames = computed(() =>
+    this.unusedRows()
+      .slice(0, 2)
+      .map((r) => `"${r.name}"`)
+      .join(' and '),
+  );
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected isUnused(row: TagAdminRow): boolean {
+    if (!row.last_applied_at) return true;
+    return Date.now() - new Date(row.last_applied_at).getTime() > UNUSED_MS;
+  }
+
+  protected relativeLastApplied(row: TagAdminRow): string {
+    if (!row.last_applied_at) return 'Never';
+    const ms = Date.now() - new Date(row.last_applied_at).getTime();
+    const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30) return `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+    const years = Math.floor(months / 12);
+    return `${years} year${years === 1 ? '' : 's'} ago`;
+  }
+
+  protected async rename(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const updated = await this.actions.rename(row, 'tag');
+    if (updated) this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, name: updated.name } : r)));
+  }
+
+  protected async merge(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const others = this.rows().filter((r) => r.id !== row.id);
+    const target = await this.actions.merge(row, others, 'tag');
+    if (target) await this.load();
+  }
+
+  protected async delete(row: TagAdminRow): Promise<void> {
+    this.blurActiveElement();
+    const deleted = await this.actions.delete(row, 'tag');
+    if (deleted) this.rows.update((rows) => rows.filter((r) => r.id !== row.id));
+  }
+
+  /** DaisyUI's CSS-only dropdown opens/closes on focus — blur the trigger so it closes before
+   * the confirm/prompt dialog opens (otherwise both float over each other). */
+  private blurActiveElement(): void {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      this.rows.set(await this.tagsSvc.getAdminList('tag'));
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : "Couldn't load tags.");
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
 
 ```typescript
@@ -60336,6 +59861,121 @@ export const personRecordIdResolver: ResolveFn<string | RedirectCommand> = async
 
 export const householdRecordIdResolver = recordSlugResolver(HouseholdsService, '/households');
 export const companyRecordIdResolver = recordSlugResolver(CompaniesService, '/companies');
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
+
+  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
+   *  grid config carries no specific entity noun. */
+  readonly addLabel = computed(() => {
+    const noun = this.grid.entityNoun;
+    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
+  });
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/services/companies-service.ts
@@ -61407,130 +61047,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
-    [class.animate-up]="nav.justPinned"
-    [class.tooltip]="isEffectivelyNarrow()"
-    [class.tooltip-right]="isEffectivelyNarrow()"
-    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="!font-semibold !text-primary"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.!font-semibold]="pendingRoute() === nav.route"
-    [class.!text-primary]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      } @if (nav.badgeCount) {
-      <span
-        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
-        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
-        >{{ nav.badgeCount }}</span
-      >
-      }
-    </span>
-    @if (nav.shortcut && !isEffectivelyNarrow()) {
-    <span
-      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
-      aria-hidden="true"
-    >
-      <kbd class="kbd kbd-xs">g</kbd>
-      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
-    </span>
-    }
-  </a>
-</ng-template>
-
-<div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <a
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </a>
-
-  <a
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
-    routerLink="/dashboard"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
-    (click)="this.closeMobile()"
-  >
-    <span aria-hidden="true">pC</span>
-  </a>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
-        <hr class="text-neutral w-6" />
-        } } @else { {{ item.name }} }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow items-start flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="arrow-right-end-on-rectangle"
-      swapOnIcon="arrow-left-start-on-rectangle"
-      [checked]="isDrawerFull()"
-      animation="flip"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
 
 ```typescript
@@ -62441,7 +61957,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly countSentence = computed<string | null>(() => {
     const count = this.hasInitiatedLoad() ? this.totalCountAll() : null;
     const sentence = this.totalSentence();
-    if (count !== null && this.anyFilterActive()) {
+    // Show "N match your filters" whenever the chip row has chips — the same
+    // source the user sees. (Tying this to the visible chips keeps the sentence
+    // in lock-step with them, rather than to a separately-derived filter flag.)
+    const isFiltered = this.filterChips().length > 0;
+    if (count !== null && isFiltered) {
       const matched =
         count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
       return sentence ? `${matched} · ${sentence}` : matched;
@@ -63247,6 +62767,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       totalCount: this.totalCountAll(),
       getRowsForExport: () => this.rows().map((r) => ({ ...r })),
       queueFullExport: () => this.queueFullExport(),
+      logInstantExport: (rowCount) => this.logInstantExport(rowCount),
     });
   }
   public doConfirmExport() {
@@ -64416,6 +63937,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
+  /** Records a direct browser-download export in Exports history so it's consistently listed
+   * alongside queued exports — see pplcrm-datagrid. Fire-and-forget: never blocks or fails the
+   * download the user already has. */
+  private logInstantExport(rowCount: number): void {
+    void this.gridSvc
+      .logInstantExport({
+        entity: (this.config.messages.exportEntity ||
+          this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
+        fileName: this.config.messages.exportFileName,
+        rowCount,
+      })
+      .catch(() => {
+        // Best-effort logging only — the user already has their file.
+      });
+  }
+
   private visibleColumnFields(): string[] {
     const visibility = this.colVisibility();
     return this.colDefsWithEdit
@@ -64535,6 +64072,126 @@ type TagDiff = {
 /** Narrow an unknown value to a property-indexable record. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
+
+```typescript
+import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-grid-tool-btn',
+  template: `
+    <li
+      [class.tooltip-left]="placement() === 'left'"
+      [class.tooltip-right]="placement() === 'right'"
+      [class.tooltip-top]="placement() === 'top'"
+      [class.tooltip-bottom]="placement() === 'bottom'"
+      [class.hidden]="hidden()"
+      [class.disabled]="!enabled() || spinning()"
+      [class.cursor-not-allowed]="!enabled() || spinning()"
+      [class.text-neutral-400]="!enabled() || spinning()"
+      [class.opacity-50]="spinning()"
+      class="tooltip tooltip-accent "
+      [class.text-primary]="active()"
+      [attr.data-tip]="tip()"
+      (click)="onLiClick($event)"
+    >
+      @if (hasDropdown()) {
+        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
+          <summary class="list-none cursor-pointer" [class.pc-no-caret]="hideCaret()" (click)="onSummaryClick($event)">
+            <div class="flex items-center justify-center ">
+              <a role="button" class="relative pointer-events-none ">
+                <pc-icon
+                  [name]="icon()"
+                  [size]="4"
+                  class="group-hover:text-primary"
+                  [class]="spinning() ? 'animate-spin' : ''"
+                ></pc-icon>
+                @if (badge() && badge()! > 0) {
+                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+                    {{ badge() }}
+                  </span>
+                }
+              </a>
+            </div>
+          </summary>
+          <ng-content></ng-content>
+        </details>
+      } @else {
+        <a
+          ><pc-icon
+            [name]="icon()"
+            [size]="4"
+            class="group-hover:text-primary"
+            [class]="spinning() ? 'animate-spin' : ''"
+          ></pc-icon
+        ></a>
+      }
+    </li>
+  `,
+  imports: [Icon],
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
+         dropdown buttons that opt out via [hideCaret]. */
+      summary.pc-no-caret::after {
+        display: none;
+      }
+    `,
+  ],
+})
+export class GridActionComponent {
+  private readonly el = inject(ElementRef);
+
+  public readonly action = output<void>();
+
+  public enabled = input(true);
+  public hidden = input(false);
+  public active = input(false);
+  public spinning = input(false);
+  public icon = input.required<PcIconNameType>();
+  public tip = input.required<string>();
+  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
+  public hasDropdown = input(false);
+  public dropdownEnd = input(true);
+  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
+  public hideCaret = input(false);
+  public badge = input<number | undefined>(undefined);
+
+  public emitClick() {
+    this.action.emit();
+  }
+
+  public onLiClick(_event: MouseEvent) {
+    if (this.hasDropdown()) {
+      return;
+    }
+    if (this.enabled() && !this.spinning()) {
+      this.emitClick();
+    }
+  }
+
+  public onSummaryClick(event: MouseEvent) {
+    if (!this.enabled() || this.spinning()) {
+      event.preventDefault();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  public onDocumentClick(event: MouseEvent) {
+    if (!this.hasDropdown()) return;
+    const detailsEl = this.el.nativeElement.querySelector('details');
+    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
+      detailsEl.removeAttribute('open');
+    }
+  }
 }
 ```
 
@@ -64733,6 +64390,396 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 }
 
 export type DATA_TYPE = 'persons' | 'households';
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="!font-semibold !text-primary"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
+        >{{ nav.badgeCount }}</span
+      >
+      }
+    </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
+  </a>
+</ng-template>
+
+<div
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <a
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </a>
+
+  <a
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
+    routerLink="/dashboard"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
+  >
+    <span aria-hidden="true">pC</span>
+  </a>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
+        <hr class="text-neutral w-6" />
+        } } @else { {{ item.name }} }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow()"
+        swapOnIcon="chevron-right"
+        swapOffIcon="chevron-down"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
+      [checked]="isDrawerFull()"
+      animation="flip"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider divider-horizontal"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts

@@ -35,6 +35,7 @@ import type {
   exportCsvInput,
   exportCsvResponse,
   queueExportInput,
+  logInstantExportInput,
   dataExportRecord,
   sortModelItem,
   InviteAuthUserObj,
@@ -162,6 +163,7 @@ export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
 export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
 export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
 export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
 export type DataExportRecordType = z.infer<typeof dataExportRecord>;
 
 export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
