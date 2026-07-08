@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -10,13 +11,13 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 /**
  * §9.2 Issues admin (spec Fig. 11). Ranked table with a proportional interest bar and a trend
  * column. Issues are the same `tags` table as §9.1 with `type: 'issue'` — but the two stay
- * visually and conceptually separate everywhere (info tint here vs secondary tint for Tags;
- * see `pplcrm-design-principles` §5) because issues power issue-based filtering/targeting, tags
- * power general categorization. Never merge the two concepts even though the plumbing is shared.
+ * conceptually separate everywhere (see `pplcrm-design-principles` §5) because issues power
+ * issue-based filtering/targeting, tags power general categorization. Never merge the two
+ * concepts even though the plumbing is shared. Each row's chip uses its own `color`.
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink],
+  imports: [Icon, RouterLink, TagItem],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
