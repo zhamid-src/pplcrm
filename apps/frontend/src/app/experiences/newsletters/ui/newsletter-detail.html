@@ -70,7 +70,7 @@
         >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
-            <div class="stat-value text-xl font-extrabold text-success mt-1">
+            <div class="stat-value text-xl font-extrabold text-success mt-1 tabular-nums">
               {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(1) : '0.0' }}%
             </div>
             <div class="stat-desc text-[10px] text-base-content/40 mt-1">
@@ -94,7 +94,7 @@
         >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
-            <div class="stat-value text-xl font-extrabold text-accent mt-1">
+            <div class="stat-value text-xl font-extrabold text-accent mt-1 tabular-nums">
               {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(1) : '0.0' }}%
             </div>
             <div class="stat-desc text-[10px] text-base-content/40 mt-1">
@@ -118,7 +118,7 @@
         >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
-            <div class="stat-value text-xl font-extrabold text-info mt-1">
+            <div class="stat-value text-xl font-extrabold text-info mt-1 tabular-nums">
               {{ formatNumber(email()?.delivered_count) }}
             </div>
             <div class="stat-desc text-[10px] text-base-content/40 mt-1">
@@ -136,7 +136,7 @@
         >
           <div>
             <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-            <div class="stat-value text-xl font-extrabold text-warning mt-1">
+            <div class="stat-value text-xl font-extrabold text-warning mt-1 tabular-nums">
               {{ formatNumber(email()?.bounce_count) }}
             </div>
             <div class="stat-desc text-[10px] text-base-content/40 mt-1">Undelivered / dropped</div>
@@ -151,13 +151,15 @@
           <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
             <div class="stat p-0">
               <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Replies</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5">{{ formatNumber(email()?.reply_count) }}</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 tabular-nums">
+                {{ formatNumber(email()?.reply_count) }}
+              </div>
             </div>
           </div>
           <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
             <div class="stat p-0">
               <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70">
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70 tabular-nums">
                 {{ formatNumber(email()?.unsubscribe_count) }}
               </div>
             </div>
@@ -165,7 +167,7 @@
           <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
             <div class="stat p-0">
               <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-error">
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-error tabular-nums">
                 {{ formatNumber(email()?.spam_complaint_count) }}
               </div>
             </div>

@@ -28,7 +28,9 @@
           <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
             Sent Campaigns
           </div>
-          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1">{{ stats().totalSent }}</div>
+          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1 tabular-nums">
+            {{ stats().totalSent }}
+          </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
         </div>
       </div>
@@ -39,7 +41,7 @@
           <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
             Total Delivered
           </div>
-          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">
+          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1 tabular-nums">
             {{ formatNumber(stats().totalRecipients) }}
           </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
@@ -54,7 +56,7 @@
           <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
             Avg Open Rate
           </div>
-          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
+          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1 tabular-nums">
             {{ stats().avgOpenRate.toFixed(1) }}%
           </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
@@ -78,7 +80,7 @@
           <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
             Avg Click Rate
           </div>
-          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">
+          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1 tabular-nums">
             {{ stats().avgClickRate.toFixed(1) }}%
           </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
@@ -98,7 +100,9 @@
       <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
         <div class="stat p-4">
           <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1">{{ stats().totalBounces }}</div>
+          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1 tabular-nums">
+            {{ stats().totalBounces }}
+          </div>
           <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
         </div>
       </div>
