@@ -142,24 +142,26 @@ export class ActivityFeed implements OnInit {
           entity: this.selectedEntity() || undefined,
           activity: this.selectedActivity() || undefined,
         },
-        fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
+        fileName: 'activity-log.csv',
       });
 
       if (res && res.status === 'processing') {
-        this.alertSvc.showSuccess(
-          'Activity feed export has been queued. You will receive an email once it is complete.',
-        );
+        this.alertSvc.showSuccess('Export queued — we’ll email you activity-log.csv once it’s ready.');
       } else if (res && res.csv) {
         const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = res.fileName || 'activity-feed-export.csv';
+        a.download = res.fileName || 'activity-log.csv';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        this.alertSvc.showSuccess('Activity feed exported successfully');
+        // Count exported events = CSV data rows (excludes the header and any trailing newline).
+        const eventCount = res.csv.trim().split('\n').length - 1;
+        this.alertSvc.showSuccess(
+          `Exported ${eventCount} ${eventCount === 1 ? 'event' : 'events'} to activity-log.csv`,
+        );
       } else {
         this.alertSvc.showError('No activity data to export');
       }
@@ -168,6 +170,88 @@ export class ActivityFeed implements OnInit {
       this.alertSvc.showError('Failed to export activity feed');
     } finally {
       this.isLoadingExport.set(false);
+    }
+  }
+
+  // Group the flat feed into day buckets (Today / Yesterday / dated) for scannable headers (§19).
+  protected readonly groupedActivities = computed(() => {
+    const rows = this.activities();
+    const groups: Array<{ key: string; label: string; items: any[] }> = [];
+    const byKey = new Map<string, { key: string; label: string; items: any[] }>();
+    for (const act of rows) {
+      const created = new Date(act.created_at);
+      const key = this.dayKey(created);
+      let group = byKey.get(key);
+      if (!group) {
+        group = { key, label: this.dayLabel(created), items: [] };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      group.items.push(act);
+    }
+    return groups;
+  });
+
+  protected readonly totalShown = computed(() => this.activities().length);
+
+  private dayKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  }
+
+  private dayLabel(date: Date): string {
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (this.dayKey(date) === this.dayKey(today)) return 'Today';
+    if (this.dayKey(date) === this.dayKey(yesterday)) return 'Yesterday';
+    return date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  // Honest attribution (§19): backend stores a full sentence in metadata.message for
+  // tokenised public actions (e.g. delivery volunteer link) — surface it verbatim rather
+  // than rebuilding a generic one.
+  protected getCustomMessage(act: any): string | null {
+    const msg = act.metadata?.message;
+    return typeof msg === 'string' && msg.trim().length ? msg : null;
+  }
+
+  // "via volunteer link" when the action came through a public token, not a signed-in user.
+  protected getViaLabel(act: any): string | null {
+    const via = act.metadata?.via ?? act.metadata?.acted_via;
+    if (via === 'volunteer_link') return 'via volunteer link';
+    return null;
+  }
+
+  // Short kind chip label paired with getActivityClass() colour.
+  protected getKindLabel(activity: string): string {
+    switch (activity) {
+      case 'create':
+        return 'Created';
+      case 'update':
+        return 'Edited';
+      case 'delete':
+        return 'Deleted';
+      case 'merge':
+        return 'Merged';
+      case 'import':
+        return 'Imported';
+      case 'export':
+        return 'Exported';
+      case 'assign':
+        return 'Assigned';
+      case 'unassign':
+        return 'Unassigned';
+      case 'close':
+        return 'Closed';
+      case 'reopen':
+        return 'Reopened';
+      case 'send':
+        return 'Sent';
+      case 'submission':
+      case 'signup':
+        return 'Submitted';
+      default:
+        return activity.charAt(0).toUpperCase() + activity.slice(1);
     }
   }
 
