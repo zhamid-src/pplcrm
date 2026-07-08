@@ -214,10 +214,10 @@ describe('DataGrid', () => {
       fixture.componentRef.setInput('totalSentence', '4 people total');
       await init();
 
-      // A fetch has run — hasInitiatedLoad must be true even though the fast mock
+      // A fetch has completed — hasLoaded must be true even though the fast mock
       // never let the (gated) isLoading() signal flip true. This is the regression
       // guard: if the count is gated on isLoading() again, the prefix disappears.
-      expect((component as unknown as { hasInitiatedLoad: () => boolean }).hasInitiatedLoad()).toBe(true);
+      expect((component as unknown as { hasLoaded: () => boolean }).hasLoaded()).toBe(true);
       expect(component.totalCountAll()).toBe(2);
 
       // Unfiltered → just the grand-total sentence, no prefix.

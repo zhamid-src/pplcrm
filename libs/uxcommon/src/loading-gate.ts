@@ -11,11 +11,13 @@ export type loadingGate = {
   visible: ReturnType<typeof signal<boolean>>;
 
   /**
-   * True once any operation has begun — ungated, so it flips even for a fast
-   * operation that never trips `visible`. Use this for "has loaded at least once"
-   * state (first-load gating, skeleton-vs-empty) instead of watching `visible`.
+   * True once the first operation has COMPLETED — ungated, so it flips even for a
+   * fast operation that never trips `visible`. Set when a load finishes (not when
+   * it begins), so the data it produced is already in place. Use this for
+   * "has loaded at least once" state (first-load gating, skeleton-vs-empty)
+   * instead of watching `visible`.
    */
-  started: Signal<boolean>;
+  loaded: Signal<boolean>;
 
   begin(): () => void;
 };
@@ -25,7 +27,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
   const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
 
   const visible = signal(false);
-  const started = signal(false);
+  const loaded = signal(false);
   let pendingCount = 0;
   let showTimer: ReturnType<typeof setTimeout> | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -67,7 +69,6 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   function begin() {
     pendingCount++;
-    started.set(true);
     if (pendingCount === 1) {
       // First operation: start the delayed show
       scheduleShow();
@@ -78,6 +79,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
       if (done) return;
       done = true;
       pendingCount--;
+      loaded.set(true); // an operation has completed — its result is now in place
       if (pendingCount <= 0) {
         pendingCount = 0;
         // If we never showed, cancel the show timer so _loading never appears
@@ -87,5 +89,5 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
     };
   }
 
-  return { begin, visible, started };
+  return { begin, visible, loaded };
 }
