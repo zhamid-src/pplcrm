@@ -77,10 +77,10 @@
       </span>
       @if (item.children?.length) {
       <pc-swap
-        class="rotate-90 invisible mr-2"
+        class="invisible mr-2"
         [class.visible]="!isEffectivelyNarrow()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
+        swapOnIcon="chevron-right"
+        swapOffIcon="chevron-down"
         animation="rotate"
         [size]="4"
         [checked]="isCollapsed(item.name)"

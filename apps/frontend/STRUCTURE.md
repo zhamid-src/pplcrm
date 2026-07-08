@@ -37536,864 +37536,6 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
 };
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-
-import type {
-  AddTurfType,
-  AssignTurfType,
-  CutTurfsType,
-  FieldReportRangeType,
-  UpdateTurfType,
-} from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-import type { RouterOutputs } from '../../../services/api/trpc-types';
-
-export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
-export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
-export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
-export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
-export type Coverage = RouterOutputs['canvassing']['getCoverage'];
-export type CutPreview = RouterOutputs['canvassing']['previewCut'];
-
-@Service()
-export class CanvassingService extends TRPCService<unknown> {
-  public getTurfs(): Promise<TurfListItem[]> {
-    return this.api.canvassing.getTurfs.query();
-  }
-
-  public getFieldSummary(): Promise<FieldSummary> {
-    return this.api.canvassing.getFieldSummary.query();
-  }
-
-  public getInFieldToday(): Promise<InFieldToday> {
-    return this.api.canvassing.getInFieldToday.query();
-  }
-
-  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
-    return this.api.canvassing.getFieldReport.query(input);
-  }
-
-  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
-    return this.api.canvassing.exportFieldReport.query(input);
-  }
-
-  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
-    return this.api.canvassing.getCoverage.query(input);
-  }
-
-  public previewCut(input: CutTurfsType): Promise<CutPreview> {
-    return this.api.canvassing.previewCut.query(input);
-  }
-
-  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
-    return this.api.canvassing.cutTurfs.mutate(input);
-  }
-
-  public assign(input: AssignTurfType): Promise<{ token: string }> {
-    return this.api.canvassing.assign.mutate(input);
-  }
-
-  public getCompanionLink(turfId: string): Promise<{ token: string }> {
-    return this.api.canvassing.getCompanionLink.mutate(turfId);
-  }
-
-  public retire(turfId: string): Promise<void> {
-    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
-  }
-
-  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
-    return this.api.canvassing.refreshFromList.mutate(turfId);
-  }
-
-  public addTurf(input: AddTurfType): Promise<{ id: string }> {
-    return this.api.canvassing.addTurf.mutate(input);
-  }
-
-  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
-    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
-
-```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
-      @if (headline()) {
-      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
-      } @else {
-      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
-      }
-    </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-bordered mb-4">
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
-      Turfs &amp; assignments
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
-      Field report
-    </button>
-  </div>
-
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
-            }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
-      }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
-
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table table-sm">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
-      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
-      the person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
-        }
-      </div>
-      <button type="button" class="btn btn-outline btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
-      </button>
-    </div>
-
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
-
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
-          >
-            Street map
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
-          >
-            By ward
-          </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
-        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Strong {{ r.responseMix.strong_support }}</span>
-        <span>Lean {{ r.responseMix.lean_support }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Opposed {{ r.responseMix.opposed }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
-
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
-          </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
-        </div>
-        }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
-
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
-
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
-
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
-    </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
-
-```typescript
-import { Component, type OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
-
-import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
-import {
-  CanvassingService,
-  type Coverage,
-  type FieldReport,
-  type FieldSummary,
-  type InFieldToday,
-  type TurfListItem,
-} from '../services/canvassing-service';
-import { CutTurfsDialog } from './cut-turfs-dialog';
-
-type TurfStatus = TurfListItem['status'];
-type Tab = 'turfs' | 'report';
-type ReportRange = FieldReportRangeType['range'];
-type CoverageStatus = Coverage['doors'][number]['status'];
-type CoverageView = 'map' | 'ward';
-
-/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
-const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
-  conversation: 'success',
-  attempted: 'warning',
-  not_yet: 'muted',
-};
-
-const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
-  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
-  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
-  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
-];
-
-const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
-  draft: 'neutral',
-  assigned: 'info',
-  in_field: 'success',
-  complete: 'primary',
-  retired: 'muted',
-};
-
-const STATUS_LABEL: Record<TurfStatus, string> = {
-  draft: 'Draft — unassigned',
-  assigned: 'Sent to app',
-  in_field: 'In field now',
-  complete: 'Complete',
-  retired: 'Retired',
-};
-
-const STATUS_BADGE: Record<TurfStatus, string> = {
-  draft: 'badge-ghost',
-  assigned: 'badge-info',
-  in_field: 'badge-success',
-  complete: 'badge-primary',
-  retired: 'badge-ghost opacity-60',
-};
-
-const RANGES: { key: ReportRange; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-  { key: 'campaign', label: 'Campaign' },
-];
-
-@Component({
-  selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, CutTurfsDialog],
-  templateUrl: './canvassing-page.html',
-})
-export class CanvassingPage implements OnInit {
-  private readonly svc = inject(CanvassingService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialog = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly tab = signal<Tab>('turfs');
-  protected readonly turfs = signal<TurfListItem[]>([]);
-  protected readonly summary = signal<FieldSummary | null>(null);
-  protected readonly today = signal<InFieldToday | null>(null);
-
-  protected readonly reportRange = signal<ReportRange>('week');
-  protected readonly report = signal<FieldReport | null>(null);
-  protected readonly coverage = signal<Coverage | null>(null);
-  protected readonly coverageView = signal<CoverageView>('map');
-
-  protected readonly cutOpen = signal(false);
-
-  protected readonly ranges = RANGES;
-  protected readonly statusLabel = STATUS_LABEL;
-  protected readonly statusBadge = STATUS_BADGE;
-  protected readonly coverageLegend = COVERAGE_LEGEND;
-
-  ngOnInit(): void {
-    void this.loadTurfs();
-  }
-
-  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
-  protected readonly headline = computed<string>(() => {
-    const s = this.summary();
-    if (!s) return '';
-    const parts = [
-      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
-      `${s.inFieldCount} in the field now`,
-      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
-      `${s.waitingCount} waiting for a canvasser`,
-    ];
-    return parts.join(' · ');
-  });
-
-  /** Response-mix stacked bar segments for the "in the field today" card. */
-  protected readonly todaySegments = computed(() => {
-    const t = this.today();
-    if (!t) return [];
-    const m = t.responseMix;
-    return [
-      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
-      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
-      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
-      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
-      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
-    ].filter((s) => s.value > 0);
-  });
-
-  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
-
-  /**
-   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
-   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
-   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
-   */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    return this.turfs()
-      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
-      .map((t) => ({
-        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
-        variant: this.variantFor(t.status),
-        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
-        id: t.id,
-        payload: t.id,
-      }));
-  });
-
-  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
-
-  protected variantFor(status: TurfStatus): PcMapVariant {
-    return STATUS_VARIANT[status];
-  }
-
-  protected progressPct(t: TurfListItem): number {
-    if (t.door_count <= 0) return 0;
-    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
-  }
-
-  protected async loadTurfs(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [turfs, summary, today] = await Promise.all([
-        this.svc.getTurfs(),
-        this.svc.getFieldSummary(),
-        this.svc.getInFieldToday(),
-      ]);
-      this.turfs.set(turfs);
-      this.summary.set(summary);
-      this.today.set(today);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async loadReport(): Promise<void> {
-    const end = this._loading.begin();
-    const range = { range: this.reportRange(), from: null, to: null };
-    try {
-      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
-      this.report.set(report);
-      this.coverage.set(coverage);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
-    } finally {
-      end();
-    }
-  }
-
-  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
-  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.doors.map((d) => ({
-      position: { lat: d.lat, lng: d.lng },
-      variant: COVERAGE_VARIANT[d.status],
-    }));
-  });
-
-  /** Dashed turf boundaries (convex hull of each turf's doors). */
-  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.turfs.map((t) => ({
-      path: t.path,
-      variant: 'neutral' as const,
-      dashed: true,
-      label: t.name,
-      id: t.id,
-    }));
-  });
-
-  protected selectTab(tab: Tab): void {
-    this.tab.set(tab);
-    if (tab === 'report' && !this.report()) void this.loadReport();
-  }
-
-  protected setRange(range: ReportRange): void {
-    this.reportRange.set(range);
-    void this.loadReport();
-  }
-
-  protected openCut(): void {
-    this.cutOpen.set(true);
-  }
-
-  protected onCutDone(created: number): void {
-    this.cutOpen.set(false);
-    if (created > 0) {
-      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
-      void this.loadTurfs();
-    }
-  }
-
-  /** Assign a turf as a shareable Companion link and copy it. */
-  protected async assign(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
-      await this.copyCompanionLink(token);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async copyLink(t: TurfListItem): Promise<void> {
-    if (t.token) {
-      await this.copyCompanionLink(t.token);
-      return;
-    }
-    await this.assign(t);
-  }
-
-  private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
-    } catch {
-      this.alerts.showSuccess(`Companion link: ${url}`);
-    }
-  }
-
-  protected async refresh(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const res = await this.svc.refreshFromList(t.id);
-      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async retire(t: TurfListItem): Promise<void> {
-    const ok = await this.dialog.confirm({
-      title: 'Retire this turf?',
-      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
-      confirmText: 'Retire turf',
-    });
-    if (!ok) return;
-    const end = this._loading.begin();
-    try {
-      await this.svc.retire(t.id);
-      this.alerts.showSuccess('Turf retired.');
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async exportReport(): Promise<void> {
-    try {
-      const { filename, content } = await this.svc.exportFieldReport({
-        range: this.reportRange(),
-        from: null,
-        to: null,
-      });
-      const blob = new Blob([content], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
-    }
-  }
-
-  protected hourLabel(h: number): string {
-    const am = h < 12;
-    const base = h % 12 === 0 ? 12 : h % 12;
-    return `${base}${am ? 'am' : 'pm'}`;
-  }
-
-  protected barPct(value: number, max: number): number {
-    if (max <= 0) return 0;
-    return Math.round((value / max) * 100);
-  }
-
-  protected maxPerDay(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
-  }
-
-  protected maxByHour(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.byHour.map((h) => h.attempts));
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.html
 
 ```html
@@ -56575,18 +55717,41 @@ export class CommandPaletteService {
     <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
     <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
     <pc-grid-tool-btn
-      [enabled]="!grid.disableImport()"
-      [tip]="'Import data from CSV'"
-      icon="arrow-up-tray"
-      (action)="onImportCsv()"
-    />
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableExport()"
-      [tip]="'Download as CSV'"
-      icon="arrow-down-tray"
-      (action)="onExportCsv()"
-    />
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
 
     <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
 
@@ -56660,9 +55825,24 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
 export class DataGridToolbarComponent {
   public readonly grid = inject(DataGrid);
 
+  private readonly countFormatter = new Intl.NumberFormat();
+
   readonly listOptions = computed<SingleSelectOption[]>(() =>
     this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
+
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
 
   /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
    *  grid config carries no specific entity noun. */
@@ -57026,6 +56206,864 @@ export const loginGuard: CanActivateFn = () => {
 
   return true;
 };
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import type {
+  AddTurfType,
+  AssignTurfType,
+  CutTurfsType,
+  FieldReportRangeType,
+  UpdateTurfType,
+} from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+import type { RouterOutputs } from '../../../services/api/trpc-types';
+
+export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
+export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
+export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
+export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
+export type Coverage = RouterOutputs['canvassing']['getCoverage'];
+export type CutPreview = RouterOutputs['canvassing']['previewCut'];
+
+@Service()
+export class CanvassingService extends TRPCService<unknown> {
+  public getTurfs(): Promise<TurfListItem[]> {
+    return this.api.canvassing.getTurfs.query();
+  }
+
+  public getFieldSummary(): Promise<FieldSummary> {
+    return this.api.canvassing.getFieldSummary.query();
+  }
+
+  public getInFieldToday(): Promise<InFieldToday> {
+    return this.api.canvassing.getInFieldToday.query();
+  }
+
+  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
+    return this.api.canvassing.getFieldReport.query(input);
+  }
+
+  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
+    return this.api.canvassing.exportFieldReport.query(input);
+  }
+
+  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
+    return this.api.canvassing.getCoverage.query(input);
+  }
+
+  public previewCut(input: CutTurfsType): Promise<CutPreview> {
+    return this.api.canvassing.previewCut.query(input);
+  }
+
+  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
+    return this.api.canvassing.cutTurfs.mutate(input);
+  }
+
+  public assign(input: AssignTurfType): Promise<{ token: string }> {
+    return this.api.canvassing.assign.mutate(input);
+  }
+
+  public getCompanionLink(turfId: string): Promise<{ token: string }> {
+    return this.api.canvassing.getCompanionLink.mutate(turfId);
+  }
+
+  public retire(turfId: string): Promise<void> {
+    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
+  }
+
+  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
+    return this.api.canvassing.refreshFromList.mutate(turfId);
+  }
+
+  public addTurf(input: AddTurfType): Promise<{ id: string }> {
+    return this.api.canvassing.addTurf.mutate(input);
+  }
+
+  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
+    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+
+```html
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
+      @if (headline()) {
+      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+      <pc-icon name="map-pin" [size]="4" />
+      Cut new turfs
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-bordered mb-4">
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
+      Turfs &amp; assignments
+    </button>
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
+      Field report
+    </button>
+  </div>
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span class="text-sm">{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
+      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
+      the person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
+        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Strong {{ r.responseMix.strong_support }}</span>
+        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
+
+```typescript
+import { Component, type OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
+
+import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
+import {
+  CanvassingService,
+  type Coverage,
+  type FieldReport,
+  type FieldSummary,
+  type InFieldToday,
+  type TurfListItem,
+} from '../services/canvassing-service';
+import { CutTurfsDialog } from './cut-turfs-dialog';
+
+type TurfStatus = TurfListItem['status'];
+type Tab = 'turfs' | 'report';
+type ReportRange = FieldReportRangeType['range'];
+type CoverageStatus = Coverage['doors'][number]['status'];
+type CoverageView = 'map' | 'ward';
+
+/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
+const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
+  conversation: 'success',
+  attempted: 'warning',
+  not_yet: 'muted',
+};
+
+const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
+  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
+  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
+  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
+];
+
+const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_field: 'success',
+  complete: 'primary',
+  retired: 'muted',
+};
+
+const STATUS_LABEL: Record<TurfStatus, string> = {
+  draft: 'Draft — unassigned',
+  assigned: 'Sent to app',
+  in_field: 'In field now',
+  complete: 'Complete',
+  retired: 'Retired',
+};
+
+const STATUS_BADGE: Record<TurfStatus, string> = {
+  draft: 'badge-ghost',
+  assigned: 'badge-info',
+  in_field: 'badge-success',
+  complete: 'badge-primary',
+  retired: 'badge-ghost opacity-60',
+};
+
+const RANGES: { key: ReportRange; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
+  { key: 'campaign', label: 'Campaign' },
+];
+
+@Component({
+  selector: 'pc-canvassing-page',
+  imports: [DatePipe, Icon, PcMap, CutTurfsDialog],
+  templateUrl: './canvassing-page.html',
+})
+export class CanvassingPage implements OnInit {
+  private readonly svc = inject(CanvassingService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialog = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly tab = signal<Tab>('turfs');
+  protected readonly turfs = signal<TurfListItem[]>([]);
+  protected readonly summary = signal<FieldSummary | null>(null);
+  protected readonly today = signal<InFieldToday | null>(null);
+
+  protected readonly reportRange = signal<ReportRange>('week');
+  protected readonly report = signal<FieldReport | null>(null);
+  protected readonly coverage = signal<Coverage | null>(null);
+  protected readonly coverageView = signal<CoverageView>('map');
+
+  protected readonly cutOpen = signal(false);
+
+  protected readonly ranges = RANGES;
+  protected readonly statusLabel = STATUS_LABEL;
+  protected readonly statusBadge = STATUS_BADGE;
+  protected readonly coverageLegend = COVERAGE_LEGEND;
+
+  ngOnInit(): void {
+    void this.loadTurfs();
+  }
+
+  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
+  protected readonly headline = computed<string>(() => {
+    const s = this.summary();
+    if (!s) return '';
+    const parts = [
+      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
+      `${s.inFieldCount} in the field now`,
+      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
+      `${s.waitingCount} waiting for a canvasser`,
+    ];
+    return parts.join(' · ');
+  });
+
+  /** Response-mix stacked bar segments for the "in the field today" card. */
+  protected readonly todaySegments = computed(() => {
+    const t = this.today();
+    if (!t) return [];
+    const m = t.responseMix;
+    return [
+      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
+      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
+      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
+      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
+      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
+    ].filter((s) => s.value > 0);
+  });
+
+  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
+
+  /**
+   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
+   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
+   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
+   */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    return this.turfs()
+      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
+      .map((t) => ({
+        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
+        variant: this.variantFor(t.status),
+        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
+        id: t.id,
+        payload: t.id,
+      }));
+  });
+
+  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
+
+  protected variantFor(status: TurfStatus): PcMapVariant {
+    return STATUS_VARIANT[status];
+  }
+
+  protected progressPct(t: TurfListItem): number {
+    if (t.door_count <= 0) return 0;
+    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
+  }
+
+  protected async loadTurfs(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [turfs, summary, today] = await Promise.all([
+        this.svc.getTurfs(),
+        this.svc.getFieldSummary(),
+        this.svc.getInFieldToday(),
+      ]);
+      this.turfs.set(turfs);
+      this.summary.set(summary);
+      this.today.set(today);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async loadReport(): Promise<void> {
+    const end = this._loading.begin();
+    const range = { range: this.reportRange(), from: null, to: null };
+    try {
+      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
+      this.report.set(report);
+      this.coverage.set(coverage);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
+    } finally {
+      end();
+    }
+  }
+
+  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
+  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.doors.map((d) => ({
+      position: { lat: d.lat, lng: d.lng },
+      variant: COVERAGE_VARIANT[d.status],
+    }));
+  });
+
+  /** Dashed turf boundaries (convex hull of each turf's doors). */
+  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.turfs.map((t) => ({
+      path: t.path,
+      variant: 'neutral' as const,
+      dashed: true,
+      label: t.name,
+      id: t.id,
+    }));
+  });
+
+  protected selectTab(tab: Tab): void {
+    this.tab.set(tab);
+    if (tab === 'report' && !this.report()) void this.loadReport();
+  }
+
+  protected setRange(range: ReportRange): void {
+    this.reportRange.set(range);
+    void this.loadReport();
+  }
+
+  protected openCut(): void {
+    this.cutOpen.set(true);
+  }
+
+  protected onCutDone(created: number): void {
+    this.cutOpen.set(false);
+    if (created > 0) {
+      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
+      void this.loadTurfs();
+    }
+  }
+
+  /** Assign a turf as a shareable Companion link and copy it. */
+  protected async assign(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
+      await this.copyCompanionLink(token);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async copyLink(t: TurfListItem): Promise<void> {
+    if (t.token) {
+      await this.copyCompanionLink(t.token);
+      return;
+    }
+    await this.assign(t);
+  }
+
+  private async copyCompanionLink(token: string): Promise<void> {
+    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
+    } catch {
+      this.alerts.showSuccess(`Companion link: ${url}`);
+    }
+  }
+
+  protected async refresh(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.svc.refreshFromList(t.id);
+      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async retire(t: TurfListItem): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Retire this turf?',
+      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
+      confirmText: 'Retire turf',
+    });
+    if (!ok) return;
+    const end = this._loading.begin();
+    try {
+      await this.svc.retire(t.id);
+      this.alerts.showSuccess('Turf retired.');
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async exportReport(): Promise<void> {
+    try {
+      const { filename, content } = await this.svc.exportFieldReport({
+        range: this.reportRange(),
+        from: null,
+        to: null,
+      });
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
+    }
+  }
+
+  protected hourLabel(h: number): string {
+    const am = h < 12;
+    const base = h % 12 === 0 ? 12 : h % 12;
+    return `${base}${am ? 'am' : 'pm'}`;
+  }
+
+  protected barPct(value: number, max: number): number {
+    if (max <= 0) return 0;
+    return Math.round((value / max) * 100);
+  }
+
+  protected maxPerDay(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
+  }
+
+  protected maxByHour(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.byHour.map((h) => h.attempts));
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
@@ -64500,6 +64538,203 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
+
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
+  }
+
+  public addMany(rows: UpdatePersonsType[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.persons.count.query();
+  }
+
+  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
+  public countWithCompany(): Promise<number> {
+    return this.api.persons.countWithCompany.query();
+  }
+
+  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
+  public getByPublicId(publicId: string) {
+    return this.api.persons.getByPublicId.query(publicId);
+  }
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+    }
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
+  }
+
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
+    }
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
+  }
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  }
+
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithAddress(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithAddress.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
+    if (!id) {
+      return [];
+    }
+
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
+      };
+    });
+  }
+
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public import(
+    input: {
+      rows: RouterInputs['persons']['import']['rows'];
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      source_csv?: string;
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    options?: { skipErrorHandler?: boolean },
+  ): Promise<RouterOutputs['persons']['import']> {
+    // Wizard shows its own error state — opt out of the global error toast when asked.
+    return this.api.persons.import.mutate(
+      {
+        rows: input.rows,
+        tags: input.tags ?? [],
+        skipped: input.skipped ?? 0,
+        file_name: input.file_name ?? undefined,
+        duplicate_decision: input.duplicate_decision ?? 'skip',
+        list_name: input.list_name,
+        source_csv: input.source_csv,
+        client_skip_reasons: input.client_skip_reasons,
+      },
+      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
+    );
+  }
+
+  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
+  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
+    return this.api.persons.checkDuplicateEmails.query({ emails });
+  }
+
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
+
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
+    return this.api.persons.update.mutate({ id: id, data }, options);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.persons.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
+    return this.api.persons.getPotentialDuplicates.query(options);
+  }
+
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
+    return this.api.persons.getDuplicateCounts.query();
+  }
+
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
+  }
+}
+
+export type DATA_TYPE = 'persons' | 'households';
+```
+
 ## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
 
 ```typescript
@@ -64726,6 +64961,10 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions — nothing is entered by hand.',
       },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot — green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet — with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut — even before the first knock.',
+      },
     ],
   },
   {
@@ -64790,203 +65029,6 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
-```
-
-## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PERSONINHOUSEHOLDTYPE,
-  UpdatePersonsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
-
-@Service()
-export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
-  protected override readonly endpointName = 'persons';
-
-  public add(row: UpdatePersonsType, options?: any) {
-    return this.api.persons.add.mutate(row, options);
-  }
-
-  public addMany(rows: UpdatePersonsType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.persons.count.query();
-  }
-
-  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
-  public countWithCompany(): Promise<number> {
-    return this.api.persons.countWithCompany.query();
-  }
-
-  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
-  public getByPublicId(publicId: string) {
-    return this.api.persons.getByPublicId.query(publicId);
-  }
-  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
-    }
-    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
-  }
-
-  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
-    }
-    return await this.api.persons.deleteMany.mutate(ids, opts as any);
-  }
-  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
-    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
-  }
-
-  public detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<RouterOutputs['persons']['detachTag']> {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getAllWithAddress(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithAddress.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  public getByCompanyId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByCompanyId.query({ id: id, options });
-  }
-
-  public countByCompanyId(id: string): Promise<number> {
-    return this.api.persons.countByCompanyId.query({ id });
-  }
-
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
-    if (!id) {
-      return [];
-    }
-
-    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
-    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
-    const requestOptions = {
-      ...options,
-      columns: mergedColumns,
-    };
-
-    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
-
-    return peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
-      };
-    });
-  }
-
-  public getActivity(id: string) {
-    return this.api.persons.getActivity.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.persons.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public import(
-    input: {
-      rows: RouterInputs['persons']['import']['rows'];
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-      duplicate_decision?: 'merge' | 'skip' | 'import_new';
-      list_name?: string;
-      source_csv?: string;
-      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
-    },
-    options?: { skipErrorHandler?: boolean },
-  ): Promise<RouterOutputs['persons']['import']> {
-    // Wizard shows its own error state — opt out of the global error toast when asked.
-    return this.api.persons.import.mutate(
-      {
-        rows: input.rows,
-        tags: input.tags ?? [],
-        skipped: input.skipped ?? 0,
-        file_name: input.file_name ?? undefined,
-        duplicate_decision: input.duplicate_decision ?? 'skip',
-        list_name: input.list_name,
-        source_csv: input.source_csv,
-        client_skip_reasons: input.client_skip_reasons,
-      },
-      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
-    );
-  }
-
-  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
-  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
-    return this.api.persons.checkDuplicateEmails.query({ emails });
-  }
-
-  public async removeHousehold(id: string) {
-    return this.api.persons.removeHousehold.mutate(id);
-  }
-
-  public async update(id: string, data: UpdatePersonsType, options?: any) {
-    return this.api.persons.update.mutate({ id: id, data }, options);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.persons.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['persons']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
-    return this.api.persons.getPotentialDuplicates.query(options);
-  }
-
-  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
-    return this.api.persons.getDuplicateCounts.query();
-  }
-
-  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
-    return this.api.persons.mergePersons.mutate({ target_id, source_id });
-  }
-}
-
-export type DATA_TYPE = 'persons' | 'households';
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
@@ -67241,7 +67283,7 @@ export const SidebarItems: ISidebarItem[] = [
         // in here — see the redirect in dashboard.routes.ts.
         name: 'Import / export',
         route: '/imports',
-        icon: 'arrow-up-tray',
+        icon: 'arrows-up-down-tray',
       },
       {
         name: `Duplicates`,
