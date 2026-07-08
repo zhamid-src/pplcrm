@@ -1,10 +1,14 @@
 import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Router, RouterLink } from '@angular/router';
 
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -26,7 +30,16 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink],
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',
@@ -34,6 +47,7 @@ type NotificationItem = {
 })
 export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
   private readonly fullscreen = inject(FullScreenService);
@@ -48,18 +62,35 @@ export class Navbar implements OnDestroy {
     return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
   });
 
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
+
   private pollInterval?: ReturnType<typeof setInterval>;
 
   public readonly notifications = signal<NotificationItem[]>([]);
   public readonly unreadCount = signal<number>(0);
   public readonly isLoadingMore = signal<boolean>(false);
   public readonly hasMore = signal<boolean>(true);
-  public readonly isPulsing = signal<boolean>(false);
 
   protected isMobileOpen() {
     return this.sideBarSvc.isMobileOpen();
   }
   protected readonly searchBarVisible = signal(false);
+
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
 
   protected readonly searchStr = signal('');
   protected readonly themeSvc = inject(ThemeService);
@@ -91,9 +122,6 @@ export class Navbar implements OnDestroy {
     try {
       const count = await this.notificationsSvc.getUnreadCount();
       this.unreadCount.set(count || 0);
-      if (count && count > 0) {
-        this.isPulsing.set(true);
-      }
       await this.fetchInitial();
     } catch (err) {
       console.error('Failed to initialize notifications', err);
@@ -119,7 +147,6 @@ export class Navbar implements OnDestroy {
       const oldCount = this.unreadCount();
       this.unreadCount.set(count || 0);
       if (count > oldCount) {
-        this.isPulsing.set(true);
         // Notification count increased, fetch first 5 notifications in background
         await this.fetchInitial();
       }
@@ -129,7 +156,6 @@ export class Navbar implements OnDestroy {
   }
 
   protected onNotificationOpen() {
-    this.isPulsing.set(false);
     if (this.notifications().length === 0) {
       void this.fetchInitial();
     }
@@ -221,7 +247,8 @@ export class Navbar implements OnDestroy {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
     const isK = event?.key?.toLowerCase() === 'k';
 
-    if (isCtrlOrCmd && isK) {
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
       event.preventDefault();
 
       this.showSearchBar();

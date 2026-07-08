@@ -4,6 +4,8 @@ import { AbstractAPIService } from '@frontend/services/api/abstract-api.service'
 import { DataGridDataService } from '../services/data.service';
 import { GridStoreService } from '../services/grid-store.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
 
 @Injectable()
 export class FetchController {
@@ -12,11 +14,13 @@ export class FetchController {
   private readonly store = inject(GridStoreService);
   private readonly alertSvc = inject(AlertService);
 
-  private get grid(): DataGrid<any, any> {
-    return this.store.grid;
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
   }
 
   async loadPage(index: number, append?: boolean): Promise<void> {
+    // The gate flips its `loaded` signal (which the grid reads as hasLoaded) when
+    // this fetch completes — via the disposer below. No separate bookkeeping here.
     const end = this.grid._loading.begin();
     try {
       const pageSize = this.store.pageSize();
@@ -29,7 +33,7 @@ export class FetchController {
         tags: this.grid.selectedTags(),
         issues: this.grid.selectedIssues(),
         filterModel: this.grid.buildFilterModel(),
-        sortState: this.store.sorting(),
+        sortState: this.store.sorting() as unknown as Array<{ id: string; desc?: boolean }>,
         sortCol: this.grid.sortCol(),
         sortDir: this.grid.sortDir(),
         includeArchived: this.grid.archiveMode(),
@@ -58,7 +62,7 @@ export class FetchController {
   }
 
   async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
-    const options: any = {
+    const options: getAllOptionsType = {
       searchStr: this.grid.searchTerm(),
       tags: this.grid.selectedTags(),
       issues: this.grid.selectedIssues(),
@@ -70,7 +74,7 @@ export class FetchController {
       : await this.gridSvc.getAll(options);
     const rowCanSelect = this.grid.rowCanSelect();
     const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
-    const ids = filteredRows.map((r: any) => this.grid.toId(r)).filter(Boolean);
+    const ids = filteredRows.map((r) => this.grid.toId(r)).filter(Boolean);
     return { ids, count: filteredRows.length };
   }
 }

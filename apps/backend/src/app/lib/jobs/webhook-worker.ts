@@ -353,8 +353,8 @@ export class WebhookEventWorker {
         .execute();
 
       logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
+    } catch (err) {
+      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
       logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
 
       const attempts = Number(eventRecord.attempts || 0);

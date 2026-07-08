@@ -198,7 +198,7 @@ async function main() {
       .where(sql`trim(first_name)`, '!=', '')
       .where(sql`trim(last_name)`, '!=', '')
       .where('household_id', 'is not', null)
-      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId!))
+      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId ?? ''))
       .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
       .having(sql`count(persons.id)`, '>', 1)
       .execute();

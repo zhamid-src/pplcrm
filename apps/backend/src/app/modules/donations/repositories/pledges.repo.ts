@@ -44,17 +44,6 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
       .execute();
   }
 
-  public async getByStripeSubscriptionId(
-    subscriptionId: string,
-  ): Promise<Selectable<Models['donation_pledges']> | undefined> {
-    // eslint-disable-next-line local/no-unscoped-db-query
-    return this.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('stripe_subscription_id', '=', subscriptionId)
-      .executeTakeFirst();
-  }
-
   /**
    * Sum of monthly_amount for all active pledges for a person.
    * Used for conservative limit enforcement: counts committed future payments.

@@ -4,6 +4,7 @@ import { HouseholdsGrid } from './households-grid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { CompaniesService } from '../../companies/services/companies-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -15,6 +16,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 class MockHouseholdsService {
   deleteMany = vi.fn().mockResolvedValue(true);
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  count = vi.fn().mockResolvedValue(0);
+  countDistinctWards = vi.fn().mockResolvedValue(0);
   abort = vi.fn();
   refreshCount = signal(0);
 }
@@ -34,6 +37,8 @@ describe('HouseholdsGrid', () => {
       getByHouseholdId: vi.fn().mockResolvedValue([{ id: 'person1' }, { id: 'person2' }]),
       removeHousehold: vi.fn().mockResolvedValue(true),
       deleteMany: vi.fn().mockResolvedValue(true),
+      // pc-grain-tabs calls count() on all three grain services
+      count: vi.fn().mockResolvedValue(0),
     };
 
     mockDialogSvc = {
@@ -59,6 +64,10 @@ describe('HouseholdsGrid', () => {
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
+        {
+          provide: CompaniesService,
+          useValue: { count: () => Promise.resolve(0), countWithCompany: () => Promise.resolve(0) },
+        },
         {
           provide: DATA_GRID_CONFIG,
           useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } },
@@ -142,39 +151,35 @@ describe('HouseholdsGrid', () => {
     expect(component.rowCanSelectFn({ is_placeholder: false })).toBe(true);
   });
 
-  it('should format street1 as "People with no addresses" for placeholder households', () => {
-    const street1Col = component['col'].find((c) => c.field === 'street1');
-    expect(street1Col).toBeDefined();
-    expect(street1Col?.valueFormatter).toBeDefined();
+  it('should render the Household door as "People with no addresses" for placeholder households', () => {
+    const doorCol = component['col'].find((c) => c.field === 'household');
+    expect(doorCol).toBeDefined();
+    expect(doorCol?.valueGetter).toBeDefined();
 
-    const formattedPlaceholder = street1Col?.valueFormatter?.({
-      data: { is_placeholder: true },
-      value: null,
-    } as any);
-    expect(formattedPlaceholder).toBe('People with no addresses');
+    const placeholder = doorCol?.valueGetter?.({ data: { is_placeholder: true } } as any);
+    expect(placeholder).toBe('People with no addresses');
 
-    const formattedRegular = street1Col?.valueFormatter?.({
-      data: { is_placeholder: false },
-      value: '123 Main St',
+    const regular = doorCol?.valueGetter?.({
+      data: { is_placeholder: false, street_num: '123', street1: 'Main St' },
     } as any);
-    expect(formattedRegular).toBe('123 Main St');
+    expect(regular).toBe('123 Main St');
   });
 
   it('should prevent inline editing for placeholder households', () => {
     fixture.detectChanges();
 
-    const street1Col = component['col'].find((c) => c.field === 'street1');
-    expect(street1Col).toBeDefined();
+    const cityCol = component['col'].find((c) => c.field === 'city');
+    expect(cityCol).toBeDefined();
 
     const grid = component['grid']();
     expect(grid).toBeDefined();
 
     // With a placeholder household, editing should be disabled
-    const placeholderCfg = grid!.editableCfg({ is_placeholder: true }, street1Col);
+    const placeholderCfg = grid!.editableCfg({ is_placeholder: true }, cityCol);
     expect(placeholderCfg.isEditable()).toBe(false);
 
     // With a regular household, editing should be enabled
-    const regularCfg = grid!.editableCfg({ is_placeholder: false }, street1Col);
+    const regularCfg = grid!.editableCfg({ is_placeholder: false }, cityCol);
     expect(regularCfg.isEditable()).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
-import { vi, describe, beforeEach, beforeAll, it, expect } from 'vitest';
+import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -98,6 +98,13 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   fixture.componentRef.setInput('id', mode === 'edit' ? '123' : null);
 };
 
+// ngOnInit kicks off async work without returning a promise, so trigger it
+// through change detection (inside the zone) and wait for stability.
+const runInit = async (): Promise<void> => {
+  fixture.detectChanges();
+  await fixture.whenStable();
+};
+
 describe('HouseholdForm', () => {
   // Loader mock handles loading. No google.maps.places.Autocomplete mock needed.
 
@@ -107,7 +114,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should initialize with empty form payload and not call service getById', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       expect(component).toBeTruthy();
@@ -119,7 +126,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should call householdsSvc.add when saving new household', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       component['payload'].update((prev) => ({
@@ -129,7 +136,7 @@ describe('HouseholdForm', () => {
       }));
 
       // Trigger save
-      component['save']();
+      void component['save']();
 
       // Wait for tRPC mock response
       await mockHouseholdsSvc.add.mock.results[0].value;
@@ -162,7 +169,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should load household details and tags on init', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       expect(component).toBeTruthy();
@@ -179,7 +186,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should dynamically update addressString when address components are modified', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       expect(component['addressString']()).toBe('1600 Amphitheatre Pkwy, Mountain View, CA');
@@ -203,7 +210,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should update address details on handleAddressChange', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       const mockAddress: AddressType = {
@@ -234,7 +241,7 @@ describe('HouseholdForm', () => {
     });
 
     it('should call householdsSvc.update when saving updated household', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
       // Modify payload values
@@ -244,7 +251,7 @@ describe('HouseholdForm', () => {
       }));
 
       // Trigger save
-      component['save']();
+      void component['save']();
 
       // Wait for tRPC mock response
       await mockHouseholdsSvc.update.mock.results[0].value;
@@ -271,13 +278,13 @@ describe('HouseholdForm', () => {
     });
 
     it('should call householdsSvc attachTag and detachTag when tag interactions occur', async () => {
-      await component.ngOnInit();
+      await runInit();
       fixture.detectChanges();
 
-      component['tagAdded']('new-tag');
+      void component['tagAdded']('new-tag');
       expect(mockHouseholdsSvc.attachTag).toHaveBeenCalledWith('123', 'new-tag', 'tag');
 
-      component['tagRemoved']('old-tag');
+      void component['tagRemoved']('old-tag');
       expect(mockHouseholdsSvc.detachTag).toHaveBeenCalledWith('123', 'old-tag', 'tag');
     });
   });

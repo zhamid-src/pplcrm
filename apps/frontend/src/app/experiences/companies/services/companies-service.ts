@@ -20,7 +20,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
   }
 
   public count(): Promise<number> {
-    return Promise.resolve(0);
+    return this.api.companies.count.query();
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -39,6 +39,26 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 
   public getById(id: string): Promise<any> {
     return this.api.companies.getById.query(id);
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.companies.getBySlug.query(slug);
+  }
+
+  /** §7 "Enrich" / "Re-check Google" — queues a Google Places lookup background job. */
+  public enrich(id: string, force = false): Promise<RouterOutputs['companies']['enrich']> {
+    return this.api.companies.enrich.mutate({ id, force });
+  }
+
+  /** Add-time preview: fetch Google Places fields for a name without persisting. */
+  public lookupEnrichment(name: string): Promise<RouterOutputs['companies']['lookupEnrichment']> {
+    return this.api.companies.lookupEnrichment.mutate({ name });
+  }
+
+  /** Advisory duplicate-name check for the add/edit form (case-insensitive, tenant-scoped). */
+  public checkNameExists(name: string, excludeId?: string): Promise<RouterOutputs['companies']['nameExists']> {
+    return this.api.companies.nameExists.query({ name, excludeId });
   }
 
   public getTags(_id: string) {

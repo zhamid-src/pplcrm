@@ -10,13 +10,17 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-event-view',
@@ -40,7 +44,10 @@ import { PersonsService } from '../../persons/services/persons-service';
 export class EventViewComponent {
   readonly id = input.required<string>();
 
+  protected readonly recordNav = injectRecordNavigation('event', this.id);
+
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly personsSvc = inject(PersonsService);
@@ -56,13 +63,18 @@ export class EventViewComponent {
   protected readonly ticketTypes = signal<any[]>([]);
   protected readonly registrations = signal<any[]>([]);
 
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Events', route: '/events/pages' },
+    { label: this.event()?.name || 'Event' },
+  ]);
+
   // Person search for adding registrations
   protected readonly personSearch = signal('');
   protected readonly personSearchResults = signal<any[]>([]);
   protected readonly selectedPersonId = signal<string | null>(null);
   protected readonly selectedTicketTypeId = signal<string | null>(null);
   protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: any = null;
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
   protected activeTab = signal<string>('attendees');
 
@@ -81,18 +93,14 @@ export class EventViewComponent {
     return new Date(end) < new Date();
   });
 
-  protected readonly activeCount = computed(
-    () => this.registrations().filter((r) => r.status !== 'cancelled').length,
-  );
+  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
 
-  protected readonly attendedCount = computed(
-    () => this.registrations().filter((r) => r.status === 'attended').length,
-  );
+  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
 
   protected readonly publicUrl = computed(() => {
     const slug = this.event()?.slug;
     if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
 
   protected readonly remainingCapacity = computed(() => {
@@ -104,7 +112,7 @@ export class EventViewComponent {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
@@ -120,7 +128,7 @@ export class EventViewComponent {
       this.ticketTypes.set(ticketData || []);
       this.registrations.set(regData || []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the event. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -137,7 +145,7 @@ export class EventViewComponent {
   }
 
   protected editEvent() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteEvent() {
@@ -155,8 +163,8 @@ export class EventViewComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Unable to delete event');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {
       end();
     }
@@ -204,8 +212,8 @@ export class EventViewComponent {
       this.personSearchResults.set([]);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to add registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
     } finally {
       this.addingRegistration.set(false);
     }
@@ -217,8 +225,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess(`${reg.first_name} checked in`);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to check in');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
     }
   }
 
@@ -227,8 +235,8 @@ export class EventViewComponent {
       await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to update status');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
     }
   }
 
@@ -245,8 +253,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess('Registration removed');
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to remove registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
     }
   }
 
@@ -264,7 +272,9 @@ export class EventViewComponent {
       r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
     ]);
 
-    const csv = [headers, ...rows].map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -276,11 +286,16 @@ export class EventViewComponent {
 
   protected getStatusType(status: string | null | undefined): any {
     switch (String(status || '').toLowerCase()) {
-      case 'attended': return 'success';
-      case 'registered': return 'warning';
-      case 'no_show': return 'error';
-      case 'cancelled': return 'neutral';
-      default: return 'ghost';
+      case 'attended':
+        return 'success';
+      case 'registered':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
     }
   }
 

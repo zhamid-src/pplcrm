@@ -4,9 +4,17 @@ import { ZapierService } from './zapier.service';
 import { PersonsService } from '../persons/services/persons.service';
 import type { IAuthKeyPayload } from '@common';
 import { logger } from '../../logger';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TooManyRequestsError } from '../../errors/app-errors';
 
 const zapierService = new ZapierService();
 const personsService = new PersonsService();
+
+// The API key is the sole authenticator for these unauthenticated-by-default write
+// routes, so cap requests per source IP: throttles key brute-forcing and abuse of a
+// leaked key (SECURITY-REVIEW.md 2.4). Generous enough for legitimate Zapier bursts.
+const ZAPIER_RATE_LIMIT = 120;
+const ZAPIER_RATE_WINDOW_MS = 60 * 1000;
 
 const upsertPersonSchema = z.object({
   email: z.string().email('Valid email required for person matching').max(255),
@@ -59,6 +67,18 @@ async function extractTenantId(req: any): Promise<string | null> {
 }
 
 const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // Rate-limit every inbound Zapier route by source IP before the handler runs.
+  fastify.addHook('onRequest', async (req, reply) => {
+    try {
+      checkRateLimit(`zapier:${req.ip}`, ZAPIER_RATE_LIMIT, ZAPIER_RATE_WINDOW_MS);
+    } catch (err) {
+      if (err instanceof TooManyRequestsError) {
+        return reply.code(429).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
   fastify.post('/persons/upsert', async (req, reply) => {
     const tenantId = await extractTenantId(req);
     if (!tenantId) {
@@ -94,8 +114,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         const result = await personsService.addPerson({ email, ...fields } as any, auth);
         return reply.code(201).send({ action: 'created', person: result });
       }
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/upsert error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
       return reply.code(500).send({ error: 'Failed to upsert person' });
     }
   });
@@ -134,8 +154,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
       return reply.code(200).send({ success: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/tag error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
       return reply.code(500).send({ error: 'Failed to add tag' });
     }
   });
@@ -182,8 +202,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       });
 
       return reply.code(200).send({ success: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/untag error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
       return reply.code(500).send({ error: 'Failed to remove tag' });
     }
   });

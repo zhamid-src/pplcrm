@@ -292,4 +292,27 @@ describe('ListsController Background Refresh', () => {
     expect(payload.type).toBe('refresh_list');
     expect(payload.list_id).toBe(listId);
   });
+
+  it('getAll runs the real grid query (counts + LAST USED IN subquery + GROUP BY) without error', async () => {
+    // Regression guard: getAllWithCounts selects lists.definition and a correlated
+    // subquery referencing lists.tenant_id alongside aggregate COUNTs — both must be
+    // in GROUP BY or Postgres rejects the query at plan time ("must appear in the
+    // GROUP BY" / "subquery uses ungrouped column"). The mocked router spec never
+    // executed this SQL; the People grid does, so run it against the real DB.
+    await controller.addList(
+      {
+        name: 'Grid Query List',
+        description: 'exercises the real getAll query',
+        object: 'people',
+        is_dynamic: false,
+        definition: { filterModel: {} },
+      },
+      auth,
+    );
+
+    const result: any = await controller.getAll(tenantId);
+    const rows: any[] = Array.isArray(result) ? result : (result?.rows ?? []);
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows.some((r) => r.name === 'Grid Query List')).toBe(true);
+  });
 });

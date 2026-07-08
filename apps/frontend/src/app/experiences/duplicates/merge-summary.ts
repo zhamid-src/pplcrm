@@ -2,11 +2,10 @@ import { Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { LowerCasePipe } from '@angular/common';
 
 @Component({
   selector: 'pc-duplicate-page-shell',
-  imports: [RouterLink, Icon, LowerCasePipe],
+  imports: [RouterLink, Icon],
   templateUrl: './merge-summary.html',
 })
 export class DuplicatePageShellComponent {
@@ -19,9 +18,12 @@ export class DuplicatePageShellComponent {
   currentPage = input.required<number>();
   totalPages = input.required<number>();
   totalGroups = input.required<number>();
+  /** "N possible duplicates waiting · found by the nightly sweep — ... · last sweep TIME"
+   * (spec §9.3) — see `BaseDuplicateManager.sweepSentence`. */
+  sweepSentence = input<string | null>(null);
 
-  onNext = output<void>();
-  onPrev = output<void>();
+  next = output<void>();
+  prev = output<void>();
 }
 
 @Component({
@@ -61,7 +63,7 @@ export class DuplicatePageShellComponent {
         </div>
 
         <div class="card-actions mt-4 pt-3 border-t border-base-300">
-          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="onMerge.emit()">
+          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="merge.emit()">
             <pc-icon name="merge" [size]="4"></pc-icon> Merge Records
           </button>
         </div>
@@ -74,5 +76,5 @@ export class MergeSummaryComponent {
   targetName = input<string>('');
   sourceName = input<string>('');
   mergeDescription = input.required<string>();
-  onMerge = output<void>();
+  merge = output<void>();
 }

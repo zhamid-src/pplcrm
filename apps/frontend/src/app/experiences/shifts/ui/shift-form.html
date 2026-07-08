@@ -1,4 +1,4 @@
-<div class="p-6 max-w-5xl mx-auto space-y-6">
+<div class="p-6 max-w-5xl space-y-6">
   <!-- Loading State -->
   @if (error() && !detail() && !isNew()) {
   <div class="alert alert-error m-4">
@@ -13,16 +13,18 @@
   <div class="space-y-6">
     <!-- Header -->
     <pc-detail-header
-      [title]="isNew() ? 'Create Volunteer Event' : detail()?.name"
+      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
       [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
-      icon="clock"
       [form]="form"
       [isLoading]="saving()"
       [disabled]="slugChecking() || slugUnique() === false"
       buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
       [showDelete]="!isNew()"
-      deleteText="Delete Event"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
       (save)="save($event)"
       (delete)="deleteEvent()"
     ></pc-detail-header>
@@ -64,7 +66,7 @@
               [hasError]="slugUnique() === false"
               (input)="onSlugInput()"
             >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/v/</span>
             </pc-input>
             @if (slugChecking()) {
             <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
@@ -290,7 +292,7 @@
 
       <!-- Right 1 col: Timing, Capacity, Actions -->
       <div class="space-y-6">
-        @if (!isNew() && detail()?.public_url) {
+        @if (!isNew() && publicUrl()) {
         <pc-card
           title="Public Signup Link"
           subtitle="Constituents can use this URL to view the event and sign up for this shift."
@@ -302,13 +304,13 @@
               readonly
               type="text"
               class="input input-bordered input-sm flex-1 font-mono text-xs"
-              [value]="environment.apiUrl + detail()?.public_url"
+              [value]="publicUrl()"
             />
             <button
               type="button"
               class="btn btn-primary btn-sm btn-square"
               title="Copy Link"
-              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+              (click)="copyToClipboard(publicUrl())"
             >
               <pc-icon name="document-duplicate" [size]="5"></pc-icon>
             </button>
@@ -321,13 +323,9 @@
           </div>
           } @else {
           <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-            <span>Public Dashboard Link:</span>
-            <a
-              [href]="environment.apiUrl + detail()?.tenant_public_url"
-              target="_blank"
-              class="link link-primary font-mono text-[10px] break-all"
-            >
-              {{ environment.apiUrl + detail()?.tenant_public_url }}
+            <span>All volunteer events page:</span>
+            <a [href]="volunteerListUrl()" target="_blank" class="link link-primary font-mono text-[10px] break-all">
+              {{ volunteerListUrl() }}
             </a>
           </div>
           }

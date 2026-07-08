@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export interface IAuthKeyPayload {
-  name: string;
+  name?: string;
 
   session_id: string;
 
@@ -34,6 +34,9 @@ export interface IAuthUser {
   tenant_deletion_scheduled_at?: Date | null;
 
   tenant_paused_at?: Date | null;
+
+  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
+  tenant_slug?: string | null;
 }
 
 export interface IUserStatsSnapshot {
@@ -93,6 +96,14 @@ export interface IToken {
   auth_token: string | null;
   refresh_token: string | null;
 }
+
+/**
+ * The one generic message shown for any failed sign-in attempt, regardless of
+ * whether the email or the password was wrong — never reveal which, so that
+ * sign-in cannot be used to probe which emails have accounts. Shared by the
+ * backend error formatter and the frontend so the copy never drifts.
+ */
+export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
 
 export type signInInputType = z.infer<typeof signInInputObj>;
 

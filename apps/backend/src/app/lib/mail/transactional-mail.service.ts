@@ -1,8 +1,8 @@
-import type { Transaction, Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
-import { BaseRepository } from '../base.repo';
 import { logger } from '../../logger';
+import { BaseRepository } from '../base.repo';
 
 export interface SendMailOptions {
   to: string;
@@ -137,14 +137,14 @@ export class TransactionalEmailService {
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1>CampaignRaven</h1>
+        <h1>PplCRM</h1>
       </div>
       <div class="content">
         ${contentHtml}
       </div>
       <div class="footer">
         <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
-        <p>&copy; ${new Date().getFullYear()} CampaignRaven. All rights reserved.</p>
+        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
       </div>
     </div>
   </div>
@@ -184,7 +184,7 @@ export class TransactionalEmailService {
         const errorText = await response.text();
         throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
       }
-    } catch (error: any) {
+    } catch (error) {
       throw new InternalError('Failed to send transactional email', undefined, { cause: error });
     }
   }

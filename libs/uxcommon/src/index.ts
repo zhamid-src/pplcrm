@@ -28,6 +28,9 @@ export * from './components/detail-item/detail-item';
 export * from './components/system-metadata/system-metadata';
 export * from './components/fields-selector/fields-selector';
 export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
 
 // Directives
 export * from './directives/animate-if.directive';

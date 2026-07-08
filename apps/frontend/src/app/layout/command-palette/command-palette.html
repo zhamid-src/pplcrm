@@ -1,0 +1,70 @@
+<!-- Command palette overlay (⌘⇧K) -->
+@if (isOpen()) {
+<div
+  class="fixed inset-0 z-[100] flex items-start justify-center bg-base-content/30 backdrop-blur-sm"
+  (click)="close()"
+>
+  <div
+    class="animate-drop mt-[14vh] w-[560px] max-w-[92vw] overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Command palette"
+    i18n-aria-label="@@palette.ariaLabel"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Query input -->
+    <div class="flex items-center gap-3 border-b border-base-200 px-4 py-3">
+      <pc-icon name="magnifying-glass" [size]="5" class="text-base-content/50"></pc-icon>
+      <input
+        #paletteInput
+        type="text"
+        class="grow bg-transparent text-base outline-none placeholder:text-base-content/40"
+        placeholder="Search actions and people…"
+        i18n-placeholder="@@palette.placeholder"
+        [value]="query()"
+        (input)="onInput($any($event.target).value)"
+        (keydown)="onInputKey($event)"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <kbd class="kbd kbd-sm">esc</kbd>
+    </div>
+
+    <!-- Results -->
+    <ul class="max-h-[52vh] overflow-y-auto py-2">
+      @for (result of results(); track $index; let i = $index) {
+      <li>
+        <button
+          type="button"
+          class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors"
+          [class.bg-base-200]="i === activeIndex()"
+          (mouseenter)="activeIndex.set(i)"
+          (click)="select(i)"
+        >
+          <pc-icon [name]="result.icon" [size]="5" class="shrink-0 text-primary"></pc-icon>
+          <span class="min-w-0 grow">
+            <span class="block truncate text-sm text-base-content">{{ result.label }}</span>
+            @if (result.sublabel) {
+            <span class="block truncate text-xs text-base-content/50">{{ result.sublabel }}</span>
+            }
+          </span>
+          <span class="shrink-0 rounded-md bg-base-200 px-2 py-0.5 text-[11px] font-medium text-base-content/60">
+            {{ result.kind }}
+          </span>
+        </button>
+      </li>
+      } @empty {
+      <li class="px-4 py-8 text-center text-sm text-base-content/50" i18n="@@palette.empty">No matching actions.</li>
+      }
+    </ul>
+
+    <!-- Footer hint -->
+    <div class="flex items-center justify-between border-t border-base-200 px-4 py-2 text-xs text-base-content/50">
+      <span i18n="@@palette.footer.enter">Enter runs the first result</span>
+      <span class="flex items-center gap-1">
+        <kbd class="kbd kbd-xs">⌘</kbd><kbd class="kbd kbd-xs">⇧</kbd><kbd class="kbd kbd-xs">K</kbd>
+      </span>
+    </div>
+  </div>
+</div>
+}

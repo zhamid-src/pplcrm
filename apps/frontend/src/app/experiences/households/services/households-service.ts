@@ -28,6 +28,21 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.count.query();
   }
 
+  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
+  public countDistinctWards(): Promise<number> {
+    return this.api.households.countDistinctWards.query();
+  }
+
+  /** People in the placeholder household (no matchable address) — powers the grid footer note. */
+  public getUnhoused(): Promise<{ count: number; household_id: string | null }> {
+    return this.api.households.getUnhoused.query();
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.households.getBySlug.query(slug);
+  }
+
   public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
     return this.api.households.detachTag.mutate({ id: id, tag_name, type });
   }

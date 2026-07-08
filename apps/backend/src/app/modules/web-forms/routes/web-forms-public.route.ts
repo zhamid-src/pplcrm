@@ -1,8 +1,14 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -216,7 +222,6 @@ const SUCCESS_HTML = `
     </div>
     <h1>Submission Successful</h1>
     <p>Thank you! Your information has been successfully received and processed.</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
 </html>
@@ -416,7 +421,6 @@ const errorHtml = (message: string) => `
     </div>
     <h1>Submission Failed</h1>
     <p>${escapeHtml(message)}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
 </html>
@@ -428,7 +432,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   fastify.get('/success', async (req: any, reply) => {
     const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    if (is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations unless mock payments are EXPLICITLY
+    // enabled (ALLOW_MOCK_PAYMENTS=true) — an unset NODE_ENV must not fail open (SECURITY-REVIEW 4.2).
+    // Real payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    if (env.allowMockPayments && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
       try {
         const { DonationsController } = await import('../../donations/controller');
         const donationsController = new DonationsController();
@@ -449,11 +458,34 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     return reply.send(SUCCESS_HTML);
   });
 
-  fastify.get('/view/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
+  // JSON config for the SPA public page (/f/:slug). The tenant is identified by its subdomain — from
+  // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
+  // header. Published forms return their render config; unpublished/archived slugs return a "closed"
+  // status; unknown tenant/slug 404s.
+  fastify.get('/f/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
     try {
-      const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'active') {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const result = await webFormsController.getPublicFormBySlug(String(slug), tenant.id);
+      return reply.status(200).send(result);
+    } catch (err) {
+      const statusCode = isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : 404;
+      return reply.status(statusCode).send({ error: 'Form not found.' });
+    }
+  });
+
+  // Server-rendered public donation page. Donation forms deliberately stay off the /f/:slug SPA
+  // page (they carry the amount field + Stripe checkout); the lookup is tenant-scoped by slug like
+  // every other public surface.
+  fastify.get('/d/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      const form = tenant ? await webFormsController.getDonationFormPublic(tenant.id, String(slug)) : undefined;
+      if (!tenant || !form || form.status !== 'published') {
         reply.status(404).type('text/html');
         return reply.send(errorHtml('Web form not found or inactive.'));
       }
@@ -468,24 +500,35 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
           : JSON.parse(String(form.fields))
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
+      const submitAction = `/api/forms/submit/${encodeURIComponent(String(slug))}?t=${encodeURIComponent(tenant.slug)}`;
       reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err: any) {
+      return reply.send(renderFormHtml(submitAction, formName, formDescription, fields, form.form_type));
+    } catch (err) {
+      // Never surface internal error detail to an unauthenticated visitor — log it, show generic
+      // copy (SECURITY-REVIEW 5.2, consistent with the tRPC sanitization boundary).
+      fastify.log.error(err, 'Failed to render public form');
       reply.status(500).type('text/html');
-      return reply.send(errorHtml(err.message || 'Failed to load form.'));
+      return reply.send(errorHtml('Failed to load form.'));
     }
   });
 
-  fastify.post('/submit/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    // Standard reverse-proxy header check, fallback to req.ip
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+  fastify.post('/submit/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
     const isJsonExpected =
       req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 
     try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        if (isJsonExpected) return reply.status(404).send({ error: 'Web form not found or inactive.' });
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
       const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
+      const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp);
 
       if (isJsonExpected) {
         return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
@@ -496,10 +539,16 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       }
 
       return reply.redirect('/api/forms/success');
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
-      const statusCode = err.statusCode || 500;
-      const message = err.message || 'An unexpected error occurred during submission.';
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
+      // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
+      const message =
+        statusCode < 500 && err instanceof Error && err.message
+          ? err.message
+          : 'An unexpected error occurred during submission.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });
@@ -516,7 +565,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default webFormsPublicRoute;
 
 const renderFormHtml = (
-  formId: string,
+  submitAction: string,
   formName: string,
   formDescription: string,
   fields: string[],
@@ -783,7 +832,7 @@ const renderFormHtml = (
       <p class="description">${escapeHtml(formDescription)}</p>
     </div>
 
-    <form action="/api/forms/submit/${formId}" method="POST">
+    <form action="${escapeHtml(submitAction)}" method="POST">
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 

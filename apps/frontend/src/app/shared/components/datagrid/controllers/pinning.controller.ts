@@ -1,12 +1,16 @@
-import { Injectable, signal, effect } from '@angular/core';
+import { Injectable, inject, signal, effect } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
 import { DataGridColumnsService } from '../services/columns.service';
+import type { GridRow } from '../types';
 
 @Injectable()
 export class PinningController {
+  private readonly columnsSvc = inject(DataGridColumnsService);
+
   private headerWidthMap = new Map<string, number>();
   readonly pinnedLeftOffsets = signal<Record<string, number>>({});
   readonly pinnedRightOffsets = signal<Record<string, number>>({});
-  private tsTable: any = null;
+  private tsTable: Table<GridRow> | null = null;
   private headerWidthVer = signal(0);
   private pinStateVer = signal(0);
   private initialized = false;
@@ -14,7 +18,7 @@ export class PinningController {
   private getSelectionWidth: (() => number) | null = null;
   private getPinState: (() => { left: string[]; right: string[] }) | null = null;
 
-  constructor(private readonly columnsSvc: DataGridColumnsService) {
+  constructor() {
     // Create effect within injection context
     effect(() => {
       // Touch versions/signals to create dependencies
@@ -34,8 +38,8 @@ export class PinningController {
     });
   }
 
-  attachTable(tsTable: any) {
-    this.tsTable = tsTable;
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
   }
 
   init(opts: {
@@ -63,9 +67,13 @@ export class PinningController {
     return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
   }
 
-  updatePinOffsets(tsTable: any, getColWidth: (id: string) => number | null, selectionStickyWidth: number) {
+  updatePinOffsets(
+    tsTable: Table<GridRow> | undefined,
+    getColWidth: (id: string) => number | null,
+    selectionStickyWidth: number,
+  ) {
     const table = tsTable ?? this.tsTable;
-    const pin = table?.getState?.().columnPinning || { left: [], right: [] };
+    const pin = table?.getState().columnPinning || { left: [], right: [] };
     const { left, right } = this.columnsSvc.computePinOffsets({
       pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
       getColWidth,

@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { QueueExportInputType } from '../../../../../../libs/common/src';
+import type { LogInstantExportInputType, QueueExportInputType } from '../../../../../../libs/common/src';
 import { ExportsRepo } from './repositories/exports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { logger } from '../../logger';
@@ -77,6 +77,37 @@ export class ExportsController {
       error: null,
       created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
       updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      downloadable: false,
+      createdBy: {
+        id: auth.user_id,
+        name: auth.name || null,
+        email: null,
+      },
+    };
+  }
+
+  /** Records an export that already downloaded straight to the browser (small/displayed-rows
+   * path in the grid toolbar) so it still appears in Exports history — see pplcrm-datagrid.
+   * No file is stored server-side, so the record can't be re-downloaded. */
+  public async logInstantExport(input: LogInstantExportInputType, auth: IAuthKeyPayload) {
+    const exportRecord = await this.repo.createCompleted({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entity: input.entity,
+      file_name: input.fileName,
+      row_count: input.rowCount,
+    });
+
+    return {
+      id: String((exportRecord as any).id),
+      entity: input.entity,
+      file_name: input.fileName,
+      status: 'completed' as const,
+      row_count: input.rowCount,
+      error: null,
+      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
+      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      downloadable: false,
       createdBy: {
         id: auth.user_id,
         name: auth.name || null,
@@ -98,6 +129,7 @@ export class ExportsController {
         error: r.error ?? null,
         created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
         updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+        downloadable: r.storage_key != null,
         createdBy: r.user_id
           ? {
               id: r.user_id,

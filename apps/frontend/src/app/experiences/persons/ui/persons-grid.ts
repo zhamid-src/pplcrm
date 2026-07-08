@@ -1,15 +1,15 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
 
 import {
   DATA_GRID_CONFIG,
@@ -22,23 +22,27 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
-interface ParamsType {
-  value: string[];
-}
-
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  imports: [DataGrid, GrainTabs, Icon],
   templateUrl: './persons-grid.html',
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
   ],
 })
 export class PersonsGrid implements OnInit {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
   public readonly _loading = createLoadingGate();
@@ -52,35 +56,62 @@ export class PersonsGrid implements OnInit {
   public inline = input<boolean>(false);
 
   private addressChangeModalId: string | null = null;
-  private importProgressTimer: any;
   private tagOptionValues: string[] = [];
   private issueOptionValues: string[] = [];
 
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
   protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
     {
       field: 'home_phone',
       headerName: 'Home phone',
@@ -102,9 +133,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -120,29 +154,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
-      },
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'street_num',
@@ -208,21 +225,28 @@ export class PersonsGrid implements OnInit {
     },
   ];
 
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
   public listId = input<string | null>(null);
 
-  protected readonly narrowTypeOptions = [
-    { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
 
-  protected tagsInput = '';
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
 
   public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
     void this.initializeComponent();
   }
 
@@ -230,9 +254,23 @@ export class PersonsGrid implements OnInit {
     try {
       await this.loadTagOptions();
       await this.loadIssueOptions();
-      // Any logic that depends on this data should go here
+      void this.loadTotalCount();
     } catch (error) {
       console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
     }
   }
 
@@ -256,8 +294,6 @@ export class PersonsGrid implements OnInit {
     return 'user-plus';
   }
 
-  // paging/preview managed by CsvImportComponent
-
   protected confirmOpenEditOnDoubleClick(event: any) {
     this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
     this.confirmAddressChange();
@@ -278,13 +314,11 @@ export class PersonsGrid implements OnInit {
     return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
   }
 
-  // --- Import CSV Flow ---
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
   protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
+    void this.router.navigate(['/imports/new']);
   }
 
   protected routeToHouseholds() {
@@ -294,105 +328,6 @@ export class PersonsGrid implements OnInit {
     if (this.addressChangeModalId !== null) {
       void this.router.navigate(['households', this.addressChangeModalId]);
     }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
   }
 
   private confirmAddressChange(): void {
@@ -431,9 +366,17 @@ export class PersonsGrid implements OnInit {
       // Call deleteMany without force, skipping global error toast
       await this.personsService.deleteMany(ids, undefined, true);
       this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err: any) {
+    } catch (err) {
       // Check if it's the captain error message
-      const errMsg = err?.message || err?.data?.message || '';
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
       if (errMsg.includes('team captains')) {
         // Ask the user if they want to proceed despite being a team captain
         const forceOk = await this.dialogs.confirm({
@@ -447,8 +390,16 @@ export class PersonsGrid implements OnInit {
           try {
             await this.personsService.deleteMany(ids, true, true);
             this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr: any) {
-            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
             this.alertSvc.showError(forceErrMsg);
           }
         }
@@ -462,4 +413,8 @@ export class PersonsGrid implements OnInit {
     }
     return true;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

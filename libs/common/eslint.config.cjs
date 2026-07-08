@@ -13,6 +13,11 @@ const compat = new FlatCompat({
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 module.exports = [
+  /* Compose the root config so `nx lint common` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Confirmed zero new violations. */
+  ...require('../../eslint.config.cjs'),
+
   /* JavaScript/TypeScript base rules */
   ...compat
     .config({

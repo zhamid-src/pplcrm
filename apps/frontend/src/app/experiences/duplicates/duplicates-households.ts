@@ -14,7 +14,7 @@ export class HouseholdDuplicatesComponent extends BaseDuplicateManager<any> impl
   private householdsSvc = inject(HouseholdsService);
 
   ngOnInit() {
-    this.loadDuplicates();
+    void this.loadDuplicates();
   }
   protected getEntityName() {
     return 'household';

@@ -66,8 +66,8 @@ export class TagOptionsService {
       const { rows } = await this.tagsSvc.getAll({ limit: 1000, offset: 0, orderBy: ['name'], type });
       const names = Array.isArray(rows)
         ? rows
-            .map((row: any) => (row?.name != null ? String(row.name).trim() : ''))
-            .filter((name: string): name is string => name.length > 0)
+            .map((row) => (row?.['name'] != null ? String(row['name']).trim() : ''))
+            .filter((name): name is string => name.length > 0)
         : [];
       const seen = new Set<string>();
       const unique: string[] = [];

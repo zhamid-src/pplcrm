@@ -1,0 +1,124 @@
+import { Component, type OnInit, computed, inject, output, signal } from '@angular/core';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { DOORS_PER_TURF_PRESETS } from '../../../../../../../libs/common/src';
+import { ListsService } from '../../lists/services/lists-service';
+import { CanvassingService, type CutPreview } from '../services/canvassing-service';
+
+interface UniverseOption {
+  id: string;
+  name: string;
+  count: number;
+  is_dynamic: boolean;
+}
+
+// Assumed door-knocking pace for the time estimate helper.
+const DOORS_PER_HOUR = 25;
+const MIN_PER_HOUR = 60;
+
+@Component({
+  selector: 'pc-cut-turfs-dialog',
+  templateUrl: './cut-turfs-dialog.html',
+})
+export class CutTurfsDialog implements OnInit {
+  private readonly svc = inject(CanvassingService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alerts = inject(AlertService);
+
+  public readonly done = output<number>();
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+
+  protected readonly presets = DOORS_PER_TURF_PRESETS;
+  protected readonly universes = signal<UniverseOption[]>([]);
+  protected readonly selectedListId = signal<string>('');
+  protected readonly doorsPerTurf = signal<number>(40);
+  protected readonly preview = signal<CutPreview | null>(null);
+
+  ngOnInit(): void {
+    void this.loadUniverses();
+  }
+
+  protected readonly selectedUniverse = computed<UniverseOption | null>(
+    () => this.universes().find((u) => u.id === this.selectedListId()) ?? null,
+  );
+
+  /** "About 96 minutes per turf at 25 doors an hour." */
+  protected readonly timeHelper = computed<string>(() => {
+    const mins = Math.round((this.doorsPerTurf() / DOORS_PER_HOUR) * MIN_PER_HOUR);
+    return `About ${mins} minutes per turf at ${DOORS_PER_HOUR} doors an hour.`;
+  });
+
+  protected async loadUniverses(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.listsSvc.getAllWithCounts({ startRow: 0, endRow: 200 });
+      const rows = Array.isArray(res) ? res : (res.rows ?? []);
+      this.universes.set(
+        rows.map((r: Record<string, unknown>) => {
+          const object = String(r['object'] ?? 'people');
+          const count = object === 'people' ? Number(r['people_count'] ?? 0) : Number(r['household_count'] ?? 0);
+          return {
+            id: String(r['id']),
+            name: String(r['name'] ?? 'List'),
+            count,
+            is_dynamic: Boolean(r['is_dynamic']),
+          };
+        }),
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load lists.');
+    } finally {
+      end();
+    }
+  }
+
+  protected onListChange(id: string): void {
+    this.selectedListId.set(id);
+    void this.refreshPreview();
+  }
+
+  protected setDoors(n: number): void {
+    this.doorsPerTurf.set(n);
+    void this.refreshPreview();
+  }
+
+  protected async refreshPreview(): Promise<void> {
+    const listId = this.selectedListId();
+    if (!listId) {
+      this.preview.set(null);
+      return;
+    }
+    const end = this._loading.begin();
+    try {
+      this.preview.set(await this.svc.previewCut({ list_id: listId, doors_per_turf: this.doorsPerTurf() }));
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to preview cut.');
+      this.preview.set(null);
+    } finally {
+      end();
+    }
+  }
+
+  protected async cut(): Promise<void> {
+    const listId = this.selectedListId();
+    if (!listId) return;
+    this.saving.set(true);
+    try {
+      const res = await this.svc.cutTurfs({ list_id: listId, doors_per_turf: this.doorsPerTurf() });
+      this.done.emit(res.created);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cut turfs.');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected cancel(): void {
+    this.done.emit(0);
+  }
+}

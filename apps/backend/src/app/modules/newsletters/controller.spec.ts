@@ -88,7 +88,9 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
+  // map_newsletters_lists rows cascade when newsletters/lists are deleted.
   await db.deleteFrom('newsletters').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
@@ -373,7 +375,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
-    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
+    const _spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
 
     const job = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId).executeTakeFirst();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
@@ -383,5 +385,134 @@ describe('NewslettersController Asynchronous Sending', () => {
     const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
     expect(newsletter.status).toBe('sent');
     expect(Number(newsletter.delivered_count)).toBe(2);
+  });
+});
+
+describe('NewslettersController list targeting (map_newsletters_lists)', () => {
+  const controller = new NewslettersController();
+  const db = (BaseRepository as any)._db;
+  let tenantId: string;
+  let userId: string;
+  let campaignId: string;
+  let householdId: string;
+  let listA: string;
+  let listB: string;
+
+  const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
+
+  beforeEach(async () => {
+    const seed = await createTestSeed(db);
+    tenantId = seed.tenantId;
+    userId = seed.userId;
+    campaignId = seed.campaignId;
+    householdId = seed.householdId;
+
+    listA = rand();
+    listB = rand();
+    for (const [id, name] of [
+      [listA, 'List A'],
+      [listB, 'List B'],
+    ]) {
+      await db
+        .insertInto('lists')
+        .values({
+          id,
+          tenant_id: tenantId,
+          name,
+          object: 'people',
+          is_dynamic: false,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+  });
+
+  afterEach(async () => {
+    await cleanTenant(db, tenantId);
+  });
+
+  async function mapRows(newsletterId: string) {
+    const rows = await db
+      .selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenantId)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+    return rows.map((r: any) => `${r.list_id}:${r.mode}`).sort();
+  }
+
+  it('syncs map rows on add/update, dropping ids that do not resolve to a live list', async () => {
+    const dangling = rand();
+    const created = await controller.add({
+      tenant_id: tenantId,
+      name: 'Targeted Newsletter',
+      status: 'draft',
+      target_lists: JSON.stringify({ include: [listA, dangling], exclude: [listB] }),
+      createdby_id: userId,
+      updatedby_id: userId,
+    } as any);
+    const id = String((created as any).id);
+
+    expect(await mapRows(id)).toEqual([`${listA}:include`, `${listB}:exclude`].sort());
+
+    // Update replaces the whole set; bare-array shape means include-only.
+    await controller.update({
+      tenant_id: tenantId,
+      id,
+      row: { target_lists: JSON.stringify([listB]), updatedby_id: userId } as any,
+    });
+    expect(await mapRows(id)).toEqual([`${listB}:include`]);
+
+    // Referential integrity: deleting the list cascades the map row away.
+    await db.deleteFrom('lists').where('tenant_id', '=', tenantId).where('id', '=', listB).execute();
+    expect(await mapRows(id)).toEqual([]);
+  });
+
+  it('buildRecipientQuery resolves include/exclude lists from the map table', async () => {
+    // Person in list A with an email.
+    const personId = rand();
+    await db
+      .insertInto('persons')
+      .values({
+        id: personId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Bob',
+        last_name: 'Jones',
+        email: 'bob@example.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    await db
+      .insertInto('map_lists_persons')
+      .values({ tenant_id: tenantId, list_id: listA, person_id: personId, createdby_id: userId, updatedby_id: userId })
+      .execute();
+
+    const created = await controller.add({
+      tenant_id: tenantId,
+      name: 'Recipient Query Newsletter',
+      status: 'draft',
+      target_lists: JSON.stringify({ include: [listA], exclude: [] }),
+      createdby_id: userId,
+      updatedby_id: userId,
+    } as any);
+    const newsletter = { id: String((created as any).id), segments: null };
+
+    const query = await controller.buildRecipientQuery(tenantId, newsletter);
+    const recipients = await query.select('persons.email').execute();
+    expect(recipients.map((r: any) => r.email)).toContain('bob@example.com');
+
+    // Excluding the same list must remove the recipient again.
+    await controller.update({
+      tenant_id: tenantId,
+      id: newsletter.id,
+      row: { target_lists: JSON.stringify({ include: [listA], exclude: [listA] }), updatedby_id: userId } as any,
+    });
+    const query2 = await controller.buildRecipientQuery(tenantId, newsletter);
+    const recipients2 = await query2.select('persons.email').execute();
+    expect(recipients2.map((r: any) => r.email)).not.toContain('bob@example.com');
   });
 });

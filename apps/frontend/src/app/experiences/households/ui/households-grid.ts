@@ -1,9 +1,12 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 
@@ -15,18 +18,16 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../services/households-service';
 
-interface ParamsType {
-  value: string[];
-}
-
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
+  imports: [DataGrid, GrainTabs, CsvImportComponent, FormsModule],
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
         #grid
         [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
+        [fitColumns]="true"
         title="Households"
         i18n-title
         description="Manage household groups, track shared addresses, and organize family relationships."
@@ -39,12 +40,32 @@ interface ParamsType {
         [disableImport]="false"
         [confirmDeleteOverride]="onConfirmDeleteBind"
         [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
         (importCSV)="openImportDialog()"
         addRoute="add"
         i18n-addRoute
         plusIcon="add-home"
         i18n-plusIcon
-      ></pc-datagrid>
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+        @if (!inline() && unhoused().count > 0) {
+          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+            <button
+              type="button"
+              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
+              (click)="openUnhoused()"
+            >
+              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+            </button>
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
+            matched to a door.
+          </p>
+        }
+      </pc-datagrid>
     </div>
 
     <!-- Reusable CSV Importer for Households -->
@@ -80,6 +101,7 @@ export class HouseholdsGrid implements OnInit {
   private readonly personsSvc = inject(PersonsService);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
+  private readonly router = inject(Router);
   public readonly _loading = createLoadingGate();
   private readonly householdsService = inject(HouseholdsService);
 
@@ -145,21 +167,35 @@ export class HouseholdsGrid implements OnInit {
 
   protected col: ColDef[] = [
     {
-      field: 'persons_count',
-      headerName: 'People',
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+      // The door that opens the household record: a generated address string, just like
+      // the People grid's combined Name column. People count rides along as a muted subtitle.
+      field: 'household',
+      headerName: 'Household',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 260,
+      minWidth: 180,
+      valueGetter: (params: CellParams) => this.addressString(params.data),
+      doorSubtitle: (params: CellParams) => {
+        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+        return `${n} ${n === 1 ? 'person' : 'people'}`;
+      },
     },
-    { field: 'street_num', headerName: 'Street Number', editable: true },
-    { field: 'apt', headerName: 'Apt', editable: true },
     {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: true,
-      valueFormatter: (params: any) =>
-        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+      field: 'members',
+      headerName: 'Members',
+      editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
+      minWidth: 200,
+      // Each member name is a link to their person card. The renderer output is
+      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
+      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
+      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
     },
-    { field: 'street2', headerName: 'Street 2', editable: true },
-    { field: 'city', headerName: 'City', editable: true },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
     {
       field: 'tags',
       headerName: 'Tags',
@@ -174,9 +210,12 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -192,21 +231,29 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
-    { field: 'state', headerName: 'State/Province', editable: true },
-    { field: 'zip', headerName: 'Zip/Province', editable: true },
-    { field: 'country', headerName: 'Country', editable: true },
-    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
+    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
     { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    { field: 'home_phone', headerName: 'Home phone', editable: true },
+    {
+      field: 'updated_at',
+      headerName: 'Last touch',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
+    },
     {
       field: 'notes',
       headerName: 'Notes',
       editable: true,
+      hide: true,
+      width: 280,
       cellEditorParams: { textarea: true, rows: 5 },
     },
   ];
@@ -219,9 +266,61 @@ export class HouseholdsGrid implements OnInit {
   protected importerOpen = signal(false);
   protected tagsInput = '';
 
-  public async ngOnInit() {
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** People with no matchable address (the placeholder household) — footer note + link target. */
+  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
+    count: 0,
+    household_id: null,
+  });
+
+  public ngOnInit(): void {
+    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
+    // keep full contrast — they're a second focal point (the People-grain of the household).
+    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
     await this.loadTagOptions();
     await this.loadIssueOptions();
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+  }
+
+  private async loadUnhoused(): Promise<void> {
+    try {
+      this.unhoused.set(await this.householdsService.getUnhoused());
+    } catch (err) {
+      console.error('Failed to load unhoused people count', err);
+    }
+  }
+
+  /** Opens the placeholder household, whose detail view lists everyone with no address. */
+  protected openUnhoused(): void {
+    const id = this.unhoused().household_id;
+    if (id) void this.router.navigate(['/households', id]);
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
   }
 
   private async loadTagOptions() {
@@ -242,6 +341,55 @@ export class HouseholdsGrid implements OnInit {
 
   protected openEditOnDoubleClick(event: any) {
     this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  /** Renders member names as person-card links; a comma separator keeps them on one line. */
+  private renderMembers(value: unknown): string {
+    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
+    const links = members
+      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
+      .map((m) => {
+        const id = this.escapeHtml(String(m.id));
+        const name = this.escapeHtml(String(m.name));
+        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
+      });
+    if (!links.length) return '';
+    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
+    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
+  }
+
+  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
+  private onMemberClicked(event: Event | undefined): void {
+    const target = event?.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('[data-person-id]');
+    const id = anchor?.getAttribute('data-person-id');
+    if (id) void this.router.navigate(['/people', id]);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** Street number + name for the Household door column (city has its own column). */
+  private addressString(data: unknown): string {
+    const d = data as Record<string, unknown> | undefined;
+    if (!d) return '';
+    if (d['is_placeholder']) return 'People with no addresses';
+    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
+  }
+
+  /** Compact relative "last touch" — matches the household view's low-chrome style. */
+  private formatLastTouch(value: unknown): string {
+    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
   }
 
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {

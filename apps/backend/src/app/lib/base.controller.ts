@@ -1,3 +1,5 @@
+import { TRPCError } from '@trpc/server';
+
 import type {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -12,9 +14,27 @@ import type { ReferenceExpression, Transaction } from 'kysely';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
 import type { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
+import { notificationEnabled } from './profile-preferences';
 import type { UserActivityType } from './user-activity.repo';
 import { UserActivityRepo } from './user-activity.repo';
 import { TransactionalEmailService } from './mail/transactional-mail.service';
+
+// The inline exportCsv path buffers the whole result set plus the built CSV string in memory and
+// returns it in a single tRPC response, so it must be bounded — a large tenant would otherwise spike
+// backend memory or stall the event loop (SECURITY-REVIEW.md 3.2). Anything past this cap has to go
+// through the queued/streamed background export (ExportsController.queueExport), which writes to
+// storage instead of buffering. Kept generous so ordinary exports are unaffected.
+const MAX_INLINE_EXPORT_ROWS = 50_000;
+
+/** Refuse an oversized inline export with an actionable message pointing at the background export. */
+function assertInlineExportWithinCap(rowCount: number): void {
+  if (rowCount > MAX_INLINE_EXPORT_ROWS) {
+    throw new TRPCError({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: `This export is too large for a direct download (over ${MAX_INLINE_EXPORT_ROWS.toLocaleString()} rows). Use the background export to have it prepared as a downloadable file.`,
+    });
+  }
+}
 
 export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
   protected readonly userActivity = new UserActivityRepo();
@@ -264,7 +284,11 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     auth?: IAuthKeyPayload,
   ): Promise<ExportCsvResponseType> {
     const options = (input?.options ?? {}) as QueryParams<T>;
-    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options });
+    // Fetch one past the cap so an oversized export is detected and refused (below) instead of
+    // pulling an unbounded table into memory. An explicit limit wins over any derived paging.
+    const cappedOptions = { ...options, limit: MAX_INLINE_EXPORT_ROWS + 1 } as QueryParams<T>;
+    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options: cappedOptions });
+    assertInlineExportWithinCap(rows.length);
     const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
     const response = this.buildCsvResponse(records, input) as {
       csv: string;
@@ -291,24 +315,11 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const user = await this.repo.db
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'profiles.json as profile_json'])
+          .select(['authusers.email', 'profiles.preferences as profile_preferences'])
           .where('authusers.id', '=', auth.user_id)
           .executeTakeFirst();
         if (user && user.email) {
-          let optedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                optedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json in exportCsv');
-            }
-          }
-
-          if (optedIn) {
+          if (notificationEnabled(user.profile_preferences, 'export_ready')) {
             const mailService = new TransactionalEmailService();
             await mailService.sendMail({
               to: user.email,
@@ -340,6 +351,9 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         ? Object.keys(rows[0] as Record<string, unknown>)
         : [];
     const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
+    // Shared safety net for override paths (persons/households/etc.) that fetch rows themselves:
+    // never build an oversized CSV string inline — steer them to the background export too.
+    assertInlineExportWithinCap(rows.length);
     const csv = columns.length ? rowsToCsv(rows as Array<Record<string, any>>, columns) : '';
     return {
       csv,

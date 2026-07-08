@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import type { Header, Table } from '@tanstack/table-core';
+import type { GridRow } from '../types';
 
 @Injectable()
 export class ReorderController {
@@ -18,7 +20,7 @@ export class ReorderController {
     } catch {}
   }
 
-  onDragStart(h: any, ev: DragEvent) {
+  onDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
     if (this.suppressHeaderDrag()) {
       try {
         ev.preventDefault();
@@ -34,18 +36,18 @@ export class ReorderController {
     } catch {}
   }
 
-  onDrop(h: any, ev: DragEvent, tsTable: any) {
+  onDrop(h: Header<GridRow, unknown>, ev: DragEvent, tsTable: Table<GridRow> | undefined) {
     ev.preventDefault();
     const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
     const tgt = String(h?.column?.id || '');
     if (!src || !tgt || src === tgt) return;
-    const leaves: any[] = tsTable?.getAllLeafColumns?.() || [];
-    const order: string[] = leaves.map((c: any) => String(c.id));
+    const leaves = tsTable?.getAllLeafColumns?.() || [];
+    const order: string[] = leaves.map((c) => String(c.id));
     const from = order.indexOf(String(src));
     const to = order.indexOf(String(tgt));
     if (from < 0 || to < 0) return;
     order.splice(to, 0, ...order.splice(from, 1));
-    tsTable?.setOptions?.((prev: any) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
+    tsTable?.setOptions?.((prev) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
     this.requestPersist();
   }
 }

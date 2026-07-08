@@ -50,8 +50,8 @@ export class PasskeySettingsComponent implements OnInit {
           pendingName: r.friendly_name ?? '',
         })),
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to load passkeys.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load passkeys.');
     } finally {
       end();
     }
@@ -65,9 +65,9 @@ export class PasskeySettingsComponent implements OnInit {
         this.alerts.showSuccess('Passkey registered successfully.');
         await this.loadPasskeys();
       }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alerts.showError(err.message || 'Failed to register passkey.');
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to register passkey.');
       }
     } finally {
       this.adding.set(false);
@@ -87,8 +87,8 @@ export class PasskeySettingsComponent implements OnInit {
       await this.authService.deletePasskey(passkey.id);
       this.alerts.showSuccess('Passkey removed.');
       this.passkeys.update((list) => list.filter((p) => p.id !== passkey.id));
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to remove passkey.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove passkey.');
     }
   }
 
@@ -114,8 +114,8 @@ export class PasskeySettingsComponent implements OnInit {
       this.passkeys.update((list) =>
         list.map((p) => (p.id === passkey.id ? { ...p, friendly_name: name, editingName: false } : p)),
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to rename passkey.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to rename passkey.');
     }
   }
 }

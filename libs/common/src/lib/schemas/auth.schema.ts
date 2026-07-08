@@ -23,6 +23,17 @@ export const NotificationPreferencesObj = z.object({
   import_summary_in_app: z.boolean().default(true),
 });
 
+/**
+ * Shape of the profiles.preferences jsonb column (formerly the untyped
+ * profiles.json grab-bag). Only `notifications` is written today; unknown
+ * keys from older rows are preserved rather than rejected.
+ */
+export const ProfilePreferencesObj = z
+  .object({
+    notifications: NotificationPreferencesObj.partial().optional(),
+  })
+  .catchall(z.unknown());
+
 export const UpdateAuthUserObj = z.object({
   email: emailSchema.optional(),
   first_name: nameSchema('First name').optional(),

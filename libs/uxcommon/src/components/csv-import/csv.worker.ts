@@ -67,7 +67,7 @@ ctx.onmessage = (e: MessageEvent) => {
     }
 
     ctx.postMessage({ type: 'result', headers, rows });
-  } catch (err: any) {
-    ctx.postMessage({ type: 'error', message: err?.message || 'Parse failed' });
+  } catch (err) {
+    ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
   }
 };

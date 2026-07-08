@@ -1,11 +1,13 @@
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ListsService } from '@experiences/lists/services/lists-service';
+import { buildDeleteConfirmMessage } from '@experiences/lists/services/list-consumers';
 import { ListsType } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
@@ -66,14 +68,14 @@ export class ListView implements OnDestroy {
       // Fetch campaign stats and history
       const statsData = await this.lists.getListStats(id);
       this.stats.set(statsData);
-    } catch (e) {
+    } catch (_e) {
       this.alerts.showError('Failed to load list details');
     } finally {
       this.loading.set(false);
     }
   }
 
-  private pollInterval: any = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   protected async refreshList() {
     try {
@@ -81,8 +83,8 @@ export class ListView implements OnDestroy {
       await this.lists.refreshList(this.id());
       this.alerts.showSuccess('Refresh job scheduled in background');
       this.pollRefreshStatus();
-    } catch (e: any) {
-      this.alerts.showError(e?.message ?? String(e));
+    } catch (e) {
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
       this.refreshing.set(false);
     }
   }
@@ -90,27 +92,29 @@ export class ListView implements OnDestroy {
   private pollRefreshStatus() {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
-    this.pollInterval = setInterval(async () => {
-      try {
-        const list = (await this.lists.getById(this.id())) as ListsType;
-        this.listData.set(list);
-        if (list.status !== 'refreshing') {
-          clearInterval(this.pollInterval);
-          this.pollInterval = null;
-          this.refreshing.set(false);
-          if (list.status === 'failed') {
-            this.alerts.showError('List refresh failed in background');
-          } else {
-            this.alerts.showSuccess('List refreshed successfully');
-          }
-          await this.loadListDetails();
-        }
-      } catch (e) {
-        clearInterval(this.pollInterval);
+    this.pollInterval = setInterval(() => void this.pollStep(), 1500);
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const list = (await this.lists.getById(this.id())) as ListsType;
+      this.listData.set(list);
+      if (list.status !== 'refreshing') {
+        if (this.pollInterval) clearInterval(this.pollInterval);
         this.pollInterval = null;
         this.refreshing.set(false);
+        if (list.status === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        await this.loadListDetails();
       }
-    }, 1500);
+    } catch (_e) {
+      if (this.pollInterval) clearInterval(this.pollInterval);
+      this.pollInterval = null;
+      this.refreshing.set(false);
+    }
   }
 
   public ngOnDestroy() {
@@ -120,16 +124,26 @@ export class ListView implements OnDestroy {
   }
 
   protected editList() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteList() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
+    let consumers: unknown = null;
+    try {
+      consumers = await this.lists.getConsumers(id);
+    } catch {
+      // Fall back to the generic body if consumers can't be loaded.
+    }
+    const listName = this.listData()?.name ?? '';
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete List',
-      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      title: 'Delete list',
+      message: buildDeleteConfirmMessage(listName, consumers),
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Delete list',
+      // Safe action styled primary (§8): "Keep list" is the reassuring default.
+      cancelText: 'Keep list',
     });
     if (!confirmed) return;
     this.loading.set(true);
@@ -138,8 +152,16 @@ export class ListView implements OnDestroy {
       this.lists.triggerRefresh();
       this.alerts.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete list';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
       this.alerts.showError(message);
     } finally {
       this.loading.set(false);
@@ -157,4 +179,8 @@ export class ListView implements OnDestroy {
     if (value == null) return '0%';
     return `${value.toFixed(1)}%`;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

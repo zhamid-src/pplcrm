@@ -15,9 +15,11 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-user-view',
@@ -39,6 +41,8 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 })
 export class UserViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('user', this.id);
 
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
@@ -71,6 +75,11 @@ export class UserViewComponent {
     const name = tokens.join(' ').trim();
     return name || user.email;
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
+  ]);
 
   protected readonly activityCards = computed(() => {
     const s = this.stats();
@@ -150,8 +159,8 @@ export class UserViewComponent {
       }
       this.alerts.showSuccess('User deleted');
       await this.router.navigate(['/users']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Unable to delete user');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
     } finally {
       end();
     }
@@ -177,8 +186,16 @@ export class UserViewComponent {
       const user = await this.users.getById(this.id());
       this.detail.set(user);
       this.stats.set(user.stats);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -186,4 +203,8 @@ export class UserViewComponent {
       this.initialized.set(true);
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -1,8 +1,8 @@
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
@@ -20,19 +20,20 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
 import { PcIconNameType } from '@icons/icons.index';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 interface SocialLinkDef {
   name: string;
   url: string | null | undefined;
   icon: PcIconNameType;
-  color: string;
 }
 
 @Component({
@@ -49,7 +50,6 @@ interface SocialLinkDef {
     Tabs,
     TabPanel,
     StatusBadge,
-    StatCard,
     ProfileCard,
     DetailItem,
     SystemMetadata,
@@ -58,8 +58,10 @@ interface SocialLinkDef {
   ],
   templateUrl: './person-view.html',
 })
-export class PersonView implements OnInit {
+export class PersonView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('person', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -68,6 +70,7 @@ export class PersonView implements OnInit {
   protected readonly donationsSvc = inject(DonationsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly eventsSvc = inject(EventsService);
@@ -85,7 +88,6 @@ export class PersonView implements OnInit {
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
   protected readonly donationStats = signal<{
     cumulativeAmount: number;
@@ -94,15 +96,20 @@ export class PersonView implements OnInit {
   } | null>(null);
   protected readonly donationHistory = signal<any[]>([]);
   protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
   protected readonly connectionCount = signal(0);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
+
+  // True when the person has at least one active monthly pledge — powers the "Monthly donor" status chip.
+  protected readonly hasActivePledge = signal(false);
+
+  // Donations are truncated to the first 6 rows until the user expands (§3 "Show all N").
+  protected readonly DONATION_PREVIEW_COUNT = 6;
+  protected readonly showAllDonations = signal(false);
+  protected readonly visibleDonations = computed(() =>
+    this.showAllDonations() ? this.donationHistory() : this.donationHistory().slice(0, this.DONATION_PREVIEW_COUNT),
+  );
 
   // Donation Dialog State
   protected readonly isCheckingEligibility = signal(false);
@@ -147,50 +154,78 @@ export class PersonView implements OnInit {
     return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
   });
 
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
+  ]);
+
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
+  protected readonly statusChip = computed<string | null>(() => {
+    if (this.hasActivePledge()) return 'Monthly donor';
+    const tags = this.tags().map((t) => t.toLowerCase());
+    if (tags.includes('donor')) return 'Donor';
+    if (tags.includes('volunteer')) return 'Volunteer';
+    if (tags.includes('host')) return 'Host';
+    return null;
+  });
+
+  // Human label for the person's preferred contact channel (§3 contact card row).
+  protected readonly preferredContactLabel = computed<string | null>(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return null;
+    }
+  });
+
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {
     const p = this.person();
     return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
+      { name: 'LinkedIn', url: p.linkedin, icon: 'linkedin' },
+      { name: 'X', url: p.twitter, icon: 'x' },
+      { name: 'Facebook', url: p.facebook, icon: 'facebook' },
+      { name: 'Instagram', url: p.instagram, icon: 'instagram' },
     ];
   });
 
   // Active tab state
   protected activeTab = signal<string>('activity');
 
+  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
+    {
+      id: 'donations',
+      label: 'Donations',
+      icon: 'currency-dollar',
+      badge: this.donationHistory()?.length || undefined,
+    },
+    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
+
+  /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
+  protected donationMethod(donation: any): string {
+    const base = donation?.stripe_session_id ? 'Card' : 'Manual';
+    return donation?.pledge_id ? `${base} · monthly` : base;
+  }
+
+  /** Receipt status for a donation row (§3), derived from the donation status. */
+  protected donationReceipt(donation: any): { label: string; type: 'success' | 'warning' | 'error' | 'neutral' } {
+    const s = String(donation?.status || '').toLowerCase();
+    if (s === 'succeeded') return { label: 'Receipted', type: 'success' };
+    if (s === 'pending') return { label: 'Pending', type: 'warning' };
+    if (s === 'failed') return { label: 'Failed', type: 'error' };
+    return { label: donation?.status || '—', type: 'neutral' };
+  }
 
   protected getMailStatusType(status: string | null | undefined): any {
     const s = String(status || '').toLowerCase();
@@ -229,12 +264,21 @@ export class PersonView implements OnInit {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  public ngOnInit() {
-    // Standard Angular Init
+  /**
+   * Spec §1: the address bar shows the record slug, never the internal id.
+   * Cosmetic swap only (Location.replaceState) — the route param, record-nav
+   * pager and breadcrumbs keep working on the numeric id.
+   */
+  private showSlugUrl(record: unknown): void {
+    const slug =
+      record != null && typeof record === 'object' && 'slug' in record ? (record as { slug: unknown }).slug : null;
+    if (typeof slug === 'string' && slug.length > 0) {
+      this.location.replaceState(`/people/${slug}`);
+    }
   }
 
   protected async loadAllData(id: string) {
@@ -243,6 +287,7 @@ export class PersonView implements OnInit {
       // 1. Load person details
       const personData = await this.personsSvc.getById(id);
       this.person.set(personData);
+      this.showSlugUrl(personData);
 
       // 2. Load tags and issues
       const tagList = await this.personsSvc.getTags(id, 'tag');
@@ -250,30 +295,29 @@ export class PersonView implements OnInit {
       const issueList = await this.personsSvc.getTags(id, 'issue');
       this.issues.set(issueList);
 
-      // 3. Load volunteer stats and history
+      // 3. Load volunteer history
       try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
         const history = await this.volunteerSvc.getHistoryForPerson(id);
         this.volunteerHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load volunteer details', err);
       }
 
-      // 4. Load donations stats and history
+      // 4. Load donations stats, history and active-pledge status (for the "Monthly donor" chip)
       try {
+        this.showAllDonations.set(false);
         const stats = await this.donationsSvc.getStats(id);
         this.donationStats.set(stats);
         const history = await this.donationsSvc.getHistory(id);
         this.donationHistory.set(history || []);
+        const pledges = await this.donationsSvc.getPersonPledges(id);
+        this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
       } catch (err) {
         console.error('Failed to load donations history', err);
       }
 
       // 5. Load event history
       try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
         const history = await this.eventsSvc.getHistoryForPerson(id);
         this.eventHistory.set(history || []);
       } catch (err) {
@@ -299,7 +343,7 @@ export class PersonView implements OnInit {
           this.donationStats.set(stats);
           const history = await this.donationsSvc.getHistory(id);
           this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
         } catch (err) {
           console.error('Failed to confirm stripe checkout session:', err);
           this.alertSvc.showError('Finalizing payment verification...');
@@ -319,7 +363,7 @@ export class PersonView implements OnInit {
           this.donationStats.set(stats);
           const history = await this.donationsSvc.getHistory(id);
           this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
         } catch (err) {
           console.error('Failed to record mock donation:', err);
         }
@@ -333,7 +377,7 @@ export class PersonView implements OnInit {
         console.error('Failed to load activity log', err);
       }
     } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the person. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -394,15 +438,15 @@ export class PersonView implements OnInit {
       } else {
         this.alertSvc.showError('Failed to initialize payment gateway.');
       }
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Verification check failed.');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
     } finally {
       this.isCheckingEligibility.set(false);
     }
   }
 
   protected editPerson() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deletePerson() {
@@ -420,8 +464,16 @@ export class PersonView implements OnInit {
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -448,8 +500,45 @@ export class PersonView implements OnInit {
   protected navigateToHousehold() {
     const household_id = this.householdId();
     if (household_id) {
-      this.router.navigate(['households', household_id]);
+      void this.router.navigate(['households', household_id]);
     }
+  }
+
+  /** Take the user to the People duplicates review UI (spec §5 / §9.3, Track D) to merge this
+   * person into another. The pair-card comparison there is the one place merges are resolved,
+   * so the safe "keep" choice always lives with the operator on that screen. */
+  protected mergeIntoAnother(): void {
+    void this.router.navigate(['/duplicates/people']);
+  }
+
+  /** Export the contact as a downloadable vCard (§3 overflow) — fully client-side. */
+  protected exportVCard(): void {
+    const p = this.person();
+    if (!p) return;
+    const esc = (v: unknown) => String(v ?? '').replace(/([,;\\])/g, '\\$1');
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `N:${esc(p.last_name)};${esc(p.first_name)};${esc(p.middle_names)};;`,
+      `FN:${esc(this.fullName())}`,
+    ];
+    if (p.company_name) lines.push(`ORG:${esc(p.company_name)}`);
+    if (p.email) lines.push(`EMAIL;TYPE=INTERNET,PREF:${esc(p.email)}`);
+    if (p.email2) lines.push(`EMAIL;TYPE=INTERNET:${esc(p.email2)}`);
+    if (p.mobile) lines.push(`TEL;TYPE=CELL:${esc(p.mobile)}`);
+    if (p.home_phone) lines.push(`TEL;TYPE=HOME:${esc(p.home_phone)}`);
+    const addr = this.addressString();
+    if (addr && addr !== 'No Address Assigned') lines.push(`ADR;TYPE=HOME:;;${esc(addr)};;;;`);
+    lines.push('END:VCARD');
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.fullName() || 'contact'}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.alertSvc.showSuccess(`Exported ${this.fullName()} as a vCard.`);
   }
 
   private getFormattedAddress(address: AddressType): string {
@@ -469,4 +558,8 @@ export class PersonView implements OnInit {
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

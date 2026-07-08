@@ -1,8 +1,8 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { AuthRouter } from './trpc.router';
-import { AuthController } from './controller';
-import { generateToken, hashToken } from '../../lib/token-hash';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseRepository } from '../../lib/base.repo';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { AuthController } from './controller';
+import { AuthRouter } from './trpc.router';
 
 vi.mock('../../lib/hibp', () => ({
   getPwnedCount: vi.fn().mockResolvedValue(0),
@@ -11,6 +11,15 @@ vi.mock('../../lib/hibp', () => ({
 beforeEach(() => {
   vi.restoreAllMocks();
 });
+
+// Minimal tRPC context carrying a Fastify-like req/res so procedures that read the refresh cookie
+// and set it on the reply (SECURITY-REVIEW 2.1) can run under createCaller.
+function cookieCtx(opts: { setCookie?: (...args: unknown[]) => unknown; cookies?: Record<string, string> } = {}): any {
+  return {
+    req: { ip: '127.0.0.1', headers: {}, cookies: opts.cookies ?? {} },
+    res: { setCookie: opts.setCookie ?? vi.fn(), clearCookie: vi.fn() },
+  };
+}
 
 function mockAuthDb() {
   const mockQB: any = {
@@ -87,22 +96,30 @@ describe('AuthRouter', () => {
     expect(result).toEqual(mockUser);
   });
 
-  it('should call signIn on the controller', async () => {
-    const mockTokens = { auth_token: 'abc', refresh_token: 'def' };
+  it('should call signIn on the controller and move the refresh token to the cookie', async () => {
+    const mockTokens = { auth_token: 'abc', refresh_token: 'def', refresh_expires_at: null };
     const spy = vi.spyOn(AuthController.prototype, 'signIn').mockResolvedValue(mockTokens as any);
+    const setCookie = vi.fn();
 
-    const caller = AuthRouter.createCaller({} as any);
+    const caller = AuthRouter.createCaller(cookieCtx({ setCookie }));
     const result = await caller.signIn({ email: 'test@example.com', password: 'password123' });
 
     expect(spy).toHaveBeenCalled();
-    expect(result).toEqual(mockTokens);
+    // Only the access token is returned in the body; the refresh token becomes an HttpOnly cookie.
+    expect(result).toEqual({ auth_token: 'abc' });
+    expect(setCookie).toHaveBeenCalledWith('pc_refresh', 'def', expect.objectContaining({ httpOnly: true }));
   });
 
-  it('should call signUp on the controller', async () => {
-    const mockTokens = { auth_token: 'signup-auth-token', refresh_token: 'signup-refresh-token' };
+  it('should call signUp on the controller and move the refresh token to the cookie', async () => {
+    const mockTokens = {
+      auth_token: 'signup-auth-token',
+      refresh_token: 'signup-refresh-token',
+      refresh_expires_at: null,
+    };
     const spy = vi.spyOn(AuthController.prototype, 'signUp').mockResolvedValue(mockTokens as any);
+    const setCookie = vi.fn();
 
-    const caller = AuthRouter.createCaller({} as any);
+    const caller = AuthRouter.createCaller(cookieCtx({ setCookie }));
     const signUpData = {
       email: 'newuser@example.com',
       password: 'StrongPassword123!',
@@ -112,7 +129,12 @@ describe('AuthRouter', () => {
     const result = await caller.signUp(signUpData);
 
     expect(spy).toHaveBeenCalledWith(signUpData);
-    expect(result).toEqual(mockTokens);
+    expect(result).toEqual({ auth_token: 'signup-auth-token' });
+    expect(setCookie).toHaveBeenCalledWith(
+      'pc_refresh',
+      'signup-refresh-token',
+      expect.objectContaining({ httpOnly: true }),
+    );
   });
 });
 
@@ -172,7 +194,7 @@ describe('AuthController Integration', () => {
 
     const controller = new AuthController();
     const creatorEmail = `creator-${Date.now()}@example.com`;
-    const tokens = await controller.signUp({
+    await controller.signUp({
       organization: `Org-Invite-${Date.now()}`,
       email: creatorEmail,
       password: 'StrongPassword123!',
@@ -342,7 +364,10 @@ describe('AuthController Integration', () => {
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
 
-    // Verify background job was enqueued
+    // Verify background job was enqueued. These tests run against a live DB:
+    // if a dev backend is running, its worker may pick the job up (and move it
+    // to processing/completed) before we read it, so assert the job exists
+    // with the right payload rather than the transient 'pending' status.
     const signupJob = await db
       .selectFrom('background_jobs')
       .selectAll()
@@ -350,13 +375,13 @@ describe('AuthController Integration', () => {
       .executeTakeFirst();
 
     expect(signupJob).toBeDefined();
-    expect(signupJob.status).toBe('pending');
+    expect(['pending', 'processing', 'completed']).toContain(signupJob.status);
     expect(signupJob.max_attempts).toBe(5);
 
     const payload = typeof signupJob.payload === 'string' ? JSON.parse(signupJob.payload) : signupJob.payload;
     expect(payload.type).toBe('send-transactional-email');
     expect(payload.to).toBe(email);
-    expect(payload.subject).toContain('Welcome to CampaignRaven');
+    expect(payload.subject).toContain('Welcome to PplCRM');
 
     await cleanup(db, user.id, user.tenant_id);
   });
@@ -460,6 +485,14 @@ describe('AuthController Integration', () => {
     // Enable 2FA on the user
     await db.updateTable('authusers').set({ two_factor_enabled: true }).where('id', '=', user.id).execute();
 
+    // Capture the plaintext OTP from the outgoing mail; it is only emailed, never
+    // stored in cleartext (the DB holds a hash of it).
+    let sentOtp = '';
+    const mailSpy = vi.spyOn((controller as any).mailService, 'sendMail').mockImplementation((msg: any): void => {
+      const match = String(msg?.text ?? '').match(/\b(\d{6})\b/);
+      if (match) sentOtp = match[1];
+    });
+
     // Attempt sign-in
     const signInResult = (await controller.signIn(
       { email, password: 'StrongPassword123!' },
@@ -467,17 +500,19 @@ describe('AuthController Integration', () => {
       'Vitest',
     )) as any;
     expect(signInResult).toEqual({ requires2FA: true, email });
+    expect(mailSpy).toHaveBeenCalled();
+    expect(sentOtp).toMatch(/^\d{6}$/);
 
     const userWithOtp = await db
       .selectFrom('authusers')
       .selectAll()
       .where('email', '=', email)
       .executeTakeFirstOrThrow();
-    expect(userWithOtp.two_factor_code).toBeTypeOf('string');
-    expect(userWithOtp.two_factor_code).toHaveLength(6);
+    // Stored value must be the hash of the emailed OTP, not the raw code.
+    expect(userWithOtp.two_factor_code).toBe(hashToken(sentOtp));
 
-    // Verify OTP
-    const verifyResult = await controller.verify2FA(email, userWithOtp.two_factor_code!, '127.0.0.1', 'Vitest');
+    // Verify OTP using the plaintext code the user received
+    const verifyResult = await controller.verify2FA(email, sentOtp, '127.0.0.1', 'Vitest');
     expect(verifyResult.auth_token).toBeTypeOf('string');
     expect(verifyResult.refresh_token).toBeTypeOf('string');
 
@@ -486,14 +521,14 @@ describe('AuthController Integration', () => {
 
   it('should enforce role rules and owner constraints', async () => {
     const { BaseRepository } = await import('../../lib/base.repo');
-    const { ForbiddenError, BadRequestError } = await import('../../errors/app-errors');
+    const { ForbiddenError, BadRequestError: _BadRequestError } = await import('../../errors/app-errors');
     const db = (BaseRepository as any)._db;
 
     const controller = new AuthController();
 
     // 1. Sign up Owner
     const emailOwner = `owner-${Date.now()}@example.com`;
-    const tokensOwner = await controller.signUp({
+    await controller.signUp({
       organization: `RoleOrg-${Date.now()}`,
       email: emailOwner,
       password: 'StrongPassword123!',
@@ -774,7 +809,8 @@ describe('AuthController Integration', () => {
     spy.mockRestore();
 
     expect(plaintextCode).toBeDefined();
-    const code = plaintextCode!;
+    if (!plaintextCode) throw new Error('plaintext reset code was not captured');
+    const code = plaintextCode;
 
     // Verify code
     const verifyResult = await controller.verifyEmail(code);

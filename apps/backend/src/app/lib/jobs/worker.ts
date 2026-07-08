@@ -6,12 +6,20 @@ import { logger } from '../../logger';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { executeJob } from './job-handlers';
 
+// Backoff before polling again once the queue drained empty.
+const IDLE_POLL_MS = 30000;
+
 export class BackgroundJobWorker {
   private readonly importsRepo = new ImportsRepo();
   private readonly db = this.importsRepo.db; // Kysely DB instance
 
+  // Number of jobs currently in flight (real concurrency), capped at maxConcurrency.
   private activeJobsCount = 0;
+  private readonly maxConcurrency = env.workerConcurrency;
   private isRunning = false;
+  // Epoch ms the next drain is scheduled for, so overlapping schedule requests coalesce to the
+  // soonest one instead of stacking timers.
+  private nextDrainAt = Number.POSITIVE_INFINITY;
   private pgClient: Client | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private recoveryInterval: NodeJS.Timeout | null = null;
@@ -51,6 +59,9 @@ export class BackgroundJobWorker {
     this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
     );
+    this.ensurePruneRetentionJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure retention prune job scheduled'),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
@@ -62,7 +73,7 @@ export class BackgroundJobWorker {
     );
 
     void this.setupListener();
-    this.poll();
+    this.drain();
   }
 
   public async stop(): Promise<void> {
@@ -70,6 +81,7 @@ export class BackgroundJobWorker {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+      this.nextDrainAt = Number.POSITIVE_INFINITY;
     }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -156,6 +168,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to ensure cleanup job scheduled');
+    }
+  }
+
+  private async ensurePruneRetentionJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_retention')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily retention prune background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_retention' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure retention prune job scheduled');
     }
   }
 
@@ -399,38 +441,55 @@ export class BackgroundJobWorker {
     }
   }
 
-  private poll() {
+  /**
+   * Fill every free slot in the worker pool with a claimer. Each claimer runs one job (or finds the
+   * queue empty) and, on completion, schedules the next drain — so the pool stays topped up to
+   * `maxConcurrency` while there is work, and backs off when there isn't. Slot bookkeeping
+   * (`activeJobsCount++`) happens synchronously here so we never launch past the cap.
+   */
+  private drain(): void {
     if (!this.isRunning) return;
-    this.timer = setTimeout(() => {
-      void this.runPollCycle();
-    }, 0);
+    while (this.activeJobsCount < this.maxConcurrency) {
+      this.activeJobsCount++;
+      void this.processSlot();
+    }
   }
 
-  private async runPollCycle(): Promise<void> {
+  private async processSlot(): Promise<void> {
     let processedAJob = false;
     try {
-      this.activeJobsCount++;
       processedAJob = await this.processNextJob();
     } catch (err) {
       logger.error({ err }, 'Error in background job worker poll cycle');
     } finally {
       this.activeJobsCount--;
 
-      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise.
       if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
         this.shutdownResolver();
       } else {
-        // Poll again immediately (10ms) if we processed a job (to drain the queue),
-        // or back off to 30 seconds if no jobs were found.
-        const delay = processedAJob ? 10 : 30000;
-        this.pollWithDelay(delay);
+        // Look for more work immediately if we just processed a job (keep the pool full to drain the
+        // queue), or back off if the queue was empty.
+        this.scheduleDrain(processedAJob ? 0 : IDLE_POLL_MS);
       }
     }
   }
 
-  private pollWithDelay(ms: number) {
+  /**
+   * Schedule a drain in `ms`, coalescing with any already-pending drain: the soonest requested time
+   * wins, so a just-finished slot's immediate re-poll supersedes an idle slot's long backoff.
+   */
+  private scheduleDrain(ms: number) {
     if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
+    const fireAt = Date.now() + ms;
+    if (this.timer && this.nextDrainAt <= fireAt) return; // a sooner (or equal) drain is already queued
+    if (this.timer) clearTimeout(this.timer);
+    this.nextDrainAt = fireAt;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.nextDrainAt = Number.POSITIVE_INFINITY;
+      this.drain();
+    }, ms);
   }
 
   private async processNextJob(): Promise<boolean> {
@@ -692,6 +751,8 @@ export class BackgroundJobWorker {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'prune_newsletter_events') {
       delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_retention') {
+      delayMs = 24 * 60 * 60 * 1000;
     }
 
     if (delayMs > 0) {
@@ -745,10 +806,7 @@ export class BackgroundJobWorker {
   }
 
   private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
+    // A NOTIFY means work may be waiting — drain the pool right away, superseding any idle backoff.
+    this.scheduleDrain(0);
   }
 }

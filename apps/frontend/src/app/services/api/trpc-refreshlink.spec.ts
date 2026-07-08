@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { refreshLink } from './trpc-refreshlink';
-import { type Operation } from '@trpc/client';
-import { type Observer } from '@trpc/server/observable';
+import type { Operation } from '@trpc/client';
+import type { Observer } from '@trpc/server/observable';
 
 const expiredToken = 'header.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 })) + '.signature';
 const validToken = 'header.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 120 })) + '.signature';
@@ -19,9 +19,8 @@ describe('trpc-refreshlink', () => {
 
     mockTokenSvc = {
       getAuthToken: vi.fn().mockImplementation(() => currentAuthToken),
-      getRefreshToken: vi.fn().mockReturnValue('refresh-token-123'),
-      set: vi.fn().mockImplementation((payload) => {
-        currentAuthToken = payload.auth_token;
+      setAuthToken: vi.fn().mockImplementation((token) => {
+        currentAuthToken = token;
       }),
       clearAll: vi.fn(),
     };
@@ -41,8 +40,8 @@ describe('trpc-refreshlink', () => {
           result: {
             data: {
               json: {
+                // Renew now returns only the access token; the refresh token is an HttpOnly cookie.
                 auth_token: validToken,
-                refresh_token: 'new-refresh-token',
               },
             },
           },
@@ -90,11 +89,8 @@ describe('trpc-refreshlink', () => {
     // Check that we only fetched once
     expect(fetchCount).toBe(1);
 
-    // Check that mockTokenSvc.set was called to update token
-    expect(mockTokenSvc.set).toHaveBeenCalledWith({
-      auth_token: validToken,
-      refresh_token: 'new-refresh-token',
-    });
+    // Check that the refreshed access token was stored in memory
+    expect(mockTokenSvc.setAuthToken).toHaveBeenCalledWith(validToken);
 
     // Subsequent call should not fetch because currentAuthToken is now updated (not expired)
     await executeLink();

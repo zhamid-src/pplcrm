@@ -66,4 +66,29 @@ describe('TasksRouter', () => {
       }),
     ).rejects.toThrow();
   });
+
+  it('should delegate countSlaBreaches to the controller (sidebar badge, spec §4)', async () => {
+    const spy = vi.spyOn(TasksController.prototype, 'countSlaBreaches').mockResolvedValue(2);
+    const caller = TasksRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    const result = await caller.countSlaBreaches();
+
+    expect(spy).toHaveBeenCalled();
+    expect(result).toBe(2);
+  });
+
+  it('should delegate getSummaryCounts to the controller (list/board count sentences)', async () => {
+    const summary = { openTotal: 12, unassigned: 3, assignedToMe: 4, slaBreaches: 2 };
+    const spy = vi.spyOn(TasksController.prototype, 'getSummaryCounts').mockResolvedValue(summary);
+    const caller = TasksRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    const result = await caller.getSummaryCounts();
+
+    expect(spy).toHaveBeenCalled();
+    expect(result).toEqual(summary);
+  });
 });

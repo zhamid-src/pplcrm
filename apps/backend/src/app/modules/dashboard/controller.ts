@@ -1,7 +1,7 @@
 import { BaseRepository } from '../../lib/base.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {
@@ -85,27 +85,29 @@ export class DashboardController {
         .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
-    // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
+    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
       .execute();
 
     const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
       }
+      list.push(new Date(sent.created_at).getTime());
     }
 
     // Initialize user stats map
@@ -175,8 +177,7 @@ export class DashboardController {
     const nowMs = Date.now();
 
     for (const email of inboxEmails) {
-      const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
-      const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
+      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
 
       // Determine who closed the email (with fallback to assignee)
       const closerId =
@@ -280,7 +281,7 @@ export class DashboardController {
 
     // Calculate Task SLA Breaches
     for (const task of tasks) {
-      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
+      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
       if (isOpenTask) {
         const workingTimeMs = calculateWorkingTimeMs(
           new Date(task.created_at),
@@ -290,8 +291,7 @@ export class DashboardController {
           workingHoursEnd,
         );
         if (workingTimeMs > taskSlaMs) {
-          const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
-          const assignedUser = isAssigned ? userStatsMap[task.assigned_to!] : null;
+          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
           if (assignedUser) {
             assignedUser.taskSlaBreaches++;
           } else {
@@ -328,6 +328,61 @@ export class DashboardController {
     const contactsGrowth = growthRows.map((r: any) => ({
       date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
       count: Number(r.count || 0),
+    }));
+
+    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
+    // (age since arrival + how long until the first-response SLA is due, in working time).
+    let oldestUnassignedCreatedAt: Date | null = null;
+    for (const email of inboxEmails) {
+      if (email.status === 'open' && email.assigned_to == null) {
+        const created = new Date(email.created_at);
+        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
+          oldestUnassignedCreatedAt = created;
+        }
+      }
+    }
+    let oldestUnassignedAgeHours: number | null = null;
+    let firstResponseDueHours: number | null = null;
+    if (oldestUnassignedCreatedAt) {
+      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
+      const workedMs = calculateWorkingTimeMs(
+        oldestUnassignedCreatedAt,
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
+    }
+
+    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
+    const draftRow = await this.db
+      .selectFrom('newsletters')
+      .select(['id', 'name', 'total_recipients'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'pending')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const draftNewsletter = draftRow
+      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
+      : null;
+
+    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
+    const upcomingRows = await this.db
+      .selectFrom('volunteer_events')
+      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
+      .where('tenant_id', '=', tenant_id)
+      .where('start_time', '>=', new Date(nowMs))
+      .orderBy('start_time', 'asc')
+      .limit(3)
+      .execute();
+    const upcomingEvents = upcomingRows.map((e: any) => ({
+      id: String(e.id),
+      name: e.name,
+      start_time: e.start_time,
+      capacity: e.capacity == null ? null : Number(e.capacity),
+      location_address: e.location_address ?? null,
     }));
 
     // Build backward-compatible emailsAssigned
@@ -383,6 +438,10 @@ export class DashboardController {
       unassignedCount,
       totalOpenCount,
       userStats,
+      oldestUnassignedAgeHours,
+      firstResponseDueHours,
+      draftNewsletter,
+      upcomingEvents,
       unassignedSlaBreaches,
       unassignedEmailSlaBreaches,
       unassignedTaskSlaBreaches,
@@ -455,27 +514,29 @@ export class DashboardController {
         .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
-    // Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
+    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
       .execute();
 
     const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
       }
+      list.push(new Date(sent.created_at).getTime());
     }
 
     const breachedEmailsList: Array<{
@@ -590,7 +651,7 @@ export class DashboardController {
       .selectFrom('tasks')
       .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
       .execute();
 
     const breachedTasksList: Array<{

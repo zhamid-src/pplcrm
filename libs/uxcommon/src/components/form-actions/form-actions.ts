@@ -26,9 +26,17 @@ export class FormActions implements OnInit {
 
   public disabled = input<boolean>(false);
 
+  /**
+   * §4 "Save never disables": when true, the primary button stays enabled
+   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
+   * consuming form is expected to guide on click (markAsTouched + focus the
+   * first invalid field) rather than block via a dead button.
+   */
+  public saveAlwaysEnabled = input<boolean>(false);
+
   public showDelete = input<boolean>(false);
 
-  public deleteText = input<string>('DELETE');
+  public deleteText = input<string>('Delete');
 
   public readonly deleteClicked = output<void>();
 
@@ -36,9 +44,9 @@ export class FormActions implements OnInit {
 
   public btn1Icon = input<PcIconNameType>('save');
 
-  public btn1Text = input<string>('SAVE');
+  public btn1Text = input<string>('Save');
 
-  public btn2Text = input<string>('SAVE & ADD MORE');
+  public btn2Text = input<string>('Save & add more');
 
   public buttonsToShow = input<'two' | 'three'>('three');
 
@@ -47,6 +55,8 @@ export class FormActions implements OnInit {
   protected get isSaveDisabled(): boolean {
     if (this.isLoading()) return true;
     if (this.disabled()) return true;
+    // Save never disables on validity/dirtiness — the form guides on click.
+    if (this.saveAlwaysEnabled()) return false;
     const sigF = this.signalForm();
     if (sigF) {
       return sigF().invalid() || !sigF().dirty();

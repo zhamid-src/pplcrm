@@ -39,13 +39,20 @@ describe('VerifySenderEmailPage', () => {
     component = fixture.componentInstance;
   });
 
+  // ngOnInit kicks off async work without returning a promise, so trigger it
+  // through change detection (inside the zone) and wait for stability.
+  const runInit = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
   it('should show error state if token is missing from URL', async () => {
     mockRoute.snapshot.queryParamMap.get.mockReturnValue(null);
-    await component.ngOnInit();
+    await runInit();
 
     expect(component['status']()).toBe('error');
     expect(component['errorMessage']()).toBe('Invalid or missing verification token.');
@@ -58,7 +65,7 @@ describe('VerifySenderEmailPage', () => {
       email: 'test@example.com',
     });
 
-    await component.ngOnInit();
+    await runInit();
 
     expect(mockSettingsSvc.verifySenderEmail).toHaveBeenCalledWith('mock-jwt-token');
     expect(component['status']()).toBe('success');
@@ -70,7 +77,7 @@ describe('VerifySenderEmailPage', () => {
       success: false,
     });
 
-    await component.ngOnInit();
+    await runInit();
 
     expect(component['status']()).toBe('error');
     expect(component['errorMessage']()).toBe('Verification failed. The token may be invalid.');
@@ -80,7 +87,7 @@ describe('VerifySenderEmailPage', () => {
     const trpcError = new TRPCClientError('Link expired');
     mockSettingsSvc.verifySenderEmail.mockRejectedValue(trpcError);
 
-    await component.ngOnInit();
+    await runInit();
 
     expect(component['status']()).toBe('error');
     expect(component['errorMessage']()).toBe('Link expired');
@@ -90,7 +97,7 @@ describe('VerifySenderEmailPage', () => {
     const error = new Error('Unexpected error');
     mockSettingsSvc.verifySenderEmail.mockRejectedValue(error);
 
-    await component.ngOnInit();
+    await runInit();
 
     expect(component['status']()).toBe('error');
     expect(component['errorMessage']()).toBe('Unexpected error');

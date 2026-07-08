@@ -14,6 +14,13 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
     return Number(result?.numDeletedRows ?? 0);
   }
 
+  /** Delete by the already-hashed session_id (as stored in the DB), for callers that hold the hash
+   * rather than the plaintext session id (e.g. cookie-based token refresh). */
+  public async deleteBySessionHash(session_hash: string, trx?: Transaction<Models>) {
+    const result = await this.getDelete(trx).where('session_id', '=', session_hash).executeTakeFirst();
+    return Number(result?.numDeletedRows ?? 0);
+  }
+
   public async deleteByUserId(user_id: string, tenant_id: string, trx?: Transaction<Models>) {
     return this.getDelete(trx).where('user_id', '=', user_id).where('tenant_id', '=', tenant_id).executeTakeFirst();
   }

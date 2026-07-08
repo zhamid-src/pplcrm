@@ -48,6 +48,9 @@ describe('Navbar Component', () => {
     mockSidebarSvc = {
       isMobileOpen: vi.fn().mockReturnValue(false),
       toggleMobile: vi.fn(),
+      // Used by the pc-favourite-toggle rendered inside the navbar
+      findItemForUrl: vi.fn().mockReturnValue(undefined),
+      toggleFavourite: vi.fn().mockReturnValue(false),
     };
 
     mockThemeSvc = {
@@ -280,7 +283,7 @@ describe('Navbar Component', () => {
     expect(component.unreadCount()).toBe(0);
   });
 
-  it('should set isPulsing to true on initNotifications if count > 0', async () => {
+  it('should set the unread count on initNotifications', async () => {
     initNotificationsSpy.mockRestore();
     mockNotificationsSvc.getUnreadCount.mockResolvedValue(3);
     mockNotificationsSvc.getLatest.mockResolvedValue([]);
@@ -288,24 +291,20 @@ describe('Navbar Component', () => {
     await component['initNotifications']();
 
     expect(component.unreadCount()).toBe(3);
-    expect(component.isPulsing()).toBe(true);
   });
 
-  it('should set isPulsing to true on refreshCount if count increases', async () => {
+  it('should refetch notifications on refreshCount when the count increases', async () => {
     component.unreadCount.set(2);
-    component.isPulsing.set(false);
     mockNotificationsSvc.getUnreadCount.mockResolvedValue(3);
     mockNotificationsSvc.getLatest.mockResolvedValue([]);
 
     await component['refreshCount']();
 
     expect(component.unreadCount()).toBe(3);
-    expect(component.isPulsing()).toBe(true);
+    expect(mockNotificationsSvc.getLatest).toHaveBeenCalled();
   });
 
-  it('should clear isPulsing on onNotificationOpen', () => {
-    component.isPulsing.set(true);
-    component['onNotificationOpen']();
-    expect(component.isPulsing()).toBe(false);
+  it('should compute avatar initials from the user name', () => {
+    expect(component['userInitials']()).toBeDefined();
   });
 });

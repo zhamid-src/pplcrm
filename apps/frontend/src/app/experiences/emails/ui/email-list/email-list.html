@@ -62,7 +62,21 @@
         <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
-      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
+        @if (rowStatus(email); as st) {
+        <span
+          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+          [class.bg-warning/15]="st.tone === 'warning'"
+          [class.text-warning]="st.tone === 'warning'"
+          [class.bg-info/15]="st.tone === 'info'"
+          [class.text-info]="st.tone === 'info'"
+          [class.bg-base-300]="st.tone === 'neutral'"
+          [class.text-base-content/70]="st.tone === 'neutral'"
+          >{{ st.label }}</span
+        >
+        }
+      </div>
     </li>
     } @empty {
     <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">

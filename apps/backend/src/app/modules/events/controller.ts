@@ -1,12 +1,13 @@
 import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { BaseController } from '../../lib/base.controller';
-import { EventsRepo } from './repositories/events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
+import { BaseController } from '../../lib/base.controller';
+import { publicOrgName } from '../../lib/public-tenant';
 import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
@@ -54,27 +55,89 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       is_published: payload.is_published ?? false,
       send_reminder: payload.send_reminder ?? true,
       send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      fields: payload.fields ?? DEFAULT_FIELDS,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
     } as OperationDataType<'events', 'insert'>;
 
     try {
       return await this.add(row);
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;
     }
   }
 
-  public async getEventBySlug(slug: string) {
-    // eslint-disable-next-line local/no-unscoped-db-query -- public registration page: tenant is unknown until the event is resolved by slug
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('slug', '=', slug)
       .where('is_published', '=', true)
       .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
   }
 
   public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
@@ -132,14 +195,16 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
     const row = {
       ...payload,
-      ...(payload.fields !== undefined ? { fields: payload.fields } : {}),
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
       updatedby_id: auth.user_id,
     } as OperationDataType<'events', 'update'>;
     let result;
     try {
       result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;
@@ -497,7 +562,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
     // Rate limiting
     const now = Date.now();
     let timestamps = ipRsvpTimestamps.get(clientIp) || [];
@@ -508,7 +573,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     timestamps.push(now);
     ipRsvpTimestamps.set(clientIp, timestamps);
 
-    const event = await this.getEventBySlug(slug);
+    const event = await this.getEventBySlug(tenantId, slug);
     if (!event) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
     }
@@ -527,16 +592,10 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
     }
 
-    const tenantId = String(event.tenant_id);
     const firstName = payload['first_name']?.trim() || null;
     const lastName = payload['last_name']?.trim() || null;
     const mobile = payload['mobile']?.trim() || null;
     const notes = payload['notes']?.trim() || null;
-    const street1 = payload['street1']?.trim() || null;
-    const city = payload['city']?.trim() || null;
-    const state = payload['state']?.trim() || null;
-    const zip = payload['zip']?.trim() || null;
-    const country = payload['country']?.trim() || null;
 
     await this.getRepo()
       .transaction()
@@ -596,22 +655,26 @@ export class EventsController extends BaseController<'events', EventsRepo> {
               .execute();
           }
         } else {
-          let campaignId: string | null = null;
-          try {
-            const campaignRow = await trx
-              .selectFrom('campaigns')
-              .select('id')
-              .where('tenant_id', '=', tenantId)
-              .orderBy('created_at', 'asc')
-              .limit(1)
-              .executeTakeFirst();
-            campaignId = campaignRow ? String(campaignRow.id) : null;
-          } catch {
-            /* ignore */
-          }
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
 
-          const insertRow: any = {
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
             tenant_id: tenantId,
+            campaign_id: campaignId,
             household_id: householdId,
             createdby_id: creatorId,
             updatedby_id: creatorId,
@@ -620,13 +683,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             email,
             mobile,
             notes,
-            street1,
-            city,
-            state,
-            zip,
-            country,
           };
-          if (campaignId) insertRow.campaign_id = campaignId as any;
 
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);

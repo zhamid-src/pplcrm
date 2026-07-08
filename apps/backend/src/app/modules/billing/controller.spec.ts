@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Stripe from 'stripe';
 
 // Mock env BEFORE importing controller to disable mock mode in controller
 vi.mock('../../../env', async (importOriginal) => {
@@ -32,11 +31,11 @@ import { WebhookEventWorker } from '../../lib/jobs/webhook-worker';
 describe('Billing Webhook Async Processing Integration', () => {
   const db = (BaseRepository as any)._db;
   let controller: BillingController;
-  let worker: WebhookEventWorker;
+  let _worker: WebhookEventWorker;
 
   beforeEach(async () => {
     controller = new BillingController();
-    worker = new WebhookEventWorker();
+    _worker = new WebhookEventWorker();
     vi.restoreAllMocks();
 
     // Clean tables before tests

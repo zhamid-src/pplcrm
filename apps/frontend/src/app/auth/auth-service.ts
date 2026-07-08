@@ -1,6 +1,7 @@
 import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
 import { TRPCService } from '../services/api/trpc-service';
+import { silentRefresh } from '../services/api/trpc-refreshlink';
 import { TRPCError } from '@trpc/server';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
@@ -8,8 +9,20 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 export class AuthService extends TRPCService<'authusers'> {
   private user = signal<IAuthUser | null>(null);
 
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+  public async getCurrentUser(opts?: { silent?: boolean }) {
+    // The startup probe (init) passes silent: it swallows failures into `null` and lets the route
+    // guards decide who gets in. A guest's UNAUTHORIZED here is a normal answer, not a toast-worthy
+    // error — without this, every cold load of a public page (e.g. a password-reset link) flashes an
+    // "unauthorized" toast.
+    const request = opts?.silent
+      ? (
+          this.api.auth.currentUser.query as unknown as (
+            input: undefined,
+            o: { context: { skipErrorHandler: boolean } },
+          ) => Promise<IAuthUser>
+        )(undefined, { context: { skipErrorHandler: true } })
+      : this.api.auth.currentUser.query();
+    const user = (await request.catch(() => null)) as IAuthUser;
     if (user) this.user.set(user);
     return user;
   }
@@ -22,8 +35,11 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.user;
   }
 
-  public init() {
-    return this.getCurrentUser();
+  public async init() {
+    // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
+    // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
+    await silentRefresh(this.tokenService);
+    return this.getCurrentUser({ silent: true });
   }
 
   public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
@@ -76,11 +92,17 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resetPassword(input: { code: string; password: string }) {
-    return this.api.auth.resetPassword.mutate(input);
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public sendPasswordResetEmail(input: { email: string }) {
-    return this.api.auth.sendPasswordResetEmail.mutate(input);
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public async signIn(
@@ -96,9 +118,9 @@ export class AuthService extends TRPCService<'authusers'> {
 
     const user = await this.updateTokensAndGetCurrentUser(response);
     if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return { requires2FA: false, user };
   }
@@ -109,9 +131,9 @@ export class AuthService extends TRPCService<'authusers'> {
     });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return user;
   }
@@ -126,7 +148,7 @@ export class AuthService extends TRPCService<'authusers'> {
 
     this.user.set(null);
     this.tokenService.clearAll();
-    this.router.navigate(['/signin']);
+    void this.router.navigate(['/signin']);
 
     return apiReturn;
   }
@@ -141,11 +163,20 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
   }
 
   public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
   }
 
   public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
@@ -153,8 +184,8 @@ export class AuthService extends TRPCService<'authusers'> {
     let response: any;
     try {
       response = await startAuthentication({ optionsJSON: options });
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
       throw err;
     }
     const token = await (
@@ -162,9 +193,9 @@ export class AuthService extends TRPCService<'authusers'> {
     )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return { user, cancelled: false };
   }
@@ -193,10 +224,12 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
   }
 
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+  private async updateTokensAndGetCurrentUser(token: { auth_token?: string | null } | TRPCError) {
     if (!token || token instanceof TRPCError) {
       throw token;
     }
+    // Only the access token comes back in the body now; the refresh token is set as an HttpOnly
+    // cookie by the server (SECURITY-REVIEW 2.1).
     this.tokenService.set(token);
     return this.getCurrentUser();
   }

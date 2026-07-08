@@ -3,6 +3,7 @@
 import {
   AfterViewInit,
   Component,
+  DestroyRef,
   ElementRef,
   OnDestroy,
   OnInit,
@@ -23,7 +24,16 @@ import { SearchService } from '@frontend/services/api/search-service';
 import { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { type SortingState, ColumnDef as TSColumnDef, type Updater } from '@tanstack/table-core';
+import {
+  type Cell,
+  type Header,
+  type HeaderGroup,
+  type Row,
+  type SortingState,
+  type Table,
+  ColumnDef as TSColumnDef,
+  type Updater,
+} from '@tanstack/table-core';
 import {
   QueryBuilderGroupNode,
   QueueExportInputType,
@@ -34,6 +44,7 @@ import {
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DateFormatService } from '../../services/date-format.service';
 
@@ -43,6 +54,7 @@ import { QueryBuilderComponent, QueryBuilderField } from '../query-builder/query
 import { PinningController } from './controllers/pinning.controller';
 import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
 import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
+import type { GridRow, HeaderRef } from './types';
 import { DataGridActionsService } from './services/actions.service';
 import { DataGridColumnsService } from './services/columns.service';
 import { DataGridDataService } from './services/data.service';
@@ -56,6 +68,9 @@ import { TagOptionsService } from './services/tag-options.service';
 import { DataGridUtilsService } from './services/utils.service';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
+import { DataGridFilterDropdownComponent } from './ui/datagrid-filter-dropdown';
+import { MultiselectFilterComponent } from './ui/multiselect-filter';
+import { SingleselectFilterComponent, type SingleSelectOption } from './ui/singleselect-filter';
 
 interface MergeableService {
   merge?(target: string, source: string): Promise<unknown>;
@@ -63,8 +78,16 @@ interface MergeableService {
   mergeCompanies?(target: string, source: string): Promise<unknown>;
   mergeHouseholds?(target: string, source: string): Promise<unknown>;
 }
+
+/** One removable chip in the active-filters row above the grid. */
+export interface GridFilterChip {
+  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced' | 'search';
+  key: string;
+  label: string;
+}
 // Header and inline filters rendered inline in template now
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import DOMPurify from 'dompurify';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { EditingController } from './controllers/editing.controller';
@@ -76,6 +99,7 @@ import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { UndoManager } from './undo-redo-mgr';
+import { RecordNavigationService } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-datagrid',
@@ -89,6 +113,9 @@ import { UndoManager } from './undo-redo-mgr';
     HeaderResizeDirective,
     QueryBuilderComponent,
     GridHeaderComponent,
+    DataGridFilterDropdownComponent,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
   ],
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',
@@ -131,9 +158,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Optional cache placeholder removed (unused in current implementation)
   private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
-  private tsColumns: TSColumnDef<any, any>[] = [];
-  private tsTable: any;
-  private readonly pctrl = inject(PinningController, { optional: true })!;
+  private tsColumns: TSColumnDef<GridRow, unknown>[] = [];
+  private tsTable: Table<GridRow> | undefined;
+  private readonly pctrl = inject(PinningController);
   private updateHeaderWidths = () => {
     const table = this.gridTable()?.nativeElement;
     if (!table) return;
@@ -150,7 +177,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Virtualizer disabled for paginated grid
 
   // Injected Services
-  protected readonly alertSvc = inject(AlertService);
+  public readonly alertSvc = inject(AlertService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -160,14 +188,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly actionsSvc = inject(DataGridActionsService);
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly store = inject(GridStoreService, { optional: true })!;
-  private readonly rctrl = inject(ResizingController, { optional: true })!;
-  private readonly kctrl = inject(KeyboardController, { optional: true })!;
-  private readonly editingCtrl = inject(EditingController, { optional: true })!;
-  private readonly fetchCtrl = inject(FetchController, { optional: true })!;
-  private readonly reorder = inject(ReorderController, { optional: true })!;
+  public readonly store = inject(GridStoreService);
+  private readonly rctrl = inject(ResizingController);
+  private readonly kctrl = inject(KeyboardController);
+  private readonly editingCtrl = inject(EditingController);
+  private readonly fetchCtrl = inject(FetchController);
+  private readonly reorder = inject(ReorderController);
+  private readonly recordNav = inject(RecordNavigationService);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
+  // A "door" column (e.g. the People Name cell) opens the record on click and
+  // replaces the hover open-icon; when present the selection column narrows to 36px.
+  protected readonly hasDoorColumn = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   private readonly dgListsSvc = inject(ListsService, { optional: true });
   public readonly flashedCells = signal<Set<string>>(new Set());
@@ -178,6 +210,35 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly selectionColumnWidthPx = 72;
   private readonly headerAutoSizeBufferPx = 8;
 
+  /** Fields that should elastically absorb leftover width when visible, highest priority first. */
+  private static readonly GROW_TEXT_FIELDS = ['description', 'notes'] as const;
+
+  /**
+   * Under {@link fitColumns}, exactly one visible column stretches to fill the leftover width so
+   * short columns stay content-sized and the row still spans full width. Preference: a visible
+   * description/notes column, else a column the grid flagged with `flex: true`, else the last
+   * visible column. Returns `null` when content-fit sizing is off (legacy proportional stretch).
+   */
+  protected growColumnId(): string | null {
+    if (!this.fitColumns()) return null;
+    const headers = this.leafHeaders();
+    if (!headers.length) return null;
+    const textCol = headers.find((h) => DataGrid.GROW_TEXT_FIELDS.includes(h.column.id as never));
+    if (textCol) return textCol.column.id;
+    const flagged = headers.find((h) => this.getColDefById(h.column.id)?.flex === true);
+    if (flagged) return flagged.column.id;
+    return headers[headers.length - 1]?.column.id ?? null;
+  }
+
+  /**
+   * The fixed width to pin a header/cell to, or `null` to leave it elastic (`width:auto`). The
+   * single {@link growColumnId} returns `null` so it soaks up the table's leftover width.
+   */
+  protected fixedWidthPx(colId: string | null | undefined): number | null {
+    if (colId && this.growColumnId() === colId) return null;
+    return this.columnWidthPx(colId);
+  }
+
   protected columnWidthPx(colId: string | null | undefined): number {
     if (!colId) return this.columnMinWidthPx(colId);
     return this.getColWidth(colId) ?? this.columnMinWidthPx(colId);
@@ -186,16 +247,29 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected columnMinWidthPx(colId: string | null | undefined): number {
     if (!colId) return 40;
     const colDef = this.getColDefById(colId);
+    const typeFloor = this.typeMinWidthPx(colDef);
     const configuredMin = colDef?.minWidth;
     if (typeof configuredMin === 'number' && configuredMin > 0) {
-      return configuredMin;
+      return Math.max(configuredMin, typeFloor);
     }
     const minMap = this.headerMinWidths();
     const measured = minMap[colId];
     if (typeof measured === 'number' && measured > 0) {
-      return Math.max(40, Math.ceil(measured));
+      return Math.max(40, Math.ceil(measured), typeFloor);
     }
-    return 40;
+    return Math.max(40, typeFloor);
+  }
+
+  /**
+   * A presentation floor for column kinds whose content reads badly when squeezed: tag/issue
+   * chips wrap a letter per line, and free text collapses to "[…". Keeps them legible even when
+   * a column has no explicit width and its header is short.
+   */
+  private typeMinWidthPx(colDef: ColDef | undefined): number {
+    if (!colDef) return 0;
+    if (colDef.tagColumn) return 120;
+    if (colDef.field === 'notes' || colDef.field === 'description') return 200;
+    return 0;
   }
 
   private clampColumnWidth(id: string, px: number): number {
@@ -216,7 +290,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
   protected readonly isEmptyState = computed(
-    () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
+    () => this.hasLoaded() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
   );
 
   public readonly hasActiveFilters = computed(
@@ -227,6 +301,188 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.hasActiveAdvancedFilters(),
   );
 
+  /** True when anything — including the list filter — is narrowing the results. */
+  public readonly anyFilterActive = computed(
+    () =>
+      this.hasActiveFilters() ||
+      this.selectedListId() !== null ||
+      this.selectedNarrowType() !== null ||
+      this.searchTerm().trim() !== '',
+  );
+
+  /** Every active filter as a named, individually removable chip. */
+  protected readonly filterChips = computed<GridFilterChip[]>(() => {
+    const chips: GridFilterChip[] = [];
+
+    // An active search is filter truth too — surface it as a removable chip (§2), so it lives
+    // in one place whether it arrived from the navbar search or the command palette hand-off.
+    const search = this.searchTerm().trim();
+    if (search) {
+      chips.push({ kind: 'search', key: 'search', label: `Search: "${search}"` });
+    }
+
+    const narrow = this.selectedNarrowType();
+    if (narrow !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === narrow);
+      chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
+    } else {
+      // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
+      // Selected tags combine with OR and land as a single removable chip (§2).
+      const tags = this.selectedTags();
+      if (tags.length) {
+        chips.push({ kind: 'tag', key: 'tags', label: `Tags: any of ${tags.join(', ')}` });
+      }
+    }
+
+    // Selected issues combine with OR and land as a single removable chip (§2).
+    const issues = this.selectedIssues();
+    if (issues.length) {
+      chips.push({ kind: 'issue', key: 'issues', label: `Issues: any of ${issues.join(', ')}` });
+    }
+
+    const listId = this.selectedListId();
+    if (listId !== null) {
+      const list = this.availableLists().find((l) => String(l['id'] ?? '') === String(listId));
+      chips.push({ kind: 'list', key: String(listId), label: `List: ${String(list?.['name'] ?? 'selected')}` });
+    }
+
+    for (const [field, value] of Object.entries(this.filterValues())) {
+      const text = this.describeFilterValue(value);
+      if (!text) continue;
+      chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
+    }
+
+    if (this.hasActiveAdvancedFilters()) {
+      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
+    }
+
+    return chips;
+  });
+
+  protected removeFilterChip(chip: GridFilterChip): void {
+    switch (chip.kind) {
+      case 'narrow':
+        this.selectNarrowType(null);
+        break;
+      case 'tag':
+        // One chip represents all OR-ed tags — clear them together.
+        this.clearTagsFilter();
+        break;
+      case 'issue':
+        this.clearIssuesFilter();
+        break;
+      case 'list':
+        this.clearListFilter();
+        break;
+      case 'column':
+        this.clearHeaderFilter(chip.key);
+        break;
+      case 'advanced':
+        this.clearAdvancedFilter();
+        break;
+      case 'search':
+        this.searchSvc.clearSearch();
+        break;
+      default: {
+        const _exhaustive: never = chip.kind;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Reset every filter domain at once, then reload from the first page. */
+  protected clearAllFilters(): void {
+    this.selectedNarrowType.set(null);
+    this.selectedTags.set([]);
+    this.selectedIssues.set([]);
+    this.selectedListId.set(null);
+    this.filterValues.set({});
+    this.panelFilters.set({});
+    this.searchSvc.clearSearch();
+    this.store?.requestPersist();
+    if (this.hasActiveAdvancedFilters()) {
+      // clearAdvancedFilter triggers its own refresh.
+      this.clearAdvancedFilter();
+    } else {
+      void this.loadPage(0);
+    }
+  }
+
+  /** Human-readable value text for a column-filter chip, from the stored `{op,value}` /
+   * array / plain-string shapes. Returns '' when the filter carries nothing to show. */
+  private describeFilterValue(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (Array.isArray(value)) return value.length ? value.join(', ') : '';
+    if (typeof value === 'object' && 'value' in value) {
+      const rec = value as { op?: unknown; value?: unknown };
+      const op = String(rec.op ?? 'contains');
+      if (op === 'isEmpty') return 'is empty';
+      if (op === 'isNotEmpty') return 'is not empty';
+      const v = rec.value;
+      if (Array.isArray(v)) return v.length ? v.join(', ') : '';
+      const s = v == null ? '' : String(v);
+      return s;
+    }
+    return String(value);
+  }
+
+  // ── "+ Add filter" quick pill — a single field → operator → value entry that lands as one
+  //    removable column chip. Reuses the same `filterValues` model the column/panel filters use
+  //    (so removal, persistence, and the server filterModel all flow through the existing path);
+  //    it does NOT fork a parallel filter representation.
+  public readonly addFilterField = signal<string>('');
+  public readonly addFilterOp = signal<string>('contains');
+  public readonly addFilterValue = signal<string>('');
+  public readonly addFilterOperators: ReadonlyArray<{ value: string; label: string }> = [
+    { value: 'contains', label: 'contains' },
+    { value: 'notContains', label: 'does not contain' },
+    { value: 'equals', label: 'equals' },
+    { value: 'notEquals', label: 'does not equal' },
+    { value: 'startsWith', label: 'starts with' },
+    { value: 'endsWith', label: 'ends with' },
+    { value: 'isEmpty', label: 'is empty' },
+    { value: 'isNotEmpty', label: 'is not empty' },
+  ];
+
+  /** Fields offered in the Add-filter pill — every real column except the tag/issue columns
+   * (those have their own dashed pills) and non-data columns. */
+  public readonly addFilterFields = computed<Array<{ field: string; label: string }>>(() =>
+    this.colDefs().flatMap((c) =>
+      c.field && c.field !== 'actions' && c.field !== 'tags' && c.field !== 'issues' && c.tagColumn !== true
+        ? [{ field: c.field, label: c.headerName || c.field }]
+        : [],
+    ),
+  );
+
+  /** Whether the currently-selected operator needs a value (isEmpty/isNotEmpty do not). */
+  public readonly addFilterNeedsValue = computed(() => {
+    const op = this.addFilterOp();
+    return op !== 'isEmpty' && op !== 'isNotEmpty';
+  });
+
+  /** Commit the Add-filter pill selection as a column chip, then reload from page 1. */
+  public applyAddFilter(): void {
+    const field = this.addFilterField();
+    if (!field) return;
+    const op = this.addFilterOp();
+    const needsValue = op !== 'isEmpty' && op !== 'isNotEmpty';
+    const value = this.addFilterValue().trim();
+    if (needsValue && !value) return;
+    const next = { ...this.filterValues() };
+    next[field] = { op, value: needsValue ? value : '' };
+    this.filterValues.set(next);
+    this.addFilterField.set('');
+    this.addFilterOp.set('contains');
+    this.addFilterValue.set('');
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  /** Saved-list options for the dashed "Lists" pill (mirrors the toolbar's mapping). */
+  public readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
   public isColFiltered(field: string): boolean {
     const fv = this.filterValues();
     const val = fv[field];
@@ -235,14 +491,57 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return val !== undefined && val !== null && val !== '';
   }
-  protected readonly hasInitiatedLoad = signal(false);
-  protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  // "The first load has finished" comes straight from the loading gate's ungated
+  // `loaded` signal — set when a fetch completes (so totalCountAll is already in
+  // place), even for a sub-300ms fetch that never trips the delayed spinner.
+  public readonly hasLoaded = this._loading.loaded;
+  public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
   public readonly hasSingleSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
   );
+
+  // Entity noun for selection/bulk-bar copy (e.g. "person"/"people"); defaults to row/rows.
+  public readonly entityNoun = this.config.messages.entityNoun ?? 'row';
+  public readonly entityNounPlural = this.config.messages.entityNounPlural ?? 'rows';
+  public nounFor(n: number): string {
+    return n === 1 ? this.entityNoun : this.entityNounPlural;
+  }
+
+  // Bulk "Add tag" — an inline field in the bulk action bar (§2).
+  public readonly bulkTagOpen = signal(false);
+  public readonly bulkTagValue = signal('');
+  public openBulkTag(): void {
+    this.bulkTagValue.set('');
+    this.bulkTagOpen.set(true);
+  }
+  public cancelBulkTag(): void {
+    this.bulkTagOpen.set(false);
+    this.bulkTagValue.set('');
+  }
+  public async applyBulkTag(): Promise<void> {
+    const tag = this.bulkTagValue().trim();
+    if (!tag) return;
+    const ids = this.getSelectedRows()
+      .map((r) => String((r as { id?: unknown }).id ?? ''))
+      .filter(Boolean);
+    if (!ids.length) return;
+    try {
+      for (const id of ids) {
+        await this.gridSvc.attachTag(id, tag, 'tag');
+      }
+      // Toast repeats the scale (§2 / §7.5).
+      this.alertSvc.showSuccess(`Added ${tag} to ${ids.length} ${this.nounFor(ids.length)}.`);
+      this.cancelBulkTag();
+      void this.dgTagOptionsSvc.invalidate('tag');
+      await this.loadPage(this.pageIndex());
+    } catch (err) {
+      console.error('Bulk tag failed', err);
+      this.alertSvc.showError(`Could not add "${tag}" to all selected ${this.entityNounPlural}.`);
+    }
+  }
 
   // Display range helpers (1-based)
   protected readonly displayStartIndex = computed(() => {
@@ -256,6 +555,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const end = (this.pageIndex() + 1) * this.pageSize();
     return Math.min(end, total);
   });
+
+  // Pager tooltips: enabled states name the action, disabled states name the
+  // unmet condition (§2 pagination honesty / §7.2 acceptance checklist).
+  protected readonly firstPageTitle = 'First page';
+  protected readonly prevPageTitle = 'Previous page';
+  protected readonly nextPageTitle = 'Next page';
+  protected readonly lastPageTitle = 'Last page';
+  protected readonly onFirstPageTitle = "You're on the first page";
+  protected readonly onLastPageTitle = "You're on the last page";
 
   // Hidden columns list for header menu as a computed
   protected readonly hiddenColumns = computed(() => {
@@ -294,7 +602,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Inline edit state
   protected editingCell = signal<{ id: string; field: string } | null>(null);
-  protected editingValue = signal<any>('');
+  protected editingValue = signal<unknown>('');
   protected tagSearch = signal('');
   protected filterValues = this.store?.filterValues ?? signal({});
   protected isLoading = this._loading.visible;
@@ -304,7 +612,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected rowHeight = 36;
 
   // Table state (TanStack-like minimal state)
-  public readonly rows = this.store?.rows ?? signal<any[]>([]);
+  public readonly rows = this.store?.rows ?? signal<GridRow[]>([]);
   protected selectedIdSet = this.store?.selectedIdSet ?? signal(new Set());
   protected selectionStickyWidth = this.store?.selectionStickyWidth ?? signal(48);
   protected showFilterPanel = signal(false);
@@ -328,19 +636,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Inline filters row injects DataGrid directly; no adapters needed
 
   // Row/cell adapters used by directives/templates
-  public readonly toIdFn = (row: any) => this.toId(row);
-  public readonly inputTypeForFn = (col: any) => this.inputTypeFor(col);
-  public readonly createPayloadFn = (row: any, key: string) => this.utilsSvc.createPayload(row, key);
-  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: any, prev?: any) =>
+  public readonly toIdFn = (row: unknown) => this.toId(row);
+  public readonly inputTypeForFn = (col: ColDef) => this.inputTypeFor(col);
+  public readonly createPayloadFn = (row: GridRow, key: string) => this.utilsSvc.createPayload(row, key);
+  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: unknown, prev?: unknown) =>
     this.updateEditedRowInCaches(id, f, v, prev);
   public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
   // Expose a simple persist method for header/directives
   public requestPersist() {
     this.store?.requestPersist();
   }
-  public readonly coerceFn = (c: any, raw: any) => this.coerceEditingValue(c, raw);
+  public readonly coerceFn = (c: ColDef, raw: unknown) => this.coerceEditingValue(c, raw);
 
-  public readonly editableCfg = (row: any, col: any) => ({
+  public readonly editableCfg = (row: GridRow, col: ColDef) => ({
     row,
     col,
     toId: this.toIdFn,
@@ -350,13 +658,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return Array.isArray(current) ? [...current] : current;
     },
     setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
-    setEditingValue: (v: any) => this.editingValue.set(v),
-    getCellValue: (r: any, c: any) => this.getCellValue(r, c),
-    getEditingDisplayValue: (r: any, c: any) => this.getEditingDisplayValue(r, c),
+    setEditingValue: (v: unknown) => this.editingValue.set(v),
+    getCellValue: (r: GridRow, c: ColDef) => this.getCellValue(r, c),
+    getEditingDisplayValue: (r: GridRow, c: ColDef) => this.getEditingDisplayValue(r, c),
     createPayload: this.createPayloadFn,
-    applyEdit: (id: string, data: any) =>
+    applyEdit: (id: string, data: Partial<GridRow>) =>
       this.gridSvc
-        .update(id, data)
+        .update(id, data as unknown as U)
         .then(() => true)
         .catch(() => false),
     updateEditedRow: this.updateEditedRowInCachesFn,
@@ -386,25 +694,65 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public disableDelete = input<boolean>(true);
   public disableMerge = input<boolean>(true);
   public disableExport = input<boolean>(false);
-  public confirmDeleteOverride = input<((selected: any[]) => Promise<boolean | void>) | null>(null);
+  public confirmDeleteOverride = input<
+    ((selected: (Partial<RowOf<T>> & { id: string })[]) => Promise<boolean | void>) | null
+  >(null);
   public disableImport = input<boolean>(false);
   public disableRefresh = input<boolean>(false);
   public disableView = input<boolean>(true);
   public enableSelection = input<boolean>(true);
-  public rowCanSelect = input<(row: any) => boolean>(() => true);
+  public rowCanSelect = input<(row: GridRow) => boolean>(() => true);
   public limitToTags = input<string[]>([]);
   public limitToIssues = input<string[]>([]);
-  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[] }>>([]);
+  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[]; count?: number }>>([]);
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
-  public isCellEditableOverride = input<((row: any, col: ColDef) => boolean) | null>(null);
+  public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
 
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
   public listId = input<string | null>(null);
   public title = input<string | null>(null);
   public description = input<string | null>(null);
   public showDescription = input<boolean>(false);
+
+  /**
+   * Grain-specific total sentence rendered under the title (spec §5), e.g.
+   * "5,012 people total" / "1,890 households across 8 wards" / "611 people in 214 companies".
+   * When filters are active the header prefixes it: "43 match your filters · {sentence}".
+   */
+  public totalSentence = input<string | null>(null);
+
+  /**
+   * Grain-tab layout (People/Households/Companies grids, spec §5 + owner screenshot):
+   * no in-grid title/ⓘ (redundant with the sidebar + breadcrumb) — the grain tabs and
+   * toolbar share one band, and the count sentence renders below the filter row.
+   */
+  public grainLayout = input<boolean>(false);
+
+  /**
+   * Content-fit column sizing. When true, columns render at their content/configured width
+   * instead of the browser stretching every column to fill the table, and a blank trailing
+   * cell absorbs the leftover width so short columns stay tight and the row still spans full
+   * width. Off by default so existing grids keep their proportional-stretch layout.
+   */
+  public fitColumns = input<boolean>(false);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  /** The "43 match your filters · 5,012 people total" sentence, rendered below the filter row in grain layout. */
+  public readonly countSentence = computed<string | null>(() => {
+    const count = this.hasLoaded() ? this.totalCountAll() : null;
+    const sentence = this.totalSentence();
+    if (count !== null && this.anyFilterActive()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
+    }
+    if (sentence) return sentence;
+    if (count === null) return null;
+    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
+  });
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
@@ -444,11 +792,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   });
 
   public selectNarrowType(value: string | null): void {
+    // Already on this view — nothing to fetch.
+    if (this.selectedNarrowType() === value) return;
     this.selectedNarrowType.set(value);
     const option = this.narrowTypeOptions().find((o) => o.value === value);
     const tags = option?.tags ?? [];
     this.tagFilter.selectedTags.set([...tags]);
-    void this.doRefresh();
+    // A view is a server-side tag filter, so fetch page 1 of the new set — but via
+    // the normal loading gate, not doRefresh()'s forced 1s spinner (that's for the
+    // manual Refresh button). Feels like filtering, not a hard reload.
+    void this.loadPage(0);
   }
 
   public toggleTagFilter(tag: string, checked: boolean) {
@@ -479,7 +832,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public selectedListId = signal<string | null>(null);
-  public availableLists = signal<any[]>([]);
+  public availableLists = signal<GridRow[]>([]);
   public activeListId = computed(() => this.listId() || this.selectedListId());
   public readonly showListFilter = computed(() => {
     const entity = this.config.messages.exportEntity;
@@ -509,7 +862,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.colDefsWithEdit
       .filter((c) => c.field && c.field !== 'actions' && c.field !== SELECTION_COLUMN.field)
       .map((c) => {
-        const fieldName = c.field!;
+        const fieldName = c.field ?? '';
         const isTagCol = fieldName === 'tags' || fieldName === 'issues' || c.tagColumn === true;
         const operators = [
           { value: 'contains', label: 'contains' },
@@ -557,6 +910,32 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.store) {
       this.store.grid = this;
     }
+
+    // Top-level grid pages publish a first-level crumb (e.g. "People") into the navbar.
+    // Only when the toolbar is shown — embedded/inline grids sit inside a detail page
+    // that owns its own trail, so they must not overwrite it. Cleared on destroy via
+    // DestroyRef (ngOnDestroy early-returns when there's no store).
+    let publishedCrumb = false;
+    effect(() => {
+      const title = this.title();
+      if (this.showToolbar() && title) {
+        this.breadcrumbs.set({
+          crumbs: [{ label: title }],
+          positionLabel: null,
+          hasPrev: false,
+          hasNext: false,
+          prevLabel: 'Previous record',
+          nextLabel: 'Next record',
+          onPrev: () => undefined,
+          onNext: () => undefined,
+        });
+        publishedCrumb = true;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (publishedCrumb) this.breadcrumbs.clear();
+    });
+
     effect(() => {
       const count = this.gridSvc.refreshCount();
       if (count > 0) {
@@ -564,11 +943,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           void this.refresh();
         });
       }
-    });
-
-    // Mark that a load has started — prevents empty-state flash before first fetch
-    effect(() => {
-      if (this.isLoading()) this.hasInitiatedLoad.set(true);
     });
 
     // Clear the tag search box whenever a different cell enters edit mode
@@ -600,7 +974,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
       // Keep track of the old filter text to avoid unnecessary roundtrip
       if (quickFilterText !== this.oldFilterText) {
-        this.oldFilterText = quickFilterText as string;
+        this.oldFilterText = quickFilterText;
         void this.loadPage(0);
       }
     });
@@ -675,11 +1049,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
     // Virtualizer count sync handled by controller
     // Pin offsets recompute centralized in PinningController
-
-    effect(() => {
-      const tool = this.showToolbar();
-      console.log(tool, this.showToolbar(), this.title());
-    });
   }
 
   public getCountRowSelected() {
@@ -701,14 +1070,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return;
     }
     // Virtualizer disabled for paged grid; no attach
-    const el = this.scrollerRef()?.nativeElement as HTMLDivElement | undefined;
+    const el = this.scrollerRef()?.nativeElement;
     void el; // reserved for future use
     // Attach controllers to the table once
     this.pctrl.attachTable(this.tsTable);
     this.pctrl.init({
       getColWidth: (id) => this.getColWidth(id),
       getSelectionWidth: () => this.selectionStickyWidth(),
-      getPinState: () => this.tsTable?.getState?.().columnPinning ?? { left: [], right: [] },
+      getPinState: () => {
+        const pin = this.tsTable?.getState().columnPinning;
+        return { left: pin?.left ?? [], right: pin?.right ?? [] };
+      },
     });
     // Measure header widths initially and on resize
     this.updateHeaderWidths();
@@ -742,13 +1114,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         },
       });
 
-      if (this.showListFilter()) {
+      if (this.showListFilter() && this.dgListsSvc) {
         try {
-          const listsResult = await this.dgListsSvc!.getAll();
+          const listsResult: unknown = await this.dgListsSvc.getAll();
           const entity = this.config.messages.exportEntity;
           const expectedObject = entity === 'persons' ? 'people' : 'households';
-          const rows = listsResult.rows ?? listsResult;
-          const filtered = rows.filter((l: any) => l.object === expectedObject);
+          const listRows: unknown[] = Array.isArray(listsResult)
+            ? listsResult
+            : isRecord(listsResult) && Array.isArray(listsResult['rows'])
+              ? listsResult['rows']
+              : [];
+          const filtered = listRows.filter((l): l is GridRow => isRecord(l) && l['object'] === expectedObject);
           this.availableLists.set(filtered);
         } catch (err) {
           console.error('Failed to load lists for filter:', err);
@@ -767,7 +1143,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         const raw = localStorage.getItem(this._persistKey);
         if (raw) {
           const data = JSON.parse(raw || '{}') as { order?: string[] };
-          if (Array.isArray(data?.order)) savedColumnOrder = data.order as string[];
+          if (Array.isArray(data?.order)) savedColumnOrder = data.order;
         }
       } catch {}
 
@@ -775,6 +1151,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
       this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
       this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
+      this.hasDoorColumn.set(this.colDefsWithEdit.some((col) => !!col?.doorColumn));
 
       // Initialize column visibility defaults
       const vis: Record<string, boolean> = {};
@@ -786,7 +1163,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.tsTable = this.tableSvc.createGridTable({
         rows: this.rows(),
         columns: this.tsColumns,
-        getRowId: (row: any) => this.toId(row),
+        getRowId: (row: GridRow) => this.toId(row),
         state: {
           sorting: this.sorting(),
           columnVisibility: this.colVisibility(),
@@ -797,7 +1174,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         },
         onStateChange: () => this.syncSignalsFromTable(),
         onSortingChange: (updater: Updater<SortingState>) => {
-          const next = typeof updater === 'function' ? updater(this.tsTable!.getState().sorting) : updater;
+          const next = typeof updater === 'function' ? updater(this.tsTable?.getState().sorting ?? []) : updater;
           this.sorting.set(next);
           const first = next?.[0];
           this.sortCol.set(first?.id ?? null);
@@ -806,8 +1183,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.store.requestPersist();
         },
         onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => {
-          const state = this.tsTable!.getState() as unknown as { rowSelection?: Record<string, boolean> };
-          const current: Record<string, boolean> = state?.rowSelection ?? {};
+          const current = this.tsTable?.getState().rowSelection ?? {};
           const next = typeof updater === 'function' ? updater(current) : updater;
           const set = new Set(this.selectedIdSet());
           const canSelectFn = this.rowCanSelect();
@@ -824,11 +1200,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.selectedIdSet.set(set);
         },
         onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
-          const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
-          const current: Record<string, number> = state?.columnSizing || {};
+          const current = this.tsTable?.getState().columnSizing ?? {};
           const next = typeof updater === 'function' ? updater(current) : updater;
-          this.colWidths.set({ ...(next || {}) });
-          this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
+          this.colWidths.set({ ...next });
+          this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: next } }));
           this.store.requestPersist();
         },
       });
@@ -837,13 +1212,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       try {
         this.store.attachTable(this.tsTable);
         this.store.setPersistKey(this._persistKey);
-        this.store.setGetRowId((row: any) => this.toId(row));
+        this.store.setGetRowId((row: GridRow) => this.toId(row));
       } catch {}
 
       // Load persisted state and apply to table before first load
       if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
       this.store.loadState();
-      this.selectionStickyWidth.set(this.selectionColumnWidthPx);
+      // A door column replaces the open-icon, so the selection column only needs
+      // to fit the checkbox (36px); without one it also holds the open-icon (72px).
+      this.selectionStickyWidth.set(this.hasDoorColumn() ? 36 : this.selectionColumnWidthPx);
 
       await this.loadPage(0);
       this._initialized = true;
@@ -876,7 +1253,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected applyPanelFilters() {
     const raw = this.panelFilters();
-    const cleaned: Record<string, any> = {};
+    const cleaned: Record<string, { op: string; value: string }> = {};
     for (const [k, v] of Object.entries(raw)) {
       const op = v?.op ?? 'contains';
       const sv = String(v?.value ?? '').trim();
@@ -891,7 +1268,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     void this.loadPage(0);
   }
 
-  public ariaSortHeader(h: any): 'ascending' | 'descending' | 'none' {
+  public ariaSortHeader(h: Header<GridRow, unknown>): 'ascending' | 'descending' | 'none' {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (s === 'asc') return 'ascending';
     if (s === 'desc') return 'descending';
@@ -899,7 +1276,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Auto-size column based on header and currently visible cells
-  public autoSizeColumn(h: any) {
+  public autoSizeColumn(h: Header<GridRow, unknown>) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
     const table = this.gridTable()?.nativeElement;
@@ -912,37 +1289,65 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Virtualizer padding not used in paginated mode
 
   // Build a compact filter model from current UI filter values
-  public buildFilterModel(): Record<string, any> {
+  public buildFilterModel(): Record<string, unknown> {
     return this.filtersSvc.buildFilterModel(this.filterValues());
   }
 
   protected readonly sanitizer = inject(DomSanitizer);
 
-  protected callCellRenderer(row: any, col: ColDef): SafeHtml {
-    const fn: any = col.cellRenderer;
-    if (typeof fn === 'function') {
-      const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+  // Memoized sanitized cell HTML. callCellRenderer runs inside a template binding, so
+  // it re-fires on every change-detection pass for every visible cell; without this it
+  // would re-run the renderer AND DOMPurify O(rows × cols) times per CD cycle. Keyed by
+  // the (stable) ColDef then the row data object — both WeakMap keys, so entries are
+  // evicted automatically when a column or row is garbage-collected — and invalidated
+  // when the cell's value changes.
+  private readonly cellHtmlCache = new WeakMap<object, WeakMap<object, { value: unknown; html: SafeHtml }>>();
+  private readonly emptyCellHtml: SafeHtml = this.sanitizer.bypassSecurityTrustHtml('');
 
-      const raw = fn({ data: row, value, colDef: col });
-
-      // If renderers return strings (your current setup), trust them here.
-      if (typeof raw === 'string') {
-        return this.sanitizer.bypassSecurityTrustHtml(raw);
-      }
-
-      // If you later allow SafeHtml from some renderers, just return it.
-      return raw as SafeHtml;
+  protected callCellRenderer(row: GridRow, col: ColDef): SafeHtml {
+    const fn = col.cellRenderer;
+    if (typeof fn !== 'function') {
+      // Empty string is still valid SafeHtml
+      return this.emptyCellHtml;
     }
-    // Empty string is still valid SafeHtml
-    return this.sanitizer.bypassSecurityTrustHtml('');
+
+    const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+
+    let byRow = this.cellHtmlCache.get(col);
+    if (!byRow) {
+      byRow = new WeakMap<object, { value: unknown; html: SafeHtml }>();
+      this.cellHtmlCache.set(col, byRow);
+    }
+    const cached = byRow.get(row);
+    if (cached && Object.is(cached.value, value)) {
+      return cached.html;
+    }
+
+    const raw = fn({ data: row, value, colDef: col });
+
+    // Renderer strings may interpolate row data, so they are never trusted as-is:
+    // DOMPurify strips script/event-handler payloads while keeping the markup
+    // (class/style/img) renderers legitimately produce. SafeHtml is returned as-is.
+    const html: SafeHtml =
+      typeof raw === 'string' ? this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw)) : (raw as SafeHtml);
+
+    byRow.set(row, { value, html });
+    return html;
   }
 
-  protected callValueFormatter(row: any, col: ColDef): any {
-    const fn: any = col.valueFormatter;
+  protected callValueFormatter(row: GridRow, col: ColDef): unknown {
+    const fn = col.valueFormatter;
     if (typeof fn === 'function') {
       return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
     }
     return this.getCellValue(row, col);
+  }
+
+  /** Muted second line under a door cell (e.g. "3 people" under a household address). */
+  protected callDoorSubtitle(row: GridRow, col: ColDef): string | null {
+    const fn = col.doorSubtitle;
+    if (typeof fn !== 'function') return null;
+    return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
   }
 
   // canNext/canPrev are computed
@@ -969,7 +1374,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.panelFilters.set({});
   }
 
-  public clearSort(h: any) {
+  public clearSort(h: Header<GridRow, unknown>) {
     if (typeof h?.column?.clearSorting === 'function') {
       h.column.clearSorting();
       return;
@@ -979,7 +1384,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!id) return;
     const next = this.sorting().filter((s) => s.id !== id);
     this.sorting.set(next);
-    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: next } }));
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, sorting: next } }));
     void this.loadPage(0);
   }
 
@@ -992,7 +1397,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return c?.headerName || id;
   }
 
-  protected async commitEdit(row: any, col: ColDef) {
+  protected async commitEdit(row: GridRow, col: ColDef) {
     if (!col.field) return;
 
     if (this.isTagColumn(col)) {
@@ -1007,19 +1412,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.editingCell.set(null);
   }
 
-  private getRowDisplayName(row: any): string {
-    if (!row) return 'Unnamed Record';
-    if (row.first_name !== undefined || row.last_name !== undefined) {
-      const parts = [row.first_name, row.last_name].filter(Boolean);
+  private getRowDisplayName(row: unknown): string {
+    if (!isRecord(row)) return 'Unnamed Record';
+    if (row['first_name'] !== undefined || row['last_name'] !== undefined) {
+      const parts = [row['first_name'], row['last_name']].filter(Boolean);
       return parts.length ? parts.join(' ') : 'Unnamed Person';
     }
-    if (row.street1 !== undefined || row.street_num !== undefined) {
-      const parts = [row.street_num, row.street1, row.apt, row.city].filter(Boolean);
+    if (row['street1'] !== undefined || row['street_num'] !== undefined) {
+      const parts = [row['street_num'], row['street1'], row['apt'], row['city']].filter(Boolean);
       return parts.length ? parts.join(' ') : 'Unnamed Household';
     }
-    if (row.name) return String(row.name);
-    if (row.display_name) return String(row.display_name);
-    if (row.id) return `Record #${row.id}`;
+    if (row['name']) return String(row['name']);
+    if (row['display_name']) return String(row['display_name']);
+    if (row['id']) return `Record #${String(row['id'])}`;
     return 'Unnamed Record';
   }
 
@@ -1038,12 +1443,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return;
     }
 
-    const row1 = selectedRows[0];
-    const row2 = selectedRows[1];
+    const [row1, row2] = selectedRows;
+    if (!row1 || !row2) return;
     const name1 = this.getRowDisplayName(row1);
     const name2 = this.getRowDisplayName(row2);
 
-    const primaryChoice = await this.dialogs.choose<{ target: any; source: any }>({
+    const primaryChoice = await this.dialogs.choose({
       title: 'Select Primary Record',
       message:
         'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
@@ -1092,15 +1497,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.alertSvc.showSuccess(`Successfully merged into "${targetName}"`);
       this.clearAllSelection();
       await this.refresh();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      this.alertSvc.showError(err?.message || 'Merge failed');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
     } finally {
       end();
     }
   }
 
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean | void> {
+  protected async confirmDelete(selectedRows?: (Partial<RowOf<T>> & { id: string })[]): Promise<boolean | void> {
     if (this.disableDelete()) {
       this.alertSvc.showError(this.config.messages.noDeletePermission);
       return true;
@@ -1145,15 +1550,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       config: this.config,
       displayedCount: this.displayedCount(),
       totalCount: this.totalCountAll(),
-      getRowsForExport: () => this.rows().map((r: any) => ({ ...r })),
+      getRowsForExport: () => this.rows().map((r) => ({ ...r })),
       queueFullExport: () => this.queueFullExport(),
+      logInstantExport: (rowCount) => this.logInstantExport(rowCount),
     });
   }
   public doConfirmExport() {
     void this.confirmExport();
   }
 
-  protected cyclePin(h: any) {
+  protected cyclePin(h: Header<GridRow, unknown>) {
     const current = this.pinState(h);
     const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
     const pin = h?.column?.pin;
@@ -1179,21 +1585,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Helpers for template-safe access to dynamic fields/formatters/renderers
-  protected getCellValue(row: any, col: ColDef): any {
+  protected getCellValue(row: GridRow, col: ColDef): unknown {
+    const field = col.field ?? '';
     // Prefer valueGetter when provided
-    const vget = col.valueGetter as ((p: any) => any) | undefined;
+    const vget = col.valueGetter;
     if (typeof vget === 'function') {
       try {
-        return vget({ data: row, colDef: col, value: row?.[col.field as string] });
+        return vget({ data: row, colDef: col, value: field ? row[field] : undefined });
       } catch {
         // fall through to field lookup
       }
     }
-    const field = (col.field as string) || '';
-    return field ? row?.[field] : undefined;
+    return field ? row[field] : undefined;
   }
 
-  protected getEditingDisplayValue(row: any, col: ColDef): any {
+  protected getEditingDisplayValue(row: GridRow, col: ColDef): unknown {
     return this.getCellValue(row, col);
   }
 
@@ -1202,17 +1608,24 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public getColWidth(id: string): number | null {
-    const col = this.tsTable?.getColumn?.(id);
-    const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
     const min = this.columnMinWidthPx(id);
-    if (size && size > 0) return Math.max(size, min);
+    // A user-resized width always wins (persisted in colWidths, mirrored into columnSizing).
     const stored = this.colWidths()[id];
-    if (typeof stored === 'number') return Math.max(stored, min);
+    if (typeof stored === 'number' && stored > 0) return Math.max(stored, min);
+    // An explicit per-column preferred width comes next.
+    const colDef = this.getColDefById(id);
+    if (typeof colDef?.width === 'number' && colDef.width > 0) return Math.max(colDef.width, min);
+    // On content-fit grids, unsized columns fall to their content/min width and the grow column
+    // soaks up the slack — so short columns stay tight instead of stretching to fill.
+    if (this.fitColumns()) return min;
+    // Legacy grids keep TanStack's default column size so existing layouts don't shift.
+    const size = this.tsTable?.getColumn?.(id)?.getSize?.();
+    if (typeof size === 'number' && size > 0) return Math.max(size, min);
     return min;
   }
 
   // displayedCount is computed
-  protected getFieldFromHeader(h: any): string | null {
+  protected getFieldFromHeader(h: Header<GridRow, unknown>): string | null {
     const id = h?.column?.id;
     return typeof id === 'string' ? id : null;
   }
@@ -1230,7 +1643,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.getSelectEditorOptions(col);
   }
 
-  protected async onSelectChange(row: any, col: ColDef, newValue: any) {
+  protected async onSelectChange(row: GridRow, col: ColDef, newValue: unknown) {
     const resolvedValue = Array.isArray(newValue) ? newValue[0] : newValue;
     // Update the editing value first so commitEdit reads the correct value
     this.editingValue.set(resolvedValue);
@@ -1247,7 +1660,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return tags;
   }
 
-  protected async handleTagRemoved(row: any, col: ColDef, tagName: string) {
+  protected async handleTagRemoved(row: GridRow, col: ColDef, tagName: string) {
     if (!col?.field || !this.isTagColumn(col)) return;
     const trimmed = typeof tagName === 'string' ? tagName.trim() : '';
     if (!trimmed) return;
@@ -1269,7 +1682,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return field === 'tags' || field === 'issues';
   }
 
-  protected async commitTagColumn(row: any, col: ColDef) {
+  protected async commitTagColumn(row: GridRow, col: ColDef) {
     try {
       const next = this.utilsSvc.normalizeTagSelection(this.editingValue());
       await this.persistTagSelection(row, col, next);
@@ -1295,7 +1708,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected toggleTagInEditor(tag: string, checked: boolean) {
-    const current: string[] = Array.isArray(this.editingValue()) ? [...this.editingValue()] : [];
+    const raw = this.editingValue();
+    const current: string[] = Array.isArray(raw) ? raw.map((t) => String(t)) : [];
     if (checked && !current.includes(tag)) {
       this.editingValue.set([...current, tag]);
     } else if (!checked) {
@@ -1303,7 +1717,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  protected async persistTagSelection(row: any, col: ColDef, desired: string[], opts?: { successMessage?: string }) {
+  protected async persistTagSelection(
+    row: GridRow,
+    col: ColDef,
+    desired: string[],
+    opts?: { successMessage?: string },
+  ) {
     const field = col.field;
     if (!field) return;
 
@@ -1317,7 +1736,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (!diff.hasChanges) return;
     const applyTags = (tags: string[], prevTags?: string[]) => {
       const safe = Array.isArray(tags) ? [...tags] : [];
-      (row as Record<string, unknown>)[field] = safe;
+      row[field] = safe;
       this.updateEditedRowInCachesFn(id, field, safe, prevTags);
       this.updateTableWindowFn(this.startIndex(), this.endIndex());
     };
@@ -1331,10 +1750,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
     } catch {
       applyTags(previous, previous);
-      const errorMsg =
-        col.cellRendererParams?.tagType === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
+      const errorMsg = this.tagTypeFor(col) === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
       this.alertSvc.showError(errorMsg);
     }
+  }
+
+  /** Resolve whether a column edits tags or issues from its renderer params. */
+  protected tagTypeFor(col?: ColDef): 'tag' | 'issue' {
+    const params: unknown = col?.cellRendererParams;
+    return isRecord(params) && params['tagType'] === 'issue' ? 'issue' : 'tag';
   }
 
   private diffTagSelection(previous: string[], next: string[]): TagDiff {
@@ -1349,17 +1773,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   private async applyTagDiff(id: string, diff: TagDiff, col?: ColDef): Promise<string[]> {
     const removedTeamNames: string[] = [];
-    const type = col?.cellRendererParams?.tagType ?? 'tag';
+    const type = this.tagTypeFor(col);
 
     for (const tag of diff.toRemove) {
       const detachResult = await this.gridSvc.detachTag(id, tag, type);
       if (detachResult === false) {
         throw new Error('Tag removal was rejected');
       }
-      const teams = (detachResult as any)?.removed_teams;
+      const teams = isRecord(detachResult) ? detachResult['removed_teams'] : undefined;
       if (Array.isArray(teams)) {
         for (const team of teams) {
-          removedTeamNames.push(team?.name || 'Unnamed team');
+          const name = isRecord(team) && typeof team['name'] === 'string' ? team['name'] : '';
+          removedTeamNames.push(name || 'Unnamed team');
         }
       }
     }
@@ -1370,7 +1795,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     // Bust the cache so the next tag/issue dropdown open re-fetches fresh names
     if (diff.toAdd.length > 0 || diff.toRemove.length > 0) {
-      void this.dgTagOptionsSvc.invalidate(type as 'tag' | 'issue');
+      void this.dgTagOptionsSvc.invalidate(type);
     }
 
     return removedTeamNames;
@@ -1378,7 +1803,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   private async refreshTagsFromServer(id: string, fallback: string[], col?: ColDef): Promise<string[]> {
     try {
-      const type = col?.cellRendererParams?.tagType ?? 'tag';
+      const type = this.tagTypeFor(col);
       const refreshed = await this.gridSvc.getTags(id, type);
       if (Array.isArray(refreshed)) {
         return [...refreshed];
@@ -1439,8 +1864,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected getTextEditorConfig(col: ColDef): { textarea: boolean; rows: number } {
     const params = this.resolveEditorParams(col);
-    const multilineFlag = Boolean(params?.textarea ?? params?.multiline);
-    const rowsRaw = params?.rows ?? params?.textareaRows ?? params?.lines;
+    const multilineFlag = Boolean(params?.['textarea'] ?? params?.['multiline']);
+    const rowsRaw = params?.['rows'] ?? params?.['textareaRows'] ?? params?.['lines'];
     const rowsNum = Number(rowsRaw);
     const rows = Number.isFinite(rowsNum) && rowsNum > 0 ? Math.floor(rowsNum) : 5;
     return { textarea: multilineFlag, rows: multilineFlag ? rows : 1 };
@@ -1452,18 +1877,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
     const currentRows = this.rows();
-    const rowById = new Map<string, RowOf<T>>();
+    const rowById = new Map<string, GridRow>();
     for (const row of currentRows) {
       const id = this.toId(row);
-      if (id) rowById.set(id, row as RowOf<T>);
+      if (id) rowById.set(id, row);
     }
 
-    const toRow = (id: string) => {
+    const toRow = (id: string): GridRow & { id: string } => {
       const fromPage = rowById.get(id);
       if (fromPage) {
-        return { ...(fromPage as unknown as Record<string, unknown>), id } as unknown as RowOf<T>;
+        return { ...fromPage, id };
       }
-      return { id } as unknown as RowOf<T>;
+      return { id };
     };
 
     if (this.allSelected()) {
@@ -1474,14 +1899,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
-  protected handleCellClick(row: any, col: ColDef) {
+  protected handleCellClick(row: GridRow, col: ColDef, event?: Event) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
+    // The door cell (e.g. Name) opens the record, routing through view() so the
+    // filtered record-navigation context (prev/next, "N of M") is captured.
+    if (col.doorColumn) {
+      const id = this.toId(row);
+      if (id) this.openEdit(id);
+      return;
+    }
     if (typeof col.onCellClicked === 'function') {
-      col.onCellClicked({ data: row, colDef: col });
+      col.onCellClicked({ data: row, colDef: col, event });
     }
   }
 
-  protected handleCellDblClick(row: any, col: ColDef) {
+  protected handleCellDblClick(row: GridRow, col: ColDef) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     if (this.isCellEditable(row, col)) {
       this.startEdit(row, col);
@@ -1498,29 +1930,34 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col.cellRenderer;
   }
 
+  /** Resolves a column's optional `cellClass` (static string or per-row function) for the cell `<td>`. */
+  protected cellClassFor(col: ColDef, row: GridRow): string {
+    const cc = col.cellClass;
+    if (!cc) return '';
+    return (typeof cc === 'function' ? cc({ data: row, colDef: col }) : cc) ?? '';
+  }
+
   protected hasValueFormatter(col: ColDef): boolean {
     return typeof col.valueFormatter === 'function';
   }
 
   // headerClick removed; using explicit header API bindings instead
 
-  protected headerGroups(): any[] {
-    const tbl: any = this.tsTable;
-    return tbl?.getHeaderGroups?.() || [];
+  protected headerGroups(): HeaderGroup<GridRow>[] {
+    return this.tsTable?.getHeaderGroups() ?? [];
   }
 
   protected hideAllCols() {
     const v = { ...this.colVisibility() };
-    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = false;
+    for (const c of this.colDefsWithEdit) if (c.field && !c.noHide) v[c.field] = false;
     this.colVisibility.set(v);
-    if (this.tsTable)
-      this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
   public hideAllColsPublic() {
     this.hideAllCols();
   }
 
-  public hideColumn(h: any) {
+  public hideColumn(h: Header<GridRow, unknown>) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
     this.toggleCol(id, false);
@@ -1544,9 +1981,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
    * Renders a raw cell value, applying the tenant's configured date format to date-typed columns that
    * don't define their own valueFormatter. Non-date columns are returned unchanged.
    */
-  protected formatGridCell(col: ColDef, value: any): any {
+  protected formatGridCell(col: ColDef, value: unknown): unknown {
     if (this.inputTypeFor(col) === 'date') {
-      const formatted = this.dateFormatSvc.format(value);
+      const formatted =
+        typeof value === 'string' || typeof value === 'number' || value instanceof Date || value == null
+          ? this.dateFormatSvc.format(value)
+          : '';
       return formatted || value;
     }
     return value;
@@ -1575,7 +2015,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.hasSelection();
   }
   public getColDefsForToolbar() {
-    return this.colDefsWithEdit;
+    // Identity columns (noHide) are omitted from the visibility toggle list.
+    return this.colDefsWithEdit.filter((c) => !c.noHide);
   }
   public getColVisibilityMap() {
     return this.colVisibility();
@@ -1592,7 +2033,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col?.editable;
   }
 
-  public isCellEditable(row: any, col: ColDef): boolean {
+  public isCellEditable(row: GridRow, col: ColDef): boolean {
     const override = this.isCellEditableOverride();
     if (override) {
       return override(row, col);
@@ -1603,7 +2044,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return true;
   }
 
-  protected isCellPointerInteractive(row: any, col: ColDef | undefined): boolean {
+  protected isCellPointerInteractive(row: GridRow, col: ColDef | undefined): boolean {
     if (!col) return false;
     if (col.isCellInteractive && !col.isCellInteractive(row)) return false;
     if (this.isCellEditable(row, col)) return false;
@@ -1637,11 +2078,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // TanStack helpers
-  protected leafHeaders(): any[] {
-    const tbl: any = this.tsTable;
-    if (!tbl) return [];
+  protected leafHeaders(): Header<GridRow, unknown>[] {
     // Flat headers correspond to leaf columns
-    return (tbl.getFlatHeaders?.() || []).filter((h: any) => h.column?.getIsVisible?.());
+    return this.tsTable?.getFlatHeaders().filter((h) => h.column.getIsVisible()) ?? [];
   }
 
   public leftOffsetPx(colId: string): number {
@@ -1680,12 +2119,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
-  protected onCellMouseOver(row: any) {
-    this.lastRowHovered = row?.id;
+  protected onCellMouseOver(row: GridRow) {
+    this.lastRowHovered = this.toId(row) || undefined;
   }
 
   // Handle filter input changes
-  protected onFilterInput(field: string, value: any) {
+  protected onFilterInput(field: string, value: unknown) {
     const next = { ...this.filterValues() };
     if (value === undefined || value === null || String(value).trim() === '') delete next[field];
     else next[field] = value;
@@ -1695,16 +2134,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   public onHeaderCheckbox(checked: boolean) {
     if (this.allSelected()) this.allSelected.set(false);
-    const api: any = this.tsTable;
-    if (typeof api?.toggleAllRowsSelected === 'function') api.toggleAllRowsSelected(checked);
+    this.tsTable?.toggleAllRowsSelected(checked);
   }
 
-  public onHeaderDragOver(_h: any, ev: DragEvent) {
+  public onHeaderDragOver(_h: Header<GridRow, unknown>, ev: DragEvent) {
     this.reorder?.onDragOver(ev);
   }
 
   // Column reordering (drag-and-drop)
-  public onHeaderDragStart(h: any, ev: DragEvent) {
+  public onHeaderDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
     this.reorder?.configure({
       suppressHeaderDrag: () => this.suppressHeaderDrag,
       requestPersist: () => this.store?.requestPersist(),
@@ -1712,11 +2150,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.reorder?.onDragStart(h, ev);
   }
 
-  public onHeaderDrop(h: any, ev: DragEvent) {
+  public onHeaderDrop(h: Header<GridRow, unknown>, ev: DragEvent) {
     this.reorder?.onDrop(h, ev, this.tsTable);
   }
 
-  public onHeaderFilterInput(field: string, value: any) {
+  public onHeaderFilterInput(field: string, value: unknown) {
     const v = String(value ?? '').trim();
     const next = { ...this.filterValues() };
     if (!v) delete next[field];
@@ -1735,19 +2173,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.panelFilters.set(next);
   }
 
-  protected onPanelValueChange(field: string, value: any) {
+  protected onPanelValueChange(field: string, value: unknown) {
     const next = { ...this.panelFilters() };
     const prev = next[field] || { op: 'contains', value: '' };
     next[field] = { ...prev, value };
     this.panelFilters.set(next);
   }
 
-  protected onRowCheckboxChange(row: any, checked: boolean) {
+  protected onRowCheckboxChange(row: Row<GridRow>, checked: boolean) {
     if (this.allSelected()) {
-      const id = this.toId(row.original ?? row);
+      const id = this.toId(row.original);
       if (!id) return;
       const canSelectFn = this.rowCanSelect();
-      if (canSelectFn && !canSelectFn(row.original ?? row)) {
+      if (canSelectFn && !canSelectFn(row.original)) {
         return;
       }
       const current = this.allSelectedIdSet();
@@ -1759,7 +2197,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     if (typeof row?.toggleSelected === 'function') {
       const canSelectFn = this.rowCanSelect();
-      if (canSelectFn && !canSelectFn(row.original ?? row)) {
+      if (canSelectFn && !canSelectFn(row.original)) {
         return;
       }
       row.toggleSelected(checked);
@@ -1814,7 +2252,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     let nextArr: string[] = current.slice();
     if (checked && !nextArr.includes(option)) nextArr.push(option);
     if (!checked) nextArr = nextArr.filter((o) => o !== option);
-    const next: Record<string, any> = { ...this.filterValues() };
+    const next = { ...this.filterValues() };
     if (nextArr.length === 0) delete next[field];
     else next[field] = { op: 'in', value: nextArr };
     this.filterValues.set(next);
@@ -1826,13 +2264,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.view(id);
   }
 
-  public openEditOnDoubleClick(row: any) {
-    this.openEdit(row?.id);
+  public openEditOnDoubleClick(row: GridRow) {
+    this.openEdit(this.toId(row));
   }
 
   // Filter panel actions
   protected panelFields(): string[] {
-    return this.colDefsWithEdit.filter((c) => !!c.field).map((c) => c.field!) as string[];
+    return this.colDefsWithEdit.flatMap((c) => (c.field ? [c.field] : []));
   }
 
   protected panelLabelFor(field: string): string {
@@ -1846,22 +2284,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.getFilterOptionsForCol(col);
   }
 
-  public pinLeft(h: any) {
+  public pinLeft(h: Header<GridRow, unknown>) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'left');
     this.store?.requestPersist();
   }
 
-  public pinRight(h: any) {
+  public pinRight(h: Header<GridRow, unknown>) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, 'right');
     this.store?.requestPersist();
   }
 
   // Column pinning helpers
-  public pinState(h: any): 'left' | 'right' | false {
+  public pinState(h: Header<GridRow, unknown> | Cell<GridRow, unknown>): 'left' | 'right' | false {
     const fn = h?.column?.getIsPinned;
-    return typeof fn === 'function' ? (fn.call(h.column) as 'left' | 'right' | false) : false;
+    return typeof fn === 'function' ? fn.call(h.column) : false;
   }
 
   protected async prevPage() {
@@ -1891,7 +2329,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected resetAllWidths() {
     this.colWidths.set({});
     const sizing: Record<string, number> = {};
-    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
     this.store?.requestPersist();
   }
 
@@ -1904,11 +2342,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Build header resize config for directive
-  protected headerResizeConfig(h: any) {
+  protected headerResizeConfig(h: Header<GridRow, unknown>) {
     return {
       header: h,
       getColWidth: (id: string) => this.getColWidth(id),
-      setWidth: (col: any, id: string, w: number) => {
+      setWidth: (col: HeaderRef['column'], id: string, w: number) => {
         const width = this.clampColumnWidth(id, w);
         try {
           if (typeof col?.setSize === 'function') col.setSize(width);
@@ -1931,18 +2369,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // loadPage(0) is triggered by effect on pageSize
   }
 
-  public resetColWidth(h: any) {
+  public resetColWidth(h: Header<GridRow, unknown>) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
-    const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
-    const sizing = { ...(state?.columnSizing || {}) };
+    const sizing = { ...(this.tsTable?.getState().columnSizing ?? {}) };
     if (id in sizing) delete sizing[id];
     this.colWidths.update((m) => {
       const next = { ...(m || {}) };
-      delete next[id!];
+      delete next[id];
       return next;
     });
-    this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
   }
 
   public rightOffsetPx(colId: string): number {
@@ -1976,7 +2413,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.colWidths.set(next);
     if (this.tsTable) {
       try {
-        this.tsTable.setOptions((prev: any) => {
+        this.tsTable.setOptions((prev) => {
           const prevState = prev?.state ?? {};
           const sizing = { ...(prevState.columnSizing || {}) };
           sizing[id] = width;
@@ -2056,8 +2493,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const v = { ...this.colVisibility() };
     for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = true;
     this.colVisibility.set(v);
-    if (this.tsTable)
-      this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
   public showAllColsPublic() {
     this.showAllCols();
@@ -2070,7 +2506,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   // Header menu actions
-  public sortAsc(h: any) {
+  public sortAsc(h: Header<GridRow, unknown>) {
     const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (isSorted !== 'asc') {
       const fn = h?.column?.toggleSorting;
@@ -2078,7 +2514,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  public sortDesc(h: any) {
+  public sortDesc(h: Header<GridRow, unknown>) {
     const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (isSorted !== 'desc') {
       const fn = h?.column?.toggleSorting;
@@ -2086,14 +2522,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  public sortIndicatorForHeader(h: any): PcIconNameType {
+  public sortIndicatorForHeader(h: Header<GridRow, unknown>): PcIconNameType {
     const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
     if (s === 'asc') return 'chevron-up';
     if (s === 'desc') return 'chevron-down';
     return 'none';
   }
 
-  protected startEdit(row: any, col: ColDef) {
+  protected startEdit(row: GridRow, col: ColDef) {
     if (!this.isCellEditable(row, col) || !col.field) return;
     const id = this.toId(row);
     if (!id) return;
@@ -2146,8 +2582,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return false;
   }
 
-  public toId(row: any): string {
-    const id = row?.id;
+  public toId(row: unknown): string {
+    const id = isRecord(row) ? row['id'] : undefined;
     return id == null ? '' : String(id);
   }
 
@@ -2163,11 +2599,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected toggleCol(field: string, checked: boolean) {
+    // Identity columns (noHide) can never be hidden.
+    if (!checked && this.colDefsWithEdit.some((c) => c.field === field && c.noHide)) return;
     const v = { ...this.colVisibility() };
     v[field] = checked;
     this.colVisibility.set(v);
     if (this.tsTable) {
-      this.tsTable.setOptions((prev: any) => ({
+      this.tsTable.setOptions((prev) => ({
         ...prev,
         state: { ...prev.state, columnVisibility: v },
       }));
@@ -2178,7 +2616,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.toggleCol(field, checked);
   }
 
-  public toggleHeaderSort(h: any, ev?: MouseEvent) {
+  public toggleHeaderSort(h: Header<GridRow, unknown>, ev?: MouseEvent) {
     const fn = h?.column?.toggleSorting;
     if (typeof fn === 'function') fn.call(h.column, undefined, !!ev?.shiftKey);
   }
@@ -2208,7 +2646,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Pagination
   // totalPages is computed
-  public unpin(h: any) {
+  public unpin(h: Header<GridRow, unknown>) {
     const pin = h?.column?.pin;
     if (typeof pin === 'function') pin.call(h.column, false);
     this.store?.requestPersist();
@@ -2216,9 +2654,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // visibleCount not used without virtualizer
 
-  protected visibleTableRows(): any[] {
-    const rows = this.tsTable?.getRowModel?.().rows || [];
-    return rows;
+  protected visibleTableRows(): Row<GridRow>[] {
+    return this.tsTable?.getRowModel().rows ?? [];
   }
 
   // Build TanStack rowSelection snapshot for current data from our global selected set
@@ -2232,7 +2669,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return map;
   }
 
-  private coerceEditingValue(col: ColDef, raw: any): any {
+  private coerceEditingValue(col: ColDef, raw: unknown): unknown {
     const editorCfg = this.selectEditorOptions(col);
     let val = raw;
     if (editorCfg && !editorCfg.multiple && Array.isArray(raw)) {
@@ -2256,11 +2693,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return val;
   }
 
-  private resolveEditorParams(col: ColDef): any {
-    const cep = col?.cellEditorParams;
+  private resolveEditorParams(col: ColDef): Record<string, unknown> | null {
+    const cep: unknown = col?.cellEditorParams;
     if (!cep) return null;
     try {
-      return typeof cep === 'function' ? cep() : cep;
+      const resolved: unknown = typeof cep === 'function' ? cep() : cep;
+      return isRecord(resolved) ? resolved : null;
     } catch {
       return null;
     }
@@ -2298,6 +2736,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
+  /** Records a direct browser-download export in Exports history so it's consistently listed
+   * alongside queued exports — see pplcrm-datagrid. Fire-and-forget: never blocks or fails the
+   * download the user already has. */
+  private logInstantExport(rowCount: number): void {
+    void this.gridSvc
+      .logInstantExport({
+        entity: (this.config.messages.exportEntity ||
+          this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
+        fileName: this.config.messages.exportFileName,
+        rowCount,
+      })
+      .catch(() => {
+        // Best-effort logging only — the user already has their file.
+      });
+  }
+
   private visibleColumnFields(): string[] {
     const visibility = this.colVisibility();
     return this.colDefsWithEdit
@@ -2316,9 +2770,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // shouldBlockEdit handled by EditingController
 
   private syncSignalsFromTable() {
-    const st: any = this.tsTable?.getState?.() ?? {};
-    if (st.sorting) this.sorting.set(st.sorting);
-    if (st.columnVisibility) this.colVisibility.set(st.columnVisibility);
+    const st = this.tsTable?.getState();
+    if (st?.sorting) this.sorting.set(st.sorting);
+    if (st?.columnVisibility) this.colVisibility.set(st.columnVisibility);
     // Notify pin-state change so controller effect recomputes offsets
     this.pctrl?.notifyPinStateChanged();
     this.store?.requestPersist();
@@ -2340,15 +2794,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }, 1300);
   }
 
-  public updateEditedRowInCaches(id: string, field: string | undefined, value: any, prevValue?: any) {
+  public updateEditedRowInCaches(id: string, field: string | undefined, value: unknown, prevValue?: unknown) {
     if (!field) return;
     if (this.store) {
-      const targetRow = this.rows().find((r: any) => String(this.toId(r)) === id);
+      const targetRow = this.rows().find((r) => String(this.toId(r)) === id);
       const prev = prevValue !== undefined ? prevValue : targetRow ? targetRow[field] : undefined;
       this.store.recordSnapshotBeforeCommit(id, field, prev, value);
     }
     // Update visible rows array
-    this.rows.update((curr: any[]) => curr.map((r: any) => (String(r?.id) === id ? { ...r, [field]: value } : r)));
+    this.rows.update((curr) => curr.map((r) => (this.toId(r) === id ? { ...r, [field]: value } : r)));
     // Trigger green flash on the updated cell
     this.triggerCellFlash(id, field);
   }
@@ -2374,12 +2828,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const vr = this.viewRoute();
     if (vr) {
+      this.captureRecordNavContext(vr);
       if (vr.startsWith('/')) {
         void this.router.navigate([vr, targetId]);
       } else {
         void this.router.navigate([vr, targetId], { relativeTo: this.route });
       }
     } else {
+      this.captureRecordNavContext(this.currentListPath());
       void this.navSvc.viewIfAllowed({
         id: targetId,
         lastRowHovered: this.lastRowHovered,
@@ -2387,6 +2843,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
       });
     }
+  }
+
+  /** The grid's own list route, stripped of query/fragment (e.g. "/teams") - used as the record-nav entity key when no explicit viewRoute is set. */
+  private currentListPath(): string {
+    const [pathAndQuery] = this.router.url.split('#');
+    const [path] = (pathAndQuery ?? this.router.url).split('?');
+    return path ?? this.router.url;
+  }
+
+  /** Hands the currently filtered id set to the detail page so it can walk "N of M filtered" with J/K. */
+  private captureRecordNavContext(entityKey: string): void {
+    this.fetchCtrl
+      .selectAllMatching()
+      .then(({ ids, count }) => this.recordNav.setContext(entityKey, ids, count))
+      .catch(() => void 0);
   }
 }
 
@@ -2396,3 +2867,8 @@ type TagDiff = {
   toRemove: string[];
   hasChanges: boolean;
 };
+
+/** Narrow an unknown value to a property-indexable record. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}

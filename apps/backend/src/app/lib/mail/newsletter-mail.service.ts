@@ -2,11 +2,17 @@ import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { logger } from '../../logger';
 
+export interface NewsletterRecipient {
+  email: string;
+  /** Per-recipient SendGrid substitutions (token -> resolved value) for merge fields. */
+  substitutions?: Record<string, string>;
+}
+
 export interface SendNewsletterOptions {
   fromName: string;
   fromEmail: string;
   replyTo?: string;
-  recipients: string[];
+  recipients: NewsletterRecipient[];
   subject: string;
   html: string;
   text?: string;
@@ -33,7 +39,13 @@ export class NewsletterEmailService {
       return options.recipients.length;
     }
 
-    const uniqueRecipients = [...new Set(options.recipients)];
+    const seen = new Set<string>();
+    const uniqueRecipients = options.recipients.filter((r) => {
+      const email = r.email?.trim();
+      if (!email || seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
     if (uniqueRecipients.length === 0) return 0;
 
     // SendGrid allows up to 1000 personalizations per API request
@@ -42,8 +54,11 @@ export class NewsletterEmailService {
 
     for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
       const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
-      const personalizations = chunk.map((email) => ({
-        to: [{ email }],
+      const personalizations = chunk.map((r) => ({
+        to: [{ email: r.email }],
+        // Per-recipient merge-field values. Keeps the whole batch a single request while still
+        // personalizing content (SendGrid replaces the tokens in subject/html/text per recipient).
+        ...(r.substitutions && Object.keys(r.substitutions).length > 0 ? { substitutions: r.substitutions } : {}),
       }));
 
       const headers: Record<string, string> = {
@@ -109,7 +124,7 @@ export class NewsletterEmailService {
         }
 
         deliveredCount += chunk.length;
-      } catch (error: any) {
+      } catch (error) {
         throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
       }
     }

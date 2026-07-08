@@ -1,9 +1,13 @@
-import { Injectable, effect, signal } from '@angular/core';
+import { Injectable, inject, effect, signal } from '@angular/core';
 import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
+import type { Row, Table } from '@tanstack/table-core';
 import { GridStoreService } from '../services/grid-store.service';
+import type { GridRow } from '../types';
 
 @Injectable()
 export class VirtualizerController {
+  private readonly store = inject(GridStoreService);
+
   private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
   private scrollerEl: HTMLDivElement | null = null;
   private rowHeight = 36;
@@ -11,12 +15,12 @@ export class VirtualizerController {
   private canNextFn: (() => boolean) | null = null;
   private isLoadingFn: (() => boolean) | null = null;
   private nextPageFn: (() => Promise<void>) | null = null;
-  private tsTable: any = null;
+  private tsTable: Table<GridRow> | null = null;
 
   // Local viewport tracking used for fallback calculations
   readonly viewportH = signal(0);
 
-  constructor(private readonly store: GridStoreService) {
+  constructor() {
     // Keep virtualizer count in sync with rows length
     effect(() => {
       const count = this.store.rows().length;
@@ -39,8 +43,8 @@ export class VirtualizerController {
     });
   }
 
-  attachTable(tsTable: any) {
-    this.tsTable = tsTable;
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
   }
 
   configurePaging(opts: { canNext: () => boolean; isLoading: () => boolean; nextPage: () => Promise<void> }) {
@@ -116,8 +120,8 @@ export class VirtualizerController {
     return Math.max(0, total - rendered);
   }
 
-  visibleTableRows(): any[] {
-    const all = this.tsTable?.getRowModel?.().rows || [];
+  visibleTableRows(): Row<GridRow>[] {
+    const all = this.tsTable?.getRowModel().rows || [];
     const start = this.startIndex();
     const end = this.endIndex();
     return all.slice(start, end);

@@ -1,7 +1,8 @@
 import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
-import { BaseRepository } from '../../../lib/base.repo';
 import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
 import { logger } from '../../../logger';
 
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
@@ -15,17 +16,19 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
     let tenantId = 'unknown';
     try {
-      // Look up tenant setting donations.webhook_token with matching value
+      // Resolve the tenant by the HASH of the token, never the plaintext (SECURITY-REVIEW.md 2.4).
+      // Cross-tenant by design — this decides which tenant owns the token.
       // eslint-disable-next-line local/no-unscoped-db-query
       const tokenRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('tenant_id')
         .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(token))
+        .where('value', '=', JSON.stringify(hashToken(token)))
         .executeTakeFirst();
 
       if (!tokenRow) {
-        logger.error(`Webhook error: Invalid webhook token: ${token}`);
+        // Do not log the token value — it's a secret. The tenant is unknown at this point.
+        logger.error('Webhook error: Invalid webhook token');
         return reply.code(400).send({ error: 'Invalid webhook token' });
       }
 
@@ -53,7 +56,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
 
-      const isMock = !stripeKey || stripeKey.includes('MockKey') || stripeKey === '';
+      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
+      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
+      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
+      const isMock = env.allowMockPayments && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
 
       let event: Stripe.Event;
 
@@ -61,6 +67,9 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         // Direct parse in mock/local dev mode
         event = JSON.parse(payload);
       } else {
+        if (!stripeKey || stripeKey.includes('MockKey')) {
+          throw new Error('Tenant donations stripe secret key not configured.');
+        }
         if (!webhookSecret) {
           throw new Error('Tenant donations stripe webhook secret not configured.');
         }
@@ -84,9 +93,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .execute();
 
       return reply.code(200).send({ received: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
     }
   });
 

@@ -4,7 +4,12 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { AddTaskObj } from '../../../../../../../../libs/common/src';
+import {
+  AddTaskObj,
+  TASK_BOARD_STATUSES,
+  TASK_STATUS_LABELS,
+  TaskBoardStatus,
+} from '../../../../../../../../libs/common/src';
 import type { IAuthUser } from '../../../../../../../../libs/common/src/lib/auth';
 import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { UserService } from '../../../../services/user.service';
@@ -34,12 +39,13 @@ export class EmailCreateTaskDialog {
   protected readonly isLoading = this._loading.visible;
 
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    status: 'todo' as TaskBoardStatus,
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
@@ -69,7 +75,16 @@ export class EmailCreateTaskDialog {
       `<p><a href="${url}">View email thread: ${subject}</a></p>` +
       `<p>From: ${fromPart}<br>Date: ${datePart}<br>Subject: ${subject}</p>`;
 
-    this.payload.set({ name: '', details, status: 'todo', priority: 'medium', due_at: '', assigned_to: '', team_id: '' });
+    this.payload.set({
+      // Prefill a sensible title so the task reads as a follow-up on this thread (§3).
+      name: `Follow up: ${subject}`,
+      details,
+      status: 'todo',
+      priority: 'medium',
+      due_at: '',
+      assigned_to: '',
+      team_id: '',
+    });
     this.error.set(null);
 
     if (!this.users().length || !this.teamsList().length) {
@@ -102,8 +117,9 @@ export class EmailCreateTaskDialog {
 
     try {
       const raw = this.payload();
+      const name = raw.name.trim();
       await this.tasksSvc.add({
-        name: raw.name.trim(),
+        name,
         details: raw.details.trim() || undefined,
         status: raw.status as any,
         priority: raw.priority as any,
@@ -112,7 +128,10 @@ export class EmailCreateTaskDialog {
         team_id: raw.team_id || null,
       });
       this.tasksSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Task created successfully');
+      // Toast repeats all three facts the user chose: title, owner, and due date (§3).
+      this.alertSvc.showSuccess(
+        `Task “${name}” created — ${this.ownerFact(raw.assigned_to, raw.team_id)}, ${this.dueFact(raw.due_at)}.`,
+      );
       this.close();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to create task';
@@ -122,6 +141,29 @@ export class EmailCreateTaskDialog {
       this.submitting.set(false);
       end();
     }
+  }
+
+  // "assigned to Jane Smith" / "assigned to the Canvass team" / "waiting for an owner".
+  private ownerFact(assignedTo: string, teamId: string): string {
+    if (assignedTo) {
+      const user = this.users().find((u) => String(u.id) === String(assignedTo));
+      const name = user ? [user.first_name, user.last_name].filter(Boolean).join(' ').trim() : '';
+      if (name) return `assigned to ${name}`;
+    }
+    if (teamId) {
+      const team = this.teamsList().find((t) => String(t?.id) === String(teamId));
+      const teamName = typeof team?.name === 'string' ? team.name : '';
+      if (teamName) return `assigned to the ${teamName} team`;
+    }
+    return 'waiting for an owner';
+  }
+
+  // "due May 3, 2026" / "no due date".
+  private dueFact(dueAt: string): string {
+    if (!dueAt) return 'no due date';
+    const date = new Date(dueAt);
+    if (Number.isNaN(date.getTime())) return 'no due date';
+    return `due ${date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`;
   }
 
   protected toTitleCase(s: string): string {

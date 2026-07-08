@@ -1,0 +1,103 @@
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  @if (article(); as article) {
+  <div class="grid gap-10 xl:grid-cols-[minmax(0,1fr)_230px]">
+    <article class="min-w-0 max-w-3xl">
+      <header class="mb-7">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{{ category()?.label }}</p>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight text-base-content">{{ article.title }}</h1>
+        <p class="mt-2 text-[15px] leading-7 text-base-content/60">{{ article.summary }}</p>
+        <p class="mt-3 text-xs tabular-nums text-base-content/50">{{ minutes() }} min read</p>
+      </header>
+
+      <pc-help-blocks [blocks]="article.blocks"></pc-help-blocks>
+
+      <!-- Previous / next within the category -->
+      @if (neighbors().prev || neighbors().next) {
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More in this category">
+        @if (neighbors().prev; as prev) {
+        <a
+          [routerLink]="['/help', prev.id]"
+          class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              Previous
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
+          </div>
+        </a>
+        } @else {
+        <span class="hidden sm:block" aria-hidden="true"></span>
+        } @if (neighbors().next; as next) {
+        <a
+          [routerLink]="['/help', next.id]"
+          class="card border border-base-300 bg-base-100 text-right shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body items-end gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              Next
+              <pc-icon name="chevron-right" [size]="4"></pc-icon>
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ next.title }}</span>
+          </div>
+        </a>
+        }
+      </nav>
+      }
+
+      <!-- Related reading -->
+      @if (related().length > 0) {
+      <section class="mt-12">
+        <h2 class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">Related articles</h2>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          @for (rel of related(); track rel.id) {
+          <a
+            [routerLink]="['/help', rel.id]"
+            class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+          >
+            <div class="card-body gap-1 p-4">
+              <h3 class="text-sm font-semibold leading-5 text-base-content">{{ rel.title }}</h3>
+              <p class="line-clamp-2 text-xs leading-5 text-base-content/60">{{ rel.summary }}</p>
+            </div>
+          </a>
+          }
+        </div>
+      </section>
+      }
+    </article>
+
+    <!-- On this page -->
+    @if (toc().length >= 3) {
+    <aside class="hidden xl:block">
+      <nav class="sticky top-6 rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="On this page">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">On this page</p>
+        <ul class="mt-2 space-y-0.5">
+          @for (entry of toc(); track entry.id) {
+          <li>
+            <button
+              type="button"
+              class="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-primary"
+              (click)="scrollTo(entry.id)"
+            >
+              {{ entry.label }}
+            </button>
+          </li>
+          }
+        </ul>
+      </nav>
+    </aside>
+    }
+  </div>
+  } @else {
+  <!-- Guided not-found state -->
+  <div class="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
+    <pc-icon name="information-circle" [size]="10" class="text-base-content/20"></pc-icon>
+    <p class="text-sm font-medium text-base-content/80">This help article doesn't exist</p>
+    <p class="text-xs leading-5 text-base-content/50">
+      It may have moved. Search the help center to find what you were looking for.
+    </p>
+    <a routerLink="/help" class="btn btn-primary btn-sm mt-1">Browse all help articles</a>
+  </div>
+  }
+</div>

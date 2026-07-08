@@ -1,4 +1,6 @@
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
@@ -6,6 +8,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import fastify from 'fastify';
 
 import jsendPlugin from './app/plugins/jsend-error-handler.plugin';
+import { helmetOptions } from './app/plugins/security-headers';
 import { routes } from './app/routes';
 import { trpcRouter } from './app/modules/trpc';
 import { createContext } from './context';
@@ -15,14 +18,19 @@ export class FastifyServer {
   private readonly server;
 
   constructor(opts: object = {}) {
-    // Create Fastify instance with logging and common config
+    // Create Fastify instance with logging and common config.
+    // pino-pretty is a dev-only formatter and is expensive/blocking under load, so use it only
+    // outside production; production emits plain JSON logs for log shippers (SECURITY-REVIEW 4.6).
+    const isProduction = process.env['NODE_ENV'] === 'production';
     this.server = fastify({
       logger: {
         level: 'info',
-        transport: {
-          target: 'pino-pretty', // Prettified logging output
-        },
+        ...(isProduction ? {} : { transport: { target: 'pino-pretty' } }),
       },
+      // Derive req.ip from X-Forwarded-For only for the proxy hops we actually trust
+      // (configurable via TRUST_PROXY). Security decisions must use req.ip, never the
+      // raw header, which any client can spoof.
+      trustProxy: env.trustProxy,
       routerOptions: {
         ignoreTrailingSlash: true,
       },
@@ -34,8 +42,19 @@ export class FastifyServer {
       JSON.stringify(payload, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
     );
 
-    // Register core Fastify plugins
-    this.server.register(cors, { ...opts });
+    // Register core Fastify plugins.
+    // Restrict cross-origin requests to the SPA origin and allow credentials so the browser sends
+    // the HttpOnly refresh cookie on same-site XHR (SECURITY-REVIEW 2.1). `origin`/`credentials`
+    // are forced AFTER the opts spread so a caller can't accidentally widen them to a wildcard —
+    // credentialed CORS with `*` is rejected by browsers anyway, and a wildcard origin would let any
+    // site drive the API on behalf of a user whose bearer token it has (SECURITY-REVIEW 4.4).
+    this.server.register(cors, { ...opts, origin: env.appUrl, credentials: true });
+    // Parse/serialize cookies (refresh-token cookie). Registered before routes/tRPC so req.cookies
+    // and reply.setCookie are available in handlers and the tRPC context.
+    this.server.register(cookie);
+    // Security headers (CSP, HSTS, nosniff, frame-ancestors, referrer-policy). See
+    // security-headers.ts for why each directive is set the way it is.
+    this.server.register(helmet, helmetOptions);
     this.server.register(sensible);
     this.server.register(multipart, {
       limits: {

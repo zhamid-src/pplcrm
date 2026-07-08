@@ -1,32 +1,42 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyFileDownloadToken } from '../../../lib/signed-download';
+import { attachmentDisposition } from '../../../lib/download-headers';
 
 const storageService = new StorageService();
 
 const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/download/:id', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
+    const { id } = req.params;
+
+    // Authenticate via the Authorization header (app-initiated downloads) or
+    // a short-lived token scoped to this one file (avatar <img> URLs).
+    // Session JWTs in the query string are deliberately not accepted — URLs
+    // leak into browser history, proxies, and logs.
+    let tenantId: string | null = null;
+    if (req.query.st) {
+      // Short-lived token scoped to this one file (avatar <img> URLs).
+      try {
+        tenantId = verifyFileDownloadToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      // App-initiated download via the Authorization header — session-gated.
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
     }
 
-    if (!token) {
+    if (!tenantId) {
       return reply.status(401).send({ error: 'Unauthorized: Missing token' });
     }
 
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
     const db = (BaseRepository as any)['_db'];
-    const { id } = req.params;
 
     const file = await db
       .selectFrom('files')
@@ -42,8 +52,9 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
-      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      // Private: these files are tenant-scoped and token-gated — never allow shared caches.
+      reply.header('Cache-Control', 'private, max-age=31536000, immutable');
       return reply.send(buffer);
     } catch (err) {
       fastify.log.error(err);

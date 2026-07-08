@@ -6,6 +6,7 @@ import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
 
 @Component({
   selector: 'pc-reset-password',
@@ -59,9 +60,9 @@ export class ResetPasswordPage {
             "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
           );
           this.emailSent.set(true);
-          this.router.navigateByUrl('signin');
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || String(err));
+          void this.router.navigateByUrl('signin');
+        } catch (err) {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the reset email. Please try again.'));
         } finally {
           end();
         }

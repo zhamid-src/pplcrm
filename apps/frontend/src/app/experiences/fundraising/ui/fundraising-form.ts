@@ -14,6 +14,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
 
 @Component({
   selector: 'pc-fundraising-form',
@@ -21,6 +22,7 @@ import { environment } from '../../../../environments/environment';
   templateUrl: './fundraising-form.html',
 })
 export class FundraisingFormComponent implements OnInit {
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly formsSvc = inject(FormsService);
@@ -36,6 +38,8 @@ export class FundraisingFormComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly isNew = signal(true);
   protected readonly formId = signal<string | null>(null);
+  // Public lookups are keyed (tenant, slug) — the UUID is internal only.
+  protected readonly formSlug = signal<string | null>(null);
 
   protected setType(type: 'donation' | 'recurring_donation') {
     this.payload.update((p) => ({ ...p, form_type: type }));
@@ -68,9 +72,10 @@ export class FundraisingFormComponent implements OnInit {
   protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
 
   protected readonly embedSnippet = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
+    const slug = this.formSlug();
+    if (!slug) return '';
     const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
     const recurring = this.isRecurring();
 
     const amountField = recurring
@@ -89,7 +94,7 @@ export class FundraisingFormComponent implements OnInit {
     const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
 
     return `<!-- PeopleCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 
   <div style="margin-bottom: 12px;">
@@ -142,9 +147,10 @@ export class FundraisingFormComponent implements OnInit {
   });
 
   protected readonly formUrl = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
+    const slug = this.formSlug();
+    if (!slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}?t=${encodeURIComponent(tenantSlug)}`;
   });
 
   public ngOnInit(): void {
@@ -217,8 +223,16 @@ export class FundraisingFormComponent implements OnInit {
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Donation page deleted');
       await this.router.navigate(['/donation-pages']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete donation page';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
       this.alertSvc.showError(message);
     } finally {
       this.saving.set(false);
@@ -281,8 +295,8 @@ export class FundraisingFormComponent implements OnInit {
               void this.router.navigate(['/donation-pages', id]);
             }
           }
-        } catch (err: any) {
-          const msg = err.message || 'An error occurred while saving.';
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
           this.error.set(msg);
           this.alertSvc.showError(msg);
         } finally {
@@ -322,6 +336,7 @@ export class FundraisingFormComponent implements OnInit {
     try {
       const record = (await this.formsSvc.getById(id)) as any;
       if (record) {
+        this.formSlug.set(record.slug ?? null);
         this.payload.set({
           name: record.name ?? '',
           description: record.description ?? '',
@@ -346,4 +361,8 @@ export class FundraisingFormComponent implements OnInit {
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

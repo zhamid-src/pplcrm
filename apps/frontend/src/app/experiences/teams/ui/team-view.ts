@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
@@ -15,6 +16,8 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserService } from '../../../services/user.service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { TeamsService } from '../services/teams-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-team-view',
@@ -35,6 +38,8 @@ import { TeamsService } from '../services/teams-service';
 export class TeamViewComponent {
   readonly id = input.required<string>();
 
+  protected readonly recordNav = injectRecordNavigation('team', this.id);
+
   private readonly alertSvc = inject(AlertService);
   private readonly teamsSvc = inject(TeamsService);
   private readonly tasksSvc = inject(TasksService);
@@ -51,6 +56,11 @@ export class TeamViewComponent {
   protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Teams', route: '/teams' },
+    { label: this.team()?.name || 'Team' },
+  ]);
 
   // Active tab state
   protected activeTab = signal<string>('activity');
@@ -77,7 +87,7 @@ export class TeamViewComponent {
   });
 
   protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'archived').length;
   });
 
   constructor() {
@@ -109,7 +119,7 @@ export class TeamViewComponent {
       } as any);
       this.teamTasks.set(res?.rows ?? []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load team details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the team. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -135,8 +145,16 @@ export class TeamViewComponent {
       this.teamsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -179,12 +197,16 @@ export class TeamViewComponent {
         return 'success';
       case 'in_progress':
         return 'info';
-      case 'blocked':
+      case 'waiting':
         return 'error';
-      case 'canceled':
+      case 'archived':
         return 'neutral';
       default:
         return 'ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

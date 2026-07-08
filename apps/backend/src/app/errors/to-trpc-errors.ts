@@ -2,12 +2,27 @@ import { TRPCError } from '@trpc/server';
 
 import { AppError } from './app-errors';
 
+/**
+ * Recognise an AppError structurally, not just via `instanceof`. Under the dev server the
+ * app-errors module can be evaluated twice (duplicate ESM instances), which makes `instanceof`
+ * return false and silently downgrades a 401/403/404 into a generic 500. Duck-typing the
+ * `status`/`code` shape keeps the mapping correct regardless of which module instance produced it.
+ */
+export function isAppErrorLike(err: unknown): err is AppError {
+  if (err instanceof AppError) return true;
+  return (
+    err instanceof Error &&
+    typeof (err as { status?: unknown }).status === 'number' &&
+    typeof (err as { code?: unknown }).code === 'string'
+  );
+}
+
 export function toTRPCError(err: unknown): TRPCError {
   if (err instanceof TRPCError) return err;
 
   const isDevOrTest = process.env['NODE_ENV'] !== 'production';
 
-  if (err instanceof AppError) {
+  if (isAppErrorLike(err)) {
     // Status -> TRPC code
     const code =
       err.status === 400

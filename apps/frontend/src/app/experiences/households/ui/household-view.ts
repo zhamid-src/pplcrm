@@ -1,12 +1,16 @@
-import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
+import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker } from '@uxcommon/components/map/map-types';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { UserService } from '../../../services/user.service';
+import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -17,9 +21,12 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-household-view',
@@ -37,11 +44,16 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     DetailItem,
     SystemMetadata,
     Tags,
+    PcMap,
+    GeocodeChip,
+    DatePipe,
   ],
   templateUrl: './household-view.html',
 })
 export class HouseholdView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -49,12 +61,12 @@ export class HouseholdView {
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly loader = inject(Loader);
+  private readonly location = inject(Location);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly household = signal<Households | null>(null);
+  protected readonly household = signal<Selectable<Households> | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
 
@@ -62,6 +74,11 @@ export class HouseholdView {
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
   protected readonly peopleCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Households', route: '/households' },
+    { label: this.addressString() },
+  ]);
 
   // Address
   protected readonly addressString = computed(() => {
@@ -86,8 +103,24 @@ export class HouseholdView {
     return !!(h && h.lat && h.lng && !h.is_placeholder);
   });
 
-  private mapInitialized = false;
-  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
+  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
+    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
+  });
+
+  /** Header subtitle — "Ward 5 · 3 people · last touch" (§6). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const h = this.household();
+    if (!h || h.is_placeholder) return null;
+    const parts: string[] = [];
+    if (h.ward) parts.push(`Ward ${h.ward}`);
+    const n = this.peopleCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    if (h.updated_at) parts.push(`last touch ${this.formatLastTouch(h.updated_at)}`);
+    return parts.join(' · ');
+  });
 
   // Active tab state
   protected activeTab = signal<string>('activity');
@@ -101,16 +134,7 @@ export class HouseholdView {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
-    });
-
-    effect(() => {
-      const elRef = this.mapContainer();
-      if (elRef) {
-        void this.initMap(elRef.nativeElement);
-      } else {
-        this.mapInitialized = false;
-      }
+      void untracked(() => this.loadAllData(currentId));
     });
 
     // Load users for addedby/updatedby display names
@@ -127,8 +151,13 @@ export class HouseholdView {
     const end = this._loading.begin();
     try {
       // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Households;
+      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
       this.household.set(householdData);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
+        this.location.replaceState(`/households/${householdData.slug}`);
+      }
 
       // 2. Load tags and issues
       const tagList = await this.householdsSvc.getTags(id, 'tag');
@@ -140,7 +169,7 @@ export class HouseholdView {
       const count = await this.householdsSvc.getPeopleCount(id);
       this.peopleCount.set(count);
     } catch (err) {
-      this.alertSvc.showError('Failed to load household details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -148,7 +177,7 @@ export class HouseholdView {
   }
 
   protected editHousehold() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteHousehold() {
@@ -196,41 +225,32 @@ export class HouseholdView {
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete household';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
       end();
     }
   }
 
-  private async initMap(mapEl: HTMLElement) {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
-
-    try {
-      await this.loader.importLibrary('maps');
-      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
-      const center = { lat: Number(h.lat), lng: Number(h.lng) };
-      const map = new google.maps.Map(mapEl, {
-        center,
-        zoom: 15,
-        disableDefaultUI: false,
-        zoomControl: true,
-        streetViewControl: false,
-        mapTypeControl: false,
-        mapId: 'DEMO_MAP_ID',
-      });
-
-      new AdvancedMarkerElement({
-        position: center,
-        map,
-        title: this.addressString(),
-      });
-      this.mapInitialized = true;
-    } catch (err) {
-      console.error('Failed to load Google Map:', err);
-    }
+  /** Compact relative "last touch" — matches the house tabular, low-chrome style. */
+  private formatLastTouch(value: Date | string): string {
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
   }
 
   protected copyToClipboard(text: string | null | undefined, label: string) {
@@ -249,4 +269,8 @@ export class HouseholdView {
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

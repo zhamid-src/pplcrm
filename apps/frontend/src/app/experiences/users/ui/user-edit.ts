@@ -10,10 +10,12 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-user-edit',
@@ -54,6 +56,8 @@ export class UserEditComponent {
     disabled(p.verified, () => true);
   });
 
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
   protected readonly displayName = computed(() => {
     const user = this.detail();
     if (!user) return '';
@@ -61,6 +65,12 @@ export class UserEditComponent {
     const name = tokens.join(' ').trim();
     return name || user.email;
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User', route: ['/users', this.id()] },
+    { label: 'Edit' },
+  ]);
 
   constructor() {
     effect(() => {
@@ -73,6 +83,10 @@ export class UserEditComponent {
         void this.load();
       });
     });
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -98,8 +112,16 @@ export class UserEditComponent {
       if (typeof done === 'function') {
         done();
       }
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to update user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -122,8 +144,16 @@ export class UserEditComponent {
     try {
       await this.users.adminTriggerPasswordReset(this.id());
       this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to trigger password reset';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to trigger password reset';
       this.alerts.showError(message);
     } finally {
       this.resettingPassword.set(false);
@@ -147,8 +177,8 @@ export class UserEditComponent {
       }
       this.alerts.showSuccess('User deleted');
       await this.router.navigate(['/users']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Unable to delete user');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
     } finally {
       this.saving.set(false);
     }
@@ -162,8 +192,16 @@ export class UserEditComponent {
       this.detail.set(user);
       this.setForm(user);
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -195,4 +233,8 @@ export class UserEditComponent {
       verified: Boolean(raw.verified),
     } as UpdateAuthUserType;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

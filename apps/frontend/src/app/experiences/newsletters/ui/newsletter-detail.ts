@@ -91,7 +91,7 @@ export class NewsletterDetailComponent {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.load(currentId));
+      void untracked(() => this.load(currentId));
     });
   }
   protected readonly topLinks = computed<MarketingEmailTopLinkType[]>(() => {

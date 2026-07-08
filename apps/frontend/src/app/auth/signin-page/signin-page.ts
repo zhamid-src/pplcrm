@@ -2,11 +2,13 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -66,7 +68,7 @@ export class SignInPage implements OnInit, OnDestroy {
   constructor() {
     effect(() => {
       const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['dashboard']);
     });
   }
 
@@ -161,8 +163,8 @@ export class SignInPage implements OnInit, OnDestroy {
         return;
       }
       if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
         this.step.set('password');
         return;
       }
@@ -210,7 +212,7 @@ export class SignInPage implements OnInit, OnDestroy {
             }
             this.suppressNavigation.set(false);
           }
-        } catch (err: any) {
+        } catch (err) {
           this.suppressNavigation.set(false);
           this.handleError(err, emailVal);
         } finally {
@@ -244,7 +246,7 @@ export class SignInPage implements OnInit, OnDestroy {
             code: codeVal,
             rememberMe: this.persistence(),
           });
-        } catch (err: any) {
+        } catch (err) {
           this.handleError(err);
         } finally {
           end();
@@ -272,9 +274,9 @@ export class SignInPage implements OnInit, OnDestroy {
       if (result.verified) {
         this.alertSvc.showSuccess('Passkey set up successfully!');
       }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
       }
     } finally {
       this.settingUpPasskey.set(false);
@@ -306,14 +308,15 @@ export class SignInPage implements OnInit, OnDestroy {
       await this.authService.resendVerificationEmail(emailVal);
       this.alertSvc.showSuccess('Verification email sent successfully!');
       this.startResendCooldown(60);
-    } catch (err: any) {
-      const tRPCData = err?.originalError?.data ?? err?.data;
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
       const retryAfterSec =
-        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
       if (retryAfterSec) {
         this.startResendCooldown(retryAfterSec);
       } else {
-        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
       }
     } finally {
       this.resending.set(false);
@@ -348,21 +351,23 @@ export class SignInPage implements OnInit, OnDestroy {
     }, 1000);
   }
 
-  private handleError(err: any, emailVal?: string) {
-    const tRPCData = err?.originalError?.data ?? err?.data;
-    const message = err.message || String(err);
-    const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
     if (retryAfterSec) {
       this.startRateLimitCountdown(retryAfterSec);
       return;
     }
-    const code = tRPCData?.code as string | undefined;
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
     if (emailVal && message.toLowerCase().includes('not verified')) {
       this.verificationPending.set(true);
       this.pendingEmail.set(emailVal);
       this.alertSvc.showError(message);
     } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError('Please check your email address and password and try again.');
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
     } else {
       this.alertSvc.showError(message);
     }
@@ -396,3 +401,15 @@ export function emailSafeValidator(): ValidatorFn {
 }
 
 const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
+}

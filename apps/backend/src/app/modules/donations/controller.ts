@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
@@ -6,10 +7,16 @@ import { DonationsRepo } from './repositories/donations.repo';
 import { DonationPeriodsRepo } from './repositories/periods.repo';
 import { DonationPledgesRepo } from './repositories/pledges.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { hashToken } from '../../lib/token-hash';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable } from 'kysely';
 import { logger } from '../../logger';
+
+// The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
+// shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
+// API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
+const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
 
 export class DonationsController extends BaseController<'donations', DonationsRepo> {
   private settingsRepo = new SettingsRepo();
@@ -18,6 +25,27 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
   constructor() {
     super(new DonationsRepo());
+  }
+
+  /** Whether a webhook token has been generated for this tenant. The token itself is never
+   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
+  public async getWebhookTokenStatus(tenantId: string): Promise<{ configured: boolean }> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key: WEBHOOK_TOKEN_KEY });
+    return { configured: !!row?.value };
+  }
+
+  /** Generate a new webhook token, persist ONLY its hash, and return the plaintext once so the
+   * caller can show the user the webhook URL to paste into Stripe. Any previous token is invalidated. */
+  public async regenerateWebhookToken(tenantId: string, userId: string): Promise<{ token: string }> {
+    const token = 'wt_' + crypto.randomBytes(24).toString('hex');
+    // upsertMany JSON.stringifies the value, so the stored column becomes JSON.stringify(hash) —
+    // exactly what the webhook route below looks up by.
+    await this.settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [{ key: WEBHOOK_TOKEN_KEY, value: hashToken(token) }],
+    });
+    return { token };
   }
 
   public async getPersonDonationsList(tenantId: string, personId: string) {
@@ -557,10 +585,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     country: string,
     userId: string,
   ): Promise<Selectable<Models['donation_pledges']>> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const existing = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('stripe_subscription_id', '=', stripeSubscriptionId)
       .executeTakeFirst();
 
@@ -667,15 +695,49 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     return pledge;
   }
 
+  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
+   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
+   * wiring with the Stripe path so offline and online gifts show up identically on the person's
+   * Donations tab and Activity log. */
+  public async recordManualDonation(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer',
+  ): Promise<Selectable<Models['donations']>> {
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['id'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!person) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift — receipts need a name.' });
+    }
+
+    return this.recordSuccessfulDonation(
+      auth.tenant_id,
+      personId,
+      amountCents,
+      null,
+      '',
+      '',
+      auth.user_id,
+      undefined,
+      method,
+    );
+  }
+
   public async recordSuccessfulDonation(
     tenantId: string,
     personId: string,
     amountCents: number,
-    sessionId: string,
+    sessionId: string | null,
     province: string,
     country: string,
     userId: string,
     pledgeId?: string,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
   ): Promise<Selectable<Models['donations']>> {
     const person = await this.getRepo()
       .db.selectFrom('persons')
@@ -701,6 +763,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             state: province || null,
             country: country || null,
             pledge_id: pledgeId ? pledgeId : null,
+            method,
+            receipt_sent: true,
           })
           .returningAll()
           .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;

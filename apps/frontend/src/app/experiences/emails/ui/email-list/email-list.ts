@@ -118,6 +118,14 @@ export class EmailList {
     return this.store.currentSelectedEmailId() === id;
   }
 
+  /** Triage status chip per row (§5): one pill shape, semantic tint. */
+  protected rowStatus(email: EmailType): { label: string; tone: 'info' | 'neutral' | 'warning' } {
+    if (this.isFolderTrash()) return { label: 'In Trash', tone: 'neutral' };
+    if ((email.status || 'open') === 'closed') return { label: 'Closed', tone: 'neutral' };
+    if (email.assigned_to) return { label: 'Assigned', tone: 'info' };
+    return { label: 'Unassigned', tone: 'warning' };
+  }
+
   public selectEmail(email: EmailType): void {
     this.emailSelected.emit(email);
   }
@@ -155,7 +163,7 @@ export class EmailList {
         show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
         items: [
           { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Reply all', icon: 'reply-all', action: () => this.handleReplyAll() },
           { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
         ] as ContextMenuItem[],
       },
@@ -175,7 +183,7 @@ export class EmailList {
           {
             label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
             icon: 'envelope',
-            action: () => this.toggleReadStatus(),
+            action: () => void this.toggleReadStatus(),
           },
         ] as ContextMenuItem[],
       },
@@ -187,28 +195,28 @@ export class EmailList {
             label: email.is_favourite ? 'Unstar' : 'Star',
             icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
             iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => this.toggleFavourite(),
+            action: () => void this.toggleFavourite(),
           },
           {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            label: email.status === 'closed' ? 'Reopen' : 'Mark as done',
             icon: 'check-circle',
             iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => this.toggleClosed(),
+            action: () => void this.toggleClosed(),
           },
           ...(this.isFolderTrash()
             ? [
                 {
-                  label: 'Restore to Inbox',
+                  label: 'Restore',
                   icon: 'restore-from-trash',
-                  action: () => this.restoreFromTrash(),
+                  action: () => void this.restoreFromTrash(),
                 },
               ]
             : []),
           {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            label: this.isFolderTrash() ? 'Delete forever' : 'Delete',
             icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
             iconClass: 'text-error',
-            action: () => this.deleteEmail(),
+            action: () => void this.deleteEmail(),
           },
         ] as ContextMenuItem[],
       },
@@ -264,7 +272,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update read status');
     }
   }
@@ -275,7 +283,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update favorite status');
     }
   }
@@ -288,7 +296,7 @@ export class EmailList {
     const newStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update email status');
     }
   }
@@ -299,7 +307,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.deleteEmail(email.id);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to delete email');
     }
   }
@@ -308,7 +316,7 @@ export class EmailList {
     const email = this.contextMenuEmail();
     if (!email) return;
     this.closeContextMenu();
-    this.store.restoreFromTrash(email.id);
+    void this.store.restoreFromTrash(email.id);
   }
 
   protected async moveToInbox() {
@@ -318,7 +326,7 @@ export class EmailList {
     try {
       await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
       this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to move email to Inbox');
     }
   }
@@ -330,7 +338,7 @@ export class EmailList {
     try {
       await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
       this.alertSvc.showSuccess('Email marked as spam');
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to mark email as spam');
     }
   }

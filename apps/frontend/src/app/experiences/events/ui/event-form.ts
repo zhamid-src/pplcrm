@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -6,18 +6,21 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 
 import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
 import { EventsService } from '../../../services/api/events-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-event-form',
@@ -37,24 +40,35 @@ import { EventsFrontendService } from '../services/events-frontend-service';
   templateUrl: './event-form.html',
   providers: [EventsService],
 })
-export class EventFormComponent {
+export class EventFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly router = inject(Router);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly addingTicket = signal(false);
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
   protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
+    const id = this.id();
+    if (id) {
+      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
+    }
+    return [events, { label: 'New event' }];
+  });
+
   protected readonly payload = signal({
     name: '',
     slug: '',
@@ -78,6 +92,7 @@ export class EventFormComponent {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
   protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
@@ -171,8 +186,8 @@ export class EventFormComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -190,8 +205,8 @@ export class EventFormComponent {
       await this.eventsSvc.deleteTicketType(id);
       this.alerts.showSuccess('Ticket type deleted');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
     }
   }
 
@@ -224,8 +239,8 @@ export class EventFormComponent {
         this.selectedFields.set(event.fields);
       }
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -242,6 +257,10 @@ export class EventFormComponent {
 
   protected onSlugInput() {
     this.slugManuallyEdited = true;
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -295,8 +314,8 @@ export class EventFormComponent {
           await this.router.navigate(['/events/pages', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -320,8 +339,8 @@ export class EventFormComponent {
       this.addingTicket.set(false);
       this.alerts.showSuccess('Ticket type added');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
     }
   }
 

@@ -1,61 +1,86 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
-    routerLinkActive="font-bold"
+    routerLinkActive="!font-semibold !text-primary"
     [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.font-bold]="pendingRoute() === nav.route"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
+    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
+        >{{ nav.badgeCount }}</span
+      >
       }
     </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
   </a>
 </ng-template>
 
 <div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
-  <div
+  <a
     [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
   >
     <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </div>
+  </a>
 
-  <div
+  <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
+    routerLink="/dashboard"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
   >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </div>
+    <span aria-hidden="true">pC</span>
+  </a>
 
   @for (item of items(); track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
-      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
-      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
+        <hr class="text-neutral w-6" />
+        } } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
+        class="invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow()"
+        swapOnIcon="chevron-right"
+        swapOffIcon="chevron-down"
         animation="rotate"
         [size]="4"
         [checked]="isCollapsed(item.name)"
@@ -78,14 +103,14 @@
   </div>
   }
 
-  <div class="hidden flex-auto grow flex-col sm:flex">
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
+      class="hover:text-primary text-base-content/40 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
       [checked]="isDrawerFull()"
-      animation="rotate"
+      animation="flip"
       (click)="toggleDrawer()"
       aria-label="Toggle drawer"
       i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"

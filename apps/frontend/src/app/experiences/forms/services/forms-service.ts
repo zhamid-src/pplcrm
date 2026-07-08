@@ -1,13 +1,50 @@
 import { Service } from '@angular/core';
 import {
   AddWebFormType,
+  CreateFormType,
   ExportCsvInputType,
   ExportCsvResponseType,
+  FormField,
+  FormStatus,
+  FormType,
+  UpdateFormType,
   UpdateWebFormType,
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+/** A form as consumed by the new Forms experience (fields normalized to objects by the server). */
+export interface FormDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  redirect_url: string | null;
+  status: FormStatus;
+  type: FormType | null;
+  slug: string | null;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  send_confirmation: boolean;
+  confirm_subject: string | null;
+  confirm_body: string | null;
+  notify_team_on: boolean;
+  target_tags: string[];
+  target_lists: string[];
+  fields: FormField[];
+  submission_count: number;
+  updated_at: Date | string;
+  created_at: Date | string;
+}
+
+export interface FormSubmissionRow {
+  id: string;
+  person_id: string;
+  person_name: string | null;
+  answers: Record<string, unknown>;
+  created_at: Date | string;
+}
 
 @Service()
 export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
@@ -59,6 +96,55 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
 
   public getSubmissionsCount(id: string): Promise<number> {
     return this.api.webForms.getSubmissionsCount.query(id);
+  }
+
+  // --- North Star lifecycle endpoints (new Forms experience) ---
+
+  public listForms(): Promise<FormDetail[]> {
+    return this.api.webForms.list.query(undefined, { signal: this.ac.signal }) as Promise<FormDetail[]>;
+  }
+
+  public getForEdit(id: string): Promise<FormDetail> {
+    return this.api.webForms.getForEdit.query(id) as Promise<FormDetail>;
+  }
+
+  public createForm(input: CreateFormType): Promise<FormDetail> {
+    return this.api.webForms.create.mutate(input) as Promise<FormDetail>;
+  }
+
+  public updateLive(id: string, data: UpdateFormType): Promise<FormDetail> {
+    return this.api.webForms.updateLive.mutate({ id, data }) as Promise<FormDetail>;
+  }
+
+  public publish(id: string): Promise<FormDetail> {
+    return this.api.webForms.publish.mutate(id) as Promise<FormDetail>;
+  }
+
+  public unpublish(id: string): Promise<FormDetail> {
+    return this.api.webForms.unpublish.mutate(id) as Promise<FormDetail>;
+  }
+
+  public archive(id: string): Promise<FormDetail> {
+    return this.api.webForms.archive.mutate(id) as Promise<FormDetail>;
+  }
+
+  public restore(id: string): Promise<FormDetail> {
+    return this.api.webForms.restore.mutate(id) as Promise<FormDetail>;
+  }
+
+  public deleteDraft(id: string): Promise<unknown> {
+    return this.api.webForms.deleteDraft.mutate(id);
+  }
+
+  public getSubmissions(
+    id: string,
+    cursor?: number,
+  ): Promise<{ items: FormSubmissionRow[]; total: number; nextCursor: number | null }> {
+    return this.api.webForms.submissions.query({ id, cursor }) as Promise<{
+      items: FormSubmissionRow[];
+      total: number;
+      nextCursor: number | null;
+    }>;
   }
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {

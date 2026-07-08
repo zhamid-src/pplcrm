@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -7,6 +7,7 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
@@ -19,11 +20,13 @@ import {
   AddVolunteerEventType,
   UpdateVolunteerEventType,
 } from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ShiftsService } from '../services/shifts-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-shift-form',
@@ -44,26 +47,41 @@ import { ShiftsService } from '../services/shifts-service';
   templateUrl: './shift-form.html',
   providers: [VolunteerService],
 })
-export class ShiftFormComponent {
+export class ShiftFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
   private readonly router = inject(Router);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/events/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   protected readonly allVolunteers = signal<any[]>([]);
   protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
+    const id = this.id();
+    if (id) {
+      return [
+        shifts,
+        { label: this.detail()?.name || 'Volunteer event', route: ['/events/shifts', id] },
+        { label: 'Edit' },
+      ];
+    }
+    return [shifts, { label: 'New volunteer event' }];
+  });
+
   protected readonly payload = signal({
     name: '',
     slug: '',
@@ -84,7 +102,7 @@ export class ShiftFormComponent {
     if (!start_time || !end_time) return false;
     return new Date(end_time) <= new Date(start_time);
   });
-  protected readonly environment = environment;
+  protected readonly volunteerListUrl = computed(() => publicPageUrl(this.auth.getUser()?.tenant_slug, 'volunteer'));
   protected readonly error = signal<string | null>(null);
   protected readonly eventPassed = computed(() => {
     const end = this.payload().end_time;
@@ -94,6 +112,7 @@ export class ShiftFormComponent {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddVolunteerEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
 
@@ -191,8 +210,8 @@ export class ShiftFormComponent {
       this.volunteerSearch.set('');
       this.alerts.showSuccess(`${person.first_name} added to roster`);
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
     }
   }
 
@@ -219,8 +238,8 @@ export class ShiftFormComponent {
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -251,7 +270,7 @@ export class ShiftFormComponent {
     }
 
     try {
-      const event = await this.volunteerEventsSvc.getById(this.id()!);
+      const event = (await this.volunteerEventsSvc.getById(this.id()!)) as any;
       this.detail.set(event);
       this.payload.set({
         name: event.name ?? '',
@@ -274,8 +293,8 @@ export class ShiftFormComponent {
       }
 
       await this.loadRoster();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -315,9 +334,13 @@ export class ShiftFormComponent {
       await this.volunteerSvc.deleteShift(shift.id);
       this.alerts.showSuccess('Volunteer removed');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this volunteer event');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -374,8 +397,8 @@ export class ShiftFormComponent {
           await this.router.navigate(['/events/shifts', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -391,8 +414,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift details saved');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to save shift details');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
     }
   }
 
@@ -429,8 +452,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift status updated');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to update shift');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
     }
   }
 }

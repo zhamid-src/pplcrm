@@ -29,6 +29,16 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public count(): Promise<number> {
     return this.api.persons.count.query();
   }
+
+  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
+  public countWithCompany(): Promise<number> {
+    return this.api.persons.countWithCompany.query();
+  }
+
+  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
+  public getByPublicId(publicId: string) {
+    return this.api.persons.getByPublicId.query(publicId);
+  }
   public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
@@ -119,15 +129,37 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   public import(
-    rows: RouterInputs['persons']['import']['rows'],
-    tags: string[] = [],
-    skipped = 0,
-    fileName?: string | null,
+    input: {
+      rows: RouterInputs['persons']['import']['rows'];
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      source_csv?: string;
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    options?: { skipErrorHandler?: boolean },
   ): Promise<RouterOutputs['persons']['import']> {
-    // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
-      context: { skipErrorHandler: true },
-    } as any);
+    // Wizard shows its own error state — opt out of the global error toast when asked.
+    return this.api.persons.import.mutate(
+      {
+        rows: input.rows,
+        tags: input.tags ?? [],
+        skipped: input.skipped ?? 0,
+        file_name: input.file_name ?? undefined,
+        duplicate_decision: input.duplicate_decision ?? 'skip',
+        list_name: input.list_name,
+        source_csv: input.source_csv,
+        client_skip_reasons: input.client_skip_reasons,
+      },
+      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
+    );
+  }
+
+  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
+  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
+    return this.api.persons.checkDuplicateEmails.query({ emails });
   }
 
   public async removeHousehold(id: string) {

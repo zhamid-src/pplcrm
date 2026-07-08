@@ -1,11 +1,12 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
-import { createSigner, createVerifier } from 'fast-jwt';
+import { createSigner } from 'fast-jwt';
 import type { QueryResult, Transaction } from 'kysely';
+import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
+import { signedFileDownloadUrl } from '../../lib/signed-download';
 
 import type {
   IAuthKeyPayload,
   INow,
-  IToken,
   InviteAuthUserType,
   UpdateAuthUserType,
   getAllOptionsType,
@@ -36,10 +37,12 @@ import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
 import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
+import { parseProfilePreferences } from '../../lib/profile-preferences';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
 import { generateToken, hashToken } from '../../lib/token-hash';
+import { logger } from '../../logger';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
@@ -48,7 +51,6 @@ import { seedOnboardingData } from './onboarding-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
-import { logger } from '../../logger';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -277,14 +279,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
       const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
-      const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+      const avatar_url = profile?.['avatar_file_id']
+        ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+        : null;
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
+      let tenant_slug: string | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at'])
+          .select(['deletion_scheduled_at', 'paused_at', 'slug'])
           .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
@@ -293,6 +298,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (tenant?.paused_at) {
           tenant_paused_at = tenant.paused_at;
         }
+        tenant_slug = tenant?.slug ?? null;
       }
 
       return {
@@ -302,6 +308,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
+        tenant_slug,
       };
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
@@ -475,7 +482,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return {
       rows: result.rows.map((row) => ({
         ...this.sanitizeUser(row),
-        avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+        avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
       })),
       count: result.count,
     };
@@ -509,7 +516,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
     const stats = await this.buildUserStats(auth, String(authUser.id));
     const sanitized = this.sanitizeUser({ ...authUser, profile });
-    const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+    const avatar_url = profile?.['avatar_file_id']
+      ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+      : null;
     return { ...sanitized, avatar_url, stats };
   }
 
@@ -519,7 +528,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     });
     return result.rows.map((row) => ({
       ...this.sanitizeUser(row),
-      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+      avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
     }));
   }
 
@@ -579,7 +588,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         {
           to: email,
           tenant_id: auth.tenant_id,
-          subject: `You've been invited to join ${auth.name} on CampaignRaven`,
+          subject: `You've been invited to join ${auth.name} on PplCRM`,
           text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}`,
           html: `<h2>You've Been Invited!</h2>
 <p>Hi ${input.first_name},</p>
@@ -670,31 +679,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { success: true };
   }
 
-  public async renewAuthToken(input: IToken) {
-    if (!input?.auth_token || !input?.refresh_token) {
+  /**
+   * Issue a fresh access token from the refresh token alone (delivered via the HttpOnly cookie,
+   * SECURITY-REVIEW.md 2.1). It deliberately does NOT require the (possibly gone) access token, so
+   * the client can silently re-auth on a cold page load using only the cookie. The refresh token is
+   * the sole authenticator here, and it's rotated on every use.
+   */
+  public async renewAuthToken(refreshToken: string | undefined) {
+    if (!refreshToken) {
       throw new UnauthorizedError();
     }
     try {
-      // 1. Verify the signature of the expired auth token (ignoring expiration)
-      const payload = (await renewalVerifier(input.auth_token)) as Record<string, unknown>;
+      const refreshHash = hashToken(refreshToken);
 
-      // Basic payload validation
-      if (!payload?.['user_id'] || !payload?.['tenant_id'] || !payload?.['name'] || !payload?.['session_id']) {
-        throw new UnauthorizedError();
-      }
-
-      // 2. Hash the session ID and incoming refresh token
-      const sessionHash = hashToken(payload['session_id'] as string);
-      const refreshHash = hashToken(input.refresh_token);
-
-      // 3. Verify that the session is active and matches in the database
+      // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
+      // itself identifies which session (and therefore tenant) this is.
+      // eslint-disable-next-line local/no-unscoped-db-query
       const session = await this.sessions.db
         .selectFrom('sessions')
-        .select(['id', 'expires_at', 'last_used_at'])
-        .where('session_id', '=', sessionHash)
+        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at'])
         .where('refresh_token', '=', refreshHash)
-        .where('user_id', '=', payload['user_id'] as string)
-        .where('tenant_id', '=', payload['tenant_id'] as string)
         .where('status', '=', 'active')
         .executeTakeFirst();
 
@@ -715,14 +719,29 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       }
 
-      // 4. Generate a new set of tokens and delete the old session
-      return this.createTokens({
-        user_id: payload['user_id'] as string,
-        tenant_id: payload['tenant_id'] as string,
-        name: payload['name'] as string,
-        oldSession: payload['session_id'] as string,
+      // The JWT carries the user's display name; pull it from the account (scoped to the session's
+      // tenant) since we no longer have the old token to read it from.
+      const user = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select(['first_name'])
+        .where('id', '=', session.user_id)
+        .where('tenant_id', '=', session.tenant_id)
+        .executeTakeFirst();
+
+      if (!user) {
+        throw new UnauthorizedError();
+      }
+
+      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry) and drop
+      // the old session so a stolen or replayed refresh token can't be reused.
+      const tokens = await this.createTokens({
+        user_id: String(session.user_id),
+        tenant_id: String(session.tenant_id),
+        name: user.first_name ?? '',
         existingExpiresAt: session.expires_at ?? null,
       });
+      await this.sessions.deleteBySessionHash(session.session_id);
+      return tokens;
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new UnauthorizedError();
@@ -730,9 +749,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async resendVerificationEmail(email: string) {
-    const user = await this.getUserByEmail(email);
+    // Never reveal whether an account exists (or is already verified): return a
+    // uniform success for unknown/verified addresses to prevent enumeration.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return { success: true };
+      throw err;
+    }
     if (user.verified) {
-      throw new BadRequestError('Email is already verified.');
+      return { success: true };
     }
     return await this.getRepo()
       .transaction()
@@ -744,7 +771,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Verify Your Email - CampaignRaven',
+            subject: 'Verify Your Email - PplCRM',
             text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
             html: `<h2>Verify Your Email</h2>
 <p>To verify your email address and activate your login, please click the button below:</p>
@@ -803,8 +830,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: user.email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
             subject: 'Security Alert: Password Changed',
-            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your CampaignRaven account was recently changed. If you did not make this change, please contact support immediately.`,
-            html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your CampaignRaven account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
+            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your PplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
+            html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your PplCRM account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
           },
           trx,
         );
@@ -871,7 +898,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
           html: `<h2>Account Scheduled for Deletion</h2>
 <p>Hi ${authUser.first_name},</p>
-<p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>As requested, your PplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
 <p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
 <p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
         },
@@ -939,7 +966,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async sendPasswordResetEmail(email: string) {
-    const user = await this.getUserByEmail(email);
+    // Never reveal whether an account exists: return success uniformly so an
+    // attacker cannot enumerate registered emails via this endpoint.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return true;
+      throw err;
+    }
     await this.getRepo()
       .transaction()
       .execute(async (trx) => {
@@ -954,7 +989,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             subject: 'Reset Your Password',
             text: `Hey there, please click this link to reset your password: ${env.appUrl}/new-password?code=${code}`,
             html: `<h2>Reset Your Password</h2>
-<p>We received a request to reset the password for your CampaignRaven account. Click the button below to choose a new password:</p>
+<p>We received a request to reset the password for your PplCRM account. Click the button below to choose a new password:</p>
 <div class="btn-container">
   <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
 </div>
@@ -993,8 +1028,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.getRepo()
         .db.updateTable('authusers')
         .set({
-          two_factor_code: otpCode,
+          // Store only the hash; the plaintext OTP is emailed to the user.
+          two_factor_code: hashToken(otpCode),
           two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+          // Reset the failed-attempt counter for this fresh challenge.
+          two_factor_attempts: 0,
         })
         .where('id', '=', user.id)
         .execute();
@@ -1025,7 +1063,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'CampaignRaven - Account Restored',
+        subject: 'PplCRM - Account Restored',
         text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
         html: `<h2>Account Restored</h2>
 <p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
@@ -1064,9 +1102,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sessions.deleteBySessionId(auth.session_id);
   }
 
-  public async signUp(input: signUpInputType): Promise<IToken> {
+  public async signUp(input: signUpInputType) {
     const email = input.email.toLowerCase();
-    let token = { auth_token: '', refresh_token: '' };
+    let token: { auth_token: string; refresh_token: string; refresh_expires_at: Date | null } = {
+      auth_token: '',
+      refresh_token: '',
+      refresh_expires_at: null,
+    };
 
     try {
       await this.verifyUserDoesNotExist(email);
@@ -1142,10 +1184,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id,
-            subject: 'Welcome to CampaignRaven - Verify Your Email',
-            text: `Welcome to CampaignRaven! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
+            subject: 'Welcome to PplCRM - Verify Your Email',
+            text: `Welcome to PplCRM! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
             html: `<h2>Verify Your Email</h2>
-<p>Welcome to CampaignRaven! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
+<p>Welcome to PplCRM! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
 <div class="btn-container">
   <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
 </div>
@@ -1271,7 +1313,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
               {
                 to: nextEmail as string,
                 tenant_id: auth.tenant_id,
-                subject: 'Verify Your New Email Address - CampaignRaven',
+                subject: 'Verify Your New Email Address - PplCRM',
                 text: `Please verify your new email address by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
                 html: `<h2>Verify Your New Email</h2>
 <p>Please verify your new email address to complete the update and activate your login:</p>
@@ -1288,10 +1330,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
                 to: oldEmail,
                 tenant_id: auth.tenant_id,
                 subject: 'Security Alert: Email Address Update Initiated',
-                text: `Hi ${existingUser.first_name},\n\nThe email address for your CampaignRaven account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
+                text: `Hi ${existingUser.first_name},\n\nThe email address for your PplCRM account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
                 html: `<h2>Security Alert: Email Change</h2>
 <p>Hi ${existingUser.first_name},</p>
-<p>The email address for your CampaignRaven account was recently changed to <strong>${nextEmail}</strong>.</p>
+<p>The email address for your PplCRM account was recently changed to <strong>${nextEmail}</strong>.</p>
 <p>We have sent a verification link to the new address. Until it is verified, login under that address is inactive.</p>
 <p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
               },
@@ -1421,20 +1463,40 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       });
 
-    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
+    return { file_id: finalFileId, avatar_url: signedFileDownloadUrl(String(finalFileId), auth.tenant_id) };
   }
 
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
     const user = await this.getUserByEmail(email.toLowerCase());
 
-    // Use timing-safe comparison to eliminate OTP brute-force side-channel
+    // The OTP is stored hashed; hash the input and compare with a timing-safe
+    // equality to eliminate the brute-force side-channel.
     const storedCode = user.two_factor_code ?? '';
-    const inputCode = String(code ?? '');
+    const inputHash = code ? hashToken(String(code)) : '';
     const codeMatch =
       storedCode.length > 0 &&
-      storedCode.length === inputCode.length &&
-      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputCode));
+      storedCode.length === inputHash.length &&
+      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputHash));
     if (!codeMatch) {
+      // Per-account brute-force cap: after too many wrong guesses, invalidate the
+      // OTP entirely so it can't be ground down within its validity window — the
+      // user must sign in again to receive a fresh code.
+      const attempts = Number(user.two_factor_attempts ?? 0) + 1;
+      if (attempts >= MAX_2FA_ATTEMPTS) {
+        await this.getRepo()
+          .db.updateTable('authusers')
+          .set({ two_factor_code: null, two_factor_expires_at: null, two_factor_attempts: 0 })
+          .where('id', '=', user.id)
+          .where('tenant_id', '=', user.tenant_id)
+          .execute();
+        throw new BadRequestError('Too many incorrect codes. Please sign in again to get a new code.');
+      }
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ two_factor_attempts: attempts })
+        .where('id', '=', user.id)
+        .where('tenant_id', '=', user.tenant_id)
+        .execute();
       throw new BadRequestError('Invalid verification code.');
     }
 
@@ -1453,6 +1515,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .set({
         two_factor_code: null,
         two_factor_expires_at: null,
+        two_factor_attempts: 0,
       })
       .where('id', '=', user.id)
       .execute();
@@ -1467,7 +1530,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'CampaignRaven - Account Restored',
+        subject: 'PplCRM - Account Restored',
         text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
         html: `<h2>Account Restored</h2>
 <p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
@@ -1602,12 +1665,37 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async createTenant(trx: Transaction<Models>, name: string) {
-    const row = { name } as OperationDataType<'tenants', 'insert'>;
+    const slug = await this.generateTenantSlug(trx, name);
+    const row = { name, slug } as OperationDataType<'tenants', 'insert'>;
     const tenantAddResult = await this.tenants.add({ row }, trx);
     if (!tenantAddResult) {
       throw new InternalError('Something went wrong, please try again');
     }
     return tenantAddResult.id;
+  }
+
+  /**
+   * Produce a globally-unique, DNS-safe subdomain label for a new tenant: slugify the org name, fall
+   * back to a random `org-xxxxxx` when the name yields nothing usable or hits a reserved label, then
+   * suffix on collision. The tenant id isn't known before insert, so the fallback is random rather
+   * than id-derived.
+   */
+  private async generateTenantSlug(trx: Transaction<Models>, name: string): Promise<string> {
+    let base = slugifyHandle(name);
+    if (!base || RESERVED_SUBDOMAINS.has(base)) {
+      base = `org-${randomBytes(4).toString('hex')}`;
+    }
+    let candidate = base;
+    let n = 2;
+    while (await this.tenantSlugTaken(trx, candidate)) {
+      candidate = `${base}-${n++}`;
+    }
+    return candidate;
+  }
+
+  private async tenantSlugTaken(trx: Transaction<Models>, slug: string): Promise<boolean> {
+    const row = await trx.selectFrom('tenants').select('id').where('slug', '=', slug).executeTakeFirst();
+    return !!row;
   }
 
   private async createTokens(
@@ -1671,7 +1759,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         name: input.name,
         session_id: plainSessionId, // plaintext in JWT; hash is in DB
       });
-      return { auth_token, refresh_token: plainRefreshToken }; // plaintext to client
+      // refresh_token goes to the client as an HttpOnly cookie (set by the router), never the body.
+      return { auth_token, refresh_token: plainRefreshToken, refresh_expires_at: expiresAt };
     } catch (err) {
       throw new InternalError('Token creation failed', undefined, { cause: err });
     }
@@ -1742,6 +1831,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return now.getTime() - then.getTime();
   }
 
+  // NOTE (SECURITY-REVIEW 4.7): `authusers.email` is UNIQUE globally, not per-tenant, and this lookup
+  // is intentionally tenant-agnostic (sign-in has no tenant context yet). Consequence: one email
+  // address belongs to exactly one tenant — a person cannot be a member of two organizations under
+  // the same email. This is the current, intended product constraint; making email per-tenant would
+  // be a schema-level change (drop the global unique, add UNIQUE(tenant_id, email), and thread a
+  // tenant selector through sign-in).
   private async getUserByEmail(email: string) {
     const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
 
@@ -1752,7 +1847,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
-    if (!ipAddress) return false;
+    // Fail closed: if the client IP can't be determined, treat it as a new
+    // device so the 2FA challenge is issued rather than silently skipped.
+    if (!ipAddress) return true;
     const existing = await this.sessions.db
       .selectFrom('sessions')
       .select('id')
@@ -1787,19 +1884,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       import_summary_in_app: true,
     };
 
-    const profileJson = (record['profile'] as Record<string, unknown>)?.['json'] ?? record['json'];
-    if (profileJson) {
-      try {
-        const parsed = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-        if (parsed && typeof parsed === 'object' && parsed.notifications) {
-          notificationPreferences = {
-            ...notificationPreferences,
-            ...parsed.notifications,
-          };
-        }
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse profile json for preferences');
-      }
+    const rawPreferences = (record['profile'] as Record<string, unknown>)?.['preferences'] ?? record['preferences'];
+    const parsedPreferences = parseProfilePreferences(rawPreferences);
+    if (parsedPreferences?.notifications) {
+      notificationPreferences = {
+        ...notificationPreferences,
+        ...parsedPreferences.notifications,
+      };
     }
 
     return {
@@ -1824,20 +1915,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
     const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
 
-    let finalJson: Record<string, unknown> | null = null;
-    if (existingProfile?.json) {
-      try {
-        finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse existing profile json');
-      }
-    }
+    let finalPreferences: Record<string, unknown> | null = existingProfile?.preferences
+      ? ((parseProfilePreferences(existingProfile.preferences) as Record<string, unknown> | null) ?? null)
+      : null;
 
     if (data.notification_preferences) {
-      finalJson = {
-        ...(finalJson || {}),
+      finalPreferences = {
+        ...(finalPreferences || {}),
         notifications: {
-          ...(((finalJson || {})['notifications'] as Record<string, unknown>) || {}),
+          ...(((finalPreferences || {})['notifications'] as Record<string, unknown>) || {}),
           ...data.notification_preferences,
         },
       };
@@ -1851,8 +1937,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       if (data.last_name !== undefined) {
         row['last_name'] = data.last_name ?? null;
       }
-      if (finalJson !== null) {
-        row['json'] = JSON.stringify(finalJson);
+      if (finalPreferences !== null) {
+        row['preferences'] = JSON.stringify(finalPreferences);
       }
 
       if (data.last_name !== undefined || data.notification_preferences !== undefined) {
@@ -1866,7 +1952,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       tenant_id: auth.tenant_id,
       auth_id: authUserId,
       last_name: data.last_name ?? null,
-      json: finalJson ? JSON.stringify(finalJson) : null,
+      preferences: finalPreferences ? JSON.stringify(finalPreferences) : null,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     } as OperationDataType<'profiles', 'insert'>;
@@ -1907,8 +1993,4 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const renewalVerifier = createVerifier({
-  algorithms: ['HS256'],
-  key: env.sharedSecret,
-  ignoreExpiration: true,
-});
+const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated

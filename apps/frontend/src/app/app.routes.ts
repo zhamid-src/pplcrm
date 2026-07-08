@@ -4,8 +4,8 @@ import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login/login-guard';
 
 export const appRoutes = [
-  // Default redirect to summary inside the dashboard shell
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+  // Default redirect to the dashboard inside the app shell
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
   // Auth pages
   {
@@ -22,7 +22,7 @@ export const appRoutes = [
     loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
   },
   {
-    path: 'newpassword',
+    path: 'new-password',
     loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
   },
   {
@@ -34,6 +34,35 @@ export const appRoutes = [
     path: 'confirm-subscription',
     loadComponent: () =>
       import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  {
+    // Canvass Companion — tokenised, account-less volunteer app (§13.4).
+    path: 'companion',
+    loadComponent: () => import('./experiences/canvassing/ui/companion-page').then((m) => m.CompanionPage),
+  },
+  {
+    // Deliveries volunteer route — tokenised, account-less (§14).
+    path: 'r/:token',
+    loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
   },
   {
     path: 'verify-email',

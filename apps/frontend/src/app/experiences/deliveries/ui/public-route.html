@@ -1,0 +1,179 @@
+<div class="min-h-screen bg-base-200">
+  @switch (state()) { @case ('loading') {
+  <div class="flex min-h-screen items-center justify-center">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+  } @case ('notfound') {
+  <div class="flex min-h-screen items-center justify-center px-6">
+    <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+      <h1 class="mb-2 text-lg font-semibold">This route link isn't active</h1>
+      <p class="text-sm text-base-content/60">Ask your organizer for a new one.</p>
+    </div>
+  </div>
+  } @case ('ready') { @if (data(); as d) {
+  <div class="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-3 py-4">
+    <!-- Header -->
+    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+      <div class="flex items-center justify-between">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
+          {{ d.campaign_name }}
+        </p>
+        <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
+      </div>
+      <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>
+      <p class="mt-2 text-sm tabular-nums text-base-content/70">
+        @if (isDone()) { {{ d.stops_total }} of {{ d.stops_total }} handled } @else { {{ d.stops_delivered }} of {{
+        d.stops_total }} delivered }
+      </p>
+      <progress
+        class="progress mt-1 w-full"
+        [class.progress-success]="isDone()"
+        [class.progress-primary]="!isDone()"
+        [value]="handled()"
+        [max]="d.stops_total || 1"
+      ></progress>
+
+      <div class="mt-3 flex items-center gap-2">
+        <div role="tablist" class="tabs tabs-boxed tabs-sm">
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            [class.tab-active]="view() === 'list'"
+            (click)="view.set('list')"
+          >
+            List
+          </button>
+          <button type="button" role="tab" class="tab" [class.tab-active]="view() === 'map'" (click)="view.set('map')">
+            Map
+          </button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm ml-auto" (click)="openFullRoute()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
+        </button>
+      </div>
+    </div>
+
+    @if (isDone()) {
+    <div class="rounded-2xl border border-success/30 bg-success/[0.08] p-5 text-center">
+      <p class="text-base font-semibold text-base-content">All {{ d.stops_total }} stops handled — thank you!</p>
+      <p class="mt-1 text-sm text-base-content/70">Your organizer already has the results.</p>
+    </div>
+    }
+
+    <!-- Map view -->
+    @if (view() === 'map') {
+    <pc-map
+      class="block h-72 overflow-hidden rounded-2xl border border-base-300"
+      [markers]="markers()"
+      (markerClicked)="selectStop($event)"
+    ></pc-map>
+    }
+
+    <!-- Stop list -->
+    @if (view() === 'list') {
+    <div class="flex flex-col gap-2.5">
+      @for (stop of d.stops; track stop.id) {
+      <div
+        class="rounded-2xl border p-4"
+        [class.border-base-300]="stop.status === 'pending'"
+        [class.bg-base-100]="stop.status === 'pending'"
+        [class.border-success]="stop.status === 'delivered'"
+        [class.bg-success]="stop.status === 'delivered'"
+        [class.bg-opacity-[0.06]]="stop.status !== 'pending'"
+        [class.border-warning]="stop.status === 'skipped'"
+        [class.bg-warning]="stop.status === 'skipped'"
+      >
+        <div class="flex items-start gap-3">
+          <span
+            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold tabular-nums"
+            >{{ stop.seq }}</span
+          >
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold text-base-content">{{ stop.first_name }}</p>
+            <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+            @if (stop.status === 'skipped' && stop.reason) {
+            <span class="mt-1 inline-block"><pc-status-badge type="warning">{{ stop.reason }}</pc-status-badge></span>
+            }
+          </div>
+          @if (stop.status === 'delivered') {
+          <pc-status-badge type="success">Delivered</pc-status-badge>
+          }
+        </div>
+
+        <!-- Actions for the active (first pending) stop -->
+        @if (stop.status === 'pending' && stop.id === activeStopId()) { @if (reasonPickerFor() === stop.id) {
+        <div class="mt-3 grid grid-cols-2 gap-2">
+          @for (reason of reasons; track reason) {
+          <button type="button" class="btn btn-outline btn-warning min-h-11 text-sm" (click)="skip(stop.id, reason)">
+            {{ reason }}
+          </button>
+          }
+          <button type="button" class="btn btn-ghost col-span-2 min-h-11 text-sm" (click)="cancelReason()">
+            Never mind — keep it pending
+          </button>
+        </div>
+        <p class="mt-2 text-xs text-base-content/50">
+          A skipped house goes back to your organizer's list automatically.
+        </p>
+        } @else {
+        <div class="mt-3 flex flex-col gap-2">
+          <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+            Mark delivered
+          </button>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              class="btn btn-ghost min-h-11 text-sm"
+              [disabled]="busy()"
+              (click)="openReasonPicker(stop.id)"
+            >
+              Couldn't deliver
+            </button>
+            <button type="button" class="btn btn-ghost min-h-11 text-sm" [disabled]="busy()" (click)="defer(stop.id)">
+              Skip for now
+            </button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">
+            <pc-icon name="map-pin" [size]="4"></pc-icon> Navigate
+          </button>
+        </div>
+        } }
+
+        <!-- Undo on the most-recently actioned row -->
+        @if (stop.status !== 'pending' && stop.id === lastActioned()) {
+        <button type="button" class="btn btn-ghost btn-sm mt-2 min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
+          <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
+        </button>
+        }
+      </div>
+      }
+    </div>
+    }
+
+    <!-- Selected pin card (map view) -->
+    @if (view() === 'map' && selectedStopId(); as sid) { @for (stop of d.stops; track stop.id) { @if (stop.id === sid) {
+    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+      <p class="font-semibold">{{ stop.seq }}. {{ stop.first_name }}</p>
+      <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+      @if (stop.status === 'pending') {
+      <div class="mt-3 flex flex-col gap-2">
+        <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+          Mark delivered
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">Navigate</button>
+      </div>
+      } @else {
+      <span class="mt-2 inline-block"
+        ><pc-status-badge [type]="stop.status === 'delivered' ? 'success' : 'warning'"
+          >{{ stop.status }}</pc-status-badge
+        ></span
+      >
+      }
+    </div>
+    } } }
+
+    <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+  </div>
+  } } }
+</div>

@@ -1,4 +1,4 @@
-import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
+import { AddTagObj, UpdateTagObj, idSchema, nameSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -22,4 +22,21 @@ export const TagsRouter = router({
       }),
     )
     .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
+
+  // §9.1 Tags admin / §9.2 Issues admin
+  getAdminList: authProcedure
+    .input(z.object({ type: z.enum(['tag', 'issue']) }))
+    .query(({ input, ctx }) => tags.getAdminList(input.type, ctx.auth)),
+
+  countDistinctPeople: authProcedure
+    .input(z.object({ type: z.enum(['tag', 'issue']) }))
+    .query(({ input, ctx }) => tags.countDistinctPeople(input.type, ctx.auth)),
+
+  rename: authProcedure
+    .input(z.object({ id: idSchema, newName: nameSchema('Tag name', 50) }))
+    .mutation(({ input, ctx }) => tags.renameTag(input.id, input.newName, ctx.auth)),
+
+  merge: authProcedure
+    .input(z.object({ sourceId: idSchema, targetId: idSchema }))
+    .mutation(({ input, ctx }) => tags.mergeTags(input.sourceId, input.targetId, ctx.auth)),
 });

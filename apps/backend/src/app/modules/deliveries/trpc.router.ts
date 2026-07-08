@@ -1,0 +1,76 @@
+import {
+  AddDeliveryRequestObj,
+  AssignVolunteerObj,
+  CommitDeliveriesObj,
+  MintShareLinkObj,
+  PlanDeliveriesObj,
+  ReorderStopObj,
+  RouteIdObj,
+  SetDeliveryRequestStatusObj,
+  SetDeliveryRouteStatusObj,
+  StopActionObj,
+  UpdateDeliveryRequestObj,
+  UpdateDeliveryRouteObj,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { DeliveriesController } from './controller';
+
+const controller = new DeliveriesController();
+
+export const DeliveriesRouter = router({
+  // Requests
+  getAllRequests: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
+  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
+  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
+  addRequest: authProcedure
+    .input(AddDeliveryRequestObj)
+    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
+  updateRequestNotes: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
+    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
+  setRequestStatus: authProcedure
+    .input(SetDeliveryRequestStatusObj)
+    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
+
+  // Planning
+  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
+  previewPlan: authProcedure
+    .input(PlanDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
+  commitPlan: authProcedure
+    .input(CommitDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
+
+  // Routes
+  getAllRoutes: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
+  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
+  updateRoute: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
+    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
+  assignVolunteer: authProcedure
+    .input(AssignVolunteerObj)
+    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
+  setRouteStatus: authProcedure
+    .input(SetDeliveryRouteStatusObj)
+    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
+  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
+  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
+  reorderStop: authProcedure
+    .input(ReorderStopObj)
+    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
+  mintShareLink: authProcedure
+    .input(MintShareLinkObj)
+    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
+  revokeShareLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
+});

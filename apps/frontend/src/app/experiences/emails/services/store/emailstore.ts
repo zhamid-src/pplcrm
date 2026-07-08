@@ -2,6 +2,7 @@ import { computed, inject, signal, Service, debounced, effect, untracked } from 
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { EmailStatus } from '../../../../../../../../libs/common/src';
 
 import { EmailsService } from '../emails-service';
@@ -24,6 +25,10 @@ export class EmailsStore {
 
   private readonly _isSyncing = signal(false);
   public readonly isSyncing = this._isSyncing.asReadonly();
+
+  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
+  private readonly _lastSyncedAt = signal<Date | null>(null);
+  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
 
   /*
   private readonly ensureHasAttachmentOnOpen = effect(() => {
@@ -228,9 +233,15 @@ export class EmailsStore {
         await this.loadEmailsForFolder(currentFolderId);
       }
       await this.refreshFolderCounts();
-      this.alerts.showSuccess('Sync complete!');
+      this._lastSyncedAt.set(new Date());
+      const inserted = result?.inserted ?? 0;
+      this.alerts.showSuccess(
+        inserted > 0
+          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced — no new emails',
+      );
       return result;
-    } catch (e: any) {
+    } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (
         msg.includes('No email accounts connected') ||
@@ -240,16 +251,17 @@ export class EmailsStore {
       ) {
         const confirmed = await this.dialogs.confirm({
           title: 'Email Account Connection Required',
-          message: 'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
           variant: 'warning',
           confirmText: 'Go to Settings',
-          cancelText: 'Cancel'
+          cancelText: 'Cancel',
         });
         if (confirmed) {
-          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+          void this.router.navigate(['/workspace'], { queryParams: { tab: 'email-sync' } });
         }
       } else {
-        this.alerts.showError(`Sync failed: ${msg}`);
+        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
       }
       throw e;
     } finally {

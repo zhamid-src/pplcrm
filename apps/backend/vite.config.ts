@@ -1,5 +1,17 @@
 /// <reference types='vitest' />
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
+
+// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
+// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
+// see apps/backend/src/env.ts for the full schema). CI/production set these as real
+// env vars instead, so loading the file is best-effort only.
+const envTestPath = resolve(__dirname, '../../.env.test');
+if (existsSync(envTestPath)) {
+  process.loadEnvFile(envTestPath);
+}
+
 export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/apps/backend',
@@ -13,21 +25,35 @@ export default defineConfig(() => ({
     globals: true,
     passWithNoTests: true,
     environment: 'node',
+    // Runs once before any worker: guardrails the target DB, migrates it to
+    // latest, and truncates it to a clean slate. Keeps the whole suite on the
+    // disposable pplcrm_test database so specs can never touch real data.
+    globalSetup: ['./src/test-setup/global-setup.ts'],
     env: {
-      DB_USER: 'pplcrm',
-      DB_NAME: 'pplcrm',
-      DB_PASSWORD: '[REDACTED]',
-      JWT_SECRET: 'dev-secret',
-      SHARED_SECRET: 'dev-secret',
-      DB_PORT: '5432',
-      DB_HOST: 'localhost',
-      DB_SSL: 'false',
+      DB_USER: process.env['DB_USER'] ?? '',
+      DB_NAME: process.env['DB_NAME'] ?? '',
+      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
+      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
+      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
+      DB_PORT: process.env['DB_PORT'] ?? '5432',
+      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
+      DB_SSL: process.env['DB_SSL'] ?? 'false',
     },
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: '../../coverage/apps/backend',
       provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 45,
+        branches: 32,
+        functions: 54,
+        lines: 46,
+      },
     },
   },
 }));

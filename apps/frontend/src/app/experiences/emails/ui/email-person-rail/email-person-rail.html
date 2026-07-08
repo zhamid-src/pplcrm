@@ -1,0 +1,117 @@
+@if (collapsed()) {
+<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
+<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 border-l border-base-300 bg-base-200 py-3">
+  <button
+    type="button"
+    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+    [attr.data-tip]="'Expand person context — ' + displayName()"
+    aria-label="Expand person context"
+    (click)="toggle()"
+  >
+    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+  </button>
+  <div
+    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+    [attr.data-tip]="displayName()"
+  >
+    {{ initial() }}
+  </div>
+</aside>
+} @else {
+<!-- Expanded: 236px context card -->
+<aside
+  class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-base-300 bg-base-200 p-4"
+>
+  <div class="flex items-center justify-between">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
+    <button
+      type="button"
+      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+      data-tip="Collapse person context"
+      aria-label="Collapse person context"
+      (click)="toggle()"
+    >
+      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+    </button>
+  </div>
+
+  <!-- Identity -->
+  <div class="flex flex-col items-start gap-2">
+    <div
+      class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary select-none"
+    >
+      {{ initial() }}
+    </div>
+    @if (person(); as p) {
+    <a
+      [routerLink]="['/people', p.id]"
+      class="text-[15px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
+    >
+      {{ displayName() }}
+    </a>
+    } @else {
+    <span class="text-[15px] font-semibold text-base-content">{{ displayName() }}</span>
+    } @if (subline()) {
+    <span class="text-xs text-base-content/60">{{ subline() }}</span>
+    }
+  </div>
+
+  @if (person(); as p) {
+  <!-- Contact card -->
+  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
+    @if (p.email) {
+    <div class="flex items-center gap-2 min-w-0">
+      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span class="truncate">{{ p.email }}</span>
+    </div>
+    } @if (email()?.date_sent) {
+    <div class="flex items-center gap-2 text-base-content/60">
+      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
+    </div>
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
+    @if (tags().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of tags(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <!-- Issues of interest -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
+    @if (issues().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of issues(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
+    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+    Open record
+  </a>
+  } @else {
+  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
+  <div
+    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
+  >
+    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
+    <span>This sender isn't matched to a person record yet.</span>
+  </div>
+  }
+</aside>
+}

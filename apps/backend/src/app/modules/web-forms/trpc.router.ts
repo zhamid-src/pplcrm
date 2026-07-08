@@ -1,4 +1,10 @@
-import { AddWebFormObj, UpdateWebFormObj, getAllOptions } from '../../../../../../libs/common/src';
+import {
+  AddWebFormObj,
+  CreateFormObj,
+  UpdateFormObj,
+  UpdateWebFormObj,
+  getAllOptions,
+} from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, publicProcedure, router } from '../../../trpc';
@@ -26,4 +32,26 @@ export const WebFormsRouter = router({
   confirmSubscription: publicProcedure
     .input(z.object({ token: z.string() }))
     .mutation(({ input }) => webForms.confirmSubscription(input.token)),
+
+  // --- North Star "living funnel" lifecycle (new Forms experience) ---
+  list: authProcedure.query(({ ctx }) => webForms.listForms(ctx.auth.tenant_id)),
+  getForEdit: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getFormForEdit(input, ctx.auth.tenant_id)),
+  create: authProcedure.input(CreateFormObj).mutation(({ input, ctx }) => webForms.createForm(input, ctx.auth)),
+  updateLive: authProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateFormObj }))
+    .mutation(({ input, ctx }) => webForms.updateFormLive(input.id, input.data, ctx.auth)),
+  publish: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.publishForm(input, ctx.auth)),
+  unpublish: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.unpublishForm(input, ctx.auth)),
+  archive: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.archiveForm(input, ctx.auth)),
+  restore: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.restoreForm(input, ctx.auth)),
+  deleteDraft: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.deleteForm(input, ctx.auth)),
+  submissions: authProcedure
+    .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
+    .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
 });

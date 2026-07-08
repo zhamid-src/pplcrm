@@ -86,7 +86,7 @@ describe('SettingsPage', () => {
       queryParams: of({}),
       snapshot: {
         data: {
-          mode: 'configuration',
+          mode: 'workspace',
         },
         queryParamMap: {
           get: vi.fn().mockReturnValue(null),
@@ -134,7 +134,7 @@ describe('SettingsPage', () => {
 
     const router = TestBed.inject(Router);
     component['selectSection']('notifications');
-    expect(router.navigate).toHaveBeenCalledWith(['/', 'configuration', 'notifications']);
+    expect(router.navigate).toHaveBeenCalledWith(['/', 'workspace', 'notifications']);
 
     fixture.componentRef.setInput('section', 'notifications');
     fixture.detectChanges();
@@ -281,7 +281,7 @@ describe('SettingsPage', () => {
 
   it('should initialize correctly under billing mode', async () => {
     const mockRoute = TestBed.inject(ActivatedRoute);
-    mockRoute.snapshot.data = { mode: 'configuration' };
+    mockRoute.snapshot.data = { mode: 'workspace' };
 
     const newFixture = TestBed.createComponent(SettingsPage);
     const newComponent = newFixture.componentInstance;
@@ -290,7 +290,7 @@ describe('SettingsPage', () => {
     await newFixture.whenStable();
     newFixture.detectChanges();
 
-    expect(newComponent['currentMode']).toBe('configuration');
+    expect(newComponent['currentMode']).toBe('workspace');
     expect(newComponent['selectedSectionId']()).toBe('billing');
   });
 });

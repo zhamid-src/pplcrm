@@ -1,11 +1,12 @@
 import { computed, signal } from '@angular/core';
+import type { GridHost, GridRow, GridSnapshot } from './types';
 
 export class UndoManager {
   private readonly isOperating = signal(false);
 
-  private readonly undoStack = signal<any[]>([]);
-  private readonly redoStack = signal<any[]>([]);
-  private grid: any = null;
+  private readonly undoStack = signal<GridSnapshot[]>([]);
+  private readonly redoStack = signal<GridSnapshot[]>([]);
+  private grid: GridHost | null = null;
 
   public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
   public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
@@ -18,12 +19,12 @@ export class UndoManager {
     return this.undoStack().length;
   }
 
-  public initialize(_api: any): void {
-    this.grid = _api;
+  public initialize(api: GridHost): void {
+    this.grid = api;
     this.isOperating.set(false);
   }
 
-  public pushUndo(snapshot: any): void {
+  public pushUndo(snapshot: GridSnapshot): void {
     this.undoStack.update((s) => {
       const next = [...s, snapshot];
       return next.length > 50 ? next.slice(1) : next;
@@ -35,20 +36,23 @@ export class UndoManager {
     const redoStack = this.redoStack();
     if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
 
+    const target = redoStack[redoStack.length - 1];
+    if (!target) return;
+
     this.isOperating.set(true);
     try {
-      const target = redoStack[redoStack.length - 1];
       this.redoStack.update((s) => s.slice(0, -1));
 
       const current = this.captureCurrentState();
       if (current && target.editMeta) {
         current.editMeta = target.editMeta;
       }
-
-      this.undoStack.update((s) => {
-        const next = [...s, current];
-        return next.length > 50 ? next.slice(1) : next;
-      });
+      if (current) {
+        this.undoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
 
       await this.applySnapshot(target, 'redo');
     } finally {
@@ -60,20 +64,23 @@ export class UndoManager {
     const undoStack = this.undoStack();
     if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
 
+    const target = undoStack[undoStack.length - 1];
+    if (!target) return;
+
     this.isOperating.set(true);
     try {
-      const target = undoStack[undoStack.length - 1];
       this.undoStack.update((s) => s.slice(0, -1));
 
       const current = this.captureCurrentState();
       if (current && target.editMeta) {
         current.editMeta = target.editMeta;
       }
-
-      this.redoStack.update((s) => {
-        const next = [...s, current];
-        return next.length > 50 ? next.slice(1) : next;
-      });
+      if (current) {
+        this.redoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
 
       await this.applySnapshot(target, 'undo');
     } finally {
@@ -81,18 +88,18 @@ export class UndoManager {
     }
   }
 
-  private captureCurrentState(): any {
+  private captureCurrentState(): GridSnapshot | null {
     const store = this.grid?.store;
     if (!store) return null;
 
-    let rowsCopy: any[] = [];
+    let rowsCopy: GridRow[] = [];
     try {
-      rowsCopy = JSON.parse(JSON.stringify(store.rows() || []));
+      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
     } catch {
-      rowsCopy = (store.rows() || []).map((r: any) => {
-        const copy = { ...r };
-        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
-        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
+      rowsCopy = (store.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
         return copy;
       });
     }
@@ -107,8 +114,8 @@ export class UndoManager {
     };
   }
 
-  private async applySnapshot(target: any, actionType: 'undo' | 'redo') {
-    if (!target || !this.grid || !this.grid.store) return;
+  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
+    if (!this.grid || !this.grid.store) return;
     const store = this.grid.store;
     const flashedCells: { id: string; field: string }[] = [];
 
@@ -155,15 +162,18 @@ export class UndoManager {
     }
   }
 
-  private findRowsDiff(oldRows: any[], newRows: any[]): { id: string; field: string; prevValue: any; newValue: any }[] {
-    const diffs: { id: string; field: string; prevValue: any; newValue: any }[] = [];
-    const oldMap = new Map<string, any>();
+  private findRowsDiff(
+    oldRows: GridRow[],
+    newRows: GridRow[],
+  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
+    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
+    const oldMap = new Map<string, GridRow>();
     for (const r of oldRows) {
-      if (r && r.id) oldMap.set(String(r.id), r);
+      if (r && r['id']) oldMap.set(String(r['id']), r);
     }
     for (const r of newRows) {
-      if (!r || !r.id) continue;
-      const idStr = String(r.id);
+      if (!r || !r['id']) continue;
+      const idStr = String(r['id']);
       const oldRow = oldMap.get(idStr);
       if (oldRow) {
         for (const key of Object.keys(r)) {

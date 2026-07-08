@@ -35,7 +35,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     }));
   }
 
-  public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
+  public async saveSteps(tenantId: string, workflowId: string, steps: SequenceStepInput[], userId: string) {
     await this.getRepo()
       .transaction()
       .execute(async (trx) => {
@@ -61,22 +61,26 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
           .where('workflow_id', '=', workflowId)
           .execute();
 
-        // 3. Insert new steps
+        // 3. Insert new steps. Spec §16: steps are polymorphic — only `wait` carries a delay,
+        // only `send_email` carries subject/body; every other kind stashes its value in `config`.
         if (steps.length > 0) {
-          const insertRows = steps.map(
-            (step, idx) =>
-              ({
-                tenant_id: tenantId,
-                workflow_id: workflowId,
-                step_number: idx + 1,
-                delay_days: Number(step.delay_days || 0),
-                delay_unit: step.delay_unit || 'days',
-                subject: step.subject || 'Follow-up Email',
-                preview_text: step.preview_text || null,
-                html_content: step.html_content || null,
-                plain_text_content: step.plain_text_content || null,
-              }) as any,
-          );
+          const insertRows = steps.map((step, idx) => {
+            const isWait = step.kind === 'wait';
+            const isEmail = step.kind === 'send_email';
+            return {
+              tenant_id: tenantId,
+              workflow_id: workflowId,
+              step_number: idx + 1,
+              kind: step.kind,
+              config: step.config ? JSON.stringify(step.config) : null,
+              delay_days: isWait ? Number(step.delay_days || 0) : 0,
+              delay_unit: isWait ? step.delay_unit || 'days' : 'days',
+              subject: isEmail ? step.subject || 'Automated message' : null,
+              preview_text: isEmail ? step.preview_text || null : null,
+              html_content: isEmail ? step.html_content || null : null,
+              plain_text_content: isEmail ? step.plain_text_content || null : null,
+            } satisfies OperationDataType<'workflow_steps', 'insert'>;
+          });
 
           await trx.insertInto('workflow_steps').values(insertRows).execute();
         }
@@ -165,7 +169,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       // 4. Find the first step of this workflow
       const firstStep = await t
         .selectFrom('workflow_steps')
-        .select(['step_number', 'delay_days', 'delay_unit'])
+        .select(['step_number'])
         .where('tenant_id', '=', tenantId)
         .where('workflow_id', '=', workflowId)
         .orderBy('step_number', 'asc')
@@ -178,12 +182,9 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         });
       }
 
-      // 5. Calculate next run at based on step delay
-      const delayMs =
-        firstStep.delay_unit === 'hours'
-          ? firstStep.delay_days * 60 * 60 * 1000
-          : firstStep.delay_days * 24 * 60 * 60 * 1000;
-      const nextRunAt = new Date(Date.now() + delayMs);
+      // 5. Process immediately — the worker interprets a leading `wait` step by rescheduling,
+      // and runs action steps in a chain until it reaches a wait or the end (spec §16).
+      const nextRunAt = new Date();
 
       // 6. Insert enrollment
       const insertRow = {
@@ -313,7 +314,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     const db = trx || this.getRepo().db;
     let query = db
       .selectFrom('workflows')
-      .select(['id', 'name'])
+      .select(['id', 'name', 'conditions'])
       .where('tenant_id', '=', tenantId)
       .where('trigger_type', '=', triggerType)
       .where('status', '=', 'active');
@@ -329,6 +330,17 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     const activeWorkflows = await query.execute();
     if (activeWorkflows.length === 0) return;
 
+    // Load the person once so we can evaluate each workflow's "ONLY ENROLL IF" conditions
+    // (spec §16) before enrolling. Trigger-based enrollment respects conditions; manual
+    // enrollment (the enrollPerson path from the UI) intentionally does not.
+    const person = await db
+      .selectFrom('persons')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', personId)
+      .executeTakeFirst();
+    if (!person) return;
+
     // Look up the default tenant admin actor ID
     const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
     if (!tenantRow?.admin_id) {
@@ -338,11 +350,15 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     const creatorId = String(tenantRow.admin_id);
 
     for (const wf of activeWorkflows) {
+      if (!passesConditions(wf.conditions, person)) {
+        logger.info(`Person ${personId} does not meet conditions for workflow ${wf.id}. Skipping enrollment.`);
+        continue;
+      }
       try {
         await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
-      } catch (err: any) {
+      } catch (err) {
         // Safe check in case they're already enrolled
-        if (err.message?.includes('already enrolled')) {
+        if (err instanceof Error && err.message.includes('already enrolled')) {
           logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
         } else {
           logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
@@ -377,5 +393,261 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     } else if (normalized === 'unsubscribed') {
       await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
     }
+  }
+
+  // Spec §16 list — the STATUS toggle. "Pausing stops new runs immediately — nothing queues
+  // while paused." Setting `paused` only gates new enrollment (see triggerWorkflow's
+  // status='active' filter) and the worker (which skips paused workflows); it does not touch
+  // enrollments already mid-sequence.
+  public async setStatus(tenantId: string, workflowId: string, status: 'active' | 'paused', userId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const workflow = await trx
+          .selectFrom('workflows')
+          .select(['id', 'name'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', workflowId)
+          .executeTakeFirst();
+        if (!workflow) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Automation not found.' });
+        }
+
+        await trx
+          .updateTable('workflows')
+          .set({ status, updatedby_id: userId, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', workflowId)
+          .execute();
+
+        await this.userActivity.log(
+          {
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'update',
+            entity: 'workflows',
+            entity_id: workflowId,
+            quantity: 1,
+            metadata: { id: workflowId, action: status === 'paused' ? 'pause' : 'resume' },
+          },
+          trx,
+        );
+
+        return { success: true, status };
+      });
+  }
+
+  // Spec §16 right rail RECENT RUNS + the editor's failure narration: the last N executed steps.
+  public async getRuns(tenantId: string, workflowId: string, limit = 20) {
+    const rows = await this.getRepo()
+      .db.selectFrom('workflow_runs')
+      .leftJoin('persons', 'persons.id', 'workflow_runs.person_id')
+      .select([
+        'workflow_runs.id',
+        'workflow_runs.workflow_id',
+        'workflow_runs.person_id',
+        'workflow_runs.step_number',
+        'workflow_runs.step_kind',
+        'workflow_runs.status',
+        'workflow_runs.error',
+        'workflow_runs.created_at',
+        'persons.first_name as person_first_name',
+        'persons.last_name as person_last_name',
+      ])
+      .where('workflow_runs.tenant_id', '=', tenantId)
+      .where('workflow_runs.workflow_id', '=', workflowId)
+      .orderBy('workflow_runs.created_at', 'desc')
+      .limit(limit)
+      .execute();
+    return rows.map((r) => ({ ...r, id: String(r.id), workflow_id: String(r.workflow_id) }));
+  }
+
+  // Spec §16 list (/automations): every automation with the data the row needs — the recipe
+  // sentence (built client-side from trigger + steps + conditions), the RUNS 30D count, and the
+  // LAST RUN (status + failing step for the inline error line).
+  public async getWorkflowsList(tenantId: string) {
+    const db = this.getRepo().db;
+    const thirtyDaysAgo = new Date(Date.now() - THIRTY_DAYS_MS);
+
+    const workflows = await db
+      .selectFrom('workflows')
+      .select(['id', 'name', 'description', 'trigger_type', 'trigger_event_id', 'status', 'conditions'])
+      .where('tenant_id', '=', tenantId)
+      .orderBy('created_at', 'desc')
+      .execute();
+
+    if (workflows.length === 0) {
+      return { rows: [] as WorkflowListRow[], summary: { total: 0, active: 0, runs30d: 0 } };
+    }
+
+    const workflowIds = workflows.map((w) => String(w.id));
+
+    const steps = await db
+      .selectFrom('workflow_steps')
+      .select(['workflow_id', 'step_number', 'kind', 'config', 'delay_days', 'delay_unit', 'subject'])
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', 'in', workflowIds)
+      .orderBy('step_number', 'asc')
+      .execute();
+
+    const runs = await db
+      .selectFrom('workflow_runs')
+      .select(['workflow_id', 'status', 'step_number', 'step_kind', 'error', 'created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', 'in', workflowIds)
+      .where('created_at', '>=', thirtyDaysAgo)
+      .orderBy('created_at', 'desc')
+      .execute();
+
+    const lastRuns = await db
+      .selectFrom('workflow_runs')
+      .select(['workflow_id', 'status', 'step_number', 'step_kind', 'error', 'created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', 'in', workflowIds)
+      .orderBy('created_at', 'desc')
+      .execute();
+
+    const stepsByWorkflow = new Map<string, WorkflowListStep[]>();
+    for (const s of steps) {
+      const key = String(s.workflow_id);
+      const list = stepsByWorkflow.get(key) ?? [];
+      list.push({
+        step_number: s.step_number,
+        kind: s.kind,
+        config: s.config,
+        delay_days: s.delay_days,
+        delay_unit: s.delay_unit,
+        subject: s.subject,
+      });
+      stepsByWorkflow.set(key, list);
+    }
+
+    const runs30dByWorkflow = new Map<string, number>();
+    for (const r of runs) {
+      const key = String(r.workflow_id);
+      runs30dByWorkflow.set(key, (runs30dByWorkflow.get(key) ?? 0) + 1);
+    }
+
+    const lastRunByWorkflow = new Map<string, (typeof lastRuns)[number]>();
+    for (const r of lastRuns) {
+      const key = String(r.workflow_id);
+      // rows are date-desc; first seen per workflow is the most recent.
+      if (!lastRunByWorkflow.has(key)) lastRunByWorkflow.set(key, r);
+    }
+
+    const rows: WorkflowListRow[] = workflows.map((w) => {
+      const key = String(w.id);
+      const last = lastRunByWorkflow.get(key);
+      return {
+        id: key,
+        name: w.name,
+        description: w.description,
+        trigger_type: w.trigger_type,
+        trigger_event_id: w.trigger_event_id,
+        status: w.status,
+        conditions: w.conditions,
+        steps: stepsByWorkflow.get(key) ?? [],
+        runs_30d: runs30dByWorkflow.get(key) ?? 0,
+        last_run_at: last ? last.created_at : null,
+        last_run_status: last ? last.status : null,
+        last_run_error: last && last.status === 'failed' ? last.error : null,
+      };
+    });
+
+    const summary = {
+      total: rows.length,
+      active: rows.filter((r) => r.status === 'active').length,
+      runs30d: runs.length,
+    };
+
+    return { rows, summary };
+  }
+}
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface SequenceStepInput {
+  kind: 'wait' | 'send_email' | 'add_tag' | 'create_task' | 'notify_team';
+  config?: Record<string, unknown> | null;
+  delay_days?: number;
+  delay_unit?: 'days' | 'hours';
+  subject?: string | null;
+  preview_text?: string | null;
+  html_content?: string | null;
+  plain_text_content?: string | null;
+}
+
+interface WorkflowListStep {
+  step_number: number;
+  kind: string;
+  config: unknown;
+  delay_days: number;
+  delay_unit: string;
+  subject: string | null;
+}
+
+interface WorkflowListRow {
+  id: string;
+  name: string;
+  description: string | null;
+  trigger_type: string;
+  trigger_event_id: string | null;
+  status: string;
+  conditions: unknown;
+  steps: WorkflowListStep[];
+  runs_30d: number;
+  last_run_at: Date | null;
+  last_run_status: 'success' | 'failed' | null;
+  last_run_error: string | null;
+}
+
+// Spec §16 "ONLY ENROLL IF" — best-effort evaluation of a QueryBuilder group against a person
+// row. We resolve scalar person columns only; a rule that names a field we can't read is skipped
+// (permissive) rather than silently blocking enrollment. Supported ops: is / is_not / contains /
+// at_least (>=, numeric). TODO(§16): richer field sources (tags, lists, donation totals) once the
+// enrollment context carries them — evaluating those needs joins this person-row check doesn't do.
+function passesConditions(conditions: unknown, person: Record<string, unknown>): boolean {
+  if (conditions == null || typeof conditions !== 'object') return true;
+  const group = conditions as { conjunction?: string; rules?: unknown[] };
+  if (!Array.isArray(group.rules) || group.rules.length === 0) return true;
+
+  const results = group.rules.map((node) => {
+    if (node != null && typeof node === 'object' && (node as { kind?: string }).kind === 'group') {
+      return passesConditions(node, person);
+    }
+    return evaluateRule(node, person);
+  });
+
+  const conjunction = group.conjunction === 'OR' ? 'OR' : 'AND';
+  return conjunction === 'OR' ? results.some(Boolean) : results.every(Boolean);
+}
+
+function evaluateRule(node: unknown, person: Record<string, unknown>): boolean {
+  if (node == null || typeof node !== 'object') return true;
+  const rule = node as { field?: string; op?: string; value?: unknown };
+  if (!rule.field || !rule.op) return true;
+  if (!(rule.field in person)) return true; // unresolvable field — don't block.
+
+  const actual = person[rule.field];
+  const actualStr = actual == null ? '' : String(actual).toLowerCase();
+  const expected = rule.value == null ? '' : String(rule.value).toLowerCase();
+
+  switch (rule.op) {
+    case 'is':
+    case 'equals':
+      return actualStr === expected;
+    case 'is_not':
+    case 'notEquals':
+      return actualStr !== expected;
+    case 'contains':
+      return actualStr.includes(expected);
+    case 'at_least':
+    case 'gte': {
+      const a = Number(actual);
+      const b = Number(rule.value);
+      return Number.isFinite(a) && Number.isFinite(b) ? a >= b : true;
+    }
+    default:
+      return true; // unknown op — don't block.
   }
 }

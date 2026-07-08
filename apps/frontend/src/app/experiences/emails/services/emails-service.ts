@@ -1,14 +1,14 @@
 import { Service } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
 
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../environments/environment';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 
 @Service()
-export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
+export class EmailsService extends TRPCService<'emails' | 'email_list'> {
   public addComment(id: string, author_id: string, comment: string) {
     return this.api.emails.addComment.mutate({ id, author_id, comment });
   }
@@ -175,13 +175,13 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     try {
       const msStatus = await this.api.msSync.getConnectionStatus.query();
       if (msStatus?.syncing) isSyncing = true;
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     try {
       const googleStatus = await this.api.googleSync.getConnectionStatus.query();
       if (googleStatus?.syncing) isSyncing = true;
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     return isSyncing;

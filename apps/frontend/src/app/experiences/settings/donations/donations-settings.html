@@ -73,9 +73,7 @@
     </div>
 
     <!-- Webhook Instructions Info Card -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 shadow-sm"
-    >
+    <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
       <div class="space-y-1">
         <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
           <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
@@ -83,22 +81,48 @@
         </h4>
         <p class="text-xs text-base-content/65 max-w-xl">
           Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
-          completion notifications:
+          completion notifications. For security the token is shown only once, when you generate it.
         </p>
-        <div
-          class="mt-2 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all inline-block"
-        >
-          {{ webhookUrl() }}
+      </div>
+
+      @if (webhookToken()) {
+      <!-- Just generated — show the URL once with a copy button -->
+      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          Copy this URL now — it won't be shown again.
+        </p>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
+            {{ webhookUrl() }}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+            Copy URL
+          </button>
         </div>
       </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline btn-primary shrink-0 self-end sm:self-center"
-        (click)="copyWebhookUrl()"
-      >
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy URL
-      </button>
+      } @else {
+      <!-- No plaintext available (never generated, or generated in a previous session) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
+          @if (webhookConfigured()) {
+          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
+          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
+          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
+          No webhook token yet. Generate one to get your Stripe webhook URL. }
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary shrink-0"
+          [disabled]="isRegeneratingWebhook()"
+          (click)="regenerateWebhookToken()"
+        >
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
+        </button>
+      </div>
+      }
     </div>
   </div>
 
@@ -111,15 +135,20 @@
           <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
           Donation Limit Periods
         </h3>
-        <button type="button" class="btn btn-xs btn-primary" (click)="showAddPeriod.set(true)" [hidden]="showAddPeriod()">
+        <button
+          type="button"
+          class="btn btn-xs btn-primary"
+          (click)="showAddPeriod.set(true)"
+          [hidden]="showAddPeriod()"
+        >
           <pc-icon name="plus" [size]="3"></pc-icon>
           Add Period
         </button>
       </div>
       <p class="text-xs text-base-content/60">
-        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year.
-        The active period covering today is used for all eligibility checks.
-        If no period is defined, the fallback annual limit below applies.
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
+        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
+        below applies.
       </p>
 
       <!-- Existing periods list -->
@@ -168,33 +197,50 @@
         <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold">Period Name</label>
-          <input type="text" class="input input-sm input-bordered bg-base-200/30" placeholder="e.g. 2024 Municipal Campaign"
-            [value]="newPeriodName()" (input)="newPeriodName.set($any($event.target).value)" />
+          <input
+            type="text"
+            class="input input-sm input-bordered bg-base-200/30"
+            placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()"
+            (input)="newPeriodName.set($any($event.target).value)"
+          />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold">Start Date</label>
-            <input type="date" class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodStartDate()" (input)="newPeriodStartDate.set($any($event.target).value)" />
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()"
+              (input)="newPeriodStartDate.set($any($event.target).value)"
+            />
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
-            <input type="date" class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodEndDate()" (input)="newPeriodEndDate.set($any($event.target).value)" />
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()"
+              (input)="newPeriodEndDate.set($any($event.target).value)"
+            />
           </div>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold">Limit per Donor ($)</label>
           <div class="relative max-w-xs">
             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
-            <input type="number" min="1" class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [ngModel]="newPeriodLimit()" (ngModelChange)="newPeriodLimit.set($event)" />
+            <input
+              type="number"
+              min="1"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              [ngModel]="newPeriodLimit()"
+              (ngModelChange)="newPeriodLimit.set($event)"
+            />
           </div>
         </div>
         <div class="flex items-center gap-2 pt-1">
           <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
-            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> }
-            Save Period
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
           </button>
           <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
         </div>

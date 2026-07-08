@@ -1,4 +1,4 @@
-<div class="p-6 max-w-4xl mx-auto">
+<div class="p-6 max-w-4xl">
   <!-- Loading State -->
   @if (isLoading()) {
   <div class="flex flex-col items-center justify-center py-20">
@@ -8,16 +8,17 @@
   } @else {
   <div class="space-y-6">
     <pc-detail-header
-      [title]="isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '')"
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
+      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
       [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      icon="briefcase"
-      [iconSize]="7"
       [form]="form"
       [isLoading]="isLoading()"
       buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
       [showDelete]="!isNewMode()"
-      deleteText="Delete Company"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete company"
       (save)="save($event)"
       (delete)="deleteCompany()"
     ></pc-detail-header>
@@ -26,7 +27,23 @@
       <!-- Form Section -->
       <pc-card class="lg:col-span-2">
         <!-- Name -->
-        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
+        <pc-input
+          label="Company Name"
+          placeholder="e.g. Acme Corp"
+          [formField]="form.name"
+          (blurred)="onNameBlur()"
+        ></pc-input>
+        @if (lookingUp()) {
+        <p class="text-xs text-base-content/60 mt-1 pl-1 flex items-center gap-1">
+          <span class="loading loading-spinner loading-xs"></span>
+          Looking up details on Google…
+        </p>
+        } @else if (duplicateName()) {
+        <p class="text-xs text-warning mt-1 pl-1 flex items-center gap-1">
+          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+          A company with this name already exists — you can still save if this is a separate record.
+        </p>
+        }
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Website -->

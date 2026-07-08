@@ -2,6 +2,7 @@ import type { AuthorizationCodeRequest } from '@azure/msal-node';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { decryptSecret, encryptSecret } from '../../lib/secret-crypto';
 
 export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
@@ -68,8 +69,8 @@ export class MsOAuthService {
         .values({
           tenant_id: tenantId,
           user_id: connectedBy,
-          access_token: response.accessToken,
-          refresh_token: refreshToken,
+          access_token: encryptSecret(response.accessToken),
+          refresh_token: encryptSecret(refreshToken),
           expires_at: expiresAt,
           ms_email: response.account?.username ?? null,
           delta_link: NEEDS_FULL_SYNC,
@@ -78,8 +79,8 @@ export class MsOAuthService {
         .onConflict((oc) =>
           oc.column('tenant_id').doUpdateSet({
             user_id: connectedBy,
-            access_token: response.accessToken,
-            refresh_token: refreshToken,
+            access_token: encryptSecret(response.accessToken),
+            refresh_token: encryptSecret(refreshToken),
             expires_at: expiresAt,
             ms_email: response.account?.username ?? null,
             delta_link: NEEDS_FULL_SYNC,
@@ -116,6 +117,10 @@ export class MsOAuthService {
       throw new Error('No Microsoft account connected for this tenant');
     }
 
+    // Decrypt at the DB read boundary so the rest of this method works in plaintext.
+    row.access_token = decryptSecret(row.access_token);
+    row.refresh_token = decryptSecret(row.refresh_token);
+
     const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
     if (!isExpired) {
       return row.access_token;
@@ -142,8 +147,8 @@ export class MsOAuthService {
     await this.db
       .updateTable('ms_oauth_tokens')
       .set({
-        access_token: response.accessToken,
-        refresh_token: newRefreshToken,
+        access_token: encryptSecret(response.accessToken),
+        refresh_token: encryptSecret(newRefreshToken),
         expires_at: newExpiry,
         updated_at: new Date(),
       })

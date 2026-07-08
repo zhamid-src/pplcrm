@@ -39,7 +39,7 @@ describe('AuthGuard', () => {
     mockAuthSvc.getUser.mockReturnValue(null);
 
     TestBed.runInInjectionContext(() => {
-      authGuard({} as any, {} as any);
+      void authGuard({} as any, {} as any);
       expect(mockRouter.navigateByUrl).toHaveBeenCalledWith('/signin');
     });
   });

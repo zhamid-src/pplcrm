@@ -1,28 +1,64 @@
+import type { GridRow } from './types';
+
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
+  /** Native DOM event, present on click callbacks so a renderer's inner links can be resolved. */
+  event?: Event;
+}
+
 // Lightweight column definition used by DataGrid
 export interface ColumnDef {
-  cellClass?: string | ((p: any) => string | undefined);
+  cellClass?: string | ((p: CellParams) => string | undefined);
   cellDataType?: string;
-  cellEditorParams?: any;
-  cellRenderer?: (p: { data: any; value: any; colDef: ColumnDef }) => CellRendererResult;
-  cellRendererParams?: any;
-  comparator?: (a: any, b: any) => number;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
+  /** Optional muted second line under a door cell (e.g. "3 people" under a household address). */
+  doorSubtitle?: (p: CellParams) => string | null;
   editable?: boolean;
-  equals?: (a: any, b: any) => boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
   field?: string;
   headerName?: string;
   hide?: boolean;
-  onCellClicked?: (event: any) => void;
-  onCellDoubleClicked?: (event: any) => void;
-  isCellInteractive?: (row: any) => boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
   tagColumn?: boolean;
-  valueFormatter?: (p: { data: any; value: any; colDef: ColumnDef }) => any;
+  valueFormatter?: (p: CellParams) => unknown;
 
   // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: any) => any;
-  valueSetter?: (p: any) => boolean;
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
   minWidth?: number;
+  /**
+   * Preferred fixed width (px) when the user hasn't manually resized the column. Short columns
+   * (a date, a count) should set this so they don't stretch to fill leftover space. Ignored for
+   * `flex` columns. Only honored on grids that declare at least one `flex` column.
+   */
+  width?: number;
+  /**
+   * Marks a column as elastic: it absorbs leftover horizontal space instead of the browser
+   * spreading slack across every column. Use it for the primary text columns (the door, a long
+   * description) so short columns stay content-sized. Multiple flex columns share the slack.
+   */
+  flex?: boolean;
 }
 
 type CellRendererResult = string | HTMLElement;
 
 export const SELECTION_COLUMN: ColumnDef = {};
+
+/**
+ * Muted text color for a grid's secondary columns, so the bold door column reads as the
+ * primary way into the record and everything else recedes. Apply as a column `cellClass`.
+ */
+export const SECONDARY_CELL_CLASS = 'text-base-content/70';

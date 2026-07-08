@@ -22,7 +22,7 @@ export async function createTokens(
     existingExpiresAt?: Date | null;
   },
   trx?: Transaction<Models>,
-): Promise<{ auth_token: string; refresh_token: string }> {
+): Promise<{ auth_token: string; refresh_token: string; refresh_expires_at: Date | null }> {
   if (input.oldSession) await sessions.deleteBySessionId(input.oldSession, trx);
 
   const plainSessionId = generateToken();
@@ -60,7 +60,7 @@ export async function createTokens(
       name: input.name,
       session_id: plainSessionId,
     });
-    return { auth_token, refresh_token: plainRefreshToken };
+    return { auth_token, refresh_token: plainRefreshToken, refresh_expires_at: expiresAt };
   } catch (err) {
     throw new InternalError('Token creation failed', undefined, { cause: err });
   }

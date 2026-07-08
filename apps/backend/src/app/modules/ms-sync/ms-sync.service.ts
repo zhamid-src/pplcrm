@@ -9,16 +9,37 @@ import { logger } from '../../logger';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStatusCode(err: unknown): number | undefined {
+  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
+}
+
+function getRetryAfterHeader(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined;
+  const headers = err['headers'];
+  if (!isRecord(headers)) return undefined;
+  const getFn = headers['get'];
+  if (typeof getFn === 'function') {
+    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
+    if (typeof value === 'string') return value;
+  }
+  const raw = headers['retry-after'];
+  return typeof raw === 'string' ? raw : undefined;
+}
+
 async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let attempt = 0;
   while (true) {
     attempt++;
     try {
       return await callFn();
-    } catch (err: any) {
-      if (err?.statusCode === 429 && attempt <= maxRetries) {
+    } catch (err) {
+      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
         let delayMs = 5000;
-        const retryAfter = err?.headers?.get?.('Retry-After') || err?.headers?.['retry-after'];
+        const retryAfter = getRetryAfterHeader(err);
         if (retryAfter) {
           const parsed = parseInt(retryAfter, 10);
           if (!isNaN(parsed)) {
@@ -108,8 +129,8 @@ export class MsSyncService {
           } else {
             hasMore = false;
           }
-        } catch (err: any) {
-          if (err?.statusCode === 410) {
+        } catch (err) {
+          if (getStatusCode(err) === 410) {
             // Delta link expired for this folder, clear it
             delete nextDeltaMap[folder.wellKnownName];
             isInitialSync = true;

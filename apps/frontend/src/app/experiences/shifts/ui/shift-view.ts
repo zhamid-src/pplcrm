@@ -6,16 +6,20 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ShiftsService } from '../services/shifts-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-shift-view',
@@ -39,7 +43,10 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 export class ShiftViewComponent {
   readonly id = input.required<string>();
 
+  protected readonly recordNav = injectRecordNavigation('shift', this.id);
+
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
@@ -50,6 +57,11 @@ export class ShiftViewComponent {
   protected readonly initialized = signal(false);
   protected readonly event = signal<any | null>(null);
   protected readonly roster = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Shifts', route: '/events/shifts' },
+    { label: this.event()?.name || 'Volunteer event' },
+  ]);
 
   // Active tab state
   protected activeTab = signal<string>('roster');
@@ -75,15 +87,15 @@ export class ShiftViewComponent {
   });
 
   protected readonly publicUrl = computed(() => {
-    const detail = this.event();
-    if (!detail || !detail.public_url) return '';
-    return environment.apiUrl + detail.public_url;
+    const slug = this.event()?.slug;
+    if (!slug) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
@@ -98,7 +110,7 @@ export class ShiftViewComponent {
       const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
       this.roster.set(rosterData || []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the shift. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -106,7 +118,7 @@ export class ShiftViewComponent {
   }
 
   protected editEvent() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteEvent() {
@@ -124,8 +136,16 @@ export class ShiftViewComponent {
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete event';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete event';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -156,4 +176,8 @@ export class ShiftViewComponent {
         return 'ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

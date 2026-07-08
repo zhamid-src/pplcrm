@@ -14,6 +14,7 @@
     <pc-form-actions
       [isLoading]="submitting()"
       [signalForm]="form"
+      [saveAlwaysEnabled]="true"
       (btn1Clicked)="submit($event)"
       [buttonsToShow]="'two'"
       [btn1Text]="'Create Task'"
@@ -28,6 +29,7 @@
         <span class="label-text">Task Name <span class="text-error">*</span></span>
       </label>
       <input
+        #nameInput
         id="name"
         type="text"
         placeholder="Enter task name..."
@@ -78,7 +80,7 @@
           [formField]="form.status"
         >
           @for (s of statuses; track s) {
-          <option [value]="s">{{ toTitleCase(s) }}</option>
+          <option [value]="s">{{ statusLabels[s] }}</option>
           }
         </select>
       </div>
@@ -101,25 +103,37 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Due Date -->
+      <!-- Due -->
       <div class="form-control w-full">
-        <label class="label font-semibold text-sm" for="due_at">
-          <span class="label-text">Due Date</span>
+        <label class="label font-semibold text-sm">
+          <span class="label-text">Due</span>
         </label>
-        <input
-          id="due_at"
-          type="date"
-          class="input input-bordered w-full focus:input-primary transition-all duration-200"
-          [formField]="form.due_at"
-          [class.input-error]="form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())"
-        />
-        @if (form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())) { @for (err of
-        form.due_at().errors(); track err) {
-        <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
-          <pc-icon name="x-mark" [size]="3"></pc-icon>
-          {{ err.message }}
-        </p>
-        } }
+        <div class="join">
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'today'"
+            (click)="pickDue('today')"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'tomorrow'"
+            (click)="pickDue('tomorrow')"
+          >
+            Tomorrow
+          </button>
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'next_week'"
+            (click)="pickDue('next_week')"
+          >
+            Next week
+          </button>
+        </div>
       </div>
 
       <!-- Assigned To -->

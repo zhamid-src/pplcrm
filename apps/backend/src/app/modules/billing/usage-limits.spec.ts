@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { BaseRepository } from '../../lib/base.repo';
 import { checkTenantUsage, getPlanLimits, queueUsageLimitCheck } from './usage-limits';
 
@@ -76,7 +76,7 @@ describe('Usage Limits System', () => {
   });
 
   it('should trigger alert at 90% and 100% capacity and reset flag on reduction', async () => {
-    const limits = getPlanLimits('free');
+    const _limits = getPlanLimits('free');
 
     // 1. Seed contacts to hit exactly 90% capacity of the Free Plan (90% of 500 = 450 contacts)
     // For performance, we don't need to insert 450 rows, but wait, the query uses sql<number>`count(*)`

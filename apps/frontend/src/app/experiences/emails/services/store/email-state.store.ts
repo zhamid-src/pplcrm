@@ -25,7 +25,14 @@ export class EmailStateStore {
 
   public readonly isBodyExpanded = signal<boolean>(false);
 
+  /** Person context rail (§5): collapsed = 48px identity strip, expanded = 236px card. */
+  public readonly personRailCollapsed = signal<boolean>(false);
+
   public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  public togglePersonRail(): void {
+    this.personRailCollapsed.update((v) => !v);
+  }
 
   public clearHasAttachment(emailId: string) {
     this.hasAttachmentByEmailId.update((m) => {

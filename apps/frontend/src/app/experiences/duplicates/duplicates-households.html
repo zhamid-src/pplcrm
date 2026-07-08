@@ -8,8 +8,9 @@
   [currentPage]="currentPage()"
   [totalPages]="totalPages()"
   [totalGroups]="totalGroups()"
-  (onNext)="nextPage()"
-  (onPrev)="prevPage()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
 >
   @for (group of groups(); track group; let gIdx = $index) {
   <div
@@ -20,7 +21,10 @@
         <span class="badge badge-warning badge-sm">Warning</span>
         <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
       </div>
-      <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
     </div>
 
     <div class="card-body p-6">
@@ -89,7 +93,7 @@
           [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
           [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
           [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (onMerge)="mergeGroup(gIdx)"
+          (merge)="mergeGroup(gIdx)"
         ></pc-merge-summary>
       </div>
     </div>

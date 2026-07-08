@@ -6,6 +6,12 @@ import type {
   AddMarketingEmailObj,
   AddTaskObj,
   AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
@@ -29,9 +35,11 @@ import type {
   exportCsvInput,
   exportCsvResponse,
   queueExportInput,
+  logInstantExportInput,
   dataExportRecord,
   sortModelItem,
   InviteAuthUserObj,
+  ProfilePreferencesObj,
   UpdateAuthUserObj,
   Verify2FAObj,
   ImportListItemObj,
@@ -44,6 +52,9 @@ import type {
   AddWebFormObj,
   UpdateWebFormObj,
   WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
   QueryBuilderRuleNode,
   QueryBuilderGroupNode,
   QueryBuilderNode,
@@ -130,7 +141,21 @@ export type UpdateListType = z.infer<typeof UpdateListObj>;
 
 export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
 
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
 export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
 
 export type AddTaskType = z.infer<typeof AddTaskObj>;
 export type TasksType = z.infer<typeof TasksObj>;
@@ -138,6 +163,7 @@ export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
 export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
 export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
 export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
 export type DataExportRecordType = z.infer<typeof dataExportRecord>;
 
 export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
@@ -151,6 +177,9 @@ export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
 export type AddWebFormType = z.infer<typeof AddWebFormObj>;
 export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
 export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
 
 export type WorkflowsType = z.infer<typeof WorkflowObj>;
 export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;

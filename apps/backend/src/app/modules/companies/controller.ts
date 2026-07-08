@@ -1,7 +1,11 @@
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
+import { CompaniesEnrichmentService, type CompanyLookupResult } from './services/companies-enrichment.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
@@ -12,14 +16,40 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     super(new CompaniesRepo());
   }
 
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
+
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
+  }
+
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
     const company = (await super.getOneById(input)) as any;
     if (company) {
-      let currentJson: any = {};
-      if (company.json) {
-        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+      let enrichment: any = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
       }
-      if (!currentJson || !currentJson.google_enriched) {
+      if (!enrichment || !enrichment.google_enriched) {
         await this.getRepo()
           .db.insertInto('background_jobs')
           .values({
@@ -39,6 +69,63 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       }
     }
     return company;
+  }
+
+  /**
+   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
+   * "Re-check Google" button). Transactional-outbox: verify the company is in
+   * the tenant, then insert the background job. `force` re-runs even if the
+   * company was already enriched.
+   */
+  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
+    const company = await this.getRepo()
+      .db.selectFrom('companies')
+      .select('id')
+      .where('id', '=', id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!company) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'enrich_company_google',
+          company_id: String(id),
+          tenant_id: String(auth.tenant_id),
+          force,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+
+    return { queued: true };
+  }
+
+  /**
+   * Interactive add-time preview: look up a company by name on Google Places and
+   * return the fields without persisting anything (no company row exists yet).
+   * Powers the "auto-fill on name blur" behavior in the New Company form.
+   */
+  public lookupEnrichment(name: string): Promise<CompanyLookupResult> {
+    return CompaniesEnrichmentService.lookupByName(name);
+  }
+
+  /**
+   * Background duplicate-name check for the add/edit form. Case-insensitive,
+   * tenant-scoped, and (in edit) ignores the record being edited. Drives the
+   * "a company by that name already exists" hint — advisory only, never blocks
+   * saving, since same-named companies can be legitimate.
+   */
+  public nameExists(name: string, auth: IAuthKeyPayload, excludeId?: string): Promise<boolean> {
+    return this.getRepo().nameExists(auth.tenant_id, name, excludeId);
   }
 
   public addCompany(payload: any, auth: IAuthKeyPayload) {
@@ -67,6 +154,10 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
 
   public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
     return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
   private readonly importsRepo = new ImportsRepo();
@@ -229,9 +320,9 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
               await (trx as any).insertInto('companies').values(companyRows).execute();
             });
           results.inserted += validRows.length;
-        } catch (err: any) {
+        } catch (err) {
           results.errors += validRows.length;
-          errorMessages.push(err?.message || String(err));
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
         }
       }
 
@@ -246,6 +337,13 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
           updated_at: new Date(),
         } as any,
       });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
     }
 
     return {

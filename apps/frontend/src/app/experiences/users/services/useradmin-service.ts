@@ -39,7 +39,7 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 
   public getAll(options?: getAllOptionsType) {
     return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: IAuthUserRecord[];
+      rows: Record<string, unknown>[];
       count: number;
     }>;
   }
