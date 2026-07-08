@@ -55,7 +55,10 @@ export class ConfirmDialogHost {
     }
   });
 
-  public cancelBtnClass = computed(() => (this.state()?.emphasizeCancel ? 'btn-primary' : ''));
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : ''));
 
   public choiceBtnClass(v?: DialogVariant): string {
     if (!v) return '';
