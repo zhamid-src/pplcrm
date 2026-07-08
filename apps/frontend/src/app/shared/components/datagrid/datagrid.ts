@@ -449,10 +449,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return val !== undefined && val !== null && val !== '';
   }
-  // Public so the fetch controller can flip it the moment a real fetch runs.
-  // (The isLoading() effect below is a fallback; the loading gate suppresses
-  // sub-300ms spinners, so on a fast fetch isLoading() may never flip true.)
-  public readonly hasInitiatedLoad = signal(false);
+  // "A load has begun" comes straight from the loading gate's ungated `started`
+  // signal — true the moment begin() runs, even for a sub-300ms fetch that never
+  // trips the (delayed) spinner. No manual bookkeeping needed here.
+  public readonly hasInitiatedLoad = this._loading.started;
   public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
@@ -893,11 +893,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           void this.refresh();
         });
       }
-    });
-
-    // Mark that a load has started — prevents empty-state flash before first fetch
-    effect(() => {
-      if (this.isLoading()) this.hasInitiatedLoad.set(true);
     });
 
     // Clear the tag search box whenever a different cell enters edit mode
