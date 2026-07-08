@@ -1,0 +1,140 @@
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">Yard-sign requests</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+        <pc-icon name="map-pin" [size]="4"></pc-icon>
+        Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs with live counts -->
+  <div role="tablist" class="tabs tabs-bordered w-fit">
+    @for (tab of tabs; track tab.key) {
+    <button
+      type="button"
+      role="tab"
+      class="tab gap-1.5"
+      [class.tab-active]="activeTab() === tab.key"
+      (click)="setTab(tab.key)"
+    >
+      {{ tab.label }}
+      <span class="text-xs font-semibold tabular-nums text-base-content/50">{{ countFor(tab.key) }}</span>
+    </button>
+    }
+  </div>
+
+  <!-- Bulk selection bar -->
+  @if (selectedCount() > 0) {
+  <div
+    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
+  >
+    <span class="text-sm text-base-content/70">
+      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
+      of {{ rows().length }} rows on this page selected
+    </span>
+    @if (newInView() > selectedCount()) {
+    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
+      Select all {{ newInView() }} new
+    </button>
+    }
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
+        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
+        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table -->
+  <div class="overflow-x-auto rounded-xl border border-base-300">
+    <table class="table table-sm">
+      <thead>
+        <tr class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">
+          <th class="w-8"></th>
+          <th>Requested by</th>
+          <th>Address</th>
+          <th>Status</th>
+          <th>Readiness</th>
+          <th>Source</th>
+          <th>Route</th>
+          <th>Requested</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.id) {
+        <tr class="hover:bg-base-200/40">
+          <td>
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="isSelected(row.id)"
+              (change)="toggle(row.id)"
+              [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+            />
+          </td>
+          <td>
+            @if (row.person_id) {
+            <a
+              class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+              [routerLink]="['/people', row.person_id]"
+            >
+              {{ row.person_name || 'Unnamed person' }}
+            </a>
+            } @else {
+            <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+            }
+          </td>
+          <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+          <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+          <td>
+            <div class="flex items-center gap-2">
+              <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+              @if (row.geocoding_status === 'failed') {
+              <a
+                class="text-xs text-primary underline underline-offset-2"
+                [routerLink]="['/households', row.household_id]"
+              >
+                Edit household
+              </a>
+              }
+            </div>
+          </td>
+          <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+          <td>
+            @if (row.route_id) {
+            <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+              {{ row.route_name || 'Route' }}
+            </a>
+            } @else {
+            <span class="text-base-content/40">—</span>
+            }
+          </td>
+          <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+            {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+
+    @if (loaded() && rows().length === 0) {
+    <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
+      <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+      <p class="text-sm text-base-content/60">No yard-sign requests in this view yet.</p>
+      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">Plan routes</button>
+    </div>
+    }
+  </div>
+</div>

@@ -17,7 +17,7 @@ const COMPOSED_ADDRESS_SQL = sql<string>`COALESCE(
   ''
 )`;
 
-export interface DeliveryRequestGridRow {
+export type DeliveryRequestGridRow = {
   id: string;
   status: string;
   source: string;
@@ -30,7 +30,7 @@ export interface DeliveryRequestGridRow {
   geocoding_status: string | null;
   route_id: string | null;
   route_name: string | null;
-}
+};
 
 export class DeliveryRequestsRepo extends BaseRepository<'delivery_requests'> {
   constructor() {

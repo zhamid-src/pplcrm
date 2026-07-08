@@ -144,7 +144,14 @@ export const SidebarItems: ISidebarItem[] = [
     name: `FIELD`,
     type: 'subheading',
     children: [
-      // Wave 2: Canvassing (§13), Deliveries (§14) — surfaces do not exist yet.
+      // Wave 2: Canvassing (§13) surface does not exist yet.
+      {
+        name: 'Deliveries',
+        route: '/deliveries',
+        icon: 'map-pin',
+        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
+        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
+      },
       {
         name: 'Events',
         route: '/events/pages',
