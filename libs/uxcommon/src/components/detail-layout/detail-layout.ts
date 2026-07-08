@@ -22,6 +22,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           [statusChip]="statusChip()"
           [icon]="icon()"
           [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
           [isLoading]="isLoading()"
           [disabled]="disabled()"
           [showActions]="showActions()"
@@ -76,6 +77,8 @@ export class DetailLayout {
   public statusChip = input<string | null>(null);
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
   public isLoading = input.required<boolean>();
   public error = input<string | null | undefined>();
   public hasRecord = input<boolean>(true);

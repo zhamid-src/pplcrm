@@ -62,9 +62,11 @@ Then bind the handle straight through to the layout (`company-view.html`):
 (nextRecord)="recordNav.goToNext()"
 ```
 
-The pager renders inline with the breadcrumb trail and `J`/`K` keys
-navigate next/prev while the page is open — but **only when `positionLabel` is set** and the
-focus isn't in an input/textarea/select/contenteditable (`detail-layout.ts`). If the user
+The pager renders **inside the detail header card** (`pc-detail-header`), left of the action
+buttons — matching the design source. The navbar breadcrumb strip shows the trail only; the
+header deliberately publishes a null pager to `BreadcrumbsService` so there is no duplicate.
+`J`/`K` keys navigate next/prev while the page is open — but **only when `positionLabel` is set**
+and the focus isn't in an input/textarea/select/contenteditable (`detail-layout.ts`). If the user
 deep-linked straight to a record (no grid handoff), `positionLabel` is `null`, the pager is
 hidden, and J/K do nothing. That's intended: no fake "1 of 1".
 

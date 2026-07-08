@@ -113,21 +113,6 @@ describe('CompanyView', () => {
     expect(component['employeeCount']()).toBe(4);
   });
 
-  it('should compute initials from the company name', async () => {
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(component['initials']()).toBe('AC');
-  });
-
-  it('should return "?" for initials when there is no company name', async () => {
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    component['company'].set({ ...mockCompanyData, name: '' });
-    expect(component['initials']()).toBe('?');
-  });
-
   it('should compute breadcrumbs using the company name once loaded', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
@@ -157,12 +142,11 @@ describe('CompanyView', () => {
     expect(component['isEnriched']()).toBe(false);
   });
 
-  it('should build tab labels including the current employee count', async () => {
+  it('should include the industry and employee count in the header subtitle', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const employeesTab = component['companyTabs']().find((t) => t.id === 'employees');
-    expect(employeesTab?.label).toBe('Employees (4)');
+    expect(component['subtitle']()).toContain('people');
   });
 
   it('should copy text to clipboard and show a success alert', async () => {

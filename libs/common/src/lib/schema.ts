@@ -1,4 +1,5 @@
 export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
 export * from './schemas/auth.schema';
 export * from './schemas/tags.schema';
 export * from './schemas/lists.schema';

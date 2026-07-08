@@ -32,6 +32,40 @@ describe('ActivityController', () => {
     expect(result).toEqual(mockFeedResult);
   });
 
+  it('should log a user-authored interaction against a record via repo.log', async () => {
+    const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
+    const spy = vi.spyOn((controller as any).repo, 'log').mockResolvedValue(undefined);
+
+    await controller.logInteraction(auth, {
+      entity: 'persons',
+      entityId: 'p-42',
+      type: 'call',
+      note: '  left a voicemail  ',
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant_id: 'tenant-1',
+        user_id: 'user-1',
+        activity: 'call',
+        entity: 'persons',
+        entity_id: 'p-42',
+        metadata: expect.objectContaining({ note: 'left a voicemail', occurred_at: expect.any(String) }),
+      }),
+    );
+  });
+
+  it('should store a null note when none is provided', async () => {
+    const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
+    const spy = vi.spyOn((controller as any).repo, 'log').mockResolvedValue(undefined);
+
+    await controller.logInteraction(auth, { entity: 'households', entityId: 'h-1', type: 'door_knock' });
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ activity: 'door_knock', metadata: expect.objectContaining({ note: null }) }),
+    );
+  });
+
   it('should delete activities older than the flat 90-day retention window for every tenant', async () => {
     const mockTenants = [{ id: '1' }, { id: '2' }];
 

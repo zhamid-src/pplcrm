@@ -69,6 +69,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.getPeopleCount.query(id);
   }
 
+  /** Most recent canvass at this household's door, or null if never canvassed. */
+  public getLastCanvass(id: string) {
+    return this.api.households.getLastCanvass.query(id);
+  }
+
   public update(id: string, data: UpdateHouseholdsType) {
     return this.api.households.update.mutate({ id: id, data });
   }
