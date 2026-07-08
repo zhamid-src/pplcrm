@@ -19,6 +19,7 @@ import { DuplicatesService } from '@experiences/duplicates/services/duplicates-s
 import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -39,6 +40,7 @@ export class Sidebar {
   private readonly destroyRef = inject(DestroyRef);
   private readonly tasksSvc = inject(TasksService);
   private readonly duplicatesSvc = inject(DuplicatesService);
+  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
 
   /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
    *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
@@ -47,6 +49,10 @@ export class Sidebar {
   /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
    *  session loading shape as `taskSlaBreaches` above. */
   protected readonly duplicatesQueueCount = signal<number | null>(null);
+
+  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly deliveriesReadyCount = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -108,6 +114,16 @@ export class Sidebar {
 
     void this.loadTaskSlaBreaches();
     void this.loadDuplicatesQueueCount();
+    void this.loadDeliveriesReadyCount();
+  }
+
+  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
+  private async loadDeliveriesReadyCount(): Promise<void> {
+    try {
+      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
   }
 
   private async loadTaskSlaBreaches(): Promise<void> {
@@ -133,6 +149,7 @@ export class Sidebar {
   private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
     const breaches = this.taskSlaBreaches();
     const duplicatesQueue = this.duplicatesQueueCount();
+    const deliveriesReady = this.deliveriesReadyCount();
     return items.map((item) => {
       const children = item.children ? this.applyBadges(item.children) : undefined;
       if (item.route === '/tasks') {
@@ -140,6 +157,9 @@ export class Sidebar {
       }
       if (item.route === '/duplicates') {
         return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
+      }
+      if (item.route === '/deliveries') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
       }
       return children ? { ...item, children } : item;
     });

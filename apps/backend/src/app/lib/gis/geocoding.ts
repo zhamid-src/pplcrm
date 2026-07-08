@@ -1,7 +1,7 @@
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
-import { env } from '../../../env';
+import { geocodeAddress } from './geocode-address';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { logger } from '../../logger';
@@ -122,79 +122,47 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
     return;
   }
 
-  // 2. Throttle API calls to protect rate limits (e.g. 200ms sleep)
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
+  // 2. Resolve coordinates via the shared geocodeAddress helper (real API in prod, deterministic
+  //    dev coordinates under isMockOrTest). ZERO_RESULTS ⇒ null ⇒ mark failed; transient errors
+  //    re-throw to trigger worker retry with backoff.
   let lat: number | null = null;
   let lng: number | null = null;
   let formattedAddress: string | null = null;
   let addressType: string | null = null;
 
-  const apiKey = env.googleMapsApiKey;
-  const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
-
   const addressStr = [hh.street_num, hh.street1, hh.street2, hh.city, hh.state, hh.zip, hh.country]
     .filter(Boolean)
     .join(', ');
 
-  if (!isMockOrTest) {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-        addressStr,
-      )}&key=${apiKey}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Google Maps Geocoding API returned status ${response.status}`);
-      }
-      const data: any = await response.json();
-
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const result = data.results[0];
-        lat = result.geometry.location.lat;
-        lng = result.geometry.location.lng;
-        formattedAddress = result.formatted_address;
-        addressType = result.geometry.location_type;
-      } else if (data.status === 'ZERO_RESULTS') {
-        logger.info(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
-        await db
-          .updateTable('households')
-          .set({
-            geocoding_status: 'failed',
-            district: null,
-            precinct: null,
-            ward: null,
-            updated_at: new Date(),
-          })
-          .where('id', '=', householdId)
-          .where('tenant_id', '=', tenantId)
-          .execute();
-        return;
-      } else {
-        // Transient error like OVER_QUERY_LIMIT, REQUEST_DENIED, etc.
-        throw new Error(`Google Maps Geocoding API error status: ${data.status}`);
-      }
-    } catch (err) {
-      logger.error({ err }, `Geocoding API call failed for household ${householdId}`);
-      // Re-throw to trigger worker retry with backoff
-      throw err;
-    }
-  } else {
-    // 3. Fallback deterministic coordinates for testing and development
-    // Create a simple hash of the address string to get reproducible coordinates
-    let hash = 0;
-    for (let i = 0; i < addressStr.length; i++) {
-      hash = addressStr.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const val = Math.abs(hash % 1000) / 1000; // Value between 0 and 1
-
-    // Map address to Chicago Loop, North Side, or West Side coordinates
-    // Lat bounds: 41.85 to 41.93. Lng bounds: -87.69 to -87.61
-    lat = 41.85 + val * 0.08;
-    lng = -87.69 + val * 0.08;
-    formattedAddress = `${hh.street_num || '123'} ${hh.street1 || 'Main St'}, ${hh.city || 'Chicago'}, ${hh.state || 'IL'} ${hh.zip || '60601'}`;
-    addressType = 'rooftop';
-    logger.info(`Geocoding job simulated in dev/test for household ${householdId} at lat=${lat}, lng=${lng}`);
+  let geocoded: Awaited<ReturnType<typeof geocodeAddress>>;
+  try {
+    geocoded = await geocodeAddress(addressStr);
+  } catch (err) {
+    logger.error({ err }, `Geocoding API call failed for household ${householdId}`);
+    throw err;
   }
+
+  if (!geocoded) {
+    logger.info(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
+    await db
+      .updateTable('households')
+      .set({
+        geocoding_status: 'failed',
+        district: null,
+        precinct: null,
+        ward: null,
+        updated_at: new Date(),
+      })
+      .where('id', '=', householdId)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+    return;
+  }
+
+  lat = geocoded.lat;
+  lng = geocoded.lng;
+  formattedAddress = geocoded.formatted_address;
+  addressType = geocoded.type;
 
   // 4. Match against GIS Boundaries
   let district: string | null = null;

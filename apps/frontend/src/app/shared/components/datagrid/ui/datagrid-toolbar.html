@@ -141,7 +141,7 @@
         <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
       </li>
       } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
+      <div class="divider divider-horizontal"></div>
       } @if (!grid.disableImport()) {
       <li>
         <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
@@ -163,8 +163,10 @@
 
 <!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
      Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3">
-  <ul class="menu menu-horizontal flex-row items-center gap-0.5 rounded-lg border border-base-300 p-1 relative z-30">
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
     <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
     <pc-grid-tool-btn
       [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
@@ -176,8 +178,7 @@
     <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
     <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
-    <li class="pointer-events-none flex items-center px-1"><span class="h-5 w-px bg-base-300"></span></li>
-
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
     <pc-grid-tool-btn
       [enabled]="!grid.disableImport()"
       [tip]="'Import data from CSV'"
@@ -191,7 +192,7 @@
       (action)="onExportCsv()"
     />
 
-    <li class="pointer-events-none flex items-center px-1"><span class="h-5 w-px bg-base-300"></span></li>
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
 
     <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
     <pc-grid-tool-btn
@@ -211,7 +212,7 @@
       (action)="grid.openAdvancedFilterBuilder()"
     />
 
-    <li class="pointer-events-none flex items-center px-1"><span class="h-5 w-px bg-base-300"></span></li>
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
 
     <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
       <pc-dg-columns-dropdown [grid]="grid" />
