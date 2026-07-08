@@ -18,13 +18,11 @@
   <div class="flex flex-col gap-4 rounded-xl border border-base-300 bg-base-100 p-5">
     <label class="flex flex-col gap-1.5">
       <span class="text-sm font-medium text-base-content">Start address</span>
-      <input
-        class="input input-bordered w-full text-sm"
-        type="text"
+      <pc-address-autocomplete
         placeholder="Where drivers set off from"
-        [ngModel]="startAddress()"
-        (ngModelChange)="startAddress.set($event)"
-      />
+        [value]="startAddress()"
+        (textChange)="startAddress.set($event)"
+      ></pc-address-autocomplete>
       @if (preview()?.start?.address) {
       <span class="mt-1 w-fit"
         ><pc-status-badge type="success">Located · {{ preview()!.start.address }}</pc-status-badge></span

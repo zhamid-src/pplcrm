@@ -93,7 +93,7 @@ export class DeliveriesController {
       .where('status', 'in', ['new', 'approved'])
       .executeTakeFirst();
     if (open) {
-      throw new ConflictError('This household already has an open yard-sign request.');
+      throw new ConflictError('This household already has an open delivery request.');
     }
     const personId = input.person_id ? String(input.person_id) : null;
     const row = {

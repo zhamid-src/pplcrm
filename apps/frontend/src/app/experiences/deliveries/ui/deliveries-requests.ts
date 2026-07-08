@@ -22,7 +22,8 @@ const STATUS_TONE: Record<string, PcStatusType> = {
 
 /**
  * Deliveries requests grid (spec §4.1). Status tabs with live counts, readiness narration via the
- * shared geocode chip, bulk approve/decline, and the always-enabled "Plan routes · N ready" primary.
+ * shared geocode chip, bulk approve/decline, and the "Plan routes · N ready" primary — disabled
+ * when nothing is approved-and-located, since there would be nothing to route.
  */
 @Component({
   selector: 'pc-deliveries-requests',

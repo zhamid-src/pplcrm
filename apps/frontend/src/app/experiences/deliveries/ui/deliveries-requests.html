@@ -3,13 +3,19 @@
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Yard-sign requests</h1>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">Delivery requests</h1>
     </div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-        <pc-icon name="map-pin" [size]="4"></pc-icon>
-        Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-      </button>
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
     </div>
   </div>
 
@@ -132,8 +138,16 @@
     @if (loaded() && rows().length === 0) {
     <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
       <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-      <p class="text-sm text-base-content/60">No yard-sign requests in this view yet.</p>
-      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">Plan routes</button>
+      <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
+      @if (readyCount() > 0) {
+      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+        Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+      </button>
+      } @else {
+      <p class="max-w-sm text-xs text-base-content/45">
+        Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
+      </p>
+      }
     </div>
     }
   </div>
