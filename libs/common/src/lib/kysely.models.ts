@@ -92,6 +92,7 @@ export interface Models {
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
+  workflow_runs: WorkflowRuns;
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
@@ -890,6 +891,8 @@ export interface Workflows extends RecordType {
   trigger_type: string;
   status: string;
   trigger_event_id: string | null;
+  // Spec §16 ONLY ENROLL IF — a QueryBuilder group node (see core.schema QueryBuilderGroupNode).
+  conditions: Json | null;
 }
 
 export interface WorkflowSteps {
@@ -899,12 +902,31 @@ export interface WorkflowSteps {
   step_number: number;
   delay_days: number;
   delay_unit: 'days' | 'hours';
-  subject: string;
+  // Spec §16: steps are polymorphic. `kind` discriminates; the value each kind carries lives
+  // in `config` (send_email uses subject/html/text columns; wait uses delay_days/delay_unit).
+  kind: 'wait' | 'send_email' | 'add_tag' | 'create_task' | 'notify_team';
+  config: Json | null;
+  subject: string | null;
   preview_text: string | null;
   html_content: string | null;
   plain_text_content: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+// Spec §16: one row per executed step (success or failure) — feeds the list's RUNS 30D /
+// LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for narration.
+export interface WorkflowRuns {
+  id: Generated<string>;
+  tenant_id: string;
+  workflow_id: string;
+  enrollment_id: string | null;
+  person_id: string | null;
+  step_number: number | null;
+  step_kind: string | null;
+  status: 'success' | 'failed';
+  error: string | null;
+  created_at: Generated<Timestamp>;
 }
 
 export interface WorkflowEnrollments {

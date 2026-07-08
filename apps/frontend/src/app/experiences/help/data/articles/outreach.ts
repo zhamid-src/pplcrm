@@ -111,15 +111,16 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe — the trigger and its steps — with how many times it ran in the last 30 days and how the last run went.',
       },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
       {
         kind: 'list',
         items: [
-          '**Trigger** — what starts a run: fire it manually, or attach it to an event so signups kick it off automatically.',
-          '**Steps** — what happens, in order. Select any step on the canvas to configure it.',
-          '**Settings** — the workflow’s name and behavior.',
+          '**Trigger** — the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps** — what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** — optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused** — Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
         ],
       },
       { kind: 'h2', id: 'first', text: 'A good first automation' },
@@ -127,21 +128,30 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           {
-            title: 'Open [Automations](/automations) and click +',
-            detail: 'Give it a name that says what it does — “Event signup thank-you”.',
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards — that’s the event that enrolls people.',
           },
-          { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },
           {
-            title: 'Add the steps',
-            detail: 'Keep the first version to one or two steps; add sophistication after it has run a few times.',
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
           },
         ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact — someone already in the sequence isn’t enrolled twice by the same trigger.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Start manual, then automate',
-        text: 'Running a workflow manually a few times is the fastest way to trust it — once the steps behave, wire it to the trigger and let it run.',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list — a failure names the step that failed, so you can see exactly where to look.',
       },
     ],
   },
