@@ -1,0 +1,93 @@
+<div class="flex flex-col gap-6">
+  <!-- Header ------------------------------------------------------------------>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Automations</h1>
+      <p class="mt-1 text-sm text-base-content/60">{{ summarySentence() }}</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
+      <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      New automation
+    </button>
+  </div>
+
+  @if (isLoading() && !loaded()) {
+  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
+  } @else if (rows().length === 0) {
+  <!-- Empty state ------------------------------------------------------------->
+  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
+      <pc-icon name="add-schedule" [size]="6"></pc-icon>
+    </div>
+    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
+    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
+      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
+      your first one to start.
+    </p>
+    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
+  </div>
+  } @else {
+  <!-- List -------------------------------------------------------------------->
+  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
+    <!-- Column header -->
+    <div
+      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
+    >
+      <span>Status</span>
+      <span>Automation</span>
+      <span class="text-right">Runs 30d</span>
+      <span>Last run</span>
+    </div>
+
+    @for (row of rows(); track row.id) {
+    <div
+      class="grid cursor-pointer grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+      [class.opacity-60]="row.status === 'paused'"
+      (click)="openAutomation(row)"
+    >
+      <!-- STATUS toggle -->
+      <div class="flex items-center gap-2" (click)="$event.stopPropagation()">
+        <input
+          type="checkbox"
+          class="toggle toggle-primary toggle-sm"
+          [checked]="row.status === 'active'"
+          [title]="statusTooltip(row)"
+          [attr.aria-label]="statusTooltip(row)"
+          (change)="toggleStatus(row, $event)"
+        />
+        @if (row.status === 'paused') {
+        <span class="text-xs font-medium text-base-content/50">Paused</span>
+        }
+      </div>
+
+      <!-- AUTOMATION: name door + recipe sentence -->
+      <div class="min-w-0">
+        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
+        <div class="truncate text-sm text-base-content/60">{{ recipe(row) }}</div>
+      </div>
+
+      <!-- RUNS 30D -->
+      <div class="text-sm tabular-nums text-base-content/80 md:text-right">
+        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
+      </div>
+
+      <!-- LAST RUN (+ inline failure narration) -->
+      <div class="text-sm">
+        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
+        @if (row.last_run_error) {
+        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
+          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
+          <span>Last run failed — {{ row.last_run_error }}</span>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+
+  <!-- Footer (verbatim spec copy) --------------------------------------------->
+  <p class="text-xs text-base-content/50">
+    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
+  </p>
+  }
+</div>
