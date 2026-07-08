@@ -257,7 +257,7 @@
               <div class="flex justify-end gap-1">
                 @if (job.status === 'completed') { @if (isExpired(job)) {
                 <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-                } @else {
+                } @else if (job.downloadable) {
                 <button
                   type="button"
                   class="btn btn-sm btn-circle btn-ghost text-primary"
@@ -266,6 +266,13 @@
                 >
                   <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
                 </button>
+                } @else {
+                <span
+                  class="text-xs text-base-content/40 italic mr-2"
+                  title="Downloaded directly to your device — not stored on the server"
+                >
+                  Downloaded
+                </span>
                 } }
                 <button
                   type="button"

@@ -98,7 +98,7 @@ export class ImportsPage {
 
   protected switchTab(tab: HistoryTab): void {
     this.tab.set(tab);
-    if (tab === 'exports' && this.exportJobs().length === 0) {
+    if (tab === 'exports') {
       void this.loadExports();
     }
   }

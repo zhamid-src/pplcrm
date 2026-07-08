@@ -4,6 +4,7 @@ import {
   ExportCsvInputType,
   ExportCsvResponseType,
   getAllOptionsType,
+  LogInstantExportInputType,
   QueueExportInputType,
 } from '../../../../../../libs/common/src';
 import { TRPCService } from './trpc-service';
@@ -75,5 +76,12 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
       queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
     };
     return exportsEndpoint.queue.mutate(input);
+  }
+
+  public logInstantExport(input: LogInstantExportInputType): Promise<DataExportRecordType> {
+    const exportsEndpoint = this.api.exports as {
+      logInstant: { mutate: (input: LogInstantExportInputType) => Promise<DataExportRecordType> };
+    };
+    return exportsEndpoint.logInstant.mutate(input);
   }
 }

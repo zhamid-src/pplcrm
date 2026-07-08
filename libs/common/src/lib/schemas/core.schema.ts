@@ -107,25 +107,36 @@ export const exportCsvResponse = z.union([
   }),
 ]);
 
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
 export const queueExportInput = z.object({
-  entity: z.enum([
-    'persons',
-    'households',
-    'companies',
-    'tags',
-    'issues',
-    'tasks',
-    'lists',
-    'newsletters',
-    'teams',
-    'users',
-    'volunteer',
-    'forms',
-    'workflows',
-  ]),
+  entity: exportEntitySchema,
   options: getAllOptions,
   columns: z.array(z.string()).optional(),
   fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
 });
 
 export const dataExportRecord = z.object({
@@ -137,6 +148,7 @@ export const dataExportRecord = z.object({
   error: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  downloadable: z.boolean(),
   createdBy: z
     .object({
       id: z.string(),

@@ -25,6 +25,28 @@ export class ExportsRepo {
       .executeTakeFirstOrThrow();
   }
 
+  public async createCompleted(row: {
+    tenant_id: string;
+    user_id: string;
+    entity: string;
+    file_name: string;
+    row_count: number;
+  }) {
+    return this.db
+      .insertInto('data_exports')
+      .values({
+        tenant_id: row.tenant_id,
+        user_id: row.user_id,
+        entity: row.entity,
+        file_name: row.file_name,
+        status: 'completed',
+        row_count: row.row_count,
+        columns: null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
   public async updateStatus(
     id: string,
     tenant_id: string,
@@ -59,6 +81,7 @@ export class ExportsRepo {
         'data_exports.created_at',
         'data_exports.updated_at',
         'data_exports.user_id',
+        'data_exports.storage_key',
         'creator.email as creator_email',
         'creator.first_name as creator_first_name',
         'creator.last_name as creator_last_name',

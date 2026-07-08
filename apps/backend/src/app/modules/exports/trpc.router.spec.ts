@@ -30,6 +30,7 @@ function makeExportRecord(overrides: Record<string, unknown> = {}) {
     error: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    downloadable: false,
     createdBy: null,
     ...overrides,
   };
