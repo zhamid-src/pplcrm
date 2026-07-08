@@ -1,7 +1,24 @@
 <!-- Navigation bar template with search, theme toggle, and user actions -->
 <div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
+  <div class="flex-1 sm:hidden">
+    <button
+      type="button"
+      class="btn btn-ghost btn-square touch-target"
+      (click)="toggleMobile()"
+      [attr.aria-expanded]="isMobileOpen()"
+      aria-controls="pc-sidebar-drawer"
+      [attr.aria-label]="isMobileOpen() ? 'Close navigation menu' : 'Open navigation menu'"
+      i18n-aria-label="@@navbar.menu.toggleAriaLabel"
+    >
+      <pc-swap
+        swapOnIcon="x-mark"
+        swapOffIcon="bars-4"
+        [checked]="isMobileOpen()"
+        animation="rotate"
+        [size]="6"
+        aria-hidden="true"
+      ></pc-swap>
+    </button>
   </div>
 
   <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
