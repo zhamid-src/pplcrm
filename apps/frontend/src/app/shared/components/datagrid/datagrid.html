@@ -632,7 +632,7 @@
             [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
             tabindex="0"
             (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
+            (click)="handleCellClick(r.original, col, $event)"
             (dblclick)="handleCellDblClick(r.original, col)"
             [class.sticky]="pinState(cell) !== false"
             [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
@@ -764,20 +764,26 @@
             } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
             === null || formattedVal === undefined || formattedVal === '') {
             <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) { @let doorSubtitle =
+            callDoorSubtitle(r.original, col);
             <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
-            @if (rawValue) {
-            <span
-              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
-              >{{ rawValue }}</span
-            >
-            } @else {
-            <span
-              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
-              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
-              >Unnamed person</span
-            >
-            } } @else if (col.field === 'address') {
+            <div class="flex flex-col gap-0.5">
+              @if (rawValue) {
+              <span
+                class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+                >{{ rawValue }}</span
+              >
+              } @else {
+              <span
+                class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+                i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+                >Unnamed person</span
+              >
+              } @if (doorSubtitle) {
+              <span class="text-xs text-base-content/55">{{ doorSubtitle }}</span>
+              }
+            </div>
+            } @else if (col.field === 'address') {
             <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
             <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
               <div
@@ -803,66 +809,69 @@
       </tbody>
     </table>
   </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
+  <div class="flex items-center justify-between mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
+    <div class="min-w-0"><ng-content select="[pcGridFooterStart]"></ng-content></div>
+    <div class="flex items-center gap-3 flex-nowrap">
+      <div class="flex items-center gap-2 whitespace-nowrap">
+        <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+          >Page Size:</span
+        >
+        <select
+          class="select select-bordered select-xs"
+          [ngModel]="pageSize()"
+          (ngModelChange)="onPageSizeChange($event)"
+        >
+          @if (![25,50,100].includes(pageSize())) {
+          <option [value]="pageSize()">{{ pageSize() }}</option>
+          } @for (opt of pageSizeChoices(); track opt) {
+          <option [value]="opt">{{ opt }}</option>
+          }
+        </select>
+      </div>
+      <div
+        class="whitespace-nowrap tabular-nums"
+        i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
       >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap tabular-nums"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
-        >{{ displayEndIndex() }}</span
-      >
-      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
-      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? nextPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? lastPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
+        <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+          >{{ displayEndIndex() }}</span
+        >
+        of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+        <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
+      </div>
+      <div class="join whitespace-nowrap">
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="firstPage()"
+        >
+          <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="prevPage()"
+        >
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? nextPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="nextPage()"
+        >
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? lastPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="lastPage()"
+        >
+          <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+        </button>
+      </div>
     </div>
   </div>
 </div>

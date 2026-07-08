@@ -315,6 +315,10 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().countDistinctWards(auth.tenant_id);
   }
 
+  public getUnhoused(auth: IAuthKeyPayload) {
+    return this.getRepo().getUnhoused(auth.tenant_id);
+  }
+
   public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
     return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }

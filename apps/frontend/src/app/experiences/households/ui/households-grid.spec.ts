@@ -151,39 +151,35 @@ describe('HouseholdsGrid', () => {
     expect(component.rowCanSelectFn({ is_placeholder: false })).toBe(true);
   });
 
-  it('should format street1 as "People with no addresses" for placeholder households', () => {
-    const street1Col = component['col'].find((c) => c.field === 'street1');
-    expect(street1Col).toBeDefined();
-    expect(street1Col?.valueFormatter).toBeDefined();
+  it('should render the Household door as "People with no addresses" for placeholder households', () => {
+    const doorCol = component['col'].find((c) => c.field === 'household');
+    expect(doorCol).toBeDefined();
+    expect(doorCol?.valueGetter).toBeDefined();
 
-    const formattedPlaceholder = street1Col?.valueFormatter?.({
-      data: { is_placeholder: true },
-      value: null,
-    } as any);
-    expect(formattedPlaceholder).toBe('People with no addresses');
+    const placeholder = doorCol?.valueGetter?.({ data: { is_placeholder: true } } as any);
+    expect(placeholder).toBe('People with no addresses');
 
-    const formattedRegular = street1Col?.valueFormatter?.({
-      data: { is_placeholder: false },
-      value: '123 Main St',
+    const regular = doorCol?.valueGetter?.({
+      data: { is_placeholder: false, street_num: '123', street1: 'Main St' },
     } as any);
-    expect(formattedRegular).toBe('123 Main St');
+    expect(regular).toBe('123 Main St');
   });
 
   it('should prevent inline editing for placeholder households', () => {
     fixture.detectChanges();
 
-    const street1Col = component['col'].find((c) => c.field === 'street1');
-    expect(street1Col).toBeDefined();
+    const cityCol = component['col'].find((c) => c.field === 'city');
+    expect(cityCol).toBeDefined();
 
     const grid = component['grid']();
     expect(grid).toBeDefined();
 
     // With a placeholder household, editing should be disabled
-    const placeholderCfg = grid!.editableCfg({ is_placeholder: true }, street1Col);
+    const placeholderCfg = grid!.editableCfg({ is_placeholder: true }, cityCol);
     expect(placeholderCfg.isEditable()).toBe(false);
 
     // With a regular household, editing should be enabled
-    const regularCfg = grid!.editableCfg({ is_placeholder: false }, street1Col);
+    const regularCfg = grid!.editableCfg({ is_placeholder: false }, cityCol);
     expect(regularCfg.isEditable()).toBe(true);
   });
 });

@@ -286,6 +286,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.precinct',
         'households.ward',
         'households.geocoding_status',
+        'households.updated_at',
       ])
       .select((eb) => [
         eb
@@ -293,6 +294,21 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .whereRef('persons.household_id', '=', 'households.id')
           .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
           .as('persons_count'),
+        // Members for the grid's Members column — {id, name} so each name can link to
+        // its person card. Ordered, empties dropped, one truncated one-liner on the client.
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(
+            sql<{ id: string; name: string }[]>`coalesce(
+              jsonb_agg(
+                jsonb_build_object('id', persons.id, 'name', trim(concat_ws(' ', persons.first_name, persons.last_name)))
+                order by persons.first_name, persons.last_name
+              ) filter (where nullif(trim(concat_ws(' ', persons.first_name, persons.last_name)), '') is not null),
+              '[]'::jsonb
+            )`.as('members'),
+          )
+          .as('members'),
         // is_placeholder: true only for the one household stored on the tenant row
         eb
           .case()
@@ -495,6 +511,31 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .select(({ fn }) => [fn.count<number>('households.id').as('count')])
       .executeTakeFirst();
     return Number(result?.count ?? 0);
+  }
+
+  /**
+   * People who live in the tenant's placeholder household — i.e. have no matchable address.
+   * Returns the count plus the placeholder household id so the grid footer can link to them.
+   */
+  public async getUnhoused(tenant_id: string): Promise<{ count: number; household_id: string | null }> {
+    const result = await this.db
+      .selectFrom('tenants')
+      .leftJoin('persons', (join) =>
+        join
+          .onRef('persons.household_id', '=', 'tenants.placeholder_household_id')
+          .on('persons.tenant_id', '=', tenant_id),
+      )
+      .where('tenants.id', '=', tenant_id)
+      .select((eb) => [
+        'tenants.placeholder_household_id as household_id',
+        eb.fn.count<number>('persons.id').as('count'),
+      ])
+      .groupBy('tenants.placeholder_household_id')
+      .executeTakeFirst();
+    return {
+      count: Number(result?.count ?? 0),
+      household_id: result?.household_id != null ? String(result.household_id) : null,
+    };
   }
 
   public async countDistinctWards(tenant_id: string): Promise<number> {
