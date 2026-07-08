@@ -392,23 +392,14 @@
                 <span
                   class="badge badge-sm py-1 capitalize font-semibold"
                   [class.badge-success]="act.event_type === 'open'"
-                  ,
                   [class.text-success-content]="act.event_type === 'open'"
-                  ,
                   [class.badge-accent]="act.event_type === 'click'"
-                  ,
                   [class.text-accent-content]="act.event_type === 'click'"
-                  ,
                   [class.badge-warning]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  ,
                   [class.text-warning-content]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  ,
                   [class.badge-error]="act.event_type === 'spamreport'"
-                  ,
                   [class.text-error-content]="act.event_type === 'spamreport'"
-                  ,
                   [class.badge-neutral]="act.event_type === 'unsubscribe'"
-                  ,
                   [class.text-neutral-content]="act.event_type === 'unsubscribe'"
                 >
                   {{ act.event_type }}
