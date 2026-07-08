@@ -147,6 +147,25 @@ describe('injectRecordNavigation', () => {
     expect(handle.nextLabel()).toBe('Next person');
   });
 
+  it('restores position from sessionStorage inside the computed on a deep-link refresh (regression: NG0600)', () => {
+    // In-memory context is /people (from beforeEach). Simulate a refresh landing
+    // directly on a /companies record: the positionLabel computed must restore
+    // from sessionStorage without writing a signal inside the computation.
+    mockActivatedRoute.snapshot.pathFromRoot = [
+      { url: [] },
+      { url: [{ path: 'companies' }] },
+      { url: [{ path: 'b' }] },
+    ];
+    sessionStorage.setItem('pc-record-nav:/companies', JSON.stringify({ ids: ['a', 'b', 'c'], total: 3 }));
+
+    const handle = TestBed.runInInjectionContext(() => injectRecordNavigation('company', signal('b')));
+
+    expect(() => handle.positionLabel()).not.toThrow();
+    expect(handle.positionLabel()).toBe('2 of 3 filtered');
+    expect(handle.hasPrev()).toBe(true);
+    expect(handle.hasNext()).toBe(true);
+  });
+
   it('goToPrev navigates to the previous id in the entity route when one exists', () => {
     const handle = TestBed.runInInjectionContext(() => injectRecordNavigation('person', signal('2')));
 

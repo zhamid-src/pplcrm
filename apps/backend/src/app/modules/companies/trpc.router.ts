@@ -23,6 +23,17 @@ export const CompaniesRouter = router({
     .input(z.object({ id: idSchema, force: z.boolean().optional() }))
     .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
 
+  // Add-time preview: look up a company by name on Google without persisting.
+  // Powers the New Company form's auto-fill on name blur.
+  lookupEnrichment: authProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(200) }))
+    .mutation(({ input }) => companies.lookupEnrichment(input.name)),
+
+  // Background duplicate-name check for the add/edit form's advisory hint.
+  nameExists: authProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(200), excludeId: idSchema.optional() }))
+    .query(({ input, ctx }) => companies.nameExists(input.name, ctx.auth, input.excludeId)),
+
   import: authProcedure
     .input(
       z.object({

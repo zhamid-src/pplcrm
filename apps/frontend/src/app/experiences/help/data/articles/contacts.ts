@@ -189,7 +189,11 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
       {
         kind: 'p',
-        text: 'Press **Enrich** on a company page to look it up on Google Places. A background job finds the business, then fills the website, phone, industry, and description **only where they are blank** — anything you typed is never overwritten. Once a company has been enriched, the button reads **Re-check Google** so you can refresh it later.',
+        text: 'While adding a company, tab out of the **Company Name** field and PeopleCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create** — nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
       },
       {
         kind: 'callout',
