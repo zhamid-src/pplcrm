@@ -1,5 +1,6 @@
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
+import { CompaniesEnrichmentService, type CompanyLookupResult } from './services/companies-enrichment.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -106,6 +107,25 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       .execute();
 
     return { queued: true };
+  }
+
+  /**
+   * Interactive add-time preview: look up a company by name on Google Places and
+   * return the fields without persisting anything (no company row exists yet).
+   * Powers the "auto-fill on name blur" behavior in the New Company form.
+   */
+  public lookupEnrichment(name: string): Promise<CompanyLookupResult> {
+    return CompaniesEnrichmentService.lookupByName(name);
+  }
+
+  /**
+   * Background duplicate-name check for the add/edit form. Case-insensitive,
+   * tenant-scoped, and (in edit) ignores the record being edited. Drives the
+   * "a company by that name already exists" hint — advisory only, never blocks
+   * saving, since same-named companies can be legitimate.
+   */
+  public nameExists(name: string, auth: IAuthKeyPayload, excludeId?: string): Promise<boolean> {
+    return this.getRepo().nameExists(auth.tenant_id, name, excludeId);
   }
 
   public addCompany(payload: any, auth: IAuthKeyPayload) {

@@ -45,6 +45,11 @@ export class RecordNavigationService {
     return ctx.ids[targetIndex] ?? null;
   }
 
+  // Read-only: `resolve` runs inside detail-page `computed`s, so it must never
+  // write a signal (NG0600). On the deep-link/refresh path the in-memory context
+  // is empty, so we fall back to sessionStorage and return the restored value
+  // without caching it. `setContext` (called off the reactive path during the
+  // grid handoff) is what populates the in-memory signal.
   private resolve(entityKey: string): RecordNavContext | null {
     const current = this.context();
     if (current?.entityKey === entityKey) return current;
@@ -60,9 +65,7 @@ export class RecordNavigationService {
     }
     if (!isStoredRecordNavContext(parsed)) return null;
 
-    const restored: RecordNavContext = { entityKey, ids: parsed.ids, total: parsed.total };
-    this.context.set(restored);
-    return restored;
+    return { entityKey, ids: parsed.ids, total: parsed.total };
   }
 
   private storageKey(entityKey: string): string {
