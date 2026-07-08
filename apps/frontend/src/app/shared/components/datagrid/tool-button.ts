@@ -22,8 +22,13 @@ import { PcIconNameType } from '@icons/icons.index';
     >
       @if (hasDropdown()) {
         <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary class="list-none cursor-pointer" [class.pc-no-caret]="hideCaret()" (click)="onSummaryClick($event)">
-            <div class="flex items-center justify-center ">
+          <summary
+            class="list-none cursor-pointer"
+            [class.pc-no-caret]="hideCaret()"
+            [class.touch-target]="touch()"
+            (click)="onSummaryClick($event)"
+          >
+            <div class="flex h-full items-center justify-center ">
               <a role="button" class="relative pointer-events-none ">
                 <pc-icon
                   [name]="icon()"
@@ -42,7 +47,7 @@ import { PcIconNameType } from '@icons/icons.index';
           <ng-content></ng-content>
         </details>
       } @else {
-        <a
+        <a class="flex items-center justify-center" [class.touch-target]="touch()"
           ><pc-icon
             [name]="icon()"
             [size]="4"
@@ -81,6 +86,8 @@ export class GridActionComponent {
   public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
   public hasDropdown = input(false);
   public dropdownEnd = input(true);
+  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
+  public touch = input(false);
   /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
   public hideCaret = input(false);
   public badge = input<number | undefined>(undefined);

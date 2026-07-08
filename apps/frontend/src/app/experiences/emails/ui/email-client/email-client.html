@@ -9,7 +9,7 @@
   <div [class]="listPanelClass()">
     <!-- Mobile back button -->
     <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to folders">
         <pc-icon name="chevron-left" [size]="4"></pc-icon>
         Folders
       </button>
@@ -28,7 +28,7 @@
   <div [class]="detailPanelClass()">
     <!-- Mobile back button -->
     <div class="md:hidden flex items-center mb-2 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to list">
         <pc-icon name="chevron-left" [size]="4"></pc-icon>
         Back
       </button>
