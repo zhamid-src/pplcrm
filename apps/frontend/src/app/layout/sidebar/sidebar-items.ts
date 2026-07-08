@@ -191,7 +191,7 @@ export const SidebarItems: ISidebarItem[] = [
         // in here — see the redirect in dashboard.routes.ts.
         name: 'Import / export',
         route: '/imports',
-        icon: 'arrow-up-tray',
+        icon: 'arrows-up-down-tray',
       },
       {
         name: `Duplicates`,
