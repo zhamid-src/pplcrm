@@ -278,7 +278,7 @@
   } @if (hasSelectionState()) {
   <!-- Bulk action bar: appears on any selection (§2) -->
   <div
-    class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
+    class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-neutral px-3 py-2 text-sm"
   >
     <span class="font-semibold tabular-nums"
       >{{ getCountRowSelected() }}
@@ -301,22 +301,22 @@
     <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
       <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
     </button>
-    <button class="btn btn-ghost btn-xs" (click)="cancelBulkTag()">
+    <button class="btn btn-xs" (click)="cancelBulkTag()">
       <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
     </button>
     } @else {
-    <button class="btn btn-ghost btn-sm gap-1.5" (click)="openBulkTag()">
+    <button class="btn btn-sm gap-1.5" (click)="openBulkTag()">
       <pc-icon name="label" [size]="4"></pc-icon>
       <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
     </button>
     @if (!disableExport()) {
-    <button class="btn btn-ghost btn-sm gap-1.5" (click)="doConfirmExport()">
+    <button class="btn btn-sm gap-1.5" (click)="doConfirmExport()">
       <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
       <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
     </button>
     } @if (!disableMerge()) {
     <button
-      class="btn btn-ghost btn-sm gap-1.5"
+      class="btn btn-sm gap-1.5"
       [disabled]="getCountRowSelected() !== 2"
       [title]="
         getCountRowSelected() === 2
@@ -330,7 +330,7 @@
     </button>
     } @if (!!addRoute()) {
     <button
-      class="btn btn-ghost btn-sm gap-1.5"
+      class="btn btn-sm gap-1.5"
       [disabled]="!hasSingleSelection()"
       [title]="
         hasSingleSelection()

@@ -60,6 +60,11 @@ export const appRoutes = [
     loadComponent: () => import('./experiences/canvassing/ui/companion-page').then((m) => m.CompanionPage),
   },
   {
+    // Deliveries volunteer route — tokenised, account-less (§14).
+    path: 'r/:token',
+    loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
+  },
+  {
     path: 'verify-email',
     loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },

@@ -144,12 +144,19 @@ export const SidebarItems: ISidebarItem[] = [
     name: `FIELD`,
     type: 'subheading',
     children: [
-      // Wave 2: Canvassing (§13) surfaced here. Deliveries (§14) lands separately (Track G).
+      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
       {
         name: 'Canvassing',
         route: '/canvassing',
         icon: 'map-pin',
         shortcut: 'v',
+      },
+      {
+        name: 'Deliveries',
+        route: '/deliveries',
+        icon: 'map-pin',
+        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
+        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
       },
       {
         name: 'Events',
