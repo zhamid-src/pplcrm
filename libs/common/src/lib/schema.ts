@@ -14,3 +14,4 @@ export * from './schemas/workflows.schema';
 export * from './schemas/companies.schema';
 export * from './schemas/events.schema';
 export * from './schemas/connections.schema';
+export * from './schemas/canvassing.schema';

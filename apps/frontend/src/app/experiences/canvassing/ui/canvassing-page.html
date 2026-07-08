@@ -1,0 +1,341 @@
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
+      @if (headline()) {
+      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+      <pc-icon name="map-pin" [size]="4" />
+      Cut new turfs
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-bordered mb-4">
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
+      Turfs &amp; assignments
+    </button>
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
+      Field report
+    </button>
+  </div>
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span class="text-sm">{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
+      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
+      the person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
+        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Strong {{ r.responseMix.strong_support }}</span>
+        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  }
+</div>

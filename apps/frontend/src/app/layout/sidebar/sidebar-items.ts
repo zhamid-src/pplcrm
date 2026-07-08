@@ -144,7 +144,13 @@ export const SidebarItems: ISidebarItem[] = [
     name: `FIELD`,
     type: 'subheading',
     children: [
-      // Wave 2: Canvassing (§13), Deliveries (§14) — surfaces do not exist yet.
+      // Wave 2: Canvassing (§13) surfaced here. Deliveries (§14) lands separately (Track G).
+      {
+        name: 'Canvassing',
+        route: '/canvassing',
+        icon: 'map-pin',
+        shortcut: 'v',
+      },
       {
         name: 'Events',
         route: '/events/pages',

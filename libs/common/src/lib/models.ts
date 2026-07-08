@@ -6,6 +6,12 @@ import type {
   AddMarketingEmailObj,
   AddTaskObj,
   AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
@@ -133,6 +139,18 @@ export type ListsType = z.infer<typeof ListsObj>;
 export type UpdateListType = z.infer<typeof UpdateListObj>;
 
 export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
 
 export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
 
