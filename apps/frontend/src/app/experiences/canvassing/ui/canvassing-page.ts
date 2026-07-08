@@ -1,0 +1,302 @@
+import { Component, type OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+
+import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
+import {
+  CanvassingService,
+  type FieldReport,
+  type FieldSummary,
+  type InFieldToday,
+  type TurfListItem,
+} from '../services/canvassing-service';
+import { CutTurfsDialog } from './cut-turfs-dialog';
+
+type TurfStatus = TurfListItem['status'];
+type Tab = 'turfs' | 'report';
+type ReportRange = FieldReportRangeType['range'];
+
+const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_field: 'success',
+  complete: 'primary',
+  retired: 'muted',
+};
+
+const STATUS_LABEL: Record<TurfStatus, string> = {
+  draft: 'Draft — unassigned',
+  assigned: 'Sent to app',
+  in_field: 'In field now',
+  complete: 'Complete',
+  retired: 'Retired',
+};
+
+const STATUS_BADGE: Record<TurfStatus, string> = {
+  draft: 'badge-ghost',
+  assigned: 'badge-info',
+  in_field: 'badge-success',
+  complete: 'badge-primary',
+  retired: 'badge-ghost opacity-60',
+};
+
+const RANGES: { key: ReportRange; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
+  { key: 'campaign', label: 'Campaign' },
+];
+
+@Component({
+  selector: 'pc-canvassing-page',
+  imports: [DatePipe, Icon, PcMap, CutTurfsDialog],
+  templateUrl: './canvassing-page.html',
+})
+export class CanvassingPage implements OnInit {
+  private readonly svc = inject(CanvassingService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialog = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly tab = signal<Tab>('turfs');
+  protected readonly turfs = signal<TurfListItem[]>([]);
+  protected readonly summary = signal<FieldSummary | null>(null);
+  protected readonly today = signal<InFieldToday | null>(null);
+
+  protected readonly reportRange = signal<ReportRange>('week');
+  protected readonly report = signal<FieldReport | null>(null);
+
+  protected readonly cutOpen = signal(false);
+
+  protected readonly ranges = RANGES;
+  protected readonly statusLabel = STATUS_LABEL;
+  protected readonly statusBadge = STATUS_BADGE;
+
+  ngOnInit(): void {
+    void this.loadTurfs();
+  }
+
+  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
+  protected readonly headline = computed<string>(() => {
+    const s = this.summary();
+    if (!s) return '';
+    const parts = [
+      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
+      `${s.inFieldCount} in the field now`,
+      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
+      `${s.waitingCount} waiting for a canvasser`,
+    ];
+    return parts.join(' · ');
+  });
+
+  /** Response-mix stacked bar segments for the "in the field today" card. */
+  protected readonly todaySegments = computed(() => {
+    const t = this.today();
+    if (!t) return [];
+    const m = t.responseMix;
+    return [
+      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
+      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
+      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
+      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
+      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
+    ].filter((s) => s.value > 0);
+  });
+
+  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
+
+  /**
+   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
+   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
+   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
+   */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    return this.turfs()
+      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
+      .map((t) => ({
+        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
+        variant: this.variantFor(t.status),
+        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
+        id: t.id,
+        payload: t.id,
+      }));
+  });
+
+  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
+
+  protected variantFor(status: TurfStatus): PcMapVariant {
+    return STATUS_VARIANT[status];
+  }
+
+  protected progressPct(t: TurfListItem): number {
+    if (t.door_count <= 0) return 0;
+    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
+  }
+
+  protected async loadTurfs(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [turfs, summary, today] = await Promise.all([
+        this.svc.getTurfs(),
+        this.svc.getFieldSummary(),
+        this.svc.getInFieldToday(),
+      ]);
+      this.turfs.set(turfs);
+      this.summary.set(summary);
+      this.today.set(today);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async loadReport(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      this.report.set(await this.svc.getFieldReport({ range: this.reportRange(), from: null, to: null }));
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
+    } finally {
+      end();
+    }
+  }
+
+  protected selectTab(tab: Tab): void {
+    this.tab.set(tab);
+    if (tab === 'report' && !this.report()) void this.loadReport();
+  }
+
+  protected setRange(range: ReportRange): void {
+    this.reportRange.set(range);
+    void this.loadReport();
+  }
+
+  protected openCut(): void {
+    this.cutOpen.set(true);
+  }
+
+  protected onCutDone(created: number): void {
+    this.cutOpen.set(false);
+    if (created > 0) {
+      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
+      void this.loadTurfs();
+    }
+  }
+
+  /** Assign a turf as a shareable Companion link and copy it. */
+  protected async assign(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
+      await this.copyCompanionLink(token);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async copyLink(t: TurfListItem): Promise<void> {
+    if (t.token) {
+      await this.copyCompanionLink(t.token);
+      return;
+    }
+    await this.assign(t);
+  }
+
+  private async copyCompanionLink(token: string): Promise<void> {
+    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
+    } catch {
+      this.alerts.showSuccess(`Companion link: ${url}`);
+    }
+  }
+
+  protected async refresh(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.svc.refreshFromList(t.id);
+      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async retire(t: TurfListItem): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Retire this turf?',
+      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
+      confirmText: 'Retire turf',
+    });
+    if (!ok) return;
+    const end = this._loading.begin();
+    try {
+      await this.svc.retire(t.id);
+      this.alerts.showSuccess('Turf retired.');
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async exportReport(): Promise<void> {
+    try {
+      const { filename, content } = await this.svc.exportFieldReport({
+        range: this.reportRange(),
+        from: null,
+        to: null,
+      });
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
+    }
+  }
+
+  protected hourLabel(h: number): string {
+    const am = h < 12;
+    const base = h % 12 === 0 ? 12 : h % 12;
+    return `${base}${am ? 'am' : 'pm'}`;
+  }
+
+  protected barPct(value: number, max: number): number {
+    if (max <= 0) return 0;
+    return Math.round((value / max) * 100);
+  }
+
+  protected maxPerDay(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
+  }
+
+  protected maxByHour(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.byHour.map((h) => h.attempts));
+  }
+}
