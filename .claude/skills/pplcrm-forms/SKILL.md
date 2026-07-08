@@ -90,6 +90,44 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   immediately and the preview re-renders. The confirmation-email + embed dialogs are the exceptions
   (explicit Save / Copy).
 
+## Donation-forms convergence — decided, deferred (Track J, 2026-07-08)
+
+Spec §12 (Fig. 15) describes donations as folding into the Forms living-funnel model — a
+"donation" template alongside signup/pledge/rsvp/request/survey. The app deliberately does **not**
+do this today; Track J re-examined the tradeoff and decided to **keep them separate for now**
+rather than converge in the same change that shipped the Donations page/dialog work. Concrete
+reasons, so the next agent doesn't have to re-derive them:
+
+- **Two field shapes are incompatible today.** Living-funnel forms store `FormField[]` objects;
+  donation forms store the legacy `string[]` (`"mobile:required"`). Converging means either
+  migrating every donation form's stored fields or teaching `normForm()`/the editor to branch on
+  form_type forever — either way it's a real migration, not a template addition.
+- **Donation forms carry Stripe checkout logic baked into `submitFormPublic`** and render via a
+  **server-rendered** page (`GET /api/forms/d/:slug`) because they need an amount field + Stripe
+  Elements that the SPA's `/f/:slug` client page doesn't support. `getPublicFormBySlug`
+  deliberately 404s donation types so they never hit the SPA page without an amount field.
+  Converging requires either bringing Stripe Elements into the SPA form renderer or keeping a
+  parallel render path forever — both are their own design/build effort.
+- **`form_submissions` isn't written for donations** (`listForms` filters them out entirely) — the
+  donation ledger is `donations`/`donation_pledges`, not `form_submissions`. Unifying the list view
+  means reconciling two different response models, not just two field shapes.
+- **The donation-collection UX just changed underneath this decision.** Track J added the Fig. 15
+  "Record donation" dialog (`record-donation-dialog.ts`) for offline gifts and rebuilt the
+  Donations page stats/table to match spec — i.e. the _product_ gap the spec cared about (no way
+  to record a gift by hand) is now closed without touching the forms model at all. That lowers the
+  urgency of convergence: the spec's donation-recording story works today via `/donation-pages`
+  (fundraising) for public giving pages and the new dialog for offline gifts.
+
+**What shipped instead:** the Donations page's "New donation form" button links to the existing
+`/donation-pages/add` (fundraising) creation flow — the one true "create a donation form" path
+today. No dead end, no new UI invented.
+
+**Revisit convergence when:** the Forms field model natively supports a payment-type field
+(amount + a Stripe Elements-equivalent widget) AND the public page architecture can serve both the
+SPA (`/f/:slug`) and payment (`/d/:slug`) cases from one route. Until then, treat "donation forms
+show in the Forms page" as **won't-fix by design**, not a bug — the non-obvious traps below explain
+the mechanics; this section is why they're intentional and haven't been scheduled for removal.
+
 ## After changes
 
 Update the Forms Help Center article (`experiences/help/data/articles/engagement.ts`, id `forms`) and

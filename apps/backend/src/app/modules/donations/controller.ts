@@ -695,15 +695,49 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     return pledge;
   }
 
+  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
+   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
+   * wiring with the Stripe path so offline and online gifts show up identically on the person's
+   * Donations tab and Activity log. */
+  public async recordManualDonation(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer',
+  ): Promise<Selectable<Models['donations']>> {
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['id'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!person) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift — receipts need a name.' });
+    }
+
+    return this.recordSuccessfulDonation(
+      auth.tenant_id,
+      personId,
+      amountCents,
+      null,
+      '',
+      '',
+      auth.user_id,
+      undefined,
+      method,
+    );
+  }
+
   public async recordSuccessfulDonation(
     tenantId: string,
     personId: string,
     amountCents: number,
-    sessionId: string,
+    sessionId: string | null,
     province: string,
     country: string,
     userId: string,
     pledgeId?: string,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
   ): Promise<Selectable<Models['donations']>> {
     const person = await this.getRepo()
       .db.selectFrom('persons')
@@ -729,6 +763,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             state: province || null,
             country: country || null,
             pledge_id: pledgeId ? pledgeId : null,
+            method,
+            receipt_sent: true,
           })
           .returningAll()
           .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;

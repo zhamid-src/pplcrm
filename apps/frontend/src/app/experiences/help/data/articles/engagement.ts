@@ -7,13 +7,30 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     title: 'Donations, pledges, and fundraising pages',
     summary:
       'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: ['donation', 'gift', 'pledge', 'fundraising', 'donate page', 'giving', 'contribution', 'donor'],
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+    ],
     related: ['person-profile', 'forms', 'export', 'grid-basics'],
     blocks: [
       { kind: 'h2', id: 'donations', text: 'Donations: money received' },
       {
         kind: 'p',
         text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically — configure the sender and template in Workspace settings → Donations.',
       },
       { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
       {
