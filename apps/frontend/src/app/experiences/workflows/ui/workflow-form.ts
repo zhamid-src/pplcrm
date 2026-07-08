@@ -1,24 +1,64 @@
-import { Component, OnInit, signal, inject, computed } from '@angular/core';
-import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
-import { AddWorkflowObj } from '../../../../../../../libs/common/src';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormField, form, submit, validateStandardSchema } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
-import { DatePipe } from '@angular/common';
-import { WorkflowsService } from '../services/workflows-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddWorkflowObj } from '@common';
+import type { QueryBuilderGroupNode, WorkflowStepKind, WorkflowTriggerType } from '@common';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
-import { ShiftsService } from '../../shifts/services/shifts-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { TeamsService } from '@experiences/teams/services/teams-service';
+import { QueryBuilderComponent, QueryBuilderField } from '@frontend/shared/components/query-builder/query-builder';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ShiftsService } from '../../shifts/services/shifts-service';
+import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
+import { WorkflowsService } from '../services/workflows-service';
+import {
+  SequenceStep,
+  SequenceStepPayload,
+  STEP_KINDS,
+  StepKindMeta,
+  TRIGGER_CARDS,
+  newUid,
+  stepKindMeta,
+  triggerCardMeta,
+} from '../models/automations.model';
 
+interface OptionRow {
+  id: string;
+  name: string;
+}
+
+interface RunRow {
+  id: string;
+  status: 'success' | 'failed';
+  step_kind: string | null;
+  step_number: number | null;
+  error: string | null;
+  created_at: string | Date;
+  person_first_name: string | null;
+  person_last_name: string | null;
+}
+
+interface EnrollmentRow {
+  id: string;
+  status: string;
+  current_step_number: number;
+  enrolled_at: string | Date;
+  person_first_name: string | null;
+  person_last_name: string | null;
+  person_email: string | null;
+}
+
+// Spec §16 Automations editor — trigger picker → vertical sequence flow + WORKFLOW SETTINGS /
+// ONLY ENROLL IF / SEQUENCE OVERVIEW / RECENT RUNS rail, plus the Enrolled contacts tab.
 @Component({
   selector: 'pc-workflow-form',
   imports: [
@@ -27,75 +67,67 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
     FormField,
     Icon,
     RecordActivities,
-    DatePipe,
     VisualNewsletterEditorComponent,
     FormActions,
     Tabs,
     TabPanel,
+    QueryBuilderComponent,
+    NgTemplateOutlet,
+    DatePipe,
   ],
   templateUrl: './workflow-form.html',
-  providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService],
+  providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService, TeamsService],
 })
 export class WorkflowFormComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly workflowsSvc = inject(WorkflowsService);
-  private readonly personsSvc = inject(PersonsService);
   private readonly alertSvc = inject(AlertService);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly tagsSvc = inject(TagsService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
+  private readonly teamsSvc = inject(TeamsService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
 
+  protected readonly triggerCards = TRIGGER_CARDS;
+  protected readonly stepKinds = STEP_KINDS;
+
   protected readonly isNew = signal(true);
   protected readonly workflowId = signal<string | null>(null);
-  protected readonly activeTab = signal<string>('steps');
-
-  protected readonly workflowTabs = computed<PcTabOption[]>(() => [
-    { id: 'steps', label: `Sequence Designer (${this.steps().length})`, icon: 'pencil-square' },
-    {
-      id: 'enrollments',
-      label: `Enrolled Contacts (${this.enrollments().length})`,
-      icon: 'user-group',
-      disabled: this.isNew(),
-      tooltip: 'Save workflow to enroll contacts',
-    },
-  ]);
-
-  // Trigger state and visual designer nodes selection
+  protected readonly activeTab = signal<string>('sequence');
   protected readonly triggerSelected = signal(false);
-  protected readonly selectedNodeType = signal<'trigger' | 'step' | 'settings'>('settings');
-  protected readonly selectedNodeIndex = signal<number | null>(null);
 
-  // Modal visual email designer state
+  // Which insertion point's ADD A STEP menu is open (index into insertion points), or null.
+  protected readonly addMenuIndex = signal<number | null>(null);
   protected readonly editingEmailStepIndex = signal<number | null>(null);
 
-  // Loaded volunteer events list
-  protected readonly volunteerEvents = signal<any[]>([]);
-  // Loaded tags, forms, and static lists
-  protected readonly tags = signal<any[]>([]);
-  protected readonly webForms = signal<any[]>([]);
-  protected readonly lists = signal<any[]>([]);
+  protected readonly steps = signal<SequenceStep[]>([]);
+  protected readonly enrollments = signal<EnrollmentRow[]>([]);
+  protected readonly runs = signal<RunRow[]>([]);
 
-  // Backing payload signal for workflow settings form
+  // Picker option lists.
+  protected readonly tags = signal<OptionRow[]>([]);
+  protected readonly webForms = signal<OptionRow[]>([]);
+  protected readonly lists = signal<OptionRow[]>([]);
+  protected readonly volunteerEvents = signal<OptionRow[]>([]);
+  protected readonly teamMembers = signal<OptionRow[]>([]);
+
+  // ONLY ENROLL IF — reuses the shared query-builder (person scalar fields the backend evaluates).
+  protected readonly conditions = signal<QueryBuilderGroupNode>(emptyConditions());
+  protected readonly conditionFields: QueryBuilderField[] = [
+    { name: 'first_name', label: 'First name', inputType: 'text', operators: CONDITION_OPS },
+    { name: 'last_name', label: 'Last name', inputType: 'text', operators: CONDITION_OPS },
+    { name: 'email', label: 'Email', inputType: 'text', operators: CONDITION_OPS },
+  ];
+
   protected readonly payload = signal<{
     name: string;
     description: string;
-    trigger_type:
-      | 'volunteer_signup'
-      | 'manual'
-      | 'tag_added'
-      | 'web_form_submitted'
-      | 'volunteer_shift_status'
-      | 'contact_created'
-      | 'list_joined'
-      | 'payment_event'
-      | 'new_subscriber'
-      | 'new_unsubscriber';
+    trigger_type: WorkflowTriggerType;
     trigger_event_id: string;
     status: 'active' | 'draft' | 'paused';
   }>({
@@ -106,203 +138,338 @@ export class WorkflowFormComponent implements OnInit {
     status: 'draft',
   });
 
-  // Signal-based form
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddWorkflowObj);
   });
 
-  // Computed signal to resolve the name of the selected event
-  protected readonly selectedEventName = computed(() => {
-    const eventId = this.payload().trigger_event_id;
-    if (!eventId) return null;
-    const type = this.payload().trigger_type;
-    if (type === 'volunteer_signup') {
-      const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
-      return event ? event.name : 'Unknown Event';
-    }
-    if (type === 'tag_added') {
-      const tag = this.tags().find((t) => String(t.id) === String(eventId));
-      return tag ? tag.name : 'Unknown Tag';
-    }
-    if (type === 'web_form_submitted') {
-      const formEl = this.webForms().find((f) => String(f.id) === String(eventId));
-      return formEl ? formEl.name : 'Unknown Web Form';
-    }
-    if (type === 'list_joined') {
-      const listEl = this.lists().find((l) => String(l.id) === String(eventId));
-      return listEl ? listEl.name : 'Unknown List';
-    }
-    if (type === 'volunteer_shift_status') {
-      if (eventId === 'attended') return 'Attended';
-      if (eventId === 'no_show') return 'No Show';
-      if (eventId === 'cancelled') return 'Cancelled';
-      return eventId;
-    }
-    return null;
+  protected readonly tabs = computed<PcTabOption[]>(() => [
+    { id: 'sequence', label: 'Sequence designer', icon: 'pencil-square' },
+    {
+      id: 'enrolled',
+      label: `Enrolled contacts (${this.enrollments().length})`,
+      icon: 'user-group',
+      disabled: this.isNew(),
+      tooltip: this.isNew() ? 'Save the automation to enroll contacts' : undefined,
+    },
+  ]);
+
+  protected readonly triggerMeta = computed(() => triggerCardMeta(this.payload().trigger_type));
+
+  // The trigger needs a specific target (tag / form / list / shift status). Manual and the
+  // event-less triggers don't.
+  protected readonly triggerNeedsTarget = computed(() => {
+    const t = this.payload().trigger_type;
+    return t === 'tag_added' || t === 'web_form_submitted' || t === 'list_joined' || t === 'volunteer_shift_status';
   });
 
-  // Steps signal
-  protected readonly steps = signal<any[]>([]);
-  // Enrollments signal
-  protected readonly enrollments = signal<any[]>([]);
-
-  // Search contacts for manual enrollment
-  protected readonly searchQuery = signal('');
-  protected readonly searchResults = signal<any[]>([]);
-  protected readonly searchingContacts = signal(false);
+  protected readonly triggerTargetOptions = computed<OptionRow[]>(() => {
+    switch (this.payload().trigger_type) {
+      case 'tag_added':
+        return this.tags();
+      case 'web_form_submitted':
+        return this.webForms();
+      case 'list_joined':
+        return this.lists();
+      case 'volunteer_shift_status':
+        return SHIFT_STATUS_OPTIONS;
+      default:
+        return [];
+    }
+  });
 
   public ngOnInit(): void {
+    void this.loadPickers();
     const id = this.route.snapshot.paramMap.get('id');
-    void this.loadVolunteerEvents();
-    void this.loadTags();
-    void this.loadWebForms();
-    void this.loadLists();
     if (id && id !== 'add') {
       this.isNew.set(false);
       this.workflowId.set(id);
       this.triggerSelected.set(true);
-      this.activeTab.set('steps');
-      void this.loadWorkflowDetails();
+      void this.loadWorkflow();
       void this.loadSteps();
       void this.loadEnrollments();
+      void this.loadRuns();
     } else {
       this.isNew.set(true);
       this.triggerSelected.set(false);
     }
   }
 
-  private async loadVolunteerEvents(): Promise<void> {
-    try {
-      const res = await this.volunteerEventsSvc.getAll({ limit: 1000 });
-      this.volunteerEvents.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteer events', err);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    try {
-      const res = await this.tagsSvc.getAll({ limit: 1000 });
-      this.tags.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load tags', err);
-    }
-  }
-
-  private async loadWebForms(): Promise<void> {
-    try {
-      const res = await this.formsSvc.getAll({ limit: 1000 });
-      this.webForms.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load web forms', err);
-    }
-  }
-
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAll({ limit: 1000 });
-      this.lists.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load lists', err);
-    }
-  }
-
-  // --- TAB MANAGEMENT ---
-  protected selectTab(tab: string): void {
-    this.activeTab.set(tab);
-    if (tab !== 'steps') {
-      this.selectedNodeType.set('settings');
-      this.selectedNodeIndex.set(null);
-    }
-  }
-
-  // --- TRIGGER SELECTION ---
-  protected selectTrigger(
-    type:
-      | 'volunteer_signup'
-      | 'manual'
-      | 'tag_added'
-      | 'web_form_submitted'
-      | 'volunteer_shift_status'
-      | 'contact_created'
-      | 'list_joined'
-      | 'payment_event'
-      | 'new_subscriber'
-      | 'new_unsubscriber',
-  ): void {
-    let name = 'New Workflow Campaign';
-    let description = 'Custom multi-step communication sequence.';
-
-    switch (type) {
-      case 'volunteer_signup':
-        name = 'Volunteer Signup Welcome Onboarding';
-        description = 'Automated welcoming sequence sent to volunteer signups.';
-        break;
-      case 'tag_added':
-        name = 'Tag Assigned Campaign';
-        description = 'Automated campaign triggered when a specific tag is added to a constituent.';
-        break;
-      case 'web_form_submitted':
-        name = 'Web Form Submission Response';
-        description = 'Runs automatically after a contact submits a public web form.';
-        break;
-      case 'volunteer_shift_status':
-        name = 'Volunteer Shift Follow-up';
-        description = 'Triggered when a volunteer shift status is updated.';
-        break;
-      case 'contact_created':
-        name = 'New Constituent Welcome Series';
-        description = 'Welcoming sequence triggered when any new person is added to the database.';
-        break;
-      case 'list_joined':
-        name = 'List Joined Campaign';
-        description = 'Triggered when a constituent is added to a static list.';
-        break;
-      case 'payment_event':
-        name = 'Stripe Billing Event Campaign';
-        description = 'Runs in response to payment events like invoice payment status updates.';
-        break;
-      case 'new_subscriber':
-        name = 'New Subscriber Onboarding';
-        description = 'Welcomes new subscribers to the newsletter list.';
-        break;
-      case 'new_unsubscriber':
-        name = 'Unsubscribe Confirmation Campaign';
-        description = 'Triggered when a contact is marked unsubscribed.';
-        break;
-      case 'manual':
-        name = 'Constituent Re-engagement Campaign';
-        description = 'Custom multi-step communication sequence.';
-        break;
-    }
-
+  // ── Trigger picker ─────────────────────────────────────────────────────────
+  protected selectTrigger(type: WorkflowTriggerType): void {
+    const meta = triggerCardMeta(type);
     this.payload.update((p) => ({
       ...p,
       trigger_type: type,
       trigger_event_id: '',
-      name,
-      description,
+      name: p.name || `${meta ? meta.title : 'New'} automation`,
     }));
-
-    // Initialize with 1 default step
-    this.steps.set([
-      {
-        step_number: 1,
-        delay_days: 1,
-        delay_unit: 'days',
-        subject: type === 'volunteer_signup' ? 'Welcome to our organization!' : 'Hello from the team!',
-        preview_text: 'Thank you for connecting with us',
-        html_content: '<p>Hi there,</p><p>We are thrilled to have you! We will reach out shortly.</p>',
-        plain_text_content: 'Hi there,\n\nWe are thrilled to have you! We will reach out shortly.',
-      },
-    ]);
-
+    if (this.steps().length === 0) {
+      // Seed a sensible first step so the sequence isn't blank.
+      this.steps.set([this.makeStep('send_email')]);
+    }
     this.triggerSelected.set(true);
-    this.selectedNodeType.set('settings');
   }
 
-  // --- LOAD DATA ---
-  private async loadWorkflowDetails(): Promise<void> {
+  protected changeTrigger(): void {
+    this.triggerSelected.set(false);
+  }
+
+  protected setTriggerTarget(id: string): void {
+    this.payload.update((p) => ({ ...p, trigger_event_id: id }));
+  }
+
+  protected setStatus(status: 'active' | 'paused'): void {
+    this.payload.update((p) => ({ ...p, status }));
+  }
+
+  // ── Sequence editing ───────────────────────────────────────────────────────
+  protected openAddMenu(index: number): void {
+    this.addMenuIndex.set(this.addMenuIndex() === index ? null : index);
+  }
+
+  protected closeAddMenu(): void {
+    this.addMenuIndex.set(null);
+  }
+
+  protected addStepAt(index: number, kind: WorkflowStepKind): void {
+    const current = [...this.steps()];
+    current.splice(index, 0, this.makeStep(kind));
+    this.steps.set(current);
+    this.addMenuIndex.set(null);
+    if (kind === 'send_email') this.editingEmailStepIndex.set(index);
+  }
+
+  protected removeStep(index: number): void {
+    this.steps.set(this.steps().filter((_, i) => i !== index));
+  }
+
+  protected setStepDelay(index: number, value: string): void {
+    const n = Math.max(0, Math.floor(Number(value) || 0));
+    this.updateStep(index, { delay_days: n });
+  }
+
+  protected setStepDelayUnit(index: number, unit: 'days' | 'hours'): void {
+    this.updateStep(index, { delay_unit: unit });
+  }
+
+  protected setStepTag(index: number, tagId: string): void {
+    const step = this.steps()[index];
+    if (!step) return;
+    const tag = this.tags().find((t) => t.id === tagId);
+    this.updateStep(index, { config: { ...step.config, tag_id: tagId, tag_name: tag?.name ?? null } });
+  }
+
+  protected setStepTaskTitle(index: number, title: string): void {
+    const step = this.steps()[index];
+    if (!step) return;
+    this.updateStep(index, { config: { ...step.config, task_title: title } });
+  }
+
+  protected setStepNotifyMember(index: number, userId: string): void {
+    const step = this.steps()[index];
+    if (!step) return;
+    const member = this.teamMembers().find((m) => m.id === userId);
+    this.updateStep(index, {
+      config: { ...step.config, notify_user_id: userId || null, notify_user_name: member?.name ?? null },
+    });
+  }
+
+  protected setStepEmailSubject(index: number, subject: string): void {
+    this.updateStep(index, { subject });
+  }
+
+  protected stepMeta(kind: WorkflowStepKind): StepKindMeta {
+    return stepKindMeta(kind);
+  }
+
+  // ── Email designer modal ───────────────────────────────────────────────────
+  protected openEmailDesigner(index: number): void {
+    this.editingEmailStepIndex.set(index);
+  }
+
+  protected closeEmailDesigner(): void {
+    this.editingEmailStepIndex.set(null);
+  }
+
+  protected editingEmailHtml(): string {
+    const i = this.editingEmailStepIndex();
+    return i == null ? '' : this.steps()[i]?.html_content || '';
+  }
+
+  protected editingEmailText(): string {
+    const i = this.editingEmailStepIndex();
+    return i == null ? '' : this.steps()[i]?.plain_text_content || '';
+  }
+
+  protected onEmailHtmlChange(html: string): void {
+    const i = this.editingEmailStepIndex();
+    if (i != null) this.updateStep(i, { html_content: html });
+  }
+
+  protected onEmailTextChange(text: string): void {
+    const i = this.editingEmailStepIndex();
+    if (i != null) this.updateStep(i, { plain_text_content: text });
+  }
+
+  // ── ONLY ENROLL IF ─────────────────────────────────────────────────────────
+  protected onConditionsChange(): void {
+    // The query-builder mutates the group node in place; re-emit to refresh the signal.
+    this.conditions.set({ ...this.conditions() });
+  }
+
+  protected hasConditions(): boolean {
+    return this.conditions().rules.length > 0;
+  }
+
+  // ── Save / delete ──────────────────────────────────────────────────────────
+  protected async save(done?: (() => void) | Event): Promise<void> {
+    if (done instanceof Event) done.preventDefault();
+    this.form().markAsTouched();
+    if (!this.form().valid()) {
+      this.alertSvc.showError('Please give the automation a name.');
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const raw = this.payload();
+          const conditions = this.hasConditions() ? this.conditions() : null;
+          const data = {
+            ...raw,
+            trigger_event_id: raw.trigger_event_id ? raw.trigger_event_id : null,
+            conditions,
+          };
+          const stepPayload = this.toStepPayload();
+
+          if (this.isNew()) {
+            const result = await this.workflowsSvc.add(data);
+            const newId = String(result['id']);
+            this.workflowId.set(newId);
+            this.isNew.set(false);
+            await this.workflowsSvc.saveSteps(newId, stepPayload);
+            this.workflowsSvc.triggerRefresh();
+            this.alertSvc.showSuccess('Automation created');
+            if (typeof done === 'function') done();
+            else void this.router.navigate(['/automations', newId]);
+          } else {
+            const id = this.workflowId();
+            if (id) {
+              await this.workflowsSvc.update(id, data);
+              await this.workflowsSvc.saveSteps(id, stepPayload);
+            }
+            this.workflowsSvc.triggerRefresh();
+            this.alertSvc.showSuccess('Automation saved');
+            if (typeof done === 'function') done();
+            else void this.loadRuns();
+          }
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Could not save the automation.');
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
+  }
+
+  protected async deleteWorkflow(): Promise<void> {
+    const id = this.workflowId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete automation',
+      message: 'Delete this automation? Contacts already mid-sequence stop receiving its steps. This cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.delete(id);
+      this.workflowsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Automation deleted');
+      await this.router.navigate(['/automations']);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Could not delete the automation.');
+    } finally {
+      end();
+    }
+  }
+
+  // ── Enrolled tab ───────────────────────────────────────────────────────────
+  protected selectTab(tab: string): void {
+    this.activeTab.set(tab);
+    if (tab === 'enrolled') void this.loadEnrollments();
+  }
+
+  protected async cancelEnrollment(enrollmentId: string): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Cancel enrollment',
+      message: 'Stop this contact’s progress through the sequence?',
+      variant: 'warning',
+      confirmText: 'Cancel enrollment',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.cancelEnrollment(enrollmentId);
+      this.alertSvc.showSuccess('Enrollment cancelled');
+      void this.loadEnrollments();
+    } catch {
+      this.alertSvc.showError('Could not cancel the enrollment.');
+    } finally {
+      end();
+    }
+  }
+
+  protected contactName(row: { person_first_name: string | null; person_last_name: string | null }): string {
+    return `${row.person_first_name || ''} ${row.person_last_name || ''}`.trim() || 'Unknown contact';
+  }
+
+  protected stepPositionLabel(row: EnrollmentRow): string {
+    const total = this.steps().length;
+    if (row.status !== 'active') return row.status;
+    return total > 0 ? `Step ${row.current_step_number} of ${total}` : `Step ${row.current_step_number}`;
+  }
+
+  protected runContact(run: RunRow): string {
+    return `${run.person_first_name || ''} ${run.person_last_name || ''}`.trim() || 'A contact';
+  }
+
+  // ── loaders ────────────────────────────────────────────────────────────────
+  private async loadPickers(): Promise<void> {
+    const [tags, forms, lists, shifts, teams] = await Promise.all([
+      this.safeRows(() => this.tagsSvc.getAll({ limit: 1000 })),
+      this.safeRows(() => this.formsSvc.getAll({ limit: 1000 })),
+      this.safeRows(() => this.listsSvc.getAll({ limit: 1000 })),
+      this.safeRows(() => this.volunteerEventsSvc.getAll({ limit: 1000 })),
+      this.safeRows(() => this.teamsSvc.getAll({ limit: 1000 })),
+    ]);
+    this.tags.set(tags);
+    this.webForms.set(forms);
+    this.lists.set(lists);
+    this.volunteerEvents.set(shifts);
+    this.teamMembers.set(teams);
+  }
+
+  private async safeRows(fn: () => Promise<{ rows?: unknown[] } | undefined>): Promise<OptionRow[]> {
+    try {
+      const res = await fn();
+      return (res?.rows ?? []).map((r) => {
+        const rec = r as Record<string, unknown>;
+        const name =
+          (rec['name'] as string) ||
+          `${(rec['first_name'] as string) || ''} ${(rec['last_name'] as string) || ''}`.trim() ||
+          String(rec['id']);
+        return { id: String(rec['id']), name };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  private async loadWorkflow(): Promise<void> {
     const id = this.workflowId();
     if (!id) return;
     const end = this._loading.begin();
@@ -316,10 +483,13 @@ export class WorkflowFormComponent implements OnInit {
           trigger_event_id: record.trigger_event_id || '',
           status: record.status || 'draft',
         });
+        const cond = record.conditions;
+        if (cond != null && typeof cond === 'object' && (cond as { kind?: string }).kind === 'group') {
+          this.conditions.set(cond as QueryBuilderGroupNode);
+        }
       }
-    } catch (err) {
-      console.error('Failed to load workflow details', err);
-      this.alertSvc.showError('Failed to load workflow details.');
+    } catch {
+      this.alertSvc.showError('Could not load the automation.');
     } finally {
       end();
     }
@@ -330,9 +500,9 @@ export class WorkflowFormComponent implements OnInit {
     if (!id) return;
     try {
       const records = await this.workflowsSvc.getSteps(id);
-      this.steps.set(records || []);
-    } catch (err) {
-      console.error('Failed to load workflow steps', err);
+      this.steps.set((records ?? []).map((r) => this.fromDbStep(r as Record<string, unknown>)));
+    } catch {
+      /* non-fatal */
     }
   }
 
@@ -341,279 +511,86 @@ export class WorkflowFormComponent implements OnInit {
     if (!id) return;
     try {
       const records = await this.workflowsSvc.getEnrollments(id);
-      this.enrollments.set(records || []);
-    } catch (err) {
-      console.error('Failed to load enrollments', err);
+      this.enrollments.set((records ?? []) as unknown as EnrollmentRow[]);
+    } catch {
+      /* non-fatal */
     }
   }
 
-  protected async deleteWorkflow() {
+  private async loadRuns(): Promise<void> {
     const id = this.workflowId();
     if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Workflow',
-      message: 'Are you sure you want to delete this workflow? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
     try {
-      await this.workflowsSvc.delete(id);
-      this.workflowsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Workflow deleted');
-      await this.router.navigate(['/automations']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete workflow';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
+      const records = await this.workflowsSvc.getRuns(id, 20);
+      this.runs.set((records ?? []) as unknown as RunRow[]);
+    } catch {
+      /* non-fatal */
     }
   }
 
-  // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
-  protected async saveSettings(done?: (() => void) | Event): Promise<void> {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (!this.form().valid()) {
-      this.alertSvc.showError('Please enter a valid workflow name.');
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const raw = this.payload();
-          const data = {
-            ...raw,
-            trigger_event_id: raw.trigger_event_id && raw.trigger_event_id !== '' ? raw.trigger_event_id : null,
-          };
-          if (this.isNew()) {
-            // 1. Create Workflow Settings
-            const result = await this.workflowsSvc.add(data);
-            const newId = String(result['id']);
-            this.workflowId.set(newId);
-            this.isNew.set(false);
-
-            // 2. Save current steps as well
-            await this.workflowsSvc.saveSteps(newId, this.steps());
-
-            this.alertSvc.showSuccess('Workflow created successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['../', newId], { relativeTo: this.route });
-            }
-          } else {
-            const id = this.workflowId();
-            if (id) {
-              // Update settings
-              await this.workflowsSvc.update(id, data);
-              // Save steps
-              await this.workflowsSvc.saveSteps(id, this.steps());
-            }
-
-            this.alertSvc.showSuccess('Workflow saved successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.loadWorkflowDetails();
-              void this.loadSteps();
-            }
-          }
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : 'An error occurred while saving the workflow.',
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-
-  // --- STEP DESIGNER ACTIONS ---
-  protected addStepAt(index: number): void {
-    const current = [...this.steps()];
-    const newStep = {
-      step_number: index + 1,
-      delay_days: index === 0 ? 1 : 2,
+  // ── helpers ────────────────────────────────────────────────────────────────
+  private makeStep(kind: WorkflowStepKind): SequenceStep {
+    return {
+      uid: newUid(),
+      kind,
+      config: {},
+      delay_days: kind === 'wait' ? 1 : 0,
       delay_unit: 'days',
-      subject: 'Follow-up message',
-      preview_text: '',
-      html_content: '<p>Hi there,</p><p>We wanted to touch base again...</p>',
-      plain_text_content: 'Hi there,\n\nWe wanted to touch base again...',
+      subject: kind === 'send_email' ? 'Your message' : null,
+      preview_text: null,
+      html_content: kind === 'send_email' ? '<p>Hi there,</p><p>…</p>' : null,
+      plain_text_content: kind === 'send_email' ? 'Hi there,\n\n…' : null,
     };
-    current.splice(index, 0, newStep);
+  }
 
-    // Reorder/Re-index step numbers
-    const updated = current.map((step, idx) => ({
-      ...step,
-      step_number: idx + 1,
+  private updateStep(index: number, patch: Partial<SequenceStep>): void {
+    this.steps.update((steps) => steps.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  }
+
+  private toStepPayload(): SequenceStepPayload[] {
+    return this.steps().map((s) => ({
+      kind: s.kind,
+      config: s.kind === 'wait' || s.kind === 'send_email' ? null : s.config,
+      delay_days: s.delay_days,
+      delay_unit: s.delay_unit,
+      subject: s.subject,
+      preview_text: s.preview_text,
+      html_content: s.html_content,
+      plain_text_content: s.plain_text_content,
     }));
-    this.steps.set(updated);
-
-    // Auto-select new step properties in sidebar
-    this.selectedNodeType.set('step');
-    this.selectedNodeIndex.set(index);
   }
 
-  protected addStep(): void {
-    this.addStepAt(this.steps().length);
-  }
-
-  protected removeStep(index: number): void {
-    const current = this.steps();
-    const updated = current
-      .filter((_, idx) => idx !== index)
-      .map((step, idx) => ({
-        ...step,
-        step_number: idx + 1,
-      }));
-    this.steps.set(updated);
-
-    // Clear selection if deleted step was selected
-    if (this.selectedNodeIndex() === index) {
-      this.selectedNodeType.set('settings');
-      this.selectedNodeIndex.set(null);
-    } else {
-      const selectedIndex = this.selectedNodeIndex();
-      if (selectedIndex !== null && selectedIndex > index) {
-        this.selectedNodeIndex.set(selectedIndex - 1);
-      }
-    }
-  }
-
-  // --- EMAIL DESIGNER MODAL METHODS ---
-  protected openEmailDesigner(idx: number): void {
-    this.editingEmailStepIndex.set(idx);
-  }
-
-  protected closeEmailDesigner(): void {
-    this.editingEmailStepIndex.set(null);
-  }
-
-  protected getEditingHtml(): string {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return '';
-    return this.steps()[idx]?.html_content || '';
-  }
-
-  protected getEditingText(): string {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return '';
-    return this.steps()[idx]?.plain_text_content || '';
-  }
-
-  protected onStepHtmlChange(html: string): void {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return;
-    const current = [...this.steps()];
-    current[idx] = {
-      ...current[idx],
-      html_content: html,
+  private fromDbStep(r: Record<string, unknown>): SequenceStep {
+    const kind = (r['kind'] as WorkflowStepKind) || 'send_email';
+    const rawConfig = r['config'];
+    const config = rawConfig != null && typeof rawConfig === 'object' ? (rawConfig as SequenceStep['config']) : {};
+    return {
+      uid: newUid(),
+      kind,
+      config,
+      delay_days: Number(r['delay_days'] ?? 0),
+      delay_unit: (r['delay_unit'] as 'days' | 'hours') || 'days',
+      subject: (r['subject'] as string) ?? null,
+      preview_text: (r['preview_text'] as string) ?? null,
+      html_content: (r['html_content'] as string) ?? null,
+      plain_text_content: (r['plain_text_content'] as string) ?? null,
     };
-    this.steps.set(current);
-  }
-
-  protected onStepTextChange(text: string): void {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return;
-    const current = [...this.steps()];
-    current[idx] = {
-      ...current[idx],
-      plain_text_content: text,
-    };
-    this.steps.set(current);
-  }
-
-  // --- MANUAL ENROLLMENT METHODS ---
-  protected async searchContacts(): Promise<void> {
-    const query = this.searchQuery().trim();
-    if (!query) {
-      this.searchResults.set([]);
-      return;
-    }
-    this.searchingContacts.set(true);
-    try {
-      const res = await this.personsSvc.getAll({ searchStr: query, limit: 10 });
-      this.searchResults.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to search contacts', err);
-      this.alertSvc.showError('Failed to search contacts.');
-    } finally {
-      this.searchingContacts.set(false);
-    }
-  }
-
-  protected async enrollSelected(personId: string): Promise<void> {
-    const wfId = this.workflowId();
-    if (!wfId) return;
-    const end = this._loading.begin();
-    try {
-      await this.workflowsSvc.enrollPerson(wfId, personId);
-      this.alertSvc.showSuccess('Contact successfully enrolled in campaign.');
-      this.searchQuery.set('');
-      this.searchResults.set([]);
-      void this.loadEnrollments();
-    } catch (err) {
-      console.error('Enrollment failed', err);
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to enroll contact.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async cancelEnrollment(enrollmentId: string): Promise<void> {
-    const confirmCancel = await this.dialogs.confirm({
-      title: 'Cancel Enrollment',
-      message: 'Are you sure you want to cancel this enrollment? This stops any future emails in this sequence.',
-      variant: 'warning',
-      confirmText: 'Cancel Enrollment',
-    });
-    if (!confirmCancel) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.workflowsSvc.cancelEnrollment(enrollmentId);
-      this.alertSvc.showSuccess('Enrollment cancelled.');
-      void this.loadEnrollments();
-    } catch (err) {
-      console.error('Cancellation failed', err);
-      this.alertSvc.showError('Failed to cancel enrollment.');
-    } finally {
-      end();
-    }
-  }
-
-  protected formatTriggerType(trigger: string): string {
-    if (trigger === 'volunteer_signup') return 'Volunteer Signup';
-    if (trigger === 'manual') return 'Manual Enrollment';
-    if (trigger === 'tag_added') return 'Tag Added';
-    if (trigger === 'web_form_submitted') return 'Web Form Submitted';
-    if (trigger === 'volunteer_shift_status') return 'Volunteer Shift Status';
-    if (trigger === 'contact_created') return 'New Contact Created';
-    if (trigger === 'list_joined') return 'List Joined';
-    if (trigger === 'payment_event') return 'Billing / Payment Event';
-    if (trigger === 'new_subscriber') return 'New Subscriber';
-    if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
-    return trigger;
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+const CONDITION_OPS = [
+  { value: 'is', label: 'is' },
+  { value: 'is_not', label: 'is not' },
+  { value: 'at_least', label: 'is at least' },
+  { value: 'contains', label: 'contains' },
+];
+
+const SHIFT_STATUS_OPTIONS: OptionRow[] = [
+  { id: 'attended', name: 'Attended' },
+  { id: 'no_show', name: 'No-show' },
+  { id: 'cancelled', name: 'Cancelled' },
+];
+
+function emptyConditions(): QueryBuilderGroupNode {
+  return { kind: 'group', id: newUid(), conjunction: 'AND', rules: [] };
 }

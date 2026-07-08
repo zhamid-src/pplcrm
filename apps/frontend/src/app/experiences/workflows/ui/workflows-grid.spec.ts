@@ -3,80 +3,87 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { WorkflowsGridComponent } from './workflows-grid';
 import { WorkflowsService } from '../services/workflows-service';
 
 class MockWorkflowsService {
-  getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  list = vi.fn().mockResolvedValue({ rows: [], summary: { total: 0, active: 0, runs30d: 0 } });
+  setStatus = vi.fn().mockResolvedValue({ success: true, status: 'paused' });
+  triggerRefresh = vi.fn();
   abort = vi.fn();
   refreshCount = signal(0);
 }
 
+const alertStub = { showSuccess: vi.fn(), showError: vi.fn() };
+
 describe('WorkflowsGridComponent', () => {
   let component: WorkflowsGridComponent;
   let fixture: ComponentFixture<WorkflowsGridComponent>;
+  let svc: MockWorkflowsService;
 
   beforeEach(async () => {
+    svc = new MockWorkflowsService();
     await TestBed.configureTestingModule({
       imports: [WorkflowsGridComponent],
-      providers: [provideRouter([]), { provide: WorkflowsService, useValue: new MockWorkflowsService() }],
-    }).compileComponents();
+      providers: [provideRouter([]), { provide: AlertService, useValue: alertStub }],
+    })
+      // The list component provides its own WorkflowsService — override it with the mock.
+      .overrideComponent(WorkflowsGridComponent, {
+        set: { providers: [{ provide: WorkflowsService, useValue: svc }] },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(WorkflowsGridComponent);
     component = fixture.componentInstance;
   });
 
-  function getFormatter(field: string) {
-    const col = component['col'].find((c: { field: string }) => c.field === field);
-    const formatter = col?.valueFormatter;
-    if (typeof formatter !== 'function') {
-      throw new Error(`Column "${field}" has no valueFormatter function`);
-    }
-    return formatter;
-  }
-
-  it('should create and define the workflow columns', () => {
-    expect(component).toBeTruthy();
-    expect(component['col'].map((c: { field: string }) => c.field)).toEqual([
-      'name',
-      'trigger_type',
-      'status',
-      'steps_count',
-      'active_enrollments_count',
-      'updated_at',
-    ]);
+  it('should build the summary sentence from the loaded summary', async () => {
+    svc.list.mockResolvedValue({ rows: [], summary: { total: 6, active: 4, runs30d: 1847 } });
+    await component['load']();
+    expect(component['summarySentence']()).toBe('6 automations · 4 active · 1,847 runs in the last 30 days');
   });
 
-  it('should humanize known trigger types', () => {
-    const format = getFormatter('trigger_type');
-    expect(format({ value: 'volunteer_signup', data: {} } as never)).toBe('Volunteer Signup');
-    expect(format({ value: 'manual', data: {} } as never)).toBe('Manual Enrollment');
-    expect(format({ value: null, data: {} } as never)).toBe('--');
+  it('should build a recipe sentence from trigger + steps', async () => {
+    await component['load']();
+    const row = {
+      id: '1',
+      name: 'Volunteer follow-up',
+      trigger_type: 'web_form_submitted',
+      status: 'active',
+      conditions: null,
+      steps: [{ kind: 'add_tag', config: { tag_name: 'volunteer' }, delay_days: 0, delay_unit: 'days', subject: null }],
+      runs_30d: 0,
+      last_run_at: null,
+      last_run_status: null,
+      last_run_error: null,
+    };
+    expect(component['recipe'](row as never)).toBe('When form submitted → add tag volunteer');
   });
 
-  it('should title-case unmapped trigger types by replacing underscores', () => {
-    const format = getFormatter('trigger_type');
-    expect(format({ value: 'tag_added', data: {} } as never)).toBe('Tag Added');
-  });
+  it('should optimistically flip status and call setStatus on toggle', async () => {
+    svc.list.mockResolvedValue({
+      rows: [
+        {
+          id: '9',
+          name: 'X',
+          trigger_type: 'manual',
+          status: 'active',
+          conditions: null,
+          steps: [],
+          runs_30d: 0,
+          last_run_at: null,
+          last_run_status: null,
+          last_run_error: null,
+        },
+      ],
+      summary: { total: 1, active: 1, runs30d: 0 },
+    });
+    await component['load']();
 
-  it('should humanize known statuses and fall back for others', () => {
-    const format = getFormatter('status');
-    expect(format({ value: 'active', data: {} } as never)).toBe('Active');
-    expect(format({ value: 'draft', data: {} } as never)).toBe('Draft');
-    expect(format({ value: 'paused', data: {} } as never)).toBe('Paused');
-    expect(format({ value: 'archived', data: {} } as never)).toBe('Archived');
-    expect(format({ value: null, data: {} } as never)).toBe('--');
-  });
+    await component['toggleStatus'](component['rows']()[0] as never, new Event('change'));
 
-  it('should default counts to 0 when missing', () => {
-    const format = getFormatter('steps_count');
-    expect(format({ value: undefined, data: {} } as never)).toBe('0');
-    expect(format({ value: 5, data: {} } as never)).toBe('5');
-  });
-
-  it('should format the updated_at date and fall back to "--" for invalid values', () => {
-    const format = getFormatter('updated_at');
-    expect(format({ value: '2026-05-01T00:00:00Z', data: {} } as never)).toContain('2026');
-    expect(format({ value: 'garbage', data: {} } as never)).toBe('--');
+    expect(svc.setStatus).toHaveBeenCalledWith('9', 'paused');
+    expect(component['rows']()[0].status).toBe('paused');
   });
 });

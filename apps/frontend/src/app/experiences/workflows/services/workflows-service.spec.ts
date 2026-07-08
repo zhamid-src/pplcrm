@@ -11,9 +11,12 @@ describe('WorkflowsService', () => {
         create: { mutate: vi.fn() },
         count: { query: vi.fn() },
         getAllWithCounts: { query: vi.fn() },
+        list: { query: vi.fn() },
         getById: { query: vi.fn() },
         getSteps: { query: vi.fn() },
         saveSteps: { mutate: vi.fn() },
+        setStatus: { mutate: vi.fn() },
+        getRuns: { query: vi.fn() },
         getEnrollments: { query: vi.fn() },
         enrollPerson: { mutate: vi.fn() },
         cancelEnrollment: { mutate: vi.fn() },
@@ -88,6 +91,35 @@ describe('WorkflowsService', () => {
 
     expect(mockApi.workflows.getById.query).toHaveBeenCalledWith('3');
     expect(result.id).toBe('3');
+  });
+
+  it('should fetch the enriched automations list', async () => {
+    const payload = { rows: [{ id: '1' }], summary: { total: 1, active: 1, runs30d: 5 } };
+    mockApi.workflows.list.query.mockResolvedValue(payload);
+
+    const result = await service.list();
+
+    expect(mockApi.workflows.list.query).toHaveBeenCalledWith(undefined, { signal: (service as any).ac.signal });
+    expect(result).toEqual(payload);
+  });
+
+  it('should set an automation status', async () => {
+    mockApi.workflows.setStatus.mutate.mockResolvedValue({ success: true, status: 'paused' });
+
+    const result = await service.setStatus('1', 'paused');
+
+    expect(mockApi.workflows.setStatus.mutate).toHaveBeenCalledWith({ id: '1', status: 'paused' });
+    expect(result).toEqual({ success: true, status: 'paused' });
+  });
+
+  it('should fetch recent runs', async () => {
+    const runs = [{ id: 'r1', status: 'success' }];
+    mockApi.workflows.getRuns.query.mockResolvedValue(runs);
+
+    const result = await service.getRuns('1', 10);
+
+    expect(mockApi.workflows.getRuns.query).toHaveBeenCalledWith({ workflowId: '1', limit: 10 });
+    expect(result).toEqual(runs);
   });
 
   it('should get workflow steps', async () => {
