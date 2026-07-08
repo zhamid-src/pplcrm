@@ -316,6 +316,15 @@ body {
   border-color: var(--color-line);
 }
 
+/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
+   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
+   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
+   just apply on the touch surface). Keep the control's own flex centering. */
+@utility touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
 /* Dark mode overrides for Quill and email prose */
 [data-theme='dark'] .ql-toolbar.ql-snow,
 [data-theme='dark'] .ql-container.ql-snow {
