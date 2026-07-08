@@ -65,7 +65,7 @@
         <tr>
           <td>
             <div class="flex items-center gap-2">
-              <span class="badge badge-secondary badge-sm font-medium">{{ row.name }}</span>
+              <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
               @if (isUnused(row)) {
               <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
               }

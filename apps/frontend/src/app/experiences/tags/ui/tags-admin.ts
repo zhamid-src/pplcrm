@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -17,7 +18,7 @@ const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink],
+  imports: [Icon, RouterLink, TagItem],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {

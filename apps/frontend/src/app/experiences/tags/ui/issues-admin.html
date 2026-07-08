@@ -43,7 +43,7 @@
         <tr>
           <td class="tabular-nums text-base-content/50">{{ entry.rank }}</td>
           <td>
-            <span class="badge badge-info badge-sm font-medium">{{ entry.row.name }}</span>
+            <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
           </td>
           <td>
             <div class="flex items-center gap-2">
@@ -100,7 +100,6 @@
 
   <p class="text-xs text-base-content/50 px-1">
     Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
-    field from tags everywhere — this info-tinted chip is never the same as a tag's chip — because issues power
-    issue-based filtering and targeting.
+    field from tags everywhere because issues power issue-based filtering and targeting.
   </p>
 </div>
