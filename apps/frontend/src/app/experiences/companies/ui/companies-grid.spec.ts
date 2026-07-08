@@ -52,29 +52,25 @@ describe('CompaniesGrid', () => {
   it('should create and initialize columns', () => {
     expect(component).toBeTruthy();
     expect(component['col']).toBeDefined();
-    expect(component['col'].map((c: any) => c.field)).toEqual([
-      'name',
-      'website',
-      'industry',
-      'email',
-      'phone',
-      'description',
-      'created_at',
-    ]);
+    expect(component['col'].map((c: any) => c.field)).toEqual(['name', 'persons_count', 'website', 'description']);
   });
 
-  it('should format the created_at column as a localized date', () => {
-    const createdCol = component['col'].find((c: any) => c.field === 'created_at');
-    expect(createdCol?.valueFormatter).toBeDefined();
-
-    const formatted = createdCol?.valueFormatter?.({ value: '2026-01-15T10:00:00Z', data: {} } as any);
-    expect(formatted).toMatch(/2026/);
+  it('should make the Company Name column the record door', () => {
+    const nameCol = component['col'].find((c: any) => c.field === 'name');
+    expect(nameCol?.doorColumn).toBe(true);
+    expect(nameCol?.noHide).toBe(true);
+    expect(nameCol?.editable).toBe(false);
   });
 
-  it('should format an empty created_at value as an empty string', () => {
-    const createdCol = component['col'].find((c: any) => c.field === 'created_at');
-    const formatted = createdCol?.valueFormatter?.({ value: null, data: {} } as any);
-    expect(formatted).toBe('');
+  it('should format the People count as a singular/plural label without being a door', () => {
+    const peopleCol = component['col'].find((c: any) => c.field === 'persons_count');
+    expect(peopleCol?.valueFormatter).toBeDefined();
+    expect(peopleCol?.doorColumn).toBeFalsy();
+    expect(peopleCol?.onCellClicked).toBeUndefined();
+
+    expect(peopleCol?.valueFormatter?.({ data: { persons_count: 1 } } as any)).toBe('1 person');
+    expect(peopleCol?.valueFormatter?.({ data: { persons_count: 12 } } as any)).toBe('12 people');
+    expect(peopleCol?.valueFormatter?.({ data: {} } as any)).toBe('0 people');
   });
 
   it('should map known CSV headers to company fields via autoMapHeader', () => {

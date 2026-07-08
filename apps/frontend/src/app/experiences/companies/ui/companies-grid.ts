@@ -1,5 +1,6 @@
 import { Component, signal, inject, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -59,11 +60,6 @@ export class CompaniesGrid {
   private readonly personsService = inject(PersonsService);
   private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
 
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
   protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
   protected readonly importerOpen = signal(false);
   protected readonly importSummary = signal<CsvImportSummary | null>(null);
@@ -90,19 +86,34 @@ export class CompaniesGrid {
     }
   }
 
-  protected col = [
-    { field: 'name', headerName: 'Company Name', editable: true },
-    { field: 'website', headerName: 'Website', editable: true },
-    { field: 'industry', headerName: 'Industry', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'phone', headerName: 'Phone', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
+  protected col: ColDef[] = [
     {
-      field: 'created_at',
-      headerName: 'Created',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
+      // The door that opens the company record. Non-editable and non-hidable identity column.
+      field: 'name',
+      headerName: 'Company Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 200,
     },
+    {
+      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
+      // the Company Name column is the door.
+      field: 'persons_count',
+      headerName: 'People',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
+    },
+    { field: 'website', headerName: 'Website', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
   ];
+
+  /** Formats the employee count as "N people" (singular/plural). */
+  private formatPeopleCount(params: CellParams): string {
+    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
+  }
 
   protected openImportDialog() {
     this.importSummary.set(null);
@@ -165,13 +176,6 @@ export class CompaniesGrid {
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
-  }
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
   }
 }
 
