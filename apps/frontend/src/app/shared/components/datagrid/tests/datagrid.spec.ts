@@ -207,6 +207,32 @@ describe('DataGrid', () => {
     });
   });
 
+  describe('count sentence (match-your-filters clause)', () => {
+    it('prefixes "N match your filters" once a fetch has run and a filter is active', async () => {
+      mockGridSvc.getAll.mockResolvedValue({ rows: [{ id: '1' }, { id: '2' }], count: 2 });
+      fixture.componentRef.setInput('grainLayout', true);
+      fixture.componentRef.setInput('totalSentence', '4 people total');
+      await init();
+
+      // A fetch has run — hasInitiatedLoad must be true even though the fast mock
+      // never let the (gated) isLoading() signal flip true. This is the regression
+      // guard: if the count is gated on isLoading() again, the prefix disappears.
+      expect((component as unknown as { hasInitiatedLoad: () => boolean }).hasInitiatedLoad()).toBe(true);
+      expect(component.totalCountAll()).toBe(2);
+
+      // Unfiltered → just the grand-total sentence, no prefix.
+      expect(component.countSentence()).toBe('4 people total');
+
+      // Filter active → the same clause the export label already showed.
+      component.toggleTagFilter('friend', true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.anyFilterActive()).toBe(true);
+      expect(component.countSentence()).toBe('2 match your filters · 4 people total');
+    });
+  });
+
   describe('isColFiltered', () => {
     it('reports true only for fields with an active filter value', async () => {
       await init();
