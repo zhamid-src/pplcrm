@@ -111,10 +111,21 @@ function countByCompanyId() {
     .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
 }
 
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
 function getById() {
   return authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+/** Tenant-scoped resolution by opaque public_id for /people/:slug URLs (spec §1). */
+function getByPublicId() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getByPublicId(input, ctx.auth));
 }
 
 function getActivity() {
@@ -178,9 +189,38 @@ function importMany() {
     tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
     skipped: z.number().int().nonnegative().optional(),
     file_name: z.string().trim().min(1).max(255).optional(),
+    // §17 CSV import wizard: how to handle rows whose email matches a person
+    // that already exists — one choice for the whole batch (spec review step
+    // is a single radio group, not a per-row decision).
+    duplicate_decision: z.enum(['merge', 'skip', 'import_new']).optional().default('skip'),
+    // Add every imported/merged person to this static list (created if it
+    // doesn't exist yet). Resolved by exact, case-insensitive name match.
+    list_name: z.string().trim().min(1).max(100).optional(),
+    // Raw uploaded CSV text, retained 90 days for the History page's
+    // per-import re-download (spec §17 footer copy).
+    source_csv: z.string().max(10_000_000).optional(),
+    // Rows the wizard's Review step already excluded/cleaned client-side
+    // (bad-email "Skip" decision) — recorded so History's "download skipped
+    // rows" export covers them too, not just server-detected skips.
+    client_skip_reasons: z
+      .array(
+        z.object({
+          row: z.number().int().nonnegative(),
+          email: z.string().optional(),
+          reason: z.string().max(200),
+        }),
+      )
+      .max(500)
+      .optional(),
   });
 
   return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
+}
+
+function checkDuplicateEmails() {
+  return authProcedure
+    .input(z.object({ emails: z.array(z.string().trim().max(255)).max(2000) }))
+    .query(({ input, ctx }) => personsService.checkDuplicateEmails(ctx.auth, input.emails));
 }
 
 function getPotentialDuplicates() {
@@ -228,6 +268,7 @@ export const PersonsRouter = router({
   import: importMany(),
   getTags: getTags(),
   getById: getById(),
+  getByPublicId: getByPublicId(),
   getActivity: getActivity(),
   attachTag: attachTag(),
   detachTag: detachTag(),
@@ -237,10 +278,12 @@ export const PersonsRouter = router({
   getByHouseholdId: getByHouseholdId(),
   getByCompanyId: getByCompanyId(),
   countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
   getPotentialDuplicates: getPotentialDuplicates(),
   getDuplicateCounts: getDuplicateCounts(),
   mergePersons: mergePersons(),
   moveEntireHousehold: moveEntireHousehold(),
+  checkDuplicateEmails: checkDuplicateEmails(),
 });

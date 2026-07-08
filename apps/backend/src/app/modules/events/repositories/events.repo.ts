@@ -74,14 +74,14 @@ export class EventsRepo extends BaseRepository<'events'> {
           .as('registrations_count'),
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce(
+        (options.sortModel ?? []).reduce(
           (acc: typeof qb, sort: { colId: string; sort: 'asc' | 'desc' }) => acc.orderBy(sort.colId, sort.sort),
           qb,
         ),
       )
       .$if(!options.sortModel?.length, (qb) => qb.orderBy('events.start_time', 'asc'))
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 0) - (options.startRow ?? 0)),
       )
       .execute();
 

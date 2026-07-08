@@ -9,13 +9,13 @@ import { Icon } from '@icons/icon';
 export class DataGridFilterPanelComponent {
   public apply = output<void>();
   public changeOp = output<{ field: string; op: string }>();
-  public changeValue = output<{ field: string; value: any }>();
+  public changeValue = output<{ field: string; value: unknown }>();
   public clear = output<void>();
-  public close = output<void>();
+  public closePanel = output<void>();
   public openAdvanced = output<void>();
   public hasActiveFilters = input<boolean>(false);
   public labelFor = input<(field: string) => string>((f) => f);
   public optionsFor = input<(field: string) => string[] | null>((_f) => null);
   public panelFields = input<string[]>([]);
-  public panelFilters = input<Record<string, { op: string; value: any }>>({});
+  public panelFilters = input<Record<string, { op: string; value: unknown }>>({});
 }

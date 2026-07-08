@@ -44,16 +44,11 @@ export class ProfilePage implements OnInit {
   private startX = 0;
   private startY = 0;
 
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
   protected readonly payload = signal({
     email: '',
     first_name: '',
     last_name: '',
-    mention_in_comment: true,
-    task_assigned: true,
-    task_due: true,
-    person_assigned: true,
-    export_ready: true,
-    import_summary: true,
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -63,15 +58,57 @@ export class ProfilePage implements OnInit {
     disabled(p.email, () => this.isViewer() || this.saving());
     disabled(p.first_name, () => this.isViewer() || this.saving());
     disabled(p.last_name, () => this.isViewer() || this.saving());
-    disabled(p.mention_in_comment, () => this.isViewer() || this.saving());
-    disabled(p.task_assigned, () => this.isViewer() || this.saving());
-    disabled(p.task_due, () => this.isViewer() || this.saving());
-    disabled(p.person_assigned, () => this.isViewer() || this.saving());
-    disabled(p.export_ready, () => this.isViewer() || this.saving());
-    disabled(p.import_summary, () => this.isViewer() || this.saving());
   });
 
+  // Instant-apply card: each email-notification toggle persists immediately (no Save button).
+  protected readonly notifPrefs = signal<NotifPrefs>({
+    mention_in_comment: true,
+    task_assigned: true,
+    task_due: true,
+    person_assigned: true,
+    export_ready: true,
+    import_summary: true,
+  });
+  protected readonly savingNotif = signal<NotifKey | null>(null);
+
+  // Grouped per §20: work-facing alerts vs data-job outcomes.
+  protected readonly notifGroups: ReadonlyArray<{
+    heading: string;
+    items: ReadonlyArray<{ key: NotifKey; title: string; description: string }>;
+  }> = [
+    {
+      heading: 'About your work',
+      items: [
+        {
+          key: 'mention_in_comment',
+          title: 'Mentioned in a comment',
+          description: 'When someone @-mentions you in a thread',
+        },
+        { key: 'task_assigned', title: 'Task assigned to you', description: 'When a task is assigned to you' },
+        { key: 'task_due', title: 'Task due today or overdue', description: 'A daily reminder of tasks that need you' },
+        {
+          key: 'person_assigned',
+          title: 'Contact assigned to you',
+          description: 'When a contact’s ownership moves to you',
+        },
+      ],
+    },
+    {
+      heading: 'About your data',
+      items: [
+        { key: 'export_ready', title: 'Export ready', description: 'A download link when your CSV export finishes' },
+        { key: 'import_summary', title: 'Import summary', description: 'Completion stats after a spreadsheet import' },
+      ],
+    },
+  ];
+
   protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
 
   protected readonly displayName = computed(() => {
     const user = this.detail();
@@ -162,8 +199,16 @@ export class ProfilePage implements OnInit {
       this.alerts.showSuccess('Profile updated successfully');
       await this.load();
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to update profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -178,8 +223,16 @@ export class ProfilePage implements OnInit {
       await this.auth.cancelEmailChange();
       this.alerts.showSuccess('Email change canceled and reverted');
       await this.load();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to cancel email change';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -309,8 +362,8 @@ export class ProfilePage implements OnInit {
       const data = await this.auth.uploadAvatar(webpFile);
       this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
       this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to crop/upload avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -322,8 +375,8 @@ export class ProfilePage implements OnInit {
       await this.auth.deleteAvatar();
       this.avatarUrl.set(null);
       this.alerts.showSuccess('Profile picture removed');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -345,8 +398,16 @@ export class ProfilePage implements OnInit {
       this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
       this.setForm(user);
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -355,24 +416,19 @@ export class ProfilePage implements OnInit {
   }
 
   private setForm(user: IAuthUserDetail) {
-    const prefs = user.notification_preferences || {
-      mention_in_comment: true,
-      task_assigned: true,
-      task_due: true,
-      person_assigned: true,
-      export_ready: true,
-      import_summary: true,
-    };
+    const prefs = user.notification_preferences;
     this.payload.set({
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name ?? '',
-      mention_in_comment: prefs.mention_in_comment ?? true,
-      task_assigned: prefs.task_assigned ?? true,
-      task_due: prefs.task_due ?? true,
-      person_assigned: prefs.person_assigned ?? true,
-      export_ready: prefs.export_ready ?? true,
-      import_summary: prefs.import_summary ?? true,
+    });
+    this.notifPrefs.set({
+      mention_in_comment: prefs?.mention_in_comment ?? true,
+      task_assigned: prefs?.task_assigned ?? true,
+      task_due: prefs?.task_due ?? true,
+      person_assigned: prefs?.person_assigned ?? true,
+      export_ready: prefs?.export_ready ?? true,
+      import_summary: prefs?.import_summary ?? true,
     });
   }
 
@@ -382,18 +438,76 @@ export class ProfilePage implements OnInit {
       const trimmed = value?.trim() ?? '';
       return trimmed.length ? trimmed : null;
     };
+    // Identity only — notification preferences are persisted instantly by their own card.
     return {
       email: raw.email?.trim() ?? '',
       first_name: raw.first_name?.trim() ?? '',
       last_name: normalize(raw.last_name),
-      notification_preferences: {
-        mention_in_comment: raw.mention_in_comment,
-        task_assigned: raw.task_assigned,
-        task_due: raw.task_due,
-        person_assigned: raw.person_assigned,
-        export_ready: raw.export_ready,
-        import_summary: raw.import_summary,
-      },
     } as UpdateAuthUserType;
   }
+
+  // Instant-apply: flip one toggle and persist just the notification preferences.
+  protected async toggleNotif(key: NotifKey): Promise<void> {
+    if (this.isViewer() || this.savingNotif()) return;
+    const user = this.detail();
+    if (!user) return;
+
+    const previous = this.notifPrefs();
+    const next: NotifPrefs = { ...previous, [key]: !previous[key] };
+    this.notifPrefs.set(next);
+    this.savingNotif.set(key);
+    // Profile only toggles the 6 email prefs; preserve the untouched in-app
+    // variants (and default any missing) so the full 12-field shape stays valid.
+    const fullPrefs: NonNullable<IAuthUserDetail['notification_preferences']> = {
+      ...FULL_NOTIF_DEFAULTS,
+      ...user.notification_preferences,
+      ...next,
+    };
+    try {
+      await this.userService.updateUserProfile(user.id, {
+        notification_preferences: fullPrefs,
+      } as UpdateAuthUserType);
+      this.detail.set({ ...user, notification_preferences: fullPrefs });
+    } catch (err) {
+      // Roll the toggle back so the UI never lies about what's stored.
+      this.notifPrefs.set(previous);
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Could not save your notification preference',
+      );
+    } finally {
+      this.savingNotif.set(null);
+    }
+  }
+}
+
+type NotifPrefs = {
+  mention_in_comment: boolean;
+  task_assigned: boolean;
+  task_due: boolean;
+  person_assigned: boolean;
+  export_ready: boolean;
+  import_summary: boolean;
+};
+
+type NotifKey = keyof NotifPrefs;
+
+// Complete 12-field default (email + in-app variants) so a persisted preferences
+// object always satisfies the canonical shape even when the source is undefined.
+const FULL_NOTIF_DEFAULTS: NonNullable<IAuthUserDetail['notification_preferences']> = {
+  mention_in_comment: true,
+  mention_in_comment_in_app: true,
+  task_assigned: true,
+  task_assigned_in_app: true,
+  task_due: true,
+  task_due_in_app: true,
+  person_assigned: true,
+  person_assigned_in_app: true,
+  export_ready: true,
+  export_ready_in_app: true,
+  import_summary: true,
+  import_summary_in_app: true,
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

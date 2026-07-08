@@ -4,9 +4,17 @@ import { sql } from 'kysely';
 import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { TASK_OPEN_STATUSES } from '../../../../../../../libs/common/src';
 
 type TaskStatus = NonNullable<Models['tasks']['status']>;
 type TaskPriority = NonNullable<Models['tasks']['priority']>;
+
+/** A task open enough to count toward SLA-breach / count-sentence math (spec §4). */
+export interface OpenTaskForSla {
+  assigned_to: string | null;
+  created_at: Date;
+  id: string;
+}
 
 export class TasksRepo extends BaseRepository<'tasks'> {
   constructor() {
@@ -31,6 +39,49 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       .execute();
     const total = res?.[0]?.['total'] as unknown as number;
     return Number(total || 0);
+  }
+
+  /** Open tasks (todo/in_progress/waiting) with just enough columns to compute SLA breach. */
+  public async getOpenForSla(tenant_id: string): Promise<OpenTaskForSla[]> {
+    const rows = await this.getSelect()
+      .select(['id', 'created_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return rows.map((r) => ({
+      id: String(r.id),
+      created_at: r.created_at,
+      assigned_to: r.assigned_to == null ? null : String(r.assigned_to),
+    }));
+  }
+
+  public async countOpen(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenUnassigned(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', 'is', null)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenAssignedTo(tenant_id: string, user_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', '=', user_id)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
   }
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {

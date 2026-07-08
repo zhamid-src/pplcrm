@@ -5,8 +5,7 @@ import type { OperationDataType, Models } from '../../../../../../libs/common/sr
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createHmac } from 'crypto';
+import { publicOrgName } from '../../lib/public-tenant';
 import { WorkflowsController } from '../workflows/controller';
 import { logger } from '../../logger';
 
@@ -15,10 +14,6 @@ const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 const ipSignupTimestamps = new Map<string, number[]>();
 const SIGNUP_RATE_LIMIT_MAX = 5;
 const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-// Cache for tenant slug lookups to avoid fetching all tenants on every public request
-const TENANT_SLUG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-let tenantSlugCache: { tenants: { id: string; name: string }[]; expiresAt: number } | null = null;
 
 export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
   constructor() {
@@ -67,7 +62,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       send_signup_confirmation: payload.send_signup_confirmation ?? true,
       send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
-      fields: payload.fields ?? DEFAULT_FIELDS,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
   }
@@ -107,8 +107,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
     }
 
+    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
+    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
+    // ARRAY literal (see addEvent() above for the full explanation).
+    const { fields, ...restPayload } = payload;
     const row = {
-      ...payload,
+      ...restPayload,
+      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
       updatedby_id: auth.user_id,
     } as OperationDataType<'volunteer_events', 'update'>;
     const result = await this.update({
@@ -486,9 +491,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       .execute();
   }
 
-  public async getEventPublic(eventId: string) {
-    const isNumeric = /^\d+$/.test(eventId);
-    let query = this.getRepo()
+  /**
+   * Public signup-page lookup. Tenant-scoped by slug: volunteer-event slugs are unique per tenant,
+   * and the tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventPublic(tenantId: string, slug: string) {
+    return this.getRepo()
       .db.selectFrom('volunteer_events')
       .select([
         'volunteer_events.id',
@@ -512,49 +520,84 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
           .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
           .as('volunteers_count'),
-      ]);
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.slug', '=', slug)
+      .executeTakeFirst();
+  }
 
-    if (isNumeric) {
-      query = query.where((eb) =>
-        eb.or([eb('volunteer_events.id', '=', eventId as any), eb('volunteer_events.slug', '=', eventId)]),
-      );
-    } else {
-      query = query.where('volunteer_events.slug', '=', eventId);
+  /**
+   * Everything the public /v/:slug SPA page renders in one payload: the event, live signup count,
+   * and the org name. Unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventPublic(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
     }
 
-    return query.executeTakeFirst();
+    const orgName = await publicOrgName(tenantId);
+    const volunteersCount = Number(event.volunteers_count || 0);
+    const isPast = new Date(event.end_time) < new Date();
+    const isFull = event.capacity !== null && volunteersCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - volunteersCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        is_private: !!event.is_private,
+        fields,
+      },
+      volunteersCount,
+      isPast,
+      isFull,
+      remaining,
+    };
   }
 
-  public getTenantSlug(tenantId: string): string {
-    return createHmac('sha256', env.sharedSecret).update(tenantId).digest('hex').slice(0, 16);
+  /** Upcoming public volunteer events for the tenant's /volunteer listing page. */
+  public async getPublicEventListing(tenantId: string) {
+    const [orgName, events] = await Promise.all([publicOrgName(tenantId), this.getUpcomingEventsPublic(tenantId)]);
+    return {
+      orgName,
+      events: events.map((ev) => {
+        const volunteersCount = Number(ev.volunteers_count || 0);
+        const remaining = ev.capacity !== null ? Math.max(0, ev.capacity - volunteersCount) : null;
+        return {
+          slug: String(ev.slug),
+          name: String(ev.name),
+          description: ev.description ?? null,
+          location_address: ev.location_address ?? null,
+          start_time: ev.start_time,
+          end_time: ev.end_time,
+          capacity: ev.capacity ?? null,
+          isFull: ev.capacity !== null && volunteersCount >= ev.capacity,
+          remaining,
+        };
+      }),
+    };
   }
 
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const event = (await super.getOneById(input)) as any;
-    if (event) {
-      const slug = this.getTenantSlug(input.tenant_id);
-      return {
-        ...event,
-        public_url: `/api/events/view/${event.slug || event.id}`,
-        tenant_public_url: `/api/events/org/${slug}`,
-      } as any;
-    }
-    return event;
-  }
-
-  public async getTenantFromSlug(slug: string) {
-    const now = Date.now();
-    if (!tenantSlugCache || now > tenantSlugCache.expiresAt) {
-      const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
-      tenantSlugCache = {
-        tenants: tenants.map((t) => ({ id: String(t.id), name: String(t.name) })),
-        expiresAt: now + TENANT_SLUG_CACHE_TTL_MS,
-      };
-    }
-    return tenantSlugCache.tenants.find((t) => this.getTenantSlug(t.id) === slug);
-  }
-
-  public async signupVolunteerPublic(eventId: string, payload: Record<string, string>, clientIp: string) {
+  public async signupVolunteerPublic(
+    tenantId: string,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+  ) {
     // 1. Rate limiting check
     const now = Date.now();
     let timestamps = ipSignupTimestamps.get(clientIp) || [];
@@ -573,8 +616,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       ipSignupTimestamps.delete(clientIp);
     }
 
-    // 2. Fetch Event by ID
-    const event = await this.getEventPublic(eventId);
+    // 2. Fetch the event — tenant-scoped by slug
+    const event = await this.getEventPublic(tenantId, slug);
     if (!event) {
       throw new TRPCError({
         code: 'NOT_FOUND',
@@ -582,11 +625,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       });
     }
 
-    const tenantId = String(event.tenant_id);
-
     // 3. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for event ${eventId}`);
+      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
       return { success: true }; // Silent mock success
     }
 

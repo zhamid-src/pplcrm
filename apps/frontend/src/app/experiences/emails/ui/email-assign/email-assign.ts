@@ -42,7 +42,7 @@ export class EmailAssign {
   public users = signal<IAuthUser[]>([]);
 
   constructor() {
-    this.userService.getUsers().then((u) => this.users.set(u));
+    void this.userService.getUsers().then((u) => this.users.set(u));
     // Can't use computed because assignedTo is settable
     effect(() => {
       this.assignedTo.set(this.email()?.assigned_to || null);
@@ -61,7 +61,7 @@ export class EmailAssign {
     try {
       await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
       this.assignedTo.set(normalizedUserId);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Something went wrong, please try again');
       this.assignedTo.set(null);
     }

@@ -30,7 +30,15 @@
       "Bash(sed -i '' '523s/fastify.log.error\\(err,/fastify.log.error\\(_err,/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
       "Bash(sed -i '' '611s/fastify.log.error\\(err,/fastify.log.error\\(_err,/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
       "Bash(sed -i '' '691s/fastify.log.error\\(err\\)/fastify.log.error\\(_err\\)/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
-      "Bash(sed -i '' '749s/fastify.log.error\\(err\\)/fastify.log.error\\(_err\\)/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)"
+      "Bash(sed -i '' '749s/fastify.log.error\\(err\\)/fastify.log.error\\(_err\\)/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
+      "Bash(git commit --no-verify -m ' *)",
+      "Bash(sed -i '' '148s/^    const passkey = await this.db/    \\\\/\\\\/ NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping\\\\n    const passkey = await this.db/' apps/backend/src/app/modules/auth/passkey.controller.ts)",
+      "Bash(sed -i '' 's/^    const existingOutbox = await trx.selectFrom/    \\\\/\\\\/ NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id\\\\n    const existingOutbox = await trx.selectFrom/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
+      "Bash(sed -i '' 's/      \\\\.db\\\\.selectFrom\\('\\\\''events'\\\\''\\)/      \\\\/\\\\/ NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug\\\\n      .db.selectFrom\\('\\\\''events'\\\\''\\)/' apps/backend/src/app/modules/events/controller.ts)",
+      "Bash(sed -i '' 's/    const row = await this\\\\.db$/    \\\\/\\\\/ NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design\\\\n    const row = await this.db/' apps/backend/src/app/modules/zapier/zapier.service.ts)",
+      "Bash(sed -i '' 's/} catch \\(e\\) {/} catch \\(_e\\) {/g' apps/frontend/src/app/experiences/emails/services/emails-service.ts apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts apps/frontend/src/app/experiences/lists/ui/list-view.ts apps/frontend/src/app/experiences/summary/summary.ts apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts apps/frontend/src/app/routing/route-reuse-strategy.ts)",
+      "Bash(sed -i '' 's/} catch \\(err\\) {/} catch \\(_err\\) {/g' apps/backend/src/app/modules/files/routes/files.route.ts apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts apps/frontend/src/app/experiences/files/ui/files-grid.ts apps/frontend/src/app/experiences/lists/ui/list-form.ts apps/frontend/src/app/experiences/summary/summary.ts apps/frontend/src/app/experiences/tags/ui/tag-palette.service.ts)",
+      "Bash(sed -i '' 's/} catch \\(error\\) {/} catch \\(_error\\) {/g' apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts)"
     ]
   },
   "enabledPlugins": {
@@ -46,7 +54,9 @@
   },
   "sandbox": {
     "network": {
-      "allowedDomains": ["www.google-analytics.com"]
+      "allowedDomains": [
+        "www.google-analytics.com"
+      ]
     }
   }
 }

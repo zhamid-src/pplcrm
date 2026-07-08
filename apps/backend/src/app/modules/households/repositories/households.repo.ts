@@ -1,10 +1,10 @@
 import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 import { logger } from '../../../logger';
 
@@ -127,7 +127,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .where('country', 'is', null)
       .where('file_id', 'is', null)
       .where('notes', 'is', null)
-      .where('json', 'is', null)
       .selectAll()
       .limit(1)
       .executeTakeFirst();
@@ -202,13 +201,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
           return qb.where(
             sql<boolean>`(
-              LOWER(households.city) LIKE ${text} OR
-              LOWER(households.street1) LIKE ${text} OR
-              LOWER(households.street2) LIKE ${text} OR
-              LOWER(households.notes) LIKE ${text} OR
-              LOWER(tags.name) LIKE ${text}
+              households.city ILIKE ${text} OR
+              households.street1 ILIKE ${text} OR
+              households.street2 ILIKE ${text} OR
+              households.notes ILIKE ${text} OR
+              tags.name ILIKE ${text}
             )`,
           );
         });
@@ -284,6 +286,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.precinct',
         'households.ward',
         'households.geocoding_status',
+        'households.updated_at',
       ])
       .select((eb) => [
         eb
@@ -291,6 +294,21 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           .whereRef('persons.household_id', '=', 'households.id')
           .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
           .as('persons_count'),
+        // Members for the grid's Members column — {id, name} so each name can link to
+        // its person card. Ordered, empties dropped, one truncated one-liner on the client.
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(
+            sql<{ id: string; name: string }[]>`coalesce(
+              jsonb_agg(
+                jsonb_build_object('id', persons.id, 'name', trim(concat_ws(' ', persons.first_name, persons.last_name)))
+                order by persons.first_name, persons.last_name
+              ) filter (where nullif(trim(concat_ws(' ', persons.first_name, persons.last_name)), '') is not null),
+              '[]'::jsonb
+            )`.as('members'),
+          )
+          .as('members'),
         // is_placeholder: true only for the one household stored on the tenant row
         eb
           .case()
@@ -330,7 +348,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.createdby_id',
         'households.updatedby_id',
         'households.file_id',
-        'households.json',
         'households.address_fp_street',
         'households.address_fp_full',
         'households.tenant_id',
@@ -346,7 +363,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
               'createdby_id',
               'file_id',
               'home_phone',
-              'json',
               'notes',
               'address_fp_street',
               'address_fp_full',
@@ -456,6 +472,82 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
+  /**
+   * Real households the tenant has, excluding the permanent placeholder household
+   * (the one on `tenants.placeholder_household_id`, which just holds people with
+   * no address and is hidden from the grid). Mirrors the exclusion `getAll` uses,
+   * so the grain-tab count and count sentence match the visible rows.
+   */
+  public async countExcludingPlaceholder(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where((eb) =>
+        eb.or([
+          eb('tenants.placeholder_household_id', 'is', null),
+          eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+        ]),
+      )
+      .select(({ fn }) => [fn.count<number>('households.id').as('count')])
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
+  /**
+   * People who live in the tenant's placeholder household — i.e. have no matchable address.
+   * Returns the count plus the placeholder household id so the grid footer can link to them.
+   */
+  public async getUnhoused(tenant_id: string): Promise<{ count: number; household_id: string | null }> {
+    const result = await this.db
+      .selectFrom('tenants')
+      .leftJoin('persons', (join) =>
+        join
+          .onRef('persons.household_id', '=', 'tenants.placeholder_household_id')
+          .on('persons.tenant_id', '=', tenant_id),
+      )
+      .where('tenants.id', '=', tenant_id)
+      .select((eb) => [
+        'tenants.placeholder_household_id as household_id',
+        eb.fn.count<number>('persons.id').as('count'),
+      ])
+      .groupBy('tenants.placeholder_household_id')
+      .executeTakeFirst();
+    return {
+      count: Number(result?.count ?? 0),
+      household_id: result?.household_id != null ? String(result.household_id) : null,
+    };
+  }
+
+  public async countDistinctWards(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('ward', 'is not', null)
+      .where('ward', '!=', '')
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
   public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
     let q = this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
@@ -469,7 +561,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // eslint-disable-next-line local/no-unscoped-db-query -- outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -493,7 +586,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-    // eslint-disable-next-line local/no-unscoped-db-query -- outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -601,7 +695,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
 
     return { groups: sortedGroups, total };

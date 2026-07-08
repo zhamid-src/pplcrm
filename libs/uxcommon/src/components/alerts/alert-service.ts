@@ -3,6 +3,8 @@ import { toObservable } from '@angular/core/rxjs-interop';
 
 export class AlertMessage {
   public readonly visible = signal(true);
+  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
+  public readonly count = signal(1);
 
   public OKBtn: string;
   public OKBtnCallback?: () => void;
@@ -21,6 +23,9 @@ export class AlertMessage {
     this.text = init?.text ?? 'Alert';
   }
 }
+
+/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
+const MAX_TOAST_STACK = 3;
 
 @Injectable({
   providedIn: 'root',
@@ -59,20 +64,28 @@ export class AlertService {
   }
 
   public show(alert: Partial<AlertMessage>): void {
-    // If the same text is shown then ignore it. // TODO: right behaviour?
-    const existing = this.alertsSignal().find((m) => m.text === alert.text);
+    // Coalesce an identical (same text + type) toast into a ×N count with a
+    // refreshed timer instead of stacking duplicates (§2).
+    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
 
     if (existing) {
-      // Extend dismissal timeout by 1 second
+      existing.count.update((c) => c + 1);
       clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), (existing.duration || 3000) + 1000);
-    } else {
-      const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-      this.alertsSignal.update((list) => [messageWithMeta, ...list]);
-
-      const duration = messageWithMeta.duration || 3000;
-      messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
+      return;
     }
+
+    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
+    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
+    this.alertsSignal.update((list) => {
+      const next = [messageWithMeta, ...list];
+      const dropped = next.slice(MAX_TOAST_STACK);
+      dropped.forEach((m) => clearTimeout(m.timeoutId));
+      return next.slice(0, MAX_TOAST_STACK);
+    });
+
+    const duration = messageWithMeta.duration || 3000;
+    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
   }
 
   public showError(text: string): void {

@@ -3,6 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { PersonsGrid } from './persons-grid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { PersonsService } from '../services/persons-service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { CompaniesService } from '../../companies/services/companies-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -14,6 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 class MockPersonsService {
   deleteMany = vi.fn().mockResolvedValue(true);
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  count = vi.fn().mockResolvedValue(0);
   abort = vi.fn();
   refreshCount = signal(0);
   import = vi.fn();
@@ -68,6 +71,16 @@ describe('PersonsGrid', () => {
         },
         { provide: AbstractAPIService, useValue: mockPersonsSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
+        // pc-grain-tabs injects Households/Companies services and calls count();
+        // the count-sentence also calls countDistinctWards / countWithCompany.
+        {
+          provide: HouseholdsService,
+          useValue: { count: () => Promise.resolve(0), countDistinctWards: () => Promise.resolve(0) },
+        },
+        {
+          provide: CompaniesService,
+          useValue: { count: () => Promise.resolve(0), countWithCompany: () => Promise.resolve(0) },
+        },
       ],
     })
       .overrideComponent(PersonsGrid, {

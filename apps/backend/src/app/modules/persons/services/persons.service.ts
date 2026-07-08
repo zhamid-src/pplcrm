@@ -1,8 +1,12 @@
 import { env } from '../../../../env';
 import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { backfillMissingSlugs } from '../../../lib/slug';
+import { backfillPersonPublicIds, insertPersonWithPublicId } from '../../../lib/person-public-id';
+import { notificationEnabled } from '../../../lib/profile-preferences';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { SettingsController } from '../../settings/controller';
 import { TagsRepo } from '../../tags/repositories/tags.repo';
@@ -13,6 +17,8 @@ import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.
 import { TeamsRepo } from '../../teams/repositories/teams.repo';
 import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { ListsRepo } from '../../lists/repositories/lists.repo';
+import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
@@ -32,6 +38,8 @@ export class PersonsService {
   private storageService = new StorageService();
   private householdRepo = new HouseholdRepo();
   private companiesRepo = new CompaniesRepo();
+  private listsRepo = new ListsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
 
   public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
     // Enforce email uniqueness within the tenant
@@ -70,16 +78,23 @@ export class PersonsService {
       }
     }
 
-    const row = {
-      ...payload,
-      household_id,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-
-    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    // Persons are keyed by an opaque public_id, not a name slug (spec §1):
+    // generate a Crockford id → insert → retry on the per-tenant unique
+    // violation. The display slug `{name}-xxxx-xxxx` is derived from the same
+    // public_id in one write. (Households/companies still use name slugs.)
+    const result = await insertPersonWithPublicId(payload.first_name, payload.last_name, (public_id, slug) => {
+      const row = {
+        ...payload,
+        public_id,
+        slug,
+        household_id,
+        campaign_id,
+        tenant_id: auth.tenant_id,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      };
+      return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    });
     if (result && typeof result === 'object') {
       try {
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
@@ -104,19 +119,11 @@ export class PersonsService {
           const assignee = await this.personsRepo.db
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', String(payload.assigned_to))
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            if (assignee.profile_json) {
-              const json =
-                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-              if (json?.notifications?.person_assigned === false) {
-                optedIn = false;
-              }
-            }
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
               const createdPerson = result as Record<string, unknown>;
               const personName =
                 `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
@@ -204,21 +211,13 @@ export class PersonsService {
             const assignee = await this.personsRepo.db
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
               // String conversion ensures precision is maintained down to the database driver level
               .where('authusers.id', '=', String(newAssigneeId))
               .executeTakeFirst();
 
             if (assignee && assignee.email) {
-              let optedIn = true;
-              if (assignee.profile_json) {
-                const json =
-                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-                if (json?.notifications?.person_assigned === false) {
-                  optedIn = false;
-                }
-              }
-              if (optedIn) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
                 const personName =
                   `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
                   'unnamed contact';
@@ -329,7 +328,22 @@ export class PersonsService {
       .selectAll('emails')
       .select('email_bodies.body_html as body_html')
       .where('emails.tenant_id', '=', auth.tenant_id)
-      .where((eb) => eb.or([eb('emails.from_email', 'in', emails), eb('emails.to_email', 'in', emails)]))
+      // Recipient match goes through email_recipients — the source of truth.
+      // emails.to_email is a display-only cache holding a joined "a, b" string,
+      // so an exact IN match would miss multi-recipient emails (D-10).
+      .where((eb) =>
+        eb.or([
+          eb('emails.from_email', 'in', emails),
+          eb.exists(
+            eb
+              .selectFrom('email_recipients')
+              .select('email_recipients.id')
+              .whereRef('email_recipients.email_id', '=', 'emails.id')
+              .where('email_recipients.tenant_id', '=', auth.tenant_id)
+              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
+          ),
+        ]),
+      )
       .orderBy('emails.created_at', 'desc')
       .limit(50)
       .execute();
@@ -542,6 +556,12 @@ export class PersonsService {
       tags?: string[];
       skipped?: number;
       file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      /** Raw uploaded CSV text, kept 90 days so the History page can offer a re-download (spec §17). */
+      source_csv?: string;
+      /** Rows the wizard already excluded/cleaned client-side (bad-email "Skip"), recorded for History's skip-reasons export. */
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
     },
     auth: IAuthKeyPayload,
   ) {
@@ -624,11 +644,30 @@ export class PersonsService {
       });
     }
 
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
     await this.importsRepo.update({
       tenant_id: auth.tenant_id,
       id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
       } as any,
     });
 
@@ -647,6 +686,9 @@ export class PersonsService {
           tenant_id: auth.tenant_id,
           user_id: auth.user_id,
           file_name: baseFileName,
+          duplicate_decision: input.duplicate_decision ?? 'skip',
+          list_name: input.list_name ?? null,
+          client_skip_reasons: input.client_skip_reasons ?? [],
         }),
         run_at: new Date(),
       })
@@ -673,15 +715,31 @@ export class PersonsService {
     tags: string[],
     skipped: number,
     rows: Record<string, string>[],
+    options?: {
+      duplicateDecision?: 'merge' | 'skip' | 'import_new';
+      listName?: string;
+      clientSkipReasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
   ) {
     const households = new HouseholdRepo();
-    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
+    const duplicateDecision = options?.duplicateDecision ?? 'skip';
+    const results: {
+      inserted: number;
+      errors: number;
+      households_created: number;
+      skipped: number;
+      merged: number;
+    } = {
       inserted: 0,
       errors: 0,
       households_created: 0,
       skipped: 0,
+      merged: 0,
     };
     const importedPersonIds: string[] = [];
+    // Rows kept downloadable with the reason each was skipped (History page, spec §17) —
+    // seeded with the wizard's own client-side skips (bad-email "Skip"), then appended to below.
+    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [...(options?.clientSkipReasons ?? [])];
 
     const errorMessages: string[] = [];
     let cachedBlankHouseholdId: string | null = null;
@@ -713,9 +771,12 @@ export class PersonsService {
         isBlankAddress: boolean;
         fp_street: string | null;
         fp_full: string | null;
+        rowNumber: number;
       };
+      const SKIP_REASONS_CAP = 500;
       const validEntries: ValidEntry[] = [];
-      for (const raw of chunk) {
+      for (const [chunkIdx, raw] of chunk.entries()) {
+        const rowNumber = i + chunkIdx + 1;
         const sanitized = this.sanitizeRow(raw);
         if (
           !sanitized.first_name &&
@@ -725,6 +786,9 @@ export class PersonsService {
           !sanitized.notes
         ) {
           results.skipped += 1;
+          if (skipReasons.length < SKIP_REASONS_CAP) {
+            skipReasons.push({ row: rowNumber, reason: 'Blank row — no importable fields' });
+          }
           continue;
         }
         const isBlankAddress =
@@ -759,6 +823,7 @@ export class PersonsService {
                 zip: sanitized.zip,
                 country: sanitized.country,
               }),
+          rowNumber,
         });
       }
 
@@ -850,7 +915,6 @@ export class PersonsService {
               address_fp_street: fp_street,
               address_fp_full: fp_full,
               notes: null,
-              json: null,
               file_id: import_id,
             } as OperationDataType<'households', 'insert'>;
             const household = await households.add({ row: hhRow }, trx);
@@ -858,8 +922,65 @@ export class PersonsService {
             householdsCreatedDelta += 1;
           }
 
+          // 2d. Duplicate-email resolution (spec §17 Review step — a single
+          // decision governs every row whose email matches a person that
+          // already exists; email is the match key app-wide, same as
+          // Duplicates and Forms).
+          //  - 'skip' (default): exclude the row; counted + reasoned below.
+          //  - 'merge': fill the existing person's blank fields from the row
+          //    (never overwrite), don't insert a second person.
+          //  - 'import_new': insert as a brand-new person anyway; the email
+          //    is cleared first so it can't collide with the unique
+          //    (tenant_id, lower(email)) index — the row becomes a
+          //    name-only duplicate for the Duplicates page to reconcile.
+          const mergeEntries: Array<{ entry: (typeof validEntries)[number]; personId: string }> = [];
+          const insertEntries: typeof validEntries = [];
+          const candidateEmails = [
+            ...new Set(validEntries.map((e) => e.sanitized.email).filter((email): email is string => !!email)),
+          ];
+          const existingByEmail = new Map<string, { id: string }>();
+          if (candidateEmails.length > 0) {
+            const existing = await trx
+              .selectFrom('persons')
+              .select(['id', 'email'])
+              .where('tenant_id', '=', tenant_id)
+              .where(
+                sql`lower(email)`,
+                'in',
+                candidateEmails.map((email) => email.toLowerCase()),
+              )
+              .execute();
+            for (const p of existing) {
+              if (p.email) existingByEmail.set(p.email.toLowerCase(), { id: String(p.id) });
+            }
+          }
+
+          for (const entry of validEntries) {
+            const match = entry.sanitized.email ? existingByEmail.get(entry.sanitized.email.toLowerCase()) : null;
+            if (!match) {
+              insertEntries.push(entry);
+              continue;
+            }
+            if (duplicateDecision === 'merge') {
+              mergeEntries.push({ entry, personId: match.id });
+            } else if (duplicateDecision === 'import_new') {
+              // Keep the row, but the email must go so the insert doesn't
+              // collide with the existing person's email.
+              insertEntries.push({ ...entry, sanitized: { ...entry.sanitized, email: undefined } });
+            } else {
+              results.skipped += 1;
+              if (skipReasons.length < SKIP_REASONS_CAP) {
+                skipReasons.push({
+                  row: entry.rowNumber,
+                  email: entry.sanitized.email,
+                  reason: 'Matches a person you already have — duplicate decision was Skip',
+                });
+              }
+            }
+          }
+
           // 3. Batch insert all persons in one statement
-          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
+          const personRows = insertEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
             tenant_id,
             campaign_id,
             createdby_id: user_id,
@@ -874,18 +995,39 @@ export class PersonsService {
             home_phone: null,
             file_id: import_id,
             notes: sanitized.notes ?? null,
-            json: null,
           }));
-          const insertedPersons = await trx
-            .insertInto('persons')
-            .values(personRows)
-            .onConflict((oc) => oc.doNothing())
-            .returningAll()
-            .execute();
+          const insertedPersons = personRows.length
+            ? await trx
+                .insertInto('persons')
+                .values(personRows)
+                .onConflict((oc) => oc.doNothing())
+                .returningAll()
+                .execute()
+            : [];
 
-          // Count rows silently skipped due to duplicate email
+          // Count rows silently skipped due to a duplicate email under the 'skip' decision
           const duplicatesSkipped = personRows.length - insertedPersons.length;
           if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+
+          // 3b. Merge decision: fill only the existing person's blank fields — never overwrite.
+          const mergedPersonIds: string[] = [];
+          for (const { entry, personId } of mergeEntries) {
+            await trx
+              .updateTable('persons')
+              .set({
+                first_name: sql`COALESCE(persons.first_name, ${entry.sanitized.first_name ?? null})`,
+                last_name: sql`COALESCE(persons.last_name, ${entry.sanitized.last_name ?? null})`,
+                mobile: sql`COALESCE(persons.mobile, ${entry.sanitized.mobile ?? null})`,
+                notes: sql`COALESCE(persons.notes, ${entry.sanitized.notes ?? null})`,
+                updated_at: sql`now()`,
+                updatedby_id: user_id,
+              })
+              .where('tenant_id', '=', tenant_id)
+              .where('id', '=', personId)
+              .execute();
+            mergedPersonIds.push(personId);
+          }
+          results.merged += mergedPersonIds.length;
 
           // 4. Upsert each unique tag name exactly once (not once per row)
           const tagRecords: Array<{ name: string; id: string }> = [];
@@ -901,22 +1043,31 @@ export class PersonsService {
             if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
           }
 
-          // 5. Batch insert all tag-person mappings in one statement
-          if (tagRecords.length > 0 && insertedPersons.length > 0) {
-            const tagMapRows = insertedPersons.flatMap((person) =>
+          // 5. Batch insert all tag-person mappings in one statement — for
+          // both freshly-inserted persons and persons a 'merge' decision
+          // folded this import's tags into.
+          const taggableIds = [...insertedPersons.map((p) => String(p.id)), ...mergedPersonIds];
+          if (tagRecords.length > 0 && taggableIds.length > 0) {
+            const tagMapRows = taggableIds.flatMap((person_id) =>
               tagRecords.map(({ id: tag_id }) => ({
                 tenant_id,
-                person_id: String(person.id),
+                person_id,
                 tag_id: tag_id as unknown as string,
                 createdby_id: user_id,
                 updatedby_id: user_id,
               })),
             );
-            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
+            // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
+            await (trx as any)
+              .insertInto('map_peoples_tags')
+              .values(tagMapRows)
+              .onConflict((oc: any) => oc.doNothing())
+              .execute();
           }
 
           return {
             insertedPersons,
+            mergedPersonIds,
             tagRecords,
             householdsCreatedDelta,
             blankHouseholdId: localBlankHouseholdId,
@@ -942,6 +1093,18 @@ export class PersonsService {
             }
           }
         }
+        // Merged persons aren't new contacts — only the tag_added workflow applies, and
+        // they still belong in the static-list membership pass below.
+        for (const personId of outcome.mergedPersonIds) {
+          importedPersonIds.push(personId);
+          for (const { name, id: tagId } of outcome.tagRecords) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow after CSV import merge');
+            }
+          }
+        }
 
         results.inserted += outcome.insertedPersons.length;
         results.households_created += outcome.householdsCreatedDelta;
@@ -964,11 +1127,55 @@ export class PersonsService {
           inserted_count: results.inserted,
           error_count: results.errors,
           skipped_count: skipped + results.skipped,
+          merged_count: results.merged,
           households_created: results.households_created,
           updatedby_id: user_id,
           updated_at: new Date(),
         } as any,
       });
+    }
+
+    // Add every imported (and merged-into) person to a static list, creating
+    // it if it doesn't already exist by that exact name (spec §17 "add
+    // everyone to a static list"). This runs here — not as a public
+    // lists.addMembers endpoint — because processImportRows is the only
+    // place that knows the final set of person ids; see pplcrm-forms-style
+    // note in the wizard skill for why no new public list-membership API
+    // was added for this track.
+    if (options?.listName && importedPersonIds.length > 0) {
+      try {
+        await this.addImportedPersonsToStaticList(tenant_id, user_id, options.listName, importedPersonIds);
+      } catch (err) {
+        logger.error({ err }, 'Failed to add imported people to the requested static list');
+      }
+    }
+
+    // Bulk-inserted rows get their identifiers in one set-based pass (spec §1):
+    // persons get an opaque public_id + display slug, households a name slug.
+    try {
+      await backfillPersonPublicIds(this.personsRepo.db, tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill record identifiers after import');
+    }
+
+    // Final History-page facts: every tag actually applied, and the reason
+    // each skipped row was skipped (spec §17 — "skipped rows stay
+    // downloadable with the reason each was skipped").
+    try {
+      await this.importsRepo.update({
+        tenant_id,
+        id: import_id,
+        row: {
+          merged_count: results.merged,
+          tags_applied: JSON.stringify(tags),
+          skip_reasons: JSON.stringify(skipReasons),
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to persist final import stats');
     }
 
     // Log the user activity
@@ -1006,10 +1213,74 @@ export class PersonsService {
       inserted: results.inserted,
       errors: results.errors,
       skipped: skipped + results.skipped,
+      merged: results.merged,
       households_created: results.households_created,
       tag_id: autoTagId,
       errorMessages,
     };
+  }
+
+  /**
+   * Find-or-create a static people list by exact, case-insensitive name and
+   * add every given person id to it (spec §17 "add everyone to a static
+   * list"). Runs inside the import job because that's the only place the
+   * final imported/merged person ids are known — see the call site comment
+   * in processImportRows.
+   */
+  private async addImportedPersonsToStaticList(
+    tenant_id: string,
+    user_id: string,
+    listName: string,
+    personIds: string[],
+  ): Promise<void> {
+    const trimmedName = listName.trim();
+    if (!trimmedName) return;
+
+    const existingList = await this.listsRepo.db
+      .selectFrom('lists')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where(sql`lower(name)`, '=', trimmedName.toLowerCase())
+      .where('object', '=', 'people')
+      .executeTakeFirst();
+
+    let listId = existingList?.id != null ? String(existingList.id) : undefined;
+
+    if (!listId) {
+      const created = await this.listsRepo.add({
+        row: {
+          tenant_id,
+          name: trimmedName,
+          description: `Created by the CSV import wizard on ${new Date().toLocaleDateString()}.`,
+          object: 'people',
+          is_dynamic: false,
+          definition: null,
+          status: 'idle',
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        } as OperationDataType<'lists', 'insert'>,
+      });
+      if (created?.id != null) listId = String(created.id);
+    }
+    if (!listId) return;
+
+    const uniqueIds = [...new Set(personIds)];
+    const rows = uniqueIds.map((person_id) => ({
+      tenant_id,
+      list_id: listId as string,
+      person_id,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })) as OperationDataType<'map_lists_persons', 'insert'>[];
+
+    // A person may already belong to this list (e.g. re-running an import
+    // into the same list) — the primary key is (tenant_id, list_id,
+    // person_id), so skip rows that would collide instead of failing the batch.
+    await this.mapListsPersonsRepo.db
+      .insertInto('map_lists_persons')
+      .values(rows)
+      .onConflict((oc) => oc.columns(['tenant_id', 'list_id', 'person_id']).doNothing())
+      .execute();
   }
 
   public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
@@ -1024,6 +1295,26 @@ export class PersonsService {
 
   public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
     return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  /**
+   * CSV import wizard Review step (spec §17) — email is the match key across
+   * this app (Duplicates, Forms). Given the emails mapped from the uploaded
+   * file, report which ones already belong to a person so the wizard can
+   * render "N rows match people you already have" with a door to each match.
+   */
+  public async checkDuplicateEmails(auth: IAuthKeyPayload, emails: string[]) {
+    const matches = await this.personsRepo.findManyByEmails({ tenant_id: auth.tenant_id, emails });
+    return matches.map((match) => ({
+      email: (match.email ?? '').toLowerCase(),
+      person_id: String(match.id),
+      name:
+        [match.first_name, match.last_name]
+          .filter((part) => !!part)
+          .join(' ')
+          .trim() || 'Unnamed person',
+      slug: match.slug ?? null,
+    }));
   }
 
   public async getDuplicateCounts(auth: IAuthKeyPayload) {

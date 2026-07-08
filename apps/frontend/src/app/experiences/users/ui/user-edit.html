@@ -8,18 +8,19 @@
   Loading user…
 </div>
 } @else {
-<section class="m-4 space-y-6">
+<section class="max-w-4xl space-y-6 p-6">
   <pc-detail-header
     [title]="displayName()"
+    [eyebrow]="'Editing'"
+    [crumbs]="crumbs()"
     [subtitle]="detail()?.email"
-    icon="user-circle"
-    [iconSize]="7"
     [form]="form"
     [isLoading]="saving()"
     buttonsToShow="two"
-    btn1Text="Save User"
+    btn1Text="Save user"
     [showDelete]="true"
-    deleteText="Delete User"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete user"
     (save)="save($event)"
     (delete)="deleteUser()"
   >

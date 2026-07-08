@@ -84,6 +84,8 @@ export class DonationsRepo extends BaseRepository<'donations'> {
         'donations.amount',
         'donations.status',
         'donations.stripe_session_id',
+        'donations.method',
+        'donations.receipt_sent',
         'donations.state',
         'donations.country',
         'donations.created_at',

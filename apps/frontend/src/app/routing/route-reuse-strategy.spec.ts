@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import type { ActivatedRouteSnapshot} from '@angular/router';
 import { Router } from '@angular/router';
+import type * as RouterModuleType from '@angular/router';
 import * as routerModule from '@angular/router';
 import { Subject } from 'rxjs';
 import { CustomRouteReuseStrategy } from './route-reuse-strategy';
@@ -9,7 +10,7 @@ import { CustomRouteReuseStrategy } from './route-reuse-strategy';
 const mockDestroyDetachedRouteHandle = vi.fn();
 
 vi.mock('@angular/router', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@angular/router')>();
+  const original = await importOriginal<typeof RouterModuleType>();
   return {
     ...original,
     destroyDetachedRouteHandle: (handle: any) => mockDestroyDetachedRouteHandle(handle),

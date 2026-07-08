@@ -32,27 +32,31 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
           <div class="skeleton h-16 w-full rounded-xl"></div>
           <div class="skeleton h-16 w-full rounded-xl"></div>
         </div>
-      } @else if (connections().length === 0) {
-        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
-          No connections recorded. Add one to start mapping this contact's network.
-        </div>
-      } @else {
-        <div class="flex flex-col gap-2">
-          @for (conn of connections(); track conn.id) {
-            <pc-connection-card
-              [connection]="conn"
-              [currentPersonId]="personId()"
-              (remove)="onRemove($event)"
-            ></pc-connection-card>
-          }
-        </div>
+      } @else if (loaded()) {
+        <!-- Only decide empty-vs-list once a fetch has finished, so a sub-300ms
+             load (which never trips the skeleton) can't flash the empty state. -->
+        @if (connections().length === 0) {
+          <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
+            No connections recorded. Add one to start mapping this contact's network.
+          </div>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (conn of connections(); track conn.id) {
+              <pc-connection-card
+                [connection]="conn"
+                [currentPersonId]="personId()"
+                (remove)="onRemove($event)"
+              ></pc-connection-card>
+            }
+          </div>
+        }
       }
     </div>
 
     <pc-add-connection-drawer
       [personId]="personId()"
       [isOpen]="showAddDrawer()"
-      (close)="showAddDrawer.set(false)"
+      (closeDrawer)="showAddDrawer.set(false)"
       (saved)="onConnectionAdded()"
     ></pc-add-connection-drawer>
   `,
@@ -67,11 +71,12 @@ export class PersonConnections implements OnInit {
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
   protected readonly connections = signal<any[]>([]);
   protected readonly showAddDrawer = signal(false);
 
   public ngOnInit() {
-    this.load();
+    void this.load();
   }
 
   private async load() {
@@ -88,7 +93,7 @@ export class PersonConnections implements OnInit {
   }
 
   protected onConnectionAdded() {
-    this.load();
+    void this.load();
   }
 
   protected async onRemove(id: string) {

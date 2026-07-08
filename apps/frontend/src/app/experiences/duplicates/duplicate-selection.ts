@@ -30,7 +30,14 @@ export class DuplicateSelectionComponent implements OnInit {
   public readonly isLoading = this._loading.visible;
   public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
 
-  async ngOnInit() {
+  ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const end = this._loading.begin();
 
     try {

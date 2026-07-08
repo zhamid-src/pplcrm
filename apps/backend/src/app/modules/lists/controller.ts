@@ -4,6 +4,7 @@ import type {
   UpdateListType,
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
+import { getAllOptions } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
@@ -15,6 +16,70 @@ import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import { logger } from '../../logger';
+
+/**
+ * The live membership of a list at the moment of the call.
+ *
+ * - Smart lists (`is_dynamic = true`) re-run their stored `definition` against
+ *   the tenant's people/households and return whoever matches *right now*.
+ * - Static lists read the fixed snapshot saved in `map_lists_persons` /
+ *   `map_lists_households` at creation time.
+ *
+ * Exported for downstream consumers that need "who is in this list today":
+ * canvassing turf cutting (§13, universe = a smart list), automations
+ * (§16, List-joined trigger), and CSV import add-to-static-list (§17).
+ */
+export interface ListCurrentMembers {
+  object: 'people' | 'households';
+  ids: string[];
+  count: number;
+}
+
+/** One thing that references a list (drives "LAST USED IN" and delete confirms). */
+export interface ListConsumer {
+  id: string;
+  name: string;
+  kind: 'newsletter' | 'form' | 'team';
+}
+
+/** Everything that references a list, grouped by kind. `total` is the flat count. */
+export interface ListConsumers {
+  newsletters: ListConsumer[];
+  forms: ListConsumer[];
+  teams: ListConsumer[];
+  total: number;
+}
+
+/** The subset of a list row this module reasons about (narrowed from the DB row). */
+interface ListShape {
+  id: string;
+  object: 'people' | 'households';
+  is_dynamic: boolean;
+  definition: getAllOptionsType | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Narrow a raw list row (or the resolved controller shape) to the fields this
+ * module needs, parsing the stored JSONB `definition` through its Zod schema
+ * rather than casting it — so a malformed definition surfaces as `null`, not a
+ * runtime blow-up deeper in the query pipeline.
+ */
+function toListShape(row: unknown): ListShape | null {
+  if (!isRecord(row)) return null;
+  const object = row['object'];
+  if (object !== 'people' && object !== 'households') return null;
+  const parsed = getAllOptions.safeParse(row['definition'] ?? undefined);
+  return {
+    id: String(row['id']),
+    object,
+    is_dynamic: row['is_dynamic'] === true,
+    definition: parsed.success ? (parsed.data ?? null) : null,
+  };
+}
 
 export class ListsController extends BaseController<'lists', ListsRepo> {
   private householdsController = new HouseholdsController();
@@ -296,43 +361,19 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
     }
 
-    // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo()
+    // Sent newsletters that targeted this list — an indexed join on
+    // map_newsletters_lists (FK-backed), instead of the old fetch-everything
+    // JS filter over the legacy JSONB target_lists document.
+    const targetedNewsletters = await this.getRepo()
       .db.selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'sent')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .selectAll('newsletters')
+      .where('newsletters.tenant_id', '=', auth.tenant_id)
+      .where('newsletters.status', '=', 'sent')
+      .where('map_newsletters_lists.tenant_id', '=', auth.tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .where('map_newsletters_lists.mode', '=', 'include')
       .execute();
-
-    // Filter newsletters in JS where their target_lists matches this list
-    const targetedNewsletters = newsletters.filter((n) => {
-      if (!n.target_lists) return false;
-      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
-      // Support legacy string values too (pre-migration rows or test data).
-      let parsed: unknown = n.target_lists;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          /* fall through */
-        }
-      }
-      if (Array.isArray(parsed)) {
-        return parsed.includes(id);
-      }
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-        return include.includes(id);
-      }
-      if (typeof parsed === 'string') {
-        return parsed
-          .split(',')
-          .map((s) => s.trim())
-          .includes(id);
-      }
-      return false;
-    });
 
     // Compute aggregated metrics
     const totalNewsletters = targetedNewsletters.length;
@@ -406,6 +447,103 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         return Number(result?.count ?? 0);
       }
     }
+  }
+
+  /**
+   * The live membership of a list, resolved the way §8 defines each type:
+   * smart lists re-run their stored definition; static lists read the saved
+   * snapshot. Reusable by turf cutting (§13), automations (§16) and CSV import
+   * (§17) — anything that needs "who is in this list today".
+   */
+  public async getCurrentMembers(auth: IAuthKeyPayload, id: string): Promise<ListCurrentMembers> {
+    const raw = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    const list = toListShape(raw);
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Smart list: re-run the definition against live data.
+    if (list.is_dynamic && list.definition) {
+      if (list.object === 'people') {
+        const data = await this.personsController.getAllWithAddress(auth, list.definition);
+        const ids = data.rows.map((r) => String(r['id']));
+        return { object: 'people', ids, count: data.count };
+      }
+      const data = await this.householdsController.getAllWithPeopleCount(auth, list.definition);
+      const ids = data.rows.map((r) => String(r['id']));
+      return { object: 'households', ids, count: data.count };
+    }
+
+    // Static list (or smart with no definition): read the saved snapshot.
+    if (list.object === 'people') {
+      const rows = await this.mapListsPersonsRepo.db
+        .selectFrom('map_lists_persons')
+        .select('person_id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('list_id', '=', id)
+        .execute();
+      const ids = rows.map((r) => String(r.person_id));
+      return { object: 'people', ids, count: ids.length };
+    }
+    const rows = await this.mapListsHouseholdsRepo.db
+      .selectFrom('map_lists_households')
+      .select('household_id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('list_id', '=', id)
+      .execute();
+    const ids = rows.map((r) => String(r.household_id));
+    return { object: 'households', ids, count: ids.length };
+  }
+
+  /**
+   * Everything that references a list — newsletters, forms and teams/turfs.
+   * Drives the "LAST USED IN" column and the delete-confirm body, which must
+   * name a list's consumers before it can be removed (§8).
+   */
+  public async getConsumers(auth: IAuthKeyPayload, id: string): Promise<ListConsumers> {
+    const tenant_id = auth.tenant_id;
+
+    // Newsletters, forms and teams each link to lists through their own
+    // FK-backed junction table (the source of truth after the schema
+    // remediation). Every arm is tenant-scoped on the junction row.
+    const newsletterRows = await this.getRepo()
+      .db.selectFrom('newsletters')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .select(['newsletters.id as id', 'newsletters.name as name'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .execute();
+
+    const formRows = await this.getRepo()
+      .db.selectFrom('web_forms')
+      .innerJoin('map_web_forms_lists', 'map_web_forms_lists.web_form_id', 'web_forms.id')
+      .select(['web_forms.id as id', 'web_forms.name as name'])
+      .where('map_web_forms_lists.tenant_id', '=', tenant_id)
+      .where('map_web_forms_lists.list_id', '=', id)
+      .execute();
+
+    const teamRows = await this.getRepo()
+      .db.selectFrom('teams')
+      .innerJoin('map_teams_lists', 'map_teams_lists.team_id', 'teams.id')
+      .select(['teams.id as id', 'teams.name as name'])
+      .where('map_teams_lists.tenant_id', '=', tenant_id)
+      .where('map_teams_lists.list_id', '=', id)
+      .execute();
+
+    const newsletters: ListConsumer[] = newsletterRows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      kind: 'newsletter' as const,
+    }));
+    const forms: ListConsumer[] = formRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'form' as const }));
+    const teams: ListConsumer[] = teamRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'team' as const }));
+
+    return {
+      newsletters,
+      forms,
+      teams,
+      total: newsletters.length + forms.length + teams.length,
+    };
   }
 
   public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {

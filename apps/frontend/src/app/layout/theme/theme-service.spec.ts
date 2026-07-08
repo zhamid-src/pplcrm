@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ThemeService } from './theme-service';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
-import { signal, effect } from '@angular/core';
+import { signal } from '@angular/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('ThemeService', () => {
@@ -59,10 +59,7 @@ describe('ThemeService', () => {
   it('should initialize theme based on localStorage override', () => {
     localStorage.setItem('pc-theme', 'dark');
     TestBed.configureTestingModule({
-      providers: [
-        ThemeService,
-        { provide: SettingsService, useValue: mockSettingsSvc },
-      ],
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
     });
     service = TestBed.inject(ThemeService);
     expect(service.getTheme()).toBe('dark');
@@ -71,10 +68,7 @@ describe('ThemeService', () => {
   it('should fallback to SettingsService default theme if no localStorage override', () => {
     settingsStore['appearance.theme'] = 'dark';
     TestBed.configureTestingModule({
-      providers: [
-        ThemeService,
-        { provide: SettingsService, useValue: mockSettingsSvc },
-      ],
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
     });
     service = TestBed.inject(ThemeService);
     expect(service.getTheme()).toBe('dark');
@@ -89,10 +83,7 @@ describe('ThemeService', () => {
     }) as any;
 
     TestBed.configureTestingModule({
-      providers: [
-        ThemeService,
-        { provide: SettingsService, useValue: mockSettingsSvc },
-      ],
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
     });
     service = TestBed.inject(ThemeService);
     expect(service.getTheme()).toBe('dark');
@@ -100,10 +91,7 @@ describe('ThemeService', () => {
 
   it('should toggle theme and store it in localStorage', () => {
     TestBed.configureTestingModule({
-      providers: [
-        ThemeService,
-        { provide: SettingsService, useValue: mockSettingsSvc },
-      ],
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
     });
     service = TestBed.inject(ThemeService);
     expect(service.getTheme()).toBe('light');
@@ -117,16 +105,32 @@ describe('ThemeService', () => {
     expect(localStorage.getItem('pc-theme')).toBe('light');
   });
 
+  it('should follow the OS when the preference is explicitly system, ignoring the workspace default', () => {
+    settingsStore['appearance.theme'] = 'light'; // workspace default is light
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true, // but the OS is dark
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as any;
+
+    TestBed.configureTestingModule({
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
+    });
+    service = TestBed.inject(ThemeService);
+
+    service.setPreference('system');
+    expect(service.getPreference()).toBe('system');
+    expect(service.getTheme()).toBe('dark');
+    expect(localStorage.getItem('pc-theme')).toBe('system');
+  });
+
   it('should clear localStorage pc-theme override if default settings theme changes after load', async () => {
     // Initial setup: Settings default is 'light', user manually set override to 'dark'
     settingsStore['appearance.theme'] = 'light';
     localStorage.setItem('pc-theme', 'dark');
 
     TestBed.configureTestingModule({
-      providers: [
-        ThemeService,
-        { provide: SettingsService, useValue: mockSettingsSvc },
-      ],
+      providers: [ThemeService, { provide: SettingsService, useValue: mockSettingsSvc }],
     });
     service = TestBed.inject(ThemeService);
     expect(service.getTheme()).toBe('dark'); // localStorage wins initially

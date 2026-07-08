@@ -79,7 +79,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
           .as('active_enrollments_count'),
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce(
+        (options.sortModel ?? []).reduce(
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

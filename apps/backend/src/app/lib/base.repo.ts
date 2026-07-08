@@ -2,7 +2,6 @@
 
 import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
-import { promises as fs } from 'fs';
 import type {
   DeleteQueryBuilder,
   DeleteResult,
@@ -20,8 +19,7 @@ import type {
   UpdateQueryBuilder,
   UpdateResult,
 } from 'kysely';
-import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
-import path from 'path';
+import { CompiledQuery, Kysely, PostgresDialect, sql } from 'kysely';
 
 import type {
   Models,
@@ -32,32 +30,51 @@ import type {
 } from '../../../../../libs/common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
+import { currentTenantId } from './tenant-context';
 import Cursor from 'pg-cursor';
+
+// S-1 (schema review 2026-07-06 §6): the tenant id is a bigint stored as a
+// string; only digits are ever a legal value. We build the set_config call with
+// a bound parameter (never string-interpolated), but still validate here so a
+// corrupt context can never smuggle SQL or a non-numeric GUC into the session.
+const TENANT_ID_PATTERN = /^\d+$/;
+
 const dialect = new PostgresDialect({
-  pool: new Pool(env.db),
+  // P-4 (schema review 2026-07-06, §5): make the pool explicit instead of pg's
+  // silent defaults (max 10, no timeouts). Without a connection timeout, a burst
+  // of traffic plus a batch of jobs queues on the pool forever; without an
+  // application_name, pool traffic is invisible in pg_stat_activity.
+  pool: new Pool({
+    ...env.db,
+    max: env.dbPoolMax,
+    connectionTimeoutMillis: 5_000, // fail fast rather than queue forever
+    idleTimeoutMillis: 30_000,
+    application_name: 'pplcrm-api',
+  }),
   cursor: Cursor,
+  // S-1: stamp the current async-context tenant onto every reserved connection
+  // so Postgres RLS policies scope the query. Runs on *every* checkout (standalone
+  // queries and transactions alike). An empty value means "unscoped" — the RLS
+  // policy then allows all rows, which is what pre-auth and background-job paths
+  // need. is_local=false so it survives the whole checkout; the next checkout
+  // always overwrites it, so a pooled connection can never carry a stale tenant.
+  onReserveConnection: async (connection) => {
+    const tenantId = currentTenantId();
+    const safe = TENANT_ID_PATTERN.test(tenantId) ? tenantId : '';
+    await connection.executeQuery(CompiledQuery.raw(`select set_config('app.tenant_id', $1, false)`, [safe]));
+  },
 });
 
 type ColName<TB extends keyof Models> = keyof Models[TB] & string;
 
 export class BaseRepository<T extends keyof Models> {
   private static _db = new Kysely<Models>({ dialect });
-  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
 
   public static get dbInstance(): Kysely<Models> {
     return BaseRepository._db;
   }
 
   protected readonly table: T;
-
-  public static migrator = new Migrator({
-    db: BaseRepository._db,
-    provider: new FileMigrationProvider({
-      fs,
-      path,
-      migrationFolder: BaseRepository._migrationFolder,
-    }),
-  });
 
   constructor(tableIn: T) {
     this.table = tableIn;
@@ -73,7 +90,11 @@ export class BaseRepository<T extends keyof Models> {
 
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
     const results = await this.addMany({ rows: [input.row] }, trx);
-    return results[0]!;
+    const first = results[0];
+    if (!first) {
+      throw new Error(`Insert into "${this.table}" returned no rows`);
+    }
+    return first;
   }
 
   public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
@@ -189,8 +210,17 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: Record<string, any>[]; count: number }> {
-    const rows = await this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx);
-    return { rows: rows as Record<string, any>[], count: rows.length };
+    // `count` must be the total matching-rows count, NOT rows.length — getAll applies
+    // limit/offset (via startRow/endRow), so rows.length is just the current page size
+    // and would break server-side grid pagination. The base getAll filters only by
+    // tenant_id, so the tenant-wide count() is the correct total here. (Entities that
+    // add server-side filters, e.g. persons/households/companies, override this method
+    // with a count query that mirrors their WHERE clause.)
+    const [rows, count] = await Promise.all([
+      this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx),
+      this.count(input.tenant_id, trx),
+    ]);
+    return { rows: rows as Record<string, any>[], count };
   }
 
   protected selectBy<C extends ColName<T>>(
@@ -341,7 +371,6 @@ export class BaseRepository<T extends keyof Models> {
                 'home_phone',
                 'file_id',
                 'company_id',
-                'json',
                 'notes',
                 'linkedin',
                 'twitter',
@@ -358,6 +387,11 @@ export class BaseRepository<T extends keyof Models> {
         }
         // Skip dotted references that weren't resolved to a known table.column
         if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
+          return acc;
+        }
+        // Defense-in-depth: only a safe SQL identifier (optionally table.column)
+        // may reach orderBy. Anything else from the client sortModel is dropped.
+        if (typeof col !== 'string' || !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(col)) {
           return acc;
         }
         return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
@@ -482,6 +516,12 @@ export class BaseRepository<T extends keyof Models> {
     return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
   }
 
+  // SECURITY (S-8, schema review 2026-07-06): `column` is interpolated verbatim via
+  // sql.raw() and MUST NEVER contain client input. Callers resolve it from a
+  // server-side columnMapping allow-list (see applyAdvancedFilters); a client's
+  // raw field string is only ever used as a lookup key into that map, never passed
+  // here directly. Filter *values* are always bound parameters. Preserve this
+  // invariant when adding call sites.
   protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: unknown) {
     // Allow users to type * as a wildcard; normalize to SQL %.
     // The operator's own wrapping is always applied — Postgres collapses %% naturally.

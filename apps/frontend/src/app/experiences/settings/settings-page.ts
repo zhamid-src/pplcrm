@@ -1,9 +1,10 @@
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { DatePipe, NgClass } from '@angular/common';
+import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
 import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
 import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AuthService } from '../../auth/auth-service';
@@ -44,17 +45,20 @@ interface SectionState {
     AccountSettingsComponent,
     PasskeySettingsComponent,
     DatePipe,
+    NgClass,
   ],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
-  protected readonly currentMode: 'settings' | 'configuration';
+  protected readonly currentMode: 'settings' | 'workspace';
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
   protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
   protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
@@ -79,6 +83,12 @@ export class SettingsPage implements OnInit {
   protected readonly sectionStates: SectionState[];
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
   protected readonly senderEmailInput = signal('');
   protected readonly settingsSvc = inject(SettingsService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
@@ -93,8 +103,22 @@ export class SettingsPage implements OnInit {
   public readonly section = input<string>();
 
   constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Own the navbar breadcrumb strip; without this the page inherits the previous
+    // page's stale trail (e.g. "Households" from the grid it was reached from).
+    this.breadcrumbs.set({
+      crumbs: [{ label: this.currentMode === 'workspace' ? 'Workspace' : 'Settings' }],
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
+    this.destroyRef.onDestroy(() => this.breadcrumbs.clear());
 
     effect(() => {
       const s = this.section();
@@ -103,7 +127,7 @@ export class SettingsPage implements OnInit {
       } else {
         if (this.currentMode === 'settings') {
           this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'configuration') {
+        } else if (this.currentMode === 'workspace') {
           this.selectedSectionId.set('organization');
         }
       }
@@ -142,13 +166,17 @@ export class SettingsPage implements OnInit {
     if (this.currentMode === 'settings') {
       return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
     }
-    if (this.currentMode === 'configuration') {
+    if (this.currentMode === 'workspace') {
       return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
     }
     return [];
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);
@@ -181,6 +209,42 @@ export class SettingsPage implements OnInit {
     (section.form as any)['integrations_webhook_api_key']().markAsDirty();
     (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
     this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
   }
 
   protected getNotificationGroups(section: SectionState) {
@@ -285,7 +349,7 @@ export class SettingsPage implements OnInit {
           notifState.form().reset();
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load user preferences in settings page', err);
     }
   }
@@ -301,8 +365,10 @@ export class SettingsPage implements OnInit {
       await this.householdsSvc.recomputeAddressFingerprints();
       this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
       await this.loadLastFingerprintRecomputeTime();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
     } finally {
       this.recomputingFingerprints.set(false);
     }
@@ -365,8 +431,16 @@ export class SettingsPage implements OnInit {
         }
       }
       this.alerts.showSuccess('Settings updated successfully');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to save settings';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
       this.alerts.showError(message);
     } finally {
       this.savingSectionId.set(null);
@@ -374,7 +448,7 @@ export class SettingsPage implements OnInit {
   }
 
   protected selectSection(sectionId: string) {
-    this.router.navigate(['/', this.currentMode, sectionId]);
+    void this.router.navigate(['/', this.currentMode, sectionId]);
   }
 
   protected async verifySenderEmail(email: string | null | undefined) {
@@ -399,8 +473,8 @@ export class SettingsPage implements OnInit {
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to send verification email.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
     } finally {
       this.verifyingEmail.set(null);
     }
@@ -516,6 +590,9 @@ export class SettingsPage implements OnInit {
       }
       case 'date':
         return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
       case 'email':
       case 'tel':
       case 'password':
@@ -546,6 +623,8 @@ export class SettingsPage implements OnInit {
       }
       case 'date':
         return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
       case 'textarea':
       case 'text':
       case 'email':
@@ -583,4 +662,8 @@ export class SettingsPage implements OnInit {
       }
     }, 1000);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -10,8 +10,80 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     super('web_forms');
   }
 
-  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
+  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
+  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .executeTakeFirst();
+  }
+
+  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
+   * forms keep their own /donation-pages experience and are excluded here.
+   */
+  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
+    return this.getSelect()
+      .selectAll('web_forms')
+      .select((eb) =>
+        eb
+          .selectFrom('form_submissions')
+          .select((eb2) => eb2.fn.countAll<number>().as('c'))
+          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+          .where('form_submissions.tenant_id', '=', tenantId)
+          .as('submission_count'),
+      )
+      .where('web_forms.tenant_id', '=', tenantId)
+      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
+      .orderBy('web_forms.updated_at', 'desc')
+      .execute();
+  }
+
+  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('form_submissions')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
+      .where('tenant_id', '=', tenantId)
+      .where('form_id', '=', formId)
+      .executeTakeFirst();
+    return Number(row?.c ?? 0);
+  }
+
+  public async getFormSubmissions(
+    tenantId: string,
+    formId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Record<string, unknown>[]> {
+    return this.db
+      .selectFrom('form_submissions')
+      .leftJoin('persons', (join) =>
+        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
+      )
+      .select([
+        'form_submissions.id',
+        'form_submissions.person_id',
+        'form_submissions.answers',
+        'form_submissions.created_at',
+        'persons.first_name',
+        'persons.last_name',
+      ])
+      .where('form_submissions.tenant_id', '=', tenantId)
+      .where('form_submissions.form_id', '=', formId)
+      .orderBy('form_submissions.created_at', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute();
   }
 
   public override async getAllWithCounts(

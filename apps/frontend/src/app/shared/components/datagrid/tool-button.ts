@@ -22,13 +22,19 @@ import { PcIconNameType } from '@icons/icons.index';
     >
       @if (hasDropdown()) {
         <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
-            <div class="flex items-center justify-center ">
+          <summary
+            class="list-none cursor-pointer"
+            [class.pc-no-caret]="hideCaret()"
+            [class.touch-target]="touch()"
+            (click)="onSummaryClick($event)"
+          >
+            <div class="flex h-full items-center justify-center ">
               <a role="button" class="relative pointer-events-none ">
                 <pc-icon
                   [name]="icon()"
+                  [size]="4"
                   class="group-hover:text-primary"
-                  [class]="spinning() ? 'animate-spin inline-block' : ''"
+                  [class]="spinning() ? 'animate-spin' : ''"
                 ></pc-icon>
                 @if (badge() && badge()! > 0) {
                   <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
@@ -41,11 +47,12 @@ import { PcIconNameType } from '@icons/icons.index';
           <ng-content></ng-content>
         </details>
       } @else {
-        <a
+        <a class="flex items-center justify-center" [class.touch-target]="touch()"
           ><pc-icon
             [name]="icon()"
+            [size]="4"
             class="group-hover:text-primary"
-            [class]="spinning() ? 'animate-spin inline-block' : ''"
+            [class]="spinning() ? 'animate-spin' : ''"
           ></pc-icon
         ></a>
       }
@@ -56,6 +63,11 @@ import { PcIconNameType } from '@icons/icons.index';
     `
       :host {
         display: contents;
+      }
+      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
+         dropdown buttons that opt out via [hideCaret]. */
+      summary.pc-no-caret::after {
+        display: none;
       }
     `,
   ],
@@ -74,6 +86,10 @@ export class GridActionComponent {
   public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
   public hasDropdown = input(false);
   public dropdownEnd = input(true);
+  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
+  public touch = input(false);
+  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
+  public hideCaret = input(false);
   public badge = input<number | undefined>(undefined);
 
   public emitClick() {

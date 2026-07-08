@@ -1,14 +1,80 @@
 import type { Selectable, Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
 
 export class CompaniesRepo extends BaseRepository<'companies'> {
   constructor() {
     super('companies');
   }
 
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * Case-insensitive check for an existing company of the same name in the tenant.
+   * Powers the "a company by that name already exists" hint on the add/edit form.
+   * `excludeId` lets an edit ignore the record being edited.
+   */
+  public async nameExists(tenant_id: string, name: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect()
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where(sql<boolean>`lower(name) = lower(${name})`);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Grid feed for the Companies list. Adds a per-company employee count (`persons_count`)
+   * on top of the base column projection so the grid's "People" column can render
+   * "N people". `persons.company_id` is the employer link (§7). The subquery is exposed
+   * as a real SELECT alias so the grid can also sort by it. Count/pagination behaviour is
+   * otherwise identical to the base implementation.
+   */
+  public override async getAllWithCounts(
+    input: { tenant_id: TypeTenantId<'companies'>; options?: any },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+    const tenant_id = input.tenant_id;
+    const [rows, count] = await Promise.all([
+      this.getSelectWithColumns(input.options, trx)
+        .where('tenant_id', '=', tenant_id)
+        .select((eb) => [
+          eb
+            .selectFrom('persons')
+            .whereRef('persons.company_id', '=', 'companies.id')
+            .where('persons.tenant_id', '=', tenant_id)
+            .select(({ fn }) => fn.count<number>('persons.id').as('persons_count'))
+            .as('persons_count'),
+        ])
+        .execute(),
+      this.count(tenant_id, trx),
+    ]);
+    return { rows: rows as Record<string, any>[], count };
+  }
+
   public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // Note: tenant ID is taken in the subquery
     // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
@@ -33,6 +99,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // Note: tenant ID is taken in the subquery
     // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
@@ -106,22 +173,26 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     const companyToPersons = new Map<string, any[]>();
     for (const p of persons) {
       const compId = String(p.company_id);
-      if (!companyToPersons.has(compId)) {
-        companyToPersons.set(compId, []);
+      let companyPersons = companyToPersons.get(compId);
+      if (!companyPersons) {
+        companyPersons = [];
+        companyToPersons.set(compId, companyPersons);
       }
-      companyToPersons.get(compId)!.push(p);
+      companyPersons.push(p);
     }
 
     const groupsMap = new Map<string, { reason: string; companies: any[] }>();
     for (const row of rows) {
       const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
+      let group = groupsMap.get(groupKey);
+      if (!group) {
+        group = {
           reason: row.reason,
           companies: [],
-        });
+        };
+        groupsMap.set(groupKey, group);
       }
-      groupsMap.get(groupKey)!.companies.push({
+      group.companies.push({
         ...row,
         id: String(row.id),
         persons: companyToPersons.get(String(row.id)) || [],
@@ -129,7 +200,10 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
 
     return { groups: sortedGroups, total };

@@ -1,8 +1,23 @@
 // _loading-gate.ts
-import { signal } from '@angular/core';
+import { type Signal, signal } from '@angular/core';
 
 export type loadingGate = {
+  /**
+   * Spinner visibility — intentionally delayed by `delay` ms and held for
+   * `minDuration` ms to suppress flicker. Bind this to spinners ONLY; it can stay
+   * false for a whole sub-`delay` operation, so it is not a truthful "did work
+   * happen" signal.
+   */
   visible: ReturnType<typeof signal<boolean>>;
+
+  /**
+   * True once the first operation has COMPLETED — ungated, so it flips even for a
+   * fast operation that never trips `visible`. Set when a load finishes (not when
+   * it begins), so the data it produced is already in place. Use this for
+   * "has loaded at least once" state (first-load gating, skeleton-vs-empty)
+   * instead of watching `visible`.
+   */
+  loaded: Signal<boolean>;
 
   begin(): () => void;
 };
@@ -12,9 +27,10 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
   const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
 
   const visible = signal(false);
+  const loaded = signal(false);
   let pendingCount = 0;
-  let showTimer: any = null;
-  let hideTimer: any = null;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let shownAt = 0;
 
   const clearShowTimer = () => {
@@ -63,6 +79,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
       if (done) return;
       done = true;
       pendingCount--;
+      loaded.set(true); // an operation has completed — its result is now in place
       if (pendingCount <= 0) {
         pendingCount = 0;
         // If we never showed, cancel the show timer so _loading never appears
@@ -72,5 +89,5 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
     };
   }
 
-  return { begin, visible };
+  return { begin, visible, loaded };
 }

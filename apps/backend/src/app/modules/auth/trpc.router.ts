@@ -13,6 +13,7 @@ import z from 'zod';
 import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
 import { AuthController } from './controller';
 import { PasskeyController } from './passkey.controller';
+import { clearRefreshCookie, getRefreshTokenFromCookie, setRefreshCookie } from './auth-cookie';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
 
@@ -42,9 +43,14 @@ function update() {
 }
 
 function renewAuthToken() {
-  return publicProcedure
-    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
-    .mutation(({ input }) => controller.renewAuthToken(input));
+  // The refresh token arrives via the HttpOnly cookie, not the body (SECURITY-REVIEW 2.1). Rotate
+  // it, hand back only the new access token, and re-set the refreshed cookie.
+  return publicProcedure.mutation(async ({ ctx }) => {
+    const refreshToken = getRefreshTokenFromCookie(ctx.req);
+    const result = await controller.renewAuthToken(refreshToken);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
+  });
 }
 
 function resetPassword() {
@@ -66,20 +72,28 @@ function sendPasswordResetEmail() {
 }
 
 function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
+  return publicProcedure.input(signInInputObj).mutation(async ({ input, ctx }) => {
     const ip = ctx.req?.ip ?? 'unknown';
     checkRateLimit(`${ip}:signIn`, 10, MIN15);
     const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.signIn(input, ip, ua);
+    const result = await controller.signIn(input, ip, ua);
+    // 2FA challenge → no tokens yet; otherwise stash the refresh token in the cookie.
+    if ('auth_token' in result) {
+      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+      return { auth_token: result.auth_token };
+    }
+    return result;
   });
 }
 
 function verify2FA() {
-  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
+  return publicProcedure.input(Verify2FAObj).mutation(async ({ input, ctx }) => {
     const ip = ctx.req?.ip ?? 'unknown';
     checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
     const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
+    const result = await controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
   });
 }
 
@@ -150,14 +164,19 @@ function invite() {
 }
 
 function signOut() {
-  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
+  return authProcedure.mutation(async ({ ctx }) => {
+    clearRefreshCookie(ctx.res);
+    return controller.signOut(ctx.auth);
+  });
 }
 
 function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
+  return publicProcedure.input(signUpInputObj).mutation(async ({ input, ctx }) => {
     const ip = ctx.req?.ip ?? 'unknown';
     checkRateLimit(`${ip}:signUp`, 5, HOUR1);
-    return controller.signUp(input);
+    const result = await controller.signUp(input);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
   });
 }
 
@@ -166,9 +185,11 @@ function deleteOne() {
 }
 
 function verifyEmail() {
-  return publicProcedure
-    .input(z.object({ code: z.string() }))
-    .mutation(({ input }) => controller.verifyEmail(input.code));
+  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
+    return controller.verifyEmail(input.code);
+  });
 }
 
 function resendVerificationEmail() {
@@ -223,11 +244,19 @@ function verifyPasskeyAuthentication() {
         rememberMe: z.boolean().optional(),
       }),
     )
-    .mutation(({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) => {
       const ip = ctx.req?.ip ?? 'unknown';
       checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
       const ua = ctx.req?.headers?.['user-agent'] ?? '';
-      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
+      const result = await passkeyController.verifyAuthentication(
+        input.response,
+        input.nonce,
+        ip,
+        ua,
+        input.rememberMe,
+      );
+      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+      return { auth_token: result.auth_token };
     });
 }
 

@@ -42,6 +42,8 @@ export interface Models {
   teams: Teams;
   map_teams_persons: MapTeamsPersons;
   map_teams_lists: MapTeamsLists;
+  map_newsletters_lists: MapNewslettersLists;
+  map_web_forms_lists: MapWebFormsLists;
   tasks: Tasks;
   persons: Persons;
   profiles: Profiles;
@@ -81,17 +83,26 @@ export interface Models {
   event_ticket_types: EventTicketTypes;
   event_registrations: EventRegistrations;
   web_forms: WebForms;
+  form_submissions: FormSubmissions;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
   data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
+  dismissed_duplicate_groups: DismissedDuplicateGroups;
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
+  workflow_runs: WorkflowRuns;
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
-  email_folders: EmailFolders;
+  turfs: Turfs;
+  turf_households: TurfHouseholds;
+  turf_assignments: TurfAssignments;
+  turf_knocks: TurfKnocks;
+  delivery_requests: DeliveryRequests;
+  delivery_routes: DeliveryRoutes;
+  delivery_route_stops: DeliveryRouteStops;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -185,6 +196,7 @@ interface AuthUsers extends RecordType {
   two_factor_enabled: boolean;
   two_factor_code: string | null;
   two_factor_expires_at: Timestamp | null;
+  two_factor_attempts: Generated<number>;
   deletion_scheduled_at: Timestamp | null;
   previous_email: string | null;
   previous_role: string | null;
@@ -198,7 +210,6 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   startdate: string | null;
   enddate: string | null;
   name: string;
-  json: Json | null;
   notes: string | null;
 }
 
@@ -207,7 +218,6 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   createdby_id: string;
   file_id: string | null;
   home_phone: string | null;
-  json: Json | null;
   notes: string | null;
   address_fp_street: string | null;
   address_fp_full: string | null;
@@ -216,6 +226,8 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   precinct: string | null;
   ward: string | null;
   geocoding_status: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
@@ -251,9 +263,95 @@ interface MapTeamsPersons extends JunctionRecordType {
   person_id: string;
 }
 
+// Deliveries (spec §14). "routed" is intentionally NOT a column on delivery_requests — it is
+// derived from an active (pending) delivery_route_stops row (one source of truth).
+export interface DeliveryRequests extends RecordType {
+  household_id: string;
+  person_id: string | null;
+  web_form_id: string | null;
+  source: Generated<'web_form' | 'manual'>;
+  status: Generated<'new' | 'approved' | 'declined' | 'delivered'>;
+  notes: string | null;
+  skip_reason: string | null;
+}
+
+export interface DeliveryRoutes extends RecordType {
+  name: string;
+  status: Generated<'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled'>;
+  volunteer_person_id: string | null;
+  start_address: string;
+  start_lat: number;
+  start_lng: number;
+  est_minutes: Generated<number>;
+  est_km: Generated<number>;
+  scheduled_for: Timestamp | null;
+  // Only the sha256 hash of the raw capability token is ever stored; the raw token is returned once.
+  share_token_hash: string | null;
+  share_token_expires_at: Timestamp | null;
+  params: Generated<Json>;
+}
+
+export interface DeliveryRouteStops extends RecordType {
+  route_id: string;
+  request_id: string;
+  seq: number;
+  leg_minutes: Generated<number>;
+  status: Generated<'pending' | 'delivered' | 'skipped'>;
+  reason: string | null;
+  acted_at: Timestamp | null;
+  acted_via: 'volunteer_link' | 'staff' | null;
+}
+
 interface MapTeamsLists extends JunctionRecordType {
   team_id: string;
   list_id: string;
+}
+
+/**
+ * Canvassing §13. A turf is a geographic slice of a smart-list universe cut into
+ * a walkable door list. `status` is the stored lifecycle only —
+ * 'draft' (unassigned) | 'active' (assigned/in the field) | 'retired'. Display
+ * state ("In field now", "Complete") and all progress numbers are DERIVED from
+ * turf_knocks at read time, never stored here (§22.6).
+ */
+interface Turfs extends RecordType {
+  name: string;
+  status: string;
+  list_id: string | null;
+  target_doors: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  ward: string | null;
+  notes: string | null;
+}
+
+/** The doors of a turf — one row per household. */
+interface TurfHouseholds extends JunctionRecordType {
+  turf_id: string;
+  household_id: string;
+}
+
+/** A turf handed to a team and/or opened via a tokenised Companion link. */
+interface TurfAssignments extends RecordType {
+  turf_id: string;
+  team_id: string | null;
+  token: string;
+  status: string;
+  assigned_at: Timestamp;
+}
+
+/** One door interaction, synced live from a Canvass Companion. */
+interface TurfKnocks extends RecordType {
+  turf_id: string;
+  household_id: string;
+  person_id: string | null;
+  outcome: string;
+  response: string | null;
+  notes: string | null;
+  source: string;
+  canvasser_name: string | null;
+  client_knock_id: string | null;
+  knocked_at: Timestamp;
 }
 
 export interface MapListsPersons extends JunctionRecordType {
@@ -264,6 +362,26 @@ export interface MapListsPersons extends JunctionRecordType {
 interface MapListsHouseholds extends JunctionRecordType {
   list_id: string;
   household_id: string;
+}
+
+/**
+ * Normalized newsletter list targeting (replaces the JSONB
+ * newsletters.target_lists document as the source of truth). `mode` carries
+ * the {include, exclude} split; list_id/newsletter_id cascade on delete.
+ */
+export interface MapNewslettersLists extends JunctionRecordType {
+  newsletter_id: string;
+  list_id: string;
+  mode: Generated<'include' | 'exclude'>;
+}
+
+/**
+ * Normalized web-form list targeting (replaces the JSONB
+ * web_forms.target_lists document as the source of truth).
+ */
+export interface MapWebFormsLists extends JunctionRecordType {
+  web_form_id: string;
+  list_id: string;
 }
 
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
@@ -279,7 +397,6 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   home_phone: string | null;
   file_id: string | null;
   company_id: string | null;
-  json: Json | null;
   notes: string | null;
   linkedin: string | null;
   twitter: string | null;
@@ -288,6 +405,19 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   assigned_to: string | null;
   opt_in_status: string | null;
   opt_in_confirmed_at: Timestamp | null;
+  preferred_contact: string | null;
+  /**
+   * Opaque public identifier — 8 Crockford Base32 chars (40 CSPRNG bits),
+   * unique per tenant, the canonical person lookup key (spec §1). Generated
+   * app-side and NEVER changes — see lib/person-public-id.ts.
+   */
+  public_id: string | null;
+  /**
+   * URL display slug `{name}-{xxxx}-{xxxx}` (spec §1: /people/joseph-4t9k-2xpm).
+   * The name is decorative; resolution is by public_id. Regenerated on rename,
+   * app-side — see lib/person-public-id.ts.
+   */
+  slug: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {
@@ -297,7 +427,8 @@ interface Profiles extends RecordType, AddressType {
   email2: string | null;
   mobile: string | null;
   home_phone: string | null;
-  json: Json | null;
+  /** Typed contract: ProfilePreferencesObj ({ notifications: {...} }). */
+  preferences: Json | null;
 }
 
 interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
@@ -322,6 +453,8 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   state: string | null;
   zip: string | null;
   country: string | null;
+  method: Generated<string>;
+  receipt_sent: Generated<boolean>;
 }
 
 export interface DonationPeriods extends RecordType {
@@ -389,7 +522,8 @@ export interface Tasks extends RecordType {
   name: string;
   details?: string;
   due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
+  /** Canonical vocabulary: TASK_STATUSES in libs/common/src/lib/schemas/tasks.schema.ts. */
+  status: 'todo' | 'in_progress' | 'waiting' | 'done' | 'archived' | null;
   priority: 'low' | 'medium' | 'high' | 'urgent' | null;
   completed_at: Timestamp | null;
   position: number | null;
@@ -400,11 +534,11 @@ export interface Tasks extends RecordType {
 
 interface Tenants extends RecordType, AddressType {
   name: string;
+  slug: string | null;
   admin_id: string | null;
   email: string | null;
   email2: string | null;
   mobile: string | null;
-  json: Json | null;
   notes: string | null;
   placeholder_household_id: string | null;
   stripe_customer_id: string | null;
@@ -420,9 +554,9 @@ interface Tenants extends RecordType, AddressType {
 interface Emails extends RecordType {
   folder_id: string;
   from_email: string | null;
+  /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
   to_email: string | null;
   subject: string | null;
-  body: string | null;
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
@@ -495,11 +629,29 @@ interface WebForms extends RecordType {
   redirect_url: string | null;
   target_tags: Json | null;
   target_lists: Json | null;
-  status: 'active' | 'archived';
+  status: 'draft' | 'published' | 'archived';
   fields: Json | null;
   send_confirmation: boolean;
   send_alert: boolean;
   form_type: string;
+  type: string | null;
+  slug: string;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  confirm_subject: string | null;
+  confirm_body: string | null;
+  notify_team_on: Generated<boolean>;
+  archived_at: Timestamp | null;
+}
+
+interface FormSubmissions {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  person_id: string;
+  answers: Json;
+  created_at: Generated<Timestamp>;
 }
 
 interface EmailComments extends RecordType {
@@ -578,6 +730,11 @@ interface UserActivity extends RecordType {
 interface DataImports extends RecordType {
   file_name: string;
   source: string;
+  /**
+   * Tag name requested at import time; label of record once the tag is deleted
+   * (tag deletion nulls tag_id). While the tag exists, tags.name via tag_id is
+   * the source of truth (D-10).
+   */
   tag_name: string | null;
   tag_id: string | null;
   row_count: number;
@@ -589,6 +746,15 @@ interface DataImports extends RecordType {
   processed_at: Timestamp;
   status: Generated<string>;
   error_message: string | null;
+  /** Rows folded into an existing person via the "Merge into existing" duplicate decision (spec §17). */
+  merged_count: Generated<number>;
+  /** All tags applied by this import (the wizard allows several comma-separated tags, not just the auto tag). */
+  tags_applied: Generated<Json>;
+  /** Storage key for the retained original upload — kept 90 days so History can offer a re-download. */
+  source_file_key: string | null;
+  source_file_size: number | null;
+  /** Per-row reasons for skipped rows, so History can offer a "download skipped rows" CSV. */
+  skip_reasons: Generated<Json>;
 }
 
 export interface DataExports {
@@ -652,6 +818,15 @@ export interface PotentialDuplicates {
   updated_at: Generated<Timestamp>;
 }
 
+/** §9.3 Duplicates: a "Not duplicates" dismissal, keyed by the same `group_key` the nightly
+ * sweep uses. No surrogate id — `(tenant_id, group_key)` is the natural primary key. */
+export interface DismissedDuplicateGroups {
+  tenant_id: string;
+  group_key: string;
+  dismissed_by_id: string;
+  dismissed_at: Generated<Timestamp>;
+}
+
 interface MsOauthTokens {
   id: Generated<string>;
   tenant_id: string;
@@ -713,8 +888,11 @@ export interface Companies extends RecordType {
   phone: string | null;
   industry: string | null;
   notes: string | null;
-  json: Json | null;
+  /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
+  enrichment: Json | null;
   file_id: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 export interface Files {
@@ -808,6 +986,8 @@ export interface Workflows extends RecordType {
   trigger_type: string;
   status: string;
   trigger_event_id: string | null;
+  // Spec §16 ONLY ENROLL IF — a QueryBuilder group node (see core.schema QueryBuilderGroupNode).
+  conditions: Json | null;
 }
 
 export interface WorkflowSteps {
@@ -817,12 +997,31 @@ export interface WorkflowSteps {
   step_number: number;
   delay_days: number;
   delay_unit: 'days' | 'hours';
-  subject: string;
+  // Spec §16: steps are polymorphic. `kind` discriminates; the value each kind carries lives
+  // in `config` (send_email uses subject/html/text columns; wait uses delay_days/delay_unit).
+  kind: 'wait' | 'send_email' | 'add_tag' | 'create_task' | 'notify_team';
+  config: Json | null;
+  subject: string | null;
   preview_text: string | null;
   html_content: string | null;
   plain_text_content: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+// Spec §16: one row per executed step (success or failure) — feeds the list's RUNS 30D /
+// LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for narration.
+export interface WorkflowRuns {
+  id: Generated<string>;
+  tenant_id: string;
+  workflow_id: string;
+  enrollment_id: string | null;
+  person_id: string | null;
+  step_number: number | null;
+  step_kind: string | null;
+  status: 'success' | 'failed';
+  error: string | null;
+  created_at: Generated<Timestamp>;
 }
 
 export interface WorkflowEnrollments {
@@ -879,19 +1078,6 @@ interface ZapierSubscriptions {
   tenant_id: string;
   event_type: string;
   webhook_url: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-interface EmailFolders {
-  id: Generated<string>;
-  tenant_id: string;
-  name: string;
-  icon: string | null;
-  sort_order: Generated<number>;
-  is_default: Generated<boolean>;
-  createdby_id: string;
-  updatedby_id: string;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

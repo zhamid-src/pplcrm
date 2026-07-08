@@ -1,15 +1,18 @@
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { env } from '../../../../env';
-import crypto from 'crypto';
 import { Client } from '@microsoft/microsoft-graph-client';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import crypto from 'crypto';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
 import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
 import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
 
 function buildRawMime(options: {
   fromName: string;
@@ -97,37 +100,12 @@ export async function saveLocalEmail(
   previewKey: string,
 ) {
   return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    // eslint-disable-next-line local/no-unscoped-db-query -- email_folders uses global hardcoded IDs; FK references id only, not tenant_id
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
+    // 1. Insert into emails table (Outbox)
     const createdEmail = await trx
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
+        folder_id: ALL_FOLDERS.OUTBOX,
         from_email: fromEmail,
         to_email: toList.join(', '),
         subject: subject,
@@ -274,28 +252,14 @@ export async function saveLocalEmail(
 const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Send composed email
   fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    // Mutating endpoint: enforce session revocation and block read-only viewers.
+    const authResult = await authenticateRest(req, { requireWrite: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
     }
 
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
+    const tenantId = authResult.auth.tenant_id;
+    const userId = authResult.auth.user_id;
     const db = (BaseRepository as any)['_db'];
 
     // Retrieve sender user details
@@ -372,12 +336,14 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const msToken = await db
       .selectFrom('ms_oauth_tokens')
       .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
     const googleToken = await db
       .selectFrom('google_oauth_tokens')
       .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
@@ -414,9 +380,9 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         uploadedFiles,
         fallbackPreview,
       );
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err.message || 'Failed to save email', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
     }
 
     // Determine send method prioritizing matching address
@@ -500,10 +466,10 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           // Send draft
           await client.api(`/me/messages/${msDraftId}/send`).post({});
 
-          // Update local email folder to '3' (Sent) on success
+          // Move local email to Sent on success
           const finalEmail = await db
             .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .returningAll()
@@ -523,7 +489,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
           // Clean up local email
           await db
@@ -531,7 +497,10 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
         }
       } else if (sendMethod === 'google') {
         const oauthSvc = new GoogleOAuthService(db, {
@@ -592,7 +561,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           const finalEmail = await db
             .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .returningAll()
@@ -611,51 +580,53 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
           await db
             .updateTable('emails')
             .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
+              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
+              folder_id: ALL_FOLDERS.DRAFTS,
               updated_at: new Date(),
             })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
 
-          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
       // Clean up local email
       await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
     }
   });
 
   // Download attachment by ID
   fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
     const { id, attachmentId } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (embeddable link, no
+    // session JWT in the URL) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
@@ -684,7 +655,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
       return reply.send(buffer);
     } catch (_err) {
       fastify.log.error(_err);
@@ -694,25 +665,24 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Serve inline attachment by CID
   fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
     const { id, cid } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (for inline <img> in the
+    // rendered body) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
@@ -742,7 +712,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Cache-Control', 'public, max-age=31536000');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
       return reply.send(buffer);
     } catch (_err) {
       fastify.log.error(_err);

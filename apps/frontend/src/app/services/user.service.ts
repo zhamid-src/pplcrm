@@ -32,17 +32,11 @@ export class UserService extends TRPCService<any> {
 
   public resolveAvatarUrl(url: string | null | undefined): string | null {
     if (!url) return null;
-    let resolved = url;
+    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
+    // so no session token is appended — tokens in URLs leak into history/logs.
     if (url.startsWith('/') && !url.startsWith('//')) {
-      resolved = environment.apiUrl + url;
+      return environment.apiUrl + url;
     }
-    if (!resolved.includes('token=')) {
-      const token = this.tokenService.getAuthToken();
-      if (token) {
-        const separator = resolved.includes('?') ? '&' : '?';
-        resolved = `${resolved}${separator}token=${encodeURIComponent(token)}`;
-      }
-    }
-    return resolved;
+    return url;
   }
 }

@@ -15,8 +15,11 @@ import { Swap } from '@uxcommon/components/swap/swap';
 
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
 import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -35,8 +38,21 @@ export class Sidebar {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly duplicatesSvc = inject(DuplicatesService);
+  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
 
-  protected hoveringSidebar = signal(false);
+  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
+   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
+  protected readonly taskSlaBreaches = signal<number | null>(null);
+
+  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
+   *  session loading shape as `taskSlaBreaches` above. */
+  protected readonly duplicatesQueueCount = signal<number | null>(null);
+
+  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly deliveriesReadyCount = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -60,8 +76,9 @@ export class Sidebar {
   protected readonly items = computed(() => {
     const role = this.auth.getUser()?.role;
     const allItems = this.sidebarSvc.getItems()();
+    const withBadges = this.applyBadges(allItems);
     if (role === 'user') {
-      return allItems.map((item) => {
+      return withBadges.map((item) => {
         if (item.children) {
           return {
             ...item,
@@ -71,7 +88,7 @@ export class Sidebar {
         return item;
       });
     }
-    return allItems;
+    return withBadges;
   });
 
   constructor() {
@@ -93,6 +110,58 @@ export class Sidebar {
           this.visibilitySignals.set(key, signal(visible));
         }
       }
+    });
+
+    void this.loadTaskSlaBreaches();
+    void this.loadDuplicatesQueueCount();
+    void this.loadDeliveriesReadyCount();
+  }
+
+  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
+  private async loadDeliveriesReadyCount(): Promise<void> {
+    try {
+      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  private async loadTaskSlaBreaches(): Promise<void> {
+    try {
+      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
+   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
+  private async loadDuplicatesQueueCount(): Promise<void> {
+    try {
+      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the Tasks and Duplicates entries — every other item is
+   *  untouched. */
+  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
+    const breaches = this.taskSlaBreaches();
+    const duplicatesQueue = this.duplicatesQueueCount();
+    const deliveriesReady = this.deliveriesReadyCount();
+    return items.map((item) => {
+      const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/tasks') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      if (item.route === '/duplicates') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
+      }
+      if (item.route === '/deliveries') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
+      }
+      return children ? { ...item, children } : item;
     });
   }
 
@@ -128,10 +197,6 @@ export class Sidebar {
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar.set(state);
   }
 
   protected toggleCollapse(name: string) {

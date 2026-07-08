@@ -1,14 +1,22 @@
 <pc-detail-layout
-  [title]="'Event Details'"
-  [icon]="'calendar'"
+  [title]="event()?.name || 'Volunteer event'"
+  [eyebrow]="'Volunteer event'"
+  [crumbs]="crumbs()"
   [isLoading]="isLoading()"
   [hasRecord]="!initialized() || !!event()"
   [showDelete]="true"
-  [deleteText]="'Delete Event'"
-  [btn1Text]="'Edit Event'"
+  [deleteText]="'Delete event'"
+  [btn1Text]="'Edit event'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editEvent()"
   (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (event()) {
   <!-- Main Content Grid -->
@@ -56,12 +64,12 @@
             Coordinator Contact
           </div>
           @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+          <pc-detail-row icon="envelope" iconClass="text-primary">
             <span>Email:</span>
             <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
           </pc-detail-row>
           } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
+          <pc-detail-row icon="phone" iconClass="text-primary">
             <span>Phone:</span>
             <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
           </pc-detail-row>
@@ -70,7 +78,7 @@
       </pc-profile-card>
 
       <!-- Public Signup Link Card -->
-      @if (event().public_url) {
+      @if (publicUrl()) {
       <pc-card title="Public Signup Link" icon="globe-americas">
         <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
@@ -102,8 +110,8 @@
           [value]="roster().length"
           [description]="'Volunteers scheduled'"
           [icon]="'user-group'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <pc-stat-card
@@ -111,8 +119,8 @@
           [value]="remainingCapacity()"
           [description]="'Total capacity: ' + (event().capacity ?? 'Unlimited')"
           [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
       </div>
 

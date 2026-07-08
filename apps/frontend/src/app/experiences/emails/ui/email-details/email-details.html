@@ -6,49 +6,93 @@
     (replyAll)="emitReplyAll()"
     (forward)="emitForward()"
   ></pc-email-header>
-  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-4">
-    @if (!commentsExpanded() || (email() && store.isBodyExpanded())) {
-    <!-- Body visible when comments are collapsed -->
+  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
+    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
+    @if (slaPill(); as sla) {
+    <div>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
+        [class.bg-base-200]="sla.tone === 'neutral'"
+        [class.text-base-content]="sla.tone === 'neutral'"
+        [class.bg-warning/15]="sla.tone === 'warning'"
+        [class.text-warning]="sla.tone === 'warning'"
+        [class.bg-error/15]="sla.tone === 'error'"
+        [class.text-error]="sla.tone === 'error'"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        {{ sla.text }}
+      </span>
+    </div>
+    }
+
+    <!-- Body owns the space (§5) -->
     <pc-email-body
       class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
       [email]="email()!"
     >
     </pc-email-body>
-    }
 
-    <!-- Comments panel: either compact with status bar or expanded occupying remaining space -->
     @if (!store.isBodyExpanded()) {
-    <div class="min-h-0 flex flex-col rounded-lg bg-base-100 border border-base-300 overflow-hidden">
-      <!-- Status bar -->
+    <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
+    <div class="flex items-center gap-4 border-b border-base-200 text-[12.5px]">
       <button
         type="button"
-        class="flex items-center justify-between px-3 py-2 text-left text-sm font-medium bg-base-200 border-b border-base-300 hover:bg-base-300"
-        (click)="toggleComments()"
-        [attr.aria-expanded]="commentsExpanded()"
-        aria-controls="comments-panel"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'comments'"
+        [class.!text-primary]="openPanel() === 'comments'"
+        [class.font-semibold]="openPanel() === 'comments'"
+        (click)="toggleCommentsTab()"
       >
-        <span class="flex items-center gap-2">
-          <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-gray-500"></pc-icon>
-          <span>Comments</span>
-          <span
-            class="inline-flex items-center justify-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700"
-            >{{ commentCount() }}</span
-          >
-        </span>
-        <span class="cursor-pointer ml-2 text-xs text-gray-500">@if (commentsExpanded()) { Hide } @else { Show }</span>
+        <pc-icon name="chat-bubble-bottom-center-text" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Comments tab@@emailDetails.tab.comments">Comments</ng-container>
+        @if (commentCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ commentCount() }}</span
+        >
+        }
       </button>
-
-      @if (commentsExpanded()) {
-      <!-- Expanded comments fill available space -->
-      <div id="comments-panel" class="flex-1 min-h-0 overflow-auto email-scrollbar">
-        <pc-email-comments [email]="email()"> </pc-email-comments>
-      </div>
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'activity'"
+        [class.!text-primary]="openPanel() === 'activity'"
+        [class.font-semibold]="openPanel() === 'activity'"
+        (click)="toggleActivityTab()"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Activity tab@@emailDetails.tab.activity">Activity</ng-container>
+        @if (activityCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ activityCount() }}</span
+        >
+        }
+      </button>
+      <span class="flex-1"></span>
+      @if (openPanel()) {
+      <button
+        type="button"
+        class="text-xs text-base-content/50 underline underline-offset-2 hover:text-base-content"
+        (click)="closePanel()"
+        i18n="EmailDetails|Hide open panel@@emailDetails.tab.hide"
+      >
+        Hide
+      </button>
       }
     </div>
 
-    <!-- Activity log panel — collapsed by default -->
-    <pc-email-activities [email]="email()"></pc-email-activities>
-    }
+    @if (openPanel() === 'comments') {
+    <div
+      class="animate-drop max-h-60 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-comments [email]="email()"></pc-email-comments>
+    </div>
+    } @else if (openPanel() === 'activity') {
+    <div
+      class="animate-drop max-h-52 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-activities [email]="email()" [headerless]="true"></pc-email-activities>
+    </div>
+    } }
   </main>
 
   } @else if (isLoading()) {
@@ -56,7 +100,7 @@
     <span class="loading loading-bars"></span>
   </div>
   } @else if (showNoEmailMsg()){
-  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-gray-400 uppercase tracking-widest">
+  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
     <img class="max-w-64" src="assets/waiting.svg" />
     <span>No emails here!</span>
   </div>

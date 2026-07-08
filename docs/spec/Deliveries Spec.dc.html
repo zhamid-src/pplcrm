@@ -1,0 +1,1015 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet data-dc-atomics>
+        <link rel="preconnect" href="https://fonts.googleapis.com" /><link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossorigin
+        /><link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+        <style>
+          html,
+          body {
+            margin: 0;
+            min-height: 100%;
+          }
+        </style>
+      </helmet>
+
+      <x-import
+        component-from-global-scope="doc-page"
+        from="./doc-page.js"
+        size="letter"
+        margin="0.75in"
+        hint-size="100%,100%"
+      >
+        <div
+          slot="footer"
+          style="
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 9.5px;
+            color: #8b93a0;
+            display: flex;
+            justify-content: space-between;
+            padding-top: 6px;
+            border-top: 1px solid #e7e5e4;
+          "
+        >
+          <span>PeopleCRM · Deliveries — implementation spec</span><span>July 5, 2026</span>
+        </div>
+
+        <div
+          data-screen-label="Deliveries implementation spec"
+          style="font-family: 'Inter', system-ui, sans-serif; color: #1f2937; font-size: 12.5px; line-height: 1.62"
+        >
+          <h1 style="margin: 0 0 4px 0; font-size: 25px; font-weight: 700; letter-spacing: -0.02em">
+            Deliveries — implementation spec
+          </h1>
+          <p style="margin: 0 0 18px 0; font-size: 13px; color: #5b6675">
+            Yard-sign requests → route planning → volunteer delivery · PeopleCRM · July 5, 2026<br />Sources:
+            <span
+              style="
+                font-family: ui-monospace, Menlo, monospace;
+                font-size: 11px;
+                background: #f4f5f7;
+                border-radius: 4px;
+                padding: 1px 5px;
+              "
+              >Yard Sign Routes Mockup.dc.html</span
+            >
+            ·
+            <span
+              style="
+                font-family: ui-monospace, Menlo, monospace;
+                font-size: 11px;
+                background: #f4f5f7;
+                border-radius: 4px;
+                padding: 1px 5px;
+              "
+              >Volunteer Route Prototype.dc.html</span
+            >
+            · raw PNG exports in
+            <span
+              style="
+                font-family: ui-monospace, Menlo, monospace;
+                font-size: 11px;
+                background: #f4f5f7;
+                border-radius: 4px;
+                padding: 1px 5px;
+              "
+              >handoff-yardsigns/img/</span
+            >
+          </p>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            1 · Overview
+          </h2>
+          <p style="margin: 0 0 8px 0">
+            Deliveries lets a campaign collect yard-sign requests, turn the approved ones into optimized driving routes,
+            and hand each route to a volunteer through a public tokenized link — no volunteer account required. Results
+            flow back automatically: every delivered or failed stop updates the request record, the route, and the
+            activity feed in real time.
+          </p>
+          <p style="margin: 0 0 8px 0">
+            <b style="font-weight: 600">Personas.</b> The <b style="font-weight: 600">staff organizer</b> works in the
+            desktop app (sidebar → Field → Deliveries). The <b style="font-weight: 600">volunteer</b> only ever sees the
+            mobile route page behind their link.
+          </p>
+          <table style="width: 100%; border-collapse: collapse; margin: 10px 0 4px 0">
+            <thead>
+              <tr>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Surface
+                </th>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Route
+                </th>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Audience
+                </th>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Spec
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; font-weight: 500">Requests grid</td>
+                <td
+                  style="
+                    padding: 6px 10px;
+                    border-bottom: 1px solid #e7e5e4;
+                    font-family: ui-monospace, Menlo, monospace;
+                    font-size: 11px;
+                  "
+                >
+                  /deliveries
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">Staff</td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">§4.1</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; font-weight: 500">Plan routes</td>
+                <td
+                  style="
+                    padding: 6px 10px;
+                    border-bottom: 1px solid #e7e5e4;
+                    font-family: ui-monospace, Menlo, monospace;
+                    font-size: 11px;
+                  "
+                >
+                  /deliveries/plan
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">Staff</td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">§4.2</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; font-weight: 500">Route detail</td>
+                <td
+                  style="
+                    padding: 6px 10px;
+                    border-bottom: 1px solid #e7e5e4;
+                    font-family: ui-monospace, Menlo, monospace;
+                    font-size: 11px;
+                  "
+                >
+                  /deliveries/routes/:id
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">Staff</td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">§4.3</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; font-weight: 500">
+                  Volunteer route page
+                </td>
+                <td
+                  style="
+                    padding: 6px 10px;
+                    border-bottom: 1px solid #e7e5e4;
+                    font-family: ui-monospace, Menlo, monospace;
+                    font-size: 11px;
+                  "
+                >
+                  /r/:token (public)
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">Volunteer</td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4">§4.4–4.5</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            2 · Data model
+          </h2>
+          <pre
+            style="
+              margin: 8px 0;
+              background: #f7f8fa;
+              border: 1px solid #e7e5e4;
+              border-radius: 8px;
+              padding: 12px 14px;
+              font-family: ui-monospace, Menlo, monospace;
+              font-size: 10.5px;
+              line-height: 1.55;
+              white-space: pre-wrap;
+            "
+          >
+DeliveryRequest {
+  id, personId, householdId          // request always belongs to a household
+  address: string
+  geo: { lat?, lng?, geocodeStatus: "pending" | "located" | "failed" }
+  status: "new" | "approved" | "declined" | "delivered"
+  source: "web_form" | "manual"
+  requestedAt: timestamp
+  // NOTE: "routed" is NOT a stored status — it is derived from having
+  // an active RouteStop. One source of truth; no sync bugs.
+}
+
+Route {
+  id, name                           // e.g. "Maple Street area — Jul 6", inline-renamable
+  status: "draft" | "assigned" | "in_progress" | "completed" | "canceled"
+  volunteerId?, scheduledFor?
+  startAddress: string               // remembered tenant-wide from last plan
+  estimate: { minutes, km }          // recomputed server-side on any reorder/removal
+  link?: { token, expiresAt, revokedAt? }   // capability URL, default 30-day validity
+}
+
+RouteStop {
+  id, routeId, requestId
+  seq: int                           // 1-based visit order
+  legMinutes: int                    // travel time from previous stop
+  status: "pending" | "delivered" | "skipped"
+  reason?: "No safe spot" | "Wrong address" | "Resident declined" | "Other"
+  actedAt?, actedVia?: "volunteer_link" | "staff"
+}</pre
+          >
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 14px 0 6px 0">State machines</h3>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Request:</b>
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px"
+                >new → approved → delivered</span
+              >, or <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">new → declined</span>. A
+              skipped or removed stop returns the request to
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">approved</span> (back in the
+              planning pool). Delivered requests keep a link to their route as the paper trail.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Route:</b>
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px"
+                >draft → assigned → in_progress → completed</span
+              >. The <em>first volunteer action</em> flips assigned → in_progress (no separate "start" step). When every
+              stop is terminal (delivered/skipped) the route <b style="font-weight: 600">auto-completes</b>. Cancel is
+              allowed from assigned/in_progress and returns all undelivered stops to the pool; delete is allowed only
+              for draft/assigned routes — the UI explains this instead of showing a bare disabled item.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Stop:</b>
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px"
+                >pending → delivered | skipped(reason)</span
+              >. Undo restores pending and clears time/reason. Undo must always be available for the most recent action
+              — mistakes on a phone in the sun are guaranteed.
+            </li>
+          </ul>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            3 · End-to-end workflow
+          </h2>
+          <ol style="margin: 0 0 8px 0; padding-left: 22px">
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Intake.</b> Requests arrive from the public web form or manual entry.
+              Geocoding runs asynchronously; its state is narrated as a Readiness chip (<em
+                >Ready / Locating… / Address problem</em
+              >) — rows are never hidden because of it.
+            </li>
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Approve.</b> Staff bulk-select new requests and approve or decline them from
+              the selection bar (§4.1).
+            </li>
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Plan.</b> Staff sets a start address (+ optional driver count), previews
+              routes — a pure computation that writes nothing — reviews the proposal and leftovers, then commits with
+              "Create N routes" (§4.2).
+            </li>
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Assign & share.</b> On the route detail page staff assigns a volunteer and
+              copies the volunteer link. First copy mints the token ("Link copied — valid 30 days") (§4.3).
+            </li>
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Deliver.</b> The volunteer opens the link on their phone and works one stop at
+              a time: mark delivered, report a failure with a reason, or defer the house to the end of the route
+              (§4.4–4.5). Each action syncs immediately and appears in the route's activity feed attributed to "via
+              volunteer link".
+            </li>
+            <li style="margin-bottom: 6px">
+              <b style="font-weight: 600">Close out.</b> When all stops are terminal the route auto-completes and the
+              volunteer sees a thank-you summary. Skipped requests are already back in the pool for the next batch. The
+              link keeps working read-only until it expires.
+            </li>
+          </ol>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            4 · Screen specifications
+          </h2>
+
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 14px 0 6px 0">
+            4.1 Requests grid —
+            <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 500"
+              >/deliveries</span
+            >
+          </h3>
+          <figure style="margin: 10px 0; break-inside: avoid">
+            <img
+              src="handoff-yardsigns/img/requests-grid.png"
+              style="width: 100%; border: 1px solid #e0e4e9; border-radius: 8px; display: block"
+              alt="Requests grid with bulk selection"
+            />
+            <figcaption style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+              Fig. 1 — Requests grid, bulk-selection state. Grey squares are standard icon slots (heroicons).
+            </figcaption>
+          </figure>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Columns:</b> checkbox · Requested by (person link) · Address · Status chip
+              (New/Approved/Delivered/Declined) · Readiness chip · Source (Web form/Manual) · Route (link or "—") ·
+              Requested (date).
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Tabs with live counts:</b> Open 32 · New 9 · Approved 23 · Delivered 54 ·
+              Declined 4. "Open" = new + approved.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Bulk selection bar</b> appears when ≥1 row is checked. It narrates scale ("2
+              of 8 rows on this page selected") and offers the next scale up ("Select all 9 new"). Actions repeat the
+              number: "Approve 2 requests"; "Decline 2 requests" sits last, in error color, transparent background.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Readiness</b> narrates geocode state instead of hiding rows. "Address problem"
+              renders an inline "Edit household" link; saving the household re-triggers geocoding.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">"Plan routes · 23 ready"</b> (primary) carries the live eligible count and is
+              never disabled — at 0 it lands on the plan page's guided empty state. Secondary "Add request" opens manual
+              entry.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Route column is derived</b> from an active stop, not stored. Delivered rows
+              keep the route link.
+            </li>
+          </ul>
+
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 16px 0 6px 0">
+            4.2 Plan routes —
+            <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 500"
+              >/deliveries/plan</span
+            >
+          </h3>
+          <figure style="margin: 10px 0; break-inside: avoid">
+            <img
+              src="handoff-yardsigns/img/plan-routes.png"
+              style="width: 88%; margin: 0 auto; border: 1px solid #e0e4e9; border-radius: 8px; display: block"
+              alt="Plan routes preview page"
+            />
+            <figcaption style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+              Fig. 2 — Plan routes, preview state: setup card, eligibility narration, 3 proposed routes, leftover
+              explanations, commit footer.
+            </figcaption>
+          </figure>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Inputs:</b> Start address (autocomplete, prefilled from the tenant's last
+              plan, saved again on commit; shows a "Located" chip once geocoded). Volunteers available — optional; blank
+              = as many routes as needed, a number balances stops across that many drivers.
+              <b style="font-weight: 600">Advanced stays collapsed</b> and summarizes its defaults inline: 60 min per
+              driver · no sign cap · 5 min per stop · 30 km/h average · no return trip.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Preview is pure.</b> "Preview routes" computes a proposal and writes nothing;
+              the page says so twice ("Preview doesn't save anything", "Nothing is saved until you create routes").
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Eligibility narration:</b> "Previewing 23 of 32 open requests. 9 can't be
+              routed yet:" with each count a deep link to the pre-filtered grid (3 waiting for location · 1 address
+              problem · 5 not approved). Guide, don't error. 0 eligible renders this as the page's empty state, not a
+              toast.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Proposal cards:</b> one per route — kicker (ROUTE 1), summary (8 stops · 51
+              min · 5.6 km), ordered stop list with per-leg travel time (+3 min).
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Leftovers are always explained, with an exit.</b> Two classes:
+              <em>Didn't fit this batch</em> (capacity; "Stays approved — first in line when you plan another batch")
+              and <em>Couldn't fit</em> (per-request reason in user terms, e.g. "Isolated — the nearest other stop is 12
+              km away"). Every leftover row links to its request, where staff can mark it delivered manually.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Commit:</b> "Create 3 routes" repeats the number; success toasts "3 routes
+              created" and lands on the routes grid. "Start over" clears the proposal.
+            </li>
+          </ul>
+
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 16px 0 6px 0">
+            4.3 Route detail —
+            <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 500"
+              >/deliveries/routes/:id</span
+            >
+          </h3>
+          <figure style="margin: 10px 0; break-inside: avoid">
+            <img
+              src="handoff-yardsigns/img/route-detail.png"
+              style="width: 88%; margin: 0 auto; border: 1px solid #e0e4e9; border-radius: 8px; display: block"
+              alt="Route detail with overflow menu open"
+            />
+            <figcaption style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+              Fig. 3 — Route detail, in progress, overflow menu open.
+            </figcaption>
+          </figure>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Header card:</b> eyebrow names the type ("Delivery route"), the real route
+              name is the title (inline rename via pencil), status chip beside it, pager carries grid context ("2 of
+              3"). Fields: Volunteer (person link) · Scheduled for · Estimate · Volunteer link state ("Active — expires
+              Aug 4").
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Actions row:</b> Change volunteer · Copy volunteer link (first click mints the
+              token and copies — "Link copied — valid 30 days") · Open in Google Maps. Overflow (⋯):
+              <em>Revoke volunteer link</em> ("The current link stops working"), <em>Cancel route…</em> in error color
+              ("5 undelivered stops return to the pool"), <em>Delete route</em> greyed with its unmet condition spelled
+              out ("Draft or assigned routes only — cancel first"). Destructive verbs always name their consequences.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Stops card:</b> header shows "3 of 8 delivered" + progress bar. Each row: seq
+              bubble · person link + address · leg time · status chip · delivered time, or for pending stops ↑ ↓ reorder
+              buttons and a ⋯ menu (mark delivered / couldn't deliver / remove from route — removal returns the request
+              to the pool). <b style="font-weight: 600">Reorder recomputes legs and the estimate server-side</b> and
+              flashes the changed row. Footer repeats the estimate and start point.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Activity feed is mandatory</b> and tells one coherent story: created from plan
+              → volunteer assigned → link created → stop-by-stop results. Public actions attribute to "via volunteer
+              link", never a fake user.
+            </li>
+          </ul>
+
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 16px 0 6px 0">
+            4.4 Volunteer route page —
+            <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 500"
+              >/r/:token</span
+            >
+            (public, mobile-first)
+          </h3>
+          <figure
+            style="
+              margin: 10px 0;
+              break-inside: avoid;
+              display: flex;
+              gap: 16px;
+              align-items: flex-start;
+              justify-content: center;
+            "
+          >
+            <div style="width: 38%">
+              <img
+                src="handoff-yardsigns/img/volunteer-midroute.png"
+                style="width: 100%; border: 1px solid #e0e4e9; border-radius: 10px; display: block"
+                alt="Volunteer page mid-route"
+              />
+              <div style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+                Fig. 4a — Mid-route: delivered rows, just-delivered with Undo, active stop card, inline reason picker,
+                pending queue.
+              </div>
+            </div>
+            <div style="width: 38%">
+              <img
+                src="handoff-yardsigns/img/volunteer-done.png"
+                style="width: 100%; border: 1px solid #e0e4e9; border-radius: 10px; display: block"
+                alt="Volunteer page done state"
+              />
+              <div style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+                Fig. 4b — Done state: auto-completed summary plus exception rows.
+              </div>
+            </div>
+          </figure>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Data minimization:</b> the page shows first name + address only. No
+              constituent email, phone, or notes ever reach this public page. Header shows the campaign name and
+              progress ("3 of 8 delivered" + bar).
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">One next action per stop;</b> all tap targets ≥44px. The first action flips
+              the route to in_progress — no separate "start" step.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Failure reasons are inline, not a modal:</b> No safe spot · Wrong address ·
+              Resident declined · Other, plus "Never mind — keep it pending". A skipped house goes back to the
+              organizer's pool automatically, and the page says so in plain words.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Undo</b> is offered on the just-actioned row (teal "Delivered just now" /
+              amber skipped) and restores pending.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Done state:</b> when every stop is terminal the route auto-completes: "All 8
+              stops handled — thank you!", counts, "Your organizer already has the results." Exceptions stay listed with
+              their reason chips. The link keeps working read-only until expiry; staff can mint a new one any time.
+            </li>
+            <li style="margin-bottom: 5px">
+              <b style="font-weight: 600">Navigation:</b> "Open full route in Google Maps" (all stops as a directions
+              URL) in the header; per-stop "Navigate" (single-destination directions URL).
+            </li>
+          </ul>
+
+          <h3 style="font-size: 13.5px; font-weight: 700; margin: 16px 0 6px 0">
+            4.5 Volunteer page — interactive behavior (from the working prototype)
+          </h3>
+          <figure
+            style="
+              margin: 10px 0;
+              break-inside: avoid;
+              display: flex;
+              gap: 14px;
+              align-items: flex-start;
+              justify-content: center;
+            "
+          >
+            <div style="width: 31%">
+              <img
+                src="handoff-yardsigns/img/proto-list.png"
+                style="width: 100%; border: 1px solid #e0e4e9; border-radius: 10px; display: block"
+                alt="Prototype list view"
+              />
+              <div style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+                Fig. 5a — List: active stop card with the three actions.
+              </div>
+            </div>
+            <div style="width: 31%">
+              <img
+                src="handoff-yardsigns/img/proto-picker.png"
+                style="width: 100%; border: 1px solid #e0e4e9; border-radius: 10px; display: block"
+                alt="Prototype reason picker"
+              />
+              <div style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+                Fig. 5b — "Couldn't deliver" swaps the card for the reason picker.
+              </div>
+            </div>
+            <div style="width: 31%">
+              <img
+                src="handoff-yardsigns/img/proto-map.png"
+                style="width: 100%; border: 1px solid #e0e4e9; border-radius: 10px; display: block"
+                alt="Prototype map view"
+              />
+              <div style="font-size: 11px; color: #8b93a0; margin-top: 5px">
+                Fig. 5c — Map view: status-colored pins, route line, stop card.
+              </div>
+            </div>
+          </figure>
+          <table style="width: 100%; border-collapse: collapse; margin: 10px 0 4px 0">
+            <thead>
+              <tr>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                    width: 26%;
+                  "
+                >
+                  Interaction
+                </th>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Behavior
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Mark delivered
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Stop → delivered with timestamp; row becomes teal "Delivered just now" with an Undo pill; the next
+                  pending stop becomes the active card; progress bar animates.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Couldn't deliver
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  The active card swaps to the inline reason picker (2×2 grid of the 4 reasons + "Never mind"). Picking
+                  a reason marks the stop skipped (amber row, reason chip, Undo) and advances.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Skip for now
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Defers the house: the stop moves to the end of the route, all seq numbers recompute, and the moved row
+                  notes "moved to the end of your route". Not a failure — status stays pending.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Undo
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Shown on the most recently actioned row only; restores pending and clears time/reason.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  List / Map toggle
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Segmented control under the header. Map shows numbered pins colored by status (teal delivered, amber
+                  skipped, primary = next, grey pending), a dashed route line in visit order, and a stop card for the
+                  selected pin.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Tap a pin
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Selects that stop. Pending stops get the full action set in the card (out-of-order delivery is
+                  allowed); delivered/skipped stops show their status chip, time, and Undo when eligible.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Progress
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Label counts delivered ("3 of 8 delivered"); the bar fills by handled (delivered + skipped). At
+                  completion the label flips to "8 of 8 handled" and the bar turns teal.
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top; font-weight: 500">
+                  Status chip
+                </td>
+                <td style="padding: 6px 10px; border-bottom: 1px solid #e7e5e4; vertical-align: top">
+                  Header chip mirrors route state: Not started (grey) → In progress (amber) → Completed (teal).
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            5 · Business rules & edge cases
+          </h2>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 5px">
+              Geocode failures never hide data — they are narrated on the row with a repair path (Edit household → save
+              re-triggers geocoding).
+            </li>
+            <li style="margin-bottom: 5px">
+              Skipping (with reason) or removing a stop returns its request to
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">approved</span> immediately;
+              the next plan preview picks it up.
+            </li>
+            <li style="margin-bottom: 5px">
+              Route auto-completes on the last terminal stop — the volunteer never has to "submit". Undoing from the
+              done state reopens the route to in_progress.
+            </li>
+            <li style="margin-bottom: 5px">
+              Cancel route returns all undelivered stops to the pool and revokes nothing retroactively: delivered stops
+              keep their record. Revoke link takes effect immediately (server-side token check on every request).
+            </li>
+            <li style="margin-bottom: 5px">
+              Volunteer actions are server-authoritative: the page posts each action, renders optimistically, and
+              retries on failure. Concurrent staff edits (reorder, removal) surface on the volunteer's next sync.
+            </li>
+            <li style="margin-bottom: 5px">
+              Out-of-order delivery is allowed everywhere; seq is a suggestion, not a lock.
+            </li>
+            <li style="margin-bottom: 5px">
+              Accessibility: ≥44px targets on mobile, visible focus rings,
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">prefers-reduced-motion</span>
+              respected.
+            </li>
+          </ul>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            6 · API sketch
+          </h2>
+          <pre
+            style="
+              margin: 8px 0;
+              background: #f7f8fa;
+              border: 1px solid #e7e5e4;
+              border-radius: 8px;
+              padding: 12px 14px;
+              font-family: ui-monospace, Menlo, monospace;
+              font-size: 10.5px;
+              line-height: 1.55;
+              white-space: pre-wrap;
+            "
+          >
+// Staff (authenticated)
+GET    /api/deliveries/requests?status=open|new|approved|delivered|declined
+POST   /api/deliveries/requests                    // manual entry
+POST   /api/deliveries/requests/bulk               // { ids[], action: "approve" | "decline" }
+POST   /api/deliveries/plan/preview                // pure; { startAddress, drivers?, advanced? }
+                                                   // → { routes[], didntFit[], couldntFit[{reason}] }
+POST   /api/deliveries/plan/commit                 // same payload → creates routes atomically
+GET    /api/deliveries/routes/:id
+PATCH  /api/deliveries/routes/:id                  // rename, volunteerId, scheduledFor
+POST   /api/deliveries/routes/:id/stops/reorder    // recomputes legs + estimate, returns route
+POST   /api/deliveries/routes/:id/stops/:sid       // { action: "deliver" | "skip" | "remove", reason? }
+POST   /api/deliveries/routes/:id/link             // mint (idempotent while active); DELETE = revoke
+POST   /api/deliveries/routes/:id/cancel
+
+// Public (token is the only credential — scope: this route, first names + addresses only)
+GET    /r/:token                                   // { campaignName, routeName, status, stops[] }
+POST   /r/:token/stops/:sid                        // { action: "deliver" | "skip" | "defer" | "undo", reason? }
+                                                   // defer = move to end; server renumbers seq</pre
+          >
+          <p style="margin: 0 0 8px 0">
+            Rate-limit the public endpoints per token; expire tokens by default after 30 days; log every public action
+            to the route activity feed as "via volunteer link".
+          </p>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            7 · Visual system
+          </h2>
+          <table style="width: 100%; border-collapse: collapse; margin: 10px 0 4px 0">
+            <thead>
+              <tr>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                    width: 30%;
+                  "
+                >
+                  Token
+                </th>
+                <th
+                  style="
+                    text-align: left;
+                    padding: 6px 10px;
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                    color: #5b6675;
+                    border-bottom: 1.5px solid #1f2937;
+                  "
+                >
+                  Value
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Type</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  Inter · h1 22/700 · card title 15/600 · body 13 · meta 12.5 · label 10.5 caps +.07em · tabular-nums on
+                  all counts
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Text / surfaces</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#1f2937</span> on app
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#f8f8f8</span>; cards
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#ffffff</span>, border
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#e7e5e4</span>, radius 12
+                  (16 on mobile cards); muted text = color-mix of text at 50–60%
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Primary</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#0ea5e9</span>, hover
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#0284c7</span>; links
+                  underline with 22%-alpha decoration, hover to primary
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Success / delivered</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  icon <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#14b8a6</span>; chip
+                  bg <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#2dd4bf</span> @20%,
+                  text <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#0b5e54</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Warning / skipped</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  chip bg
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#e5c963</span> @26%, text
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#6b5713</span>; icon
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#b98a12</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Error / destructive</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  text <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#b91c1c</span>; bg
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#f37373</span> @12–15%
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Info narration</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  bg <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#38bdf8</span> @9% over
+                  white, border @32%, headline text
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">#0c4a6e</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Layout</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  Sidebar 206px · top bar 52px · content max-width 930–980px centered · chips radius 99 · mobile frame
+                  390×844, hit targets ≥44px
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">Icons</td>
+                <td style="padding: 5px 10px; border-bottom: 1px solid #e7e5e4">
+                  Heroicons (outline), rendered as CSS mask so they take currentColor; set in
+                  <span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px">assets/icons/</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2
+            style="
+              font-size: 16px;
+              font-weight: 700;
+              letter-spacing: -0.01em;
+              margin: 22px 0 8px 0;
+              padding-top: 12px;
+              border-top: 2px solid #1f2937;
+            "
+          >
+            8 · Acceptance checklist
+          </h2>
+          <ul style="margin: 0 0 8px 0; padding-left: 20px">
+            <li style="margin-bottom: 4px">
+              Bulk bar narrates selection scale and offers "Select all N new"; actions repeat the count.
+            </li>
+            <li style="margin-bottom: 4px">
+              "Plan routes" button always enabled, count live; 0 eligible lands on a guided empty state.
+            </li>
+            <li style="margin-bottom: 4px">
+              Preview writes nothing; commit creates all routes atomically and repeats the number.
+            </li>
+            <li style="margin-bottom: 4px">
+              Every non-routed request after preview has a named reason and a link to act on it.
+            </li>
+            <li style="margin-bottom: 4px">
+              First "Copy volunteer link" mints the token; revoke invalidates instantly.
+            </li>
+            <li style="margin-bottom: 4px">
+              Public page exposes first name + address only (verify payload, not just UI).
+            </li>
+            <li style="margin-bottom: 4px">
+              First volunteer action flips route to in progress; last terminal stop auto-completes it.
+            </li>
+            <li style="margin-bottom: 4px">
+              Skip-with-reason returns the request to the pool; defer ("Skip for now") renumbers and keeps it pending.
+            </li>
+            <li style="margin-bottom: 4px">
+              Undo restores pending from either delivered or skipped, including from the done state.
+            </li>
+            <li style="margin-bottom: 4px">
+              Stop reorder recomputes legs + estimate server-side; UI flashes the moved row.
+            </li>
+            <li style="margin-bottom: 4px">
+              Activity feed logs every state change with correct attribution ("via volunteer link" for public actions).
+            </li>
+            <li style="margin-bottom: 4px">
+              All volunteer tap targets ≥44px; focus-visible rings present; reduced motion respected.
+            </li>
+          </ul>
+        </div>
+      </x-import>
+    </x-dc>
+  </body>
+</html>

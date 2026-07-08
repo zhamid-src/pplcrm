@@ -5,12 +5,14 @@ import type {
   UpdateHouseholdsType,
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
 
 import type { QueryParams } from '../../lib/base.repo';
 import { BaseRepository } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { uniqueSlug } from '../../lib/slug';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
@@ -27,6 +29,14 @@ export class HouseholdsController extends BaseController<'households', Household
 
   constructor() {
     super(new HouseholdRepo());
+  }
+
+  /**
+   * Household count for the grain tabs + count sentence — excludes the tenant's
+   * permanent placeholder household so the number matches the rows the grid shows.
+   */
+  public override getCount(tenant_id: string): Promise<number> {
+    return this.getRepo().countExcludingPlaceholder(tenant_id);
   }
 
   public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
@@ -74,8 +84,15 @@ export class HouseholdsController extends BaseController<'households', Household
       if (existing?.id) return { id: String(existing.id) } as any;
     }
 
+    // Record slug for /households/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.street_num ?? ''} ${payload.street1 ?? ''}`, 'household'),
+      (candidate) => this.getRepo().slugExists(auth.tenant_id, candidate),
+    );
+
     const row = {
       ...payload,
+      slug,
       address_fp_street: fp_street,
       address_fp_full: fp_full,
       campaign_id,
@@ -150,7 +167,14 @@ export class HouseholdsController extends BaseController<'households', Household
           }
         }
 
+        // Address change is a household "rename" — regenerate the record slug (spec §1).
+        const slug = await uniqueSlug(
+          slugifyRecordName(`${merged.street_num ?? ''} ${merged.street1 ?? ''}`, 'household'),
+          (candidate) => this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+        );
+
         const fpRow: any = {
+          slug,
           address_fp_street: fingerprintStreet({
             street_num: merged.street_num,
             street1: merged.street1,
@@ -285,6 +309,18 @@ export class HouseholdsController extends BaseController<'households', Household
 
   public getPeopleCount(id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
+
+  public countDistinctWards(auth: IAuthKeyPayload) {
+    return this.getRepo().countDistinctWards(auth.tenant_id);
+  }
+
+  public getUnhoused(auth: IAuthKeyPayload) {
+    return this.getRepo().getUnhoused(auth.tenant_id);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {

@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
@@ -11,6 +12,7 @@ import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 import { UserService } from '../../../services/user.service';
 import { ListsService } from '../../lists/services/lists-service';
@@ -48,6 +50,15 @@ export class TeamFormComponent implements OnInit {
   protected readonly detail = signal<TeamDetail | null>(null);
   protected readonly error = signal<string | null>(null);
 
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const teams: PcBreadcrumb = { label: 'Teams', route: '/teams' };
+    const id = this.id();
+    if (id) {
+      return [teams, { label: this.detail()?.name || 'Team', route: ['/teams', id] }, { label: 'Edit' }];
+    }
+    return [teams, { label: 'New team' }];
+  });
+
   protected readonly payload = signal({
     name: '',
     description: '',
@@ -60,6 +71,8 @@ export class TeamFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddTeamObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -200,13 +213,25 @@ export class TeamFormComponent implements OnInit {
       this.teams.triggerRefresh();
       this.alerts.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
       this.saving.set(false);
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this team');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -270,8 +295,16 @@ export class TeamFormComponent implements OnInit {
       this.setForm(result);
       this.form().reset();
       this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to save team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -333,8 +366,16 @@ export class TeamFormComponent implements OnInit {
         filterModel: { team_id: { value: this.id() } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
       this.error.set(message);
       this.alerts.showError(message);
     }
@@ -373,12 +414,16 @@ export class TeamFormComponent implements OnInit {
         return 'badge-success text-success-content';
       case 'in_progress':
         return 'badge-info text-info-content';
-      case 'blocked':
+      case 'waiting':
         return 'badge-error text-error-content';
-      case 'canceled':
+      case 'archived':
         return 'badge-neutral text-neutral-content';
       default:
         return 'badge-ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

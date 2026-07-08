@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ExportsController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
-import { StorageService } from '../../lib/storage.service';
-import { BackgroundJobWorker } from '../../lib/jobs/worker';
 
 vi.mock('../../lib/storage.service', () => ({
   TransactionalEmailService: class {

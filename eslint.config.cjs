@@ -105,4 +105,30 @@ module.exports = [
       '@nx/enforce-module-boundaries': 'off',
     },
   },
+
+  /* 5️⃣  console allowed in CLI scripts and e2e specs */
+  {
+    files: ['scripts/**/*.ts', 'apps/frontend-e2e/**/*.ts'],
+    rules: { 'no-console': 'off' },
+  },
+
+  /* 6️⃣  internal ESLint plugin files are CommonJS */
+  {
+    files: ['tools/eslint-rules/**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } },
+  },
+
+  /* 7️⃣  Register @angular-eslint rules for Angular projects so that tools
+   *      which run from the workspace root (editor, lint-staged/git hooks)
+   *      recognize rule IDs like `@angular-eslint/component-selector` —
+   *      otherwise `eslint-disable-next-line` comments for those rules fail
+   *      with "Definition for rule ... was not found". `nx lint frontend`
+   *      is unaffected since it already loads apps/frontend/eslint.config.cjs
+   *      directly, which sets the actual severities/options for these rules. */
+  ...compat
+    .config({ extends: ['plugin:@angular-eslint/recommended'] })
+    .map((cfg) => ({
+      ...cfg,
+      files: ['apps/frontend/**/*.ts', 'libs/uxcommon/**/*.ts'],
+    })),
 ];

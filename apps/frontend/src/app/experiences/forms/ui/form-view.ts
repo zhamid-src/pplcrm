@@ -7,7 +7,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { UserService } from '../../../services/user.service';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
+import type { IAuthUser } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
@@ -15,8 +15,13 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-form-view',
@@ -37,6 +42,7 @@ import { environment } from '../../../../environments/environment';
 })
 export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
@@ -44,11 +50,17 @@ export class FormViewComponent {
   private readonly dialogs = inject(ConfirmDialogService);
 
   readonly id = input.required<string>();
+  protected readonly recordNav = injectRecordNavigation('form', this.id);
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
   protected readonly formRecord = signal<any | null>(null);
   protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly users = signal<IAuthUser[]>([]);
   private readonly router = inject(Router);
@@ -133,18 +145,18 @@ export class FormViewComponent {
     <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
       : isRecurring
-      ? `
+        ? `
   <div style="margin-bottom: 16px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
     <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
     <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
   </div>`
-      : '';
+        : '';
 
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
     return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
   fields.includes('first_name') || isAnyDonation
@@ -184,14 +196,21 @@ ${
   });
 
   protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+    const record = this.formRecord();
+    if (!record?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
+    // /f/:slug SPA page on the tenant subdomain.
+    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
+      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+    }
+    return publicPageUrl(tenantSlug, `f/${record.slug}`);
   });
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
 
     // Load users
@@ -225,7 +244,7 @@ ${
       const subCount = await this.formsSvc.getSubmissionsCount(id);
       this.submissionsCount.set(subCount);
     } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -233,7 +252,7 @@ ${
   }
 
   protected editForm() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteForm() {
@@ -252,8 +271,16 @@ ${
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate([backRoute]);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -283,4 +310,8 @@ ${
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -105,7 +105,7 @@ describe('PersonForm', () => {
   it('should create and load data on init in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
-    component.ngOnInit();
+    void component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     expect(component['id']()).toBe('p1');
@@ -119,7 +119,7 @@ describe('PersonForm', () => {
   it('should format name properly', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
-    component.ngOnInit();
+    void component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     // Test computed value
@@ -130,7 +130,7 @@ describe('PersonForm', () => {
   it('should save updates when in edit mode', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
-    component.ngOnInit();
+    void component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     component['payload'].set({
@@ -146,7 +146,7 @@ describe('PersonForm', () => {
     expect(updateCallArg.first_name).toBe('Johnny');
     expect(updateCallArg.assigned_to).toBeNull();
     expect(updateCallArg.company_id).toBeNull();
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Person updated successfully.');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Saved'));
   });
 
   it('should add new person when in new mode', async () => {
@@ -156,7 +156,7 @@ describe('PersonForm', () => {
     fixtureNew.componentRef.setInput('mode', 'new');
     fixtureNew.componentRef.setInput('id', null);
 
-    componentNew.ngOnInit();
+    void componentNew.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     componentNew['payload'].set({
@@ -169,13 +169,13 @@ describe('PersonForm', () => {
     expect(mockPersonsSvc.add).toHaveBeenCalled();
     const addCallArg = mockPersonsSvc.add.mock.calls[0][0];
     expect(addCallArg.first_name).toBe('Jane');
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Person added');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Added'));
   });
 
   it('should remove household address with confirmation', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
-    component.ngOnInit();
+    void component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     await component['removeAddress']();
@@ -188,7 +188,7 @@ describe('PersonForm', () => {
   it('should prompt before detaching volunteer tag if person is in teams', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
-    component.ngOnInit();
+    void component.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
 
     await component['tagRemoved']('volunteer');
@@ -205,7 +205,7 @@ describe('PersonForm', () => {
     fixtureNew.componentRef.setInput('mode', 'new');
     fixtureNew.componentRef.setInput('id', null);
 
-    componentNew.ngOnInit();
+    void componentNew.ngOnInit();
     await new Promise((r) => setTimeout(r, 10));
     await componentNew['assignToHousehold']('h1');
 

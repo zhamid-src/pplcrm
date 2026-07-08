@@ -10,6 +10,12 @@
       </button>
     </div>
 
+    <!-- Reassure the user the thread isn't lost when they leave the inbox for a task (§3) -->
+    <p class="-mt-3 mb-5 flex items-center gap-1.5 text-xs text-base-content/60">
+      <pc-icon name="paper-clip" [size]="4" class="text-base-content/40"></pc-icon>
+      The email thread stays linked to the task.
+    </p>
+
     <form class="space-y-4" (submit)="$event.preventDefault(); submit()" novalidate>
       <!-- Task Name -->
       <div class="form-control w-full">
@@ -25,13 +31,12 @@
           [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
           autofocus
         />
-        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
-          @for (err of form.name().errors(); track err) {
-            <p class="text-xs text-error mt-1 flex items-center gap-1">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
-            </p>
-          }
-        }
+        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+        form.name().errors(); track err) {
+        <p class="text-xs text-error mt-1 flex items-center gap-1">
+          <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
+        </p>
+        } }
       </div>
 
       <!-- Details (pre-filled with email thread) -->
@@ -54,7 +59,7 @@
           </label>
           <select id="ct-status" class="select select-bordered w-full focus:select-primary" [formField]="form.status">
             @for (s of statuses; track s) {
-              <option [value]="s">{{ toTitleCase(s) }}</option>
+            <option [value]="s">{{ statusLabels[s] }}</option>
             }
           </select>
         </div>
@@ -64,9 +69,13 @@
           <label class="label font-semibold text-sm" for="ct-priority">
             <span class="label-text">Priority</span>
           </label>
-          <select id="ct-priority" class="select select-bordered w-full focus:select-primary" [formField]="form.priority">
+          <select
+            id="ct-priority"
+            class="select select-bordered w-full focus:select-primary"
+            [formField]="form.priority"
+          >
             @for (p of priorities; track p) {
-              <option [value]="p">{{ toTitleCase(p) }}</option>
+            <option [value]="p">{{ toTitleCase(p) }}</option>
             }
           </select>
         </div>
@@ -91,10 +100,14 @@
           <label class="label font-semibold text-sm" for="ct-assigned">
             <span class="label-text">Assignee</span>
           </label>
-          <select id="ct-assigned" class="select select-bordered w-full focus:select-primary" [formField]="form.assigned_to">
+          <select
+            id="ct-assigned"
+            class="select select-bordered w-full focus:select-primary"
+            [formField]="form.assigned_to"
+          >
             <option value="">Unassigned</option>
             @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+            <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
             }
           </select>
         </div>
@@ -108,27 +121,26 @@
         <select id="ct-team" class="select select-bordered w-full focus:select-primary" [formField]="form.team_id">
           <option value="">No Team</option>
           @for (t of teamsList(); track t.id) {
-            <option [value]="t.id">{{ t.name }}</option>
+          <option [value]="t.id">{{ t.name }}</option>
           }
         </select>
       </div>
 
       @if (error()) {
-        <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
-          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
-          <span>{{ error() }}</span>
-        </div>
+      <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
+        <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
       }
 
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
         <button type="submit" class="btn btn-primary" [disabled]="submitting()">
           @if (submitting()) {
-            <span class="loading loading-spinner loading-sm"></span>
+          <span class="loading loading-spinner loading-sm"></span>
           } @else {
-            <pc-icon name="plus" [size]="4"></pc-icon>
-          }
-          Create Task
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          } Create Task
         </button>
       </div>
     </form>

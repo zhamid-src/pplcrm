@@ -157,7 +157,7 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 export class AddConnectionDrawer {
   readonly personId = input.required<string>();
   readonly isOpen = input.required<boolean>();
-  readonly close = output<void>();
+  readonly closeDrawer = output<void>();
   readonly saved = output<any>();
 
   private readonly connectionsSvc = inject(ConnectionsService);
@@ -197,25 +197,23 @@ export class AddConnectionDrawer {
       return;
     }
     this.isSearching.set(true);
-    this.searchTimer = setTimeout(async () => {
-      try {
-        const result = await this.personsSvc.getAllWithAddress({
-          searchStr: value,
-          startRow: 0,
-          endRow: 10,
-        });
-        const currentPersonId = this.personId();
-        this.searchResults.set(
-          ((result as any).rows ?? [])
-            .filter((p: any) => String(p.id) !== String(currentPersonId))
-            .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
-        );
-      } catch {
-        this.searchResults.set([]);
-      } finally {
-        this.isSearching.set(false);
-      }
-    }, 250);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
+  }
+
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const currentPersonId = this.personId();
+      this.searchResults.set(
+        ((result as any).rows ?? [])
+          .filter((p: any) => String(p.id) !== String(currentPersonId))
+          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
+      );
+    } catch {
+      this.searchResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
   }
 
   protected selectPerson(p: PersonSearchResult) {
@@ -246,9 +244,9 @@ export class AddConnectionDrawer {
       this.alertSvc.showSuccess('Connection added');
       this.saved.emit(result);
       this.resetForm();
-      this.close.emit();
-    } catch (err: any) {
-      if (err?.message?.includes('already exists')) {
+      this.closeDrawer.emit();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already exists')) {
         this.alertSvc.showError('A connection of this type already exists between these contacts.');
       }
     } finally {
@@ -258,7 +256,7 @@ export class AddConnectionDrawer {
 
   protected onClose() {
     this.resetForm();
-    this.close.emit();
+    this.closeDrawer.emit();
   }
 
   private resetForm() {

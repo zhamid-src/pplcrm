@@ -32,11 +32,8 @@ describe('ActivityController', () => {
     expect(result).toEqual(mockFeedResult);
   });
 
-  it('should delete old activities based on subscription tier', async () => {
-    const mockTenants = [
-      { id: '1', subscription_plan: 'free' },
-      { id: '2', subscription_plan: 'grassroots' },
-    ];
+  it('should delete activities older than the flat 90-day retention window for every tenant', async () => {
+    const mockTenants = [{ id: '1' }, { id: '2' }];
 
     const selectMock = {
       select: vi.fn().mockReturnThis(),

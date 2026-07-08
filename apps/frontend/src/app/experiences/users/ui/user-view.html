@@ -1,15 +1,23 @@
 <pc-detail-layout
-  [title]="'User Profile'"
-  [icon]="'user-circle'"
+  [title]="displayName() || 'User'"
+  [eyebrow]="'User'"
+  [crumbs]="crumbs()"
   [isLoading]="loading()"
   [error]="error()"
   [hasRecord]="!initialized() || !!detail()"
   [showDelete]="true"
-  [deleteText]="'Delete User'"
-  [btn1Text]="'Edit User'"
+  [deleteText]="'Delete user'"
+  [btn1Text]="'Edit user'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editUser()"
   (delete)="deleteUser()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (detail()) {
   <!-- Main Content Grid -->

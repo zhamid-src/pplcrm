@@ -21,6 +21,8 @@ export interface BaseDialogOptions {
   allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
   cancelText?: string; // default per type
   confirmText?: string; // default per type
+  /** Style cancel as the primary/safe-default button and confirm as a plain variant-colored one (e.g. "Keep editing" vs. "Discard changes"). */
+  emphasizeCancel?: boolean;
   icon?: PcIconNameType; // optional icon name for <pc-icon>
   message?: string;
   title: string;
@@ -32,6 +34,7 @@ export interface DialogState {
   cancelText: string;
   confirmText: string;
   defaultValue?: string;
+  emphasizeCancel?: boolean;
   icon?: PcIconNameType;
 
   // prompt
@@ -97,6 +100,7 @@ export class ConfirmDialogService {
       allowBackdropClose,
       confirmText,
       cancelText,
+      emphasizeCancel: opts.emphasizeCancel,
     });
 
     return new Promise<boolean>((resolve) => (this._resolve = resolve));

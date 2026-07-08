@@ -9,6 +9,8 @@ export class SidebarService {
   private readonly drawerStateSubject = signal<DrawerStates>(this.getState());
   private readonly isMobileOpenSubject = signal<boolean>(false);
   private favourites = new Set<string>();
+  /** Route of the item just pinned, so its clone plays the `up` entry once. */
+  private pendingAnimateRoute?: string;
   private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
   private get items() {
     return this.itemsSignal();
@@ -73,6 +75,7 @@ export class SidebarService {
 
     if (favourite) {
       this.favourites.add(normalizedRoute);
+      this.pendingAnimateRoute = normalizedRoute;
     } else {
       this.favourites.delete(normalizedRoute);
     }
@@ -133,7 +136,7 @@ export class SidebarService {
   }
 
   private cloneForFavourite(item: ISidebarItem, parent: ISidebarItem): ISidebarItem {
-    const { children, parent: _originalParent, ...rest } = item;
+    const { children: _children, parent: _originalParent, ...rest } = item;
 
     return {
       ...rest,
@@ -215,7 +218,12 @@ export class SidebarService {
     const favouriteItems = this.flattenItems(currentItems)
       .filter((item) => item.type !== 'bookmark' && item.parent?.type !== 'bookmark')
       .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
-      .map((item) => this.cloneForFavourite(item, favouritesSection));
+      .map((item) => {
+        const clone = this.cloneForFavourite(item, favouritesSection);
+        clone.justPinned =
+          !!this.pendingAnimateRoute && !!item.route && this.normalizeRoute(item.route) === this.pendingAnimateRoute;
+        return clone;
+      });
 
     const updatedSection: ISidebarItem = {
       ...favouritesSection,
@@ -226,6 +234,8 @@ export class SidebarService {
     const updatedItems = [...currentItems];
     updatedItems[favouritesSectionIndex] = updatedSection;
     this.itemsSignal.set(updatedItems);
+    // Entry animation is a one-shot; clear so subsequent rebuilds don't replay it.
+    this.pendingAnimateRoute = undefined;
   }
 
   private setState(state: DrawerStates) {

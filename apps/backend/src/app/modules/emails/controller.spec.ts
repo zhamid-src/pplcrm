@@ -92,35 +92,7 @@ describe('EmailsController Integration', () => {
       })
       .execute();
 
-    // 3. Seed global email folders (hardcoded IDs, shared across tenants).
-    await db
-      .insertInto('email_folders')
-      .values([
-        {
-          id: '11',
-          tenant_id: tenantId,
-          name: 'Inbox',
-          icon: 'inbox',
-          sort_order: 6,
-          is_default: false,
-          createdby_id: userId,
-          updatedby_id: userId,
-        },
-        {
-          id: '5',
-          tenant_id: tenantId,
-          name: 'Trash',
-          icon: 'trash',
-          sort_order: 12,
-          is_default: false,
-          createdby_id: userId,
-          updatedby_id: userId,
-        },
-      ])
-      .onConflict((oc) => oc.column('id').doNothing())
-      .execute();
-
-    // 4. Email
+    // 3. Email (folders are code-defined; folder_id is guarded by a CHECK constraint)
     await db
       .insertInto('emails')
       .values({
@@ -235,7 +207,7 @@ describe('EmailsController Integration', () => {
     expect(trashRows[0].email_id).toBe(emailId);
     expect(trashRows[0].from_folder_id).toBe('11'); // Original folder
 
-    const trashRowId = trashRows[0].id; // The primary key (id) of the email_trash record
+    const _trashRowId = trashRows[0].id; // The primary key (id) of the email_trash record
 
     // 2. Restore from trash using restoreFromTrash.
     // This internally calls emailTrashRepo.deleteByEmailIds passing emailIds as IDs.

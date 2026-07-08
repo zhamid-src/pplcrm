@@ -1,19 +1,39 @@
 <!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
   <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.addRoute()"
+    [tip]="'Add'"
+    [icon]="grid.plusIcon()"
+    (action)="onAdd()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
     [tip]="'Delete selected row(s)'"
     icon="trash"
     (action)="onDeleteSelected()"
   />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canUndo()"
+    [tip]="'Undo'"
+    icon="arrow-uturn-left"
+    (action)="onUndo()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canRedo()"
+    [tip]="'Redo'"
+    icon="arrow-uturn-right"
+    (action)="onRedo()"
+  />
 
   <!-- Combined filter panel -->
   @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
   grid.showListFilter()) {
   <pc-grid-tool-btn
+    [touch]="true"
     icon="funnel"
     tip="Filters"
     [hasDropdown]="true"
@@ -27,27 +47,20 @@
       grid.hasActiveAdvancedFilters()
     "
   >
+    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg
+             fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6
+             sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
-      @if (grid.showNarrowTypeFilter()) {
-      <pc-dg-filter-section
-        [title]="'Narrow by Type'"
-        [bordered]="false"
-        [clearable]="false"
-        [active]="grid.selectedNarrowType() !== null"
-        [open]="grid.selectedNarrowType() !== null"
-      >
-        <pc-singleselect-filter
-          [label]="'Type'"
-          [options]="narrowTypeOptions()"
-          [selected]="grid.selectedNarrowType()"
-          [radioName]="'narrowTypeMobile'"
-          (select)="grid.selectNarrowType($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showTagFilter()) {
+      <!-- Grab handle — bottom-sheet affordance, touch only -->
+      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
+      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
+        Filters
+      </h3>
+      @if (grid.showTagFilter()) {
       <pc-dg-filter-section
         [title]="'Filter by Tags'"
         [active]="grid.selectedTags().length > 0"
@@ -121,12 +134,12 @@
     </div>
   </pc-grid-tool-btn>
   }
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
     <pc-dg-columns-dropdown [grid]="grid" />
   </pc-grid-tool-btn>
 
   <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
       <li
         [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
@@ -145,7 +158,15 @@
         [class.text-neutral-400]="!grid.hasSingleSelection()"
         [class.pointer-events-none]="!grid.hasSingleSelection()"
       >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+        <a class="flex items-start gap-2 py-2" (click)="onClone()">
+          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Clone</span>
+            @if (!grid.hasSingleSelection()) {
+            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
+            }
+          </span>
+        </a>
       </li>
       } @if (!grid.disableMerge()) {
       <li
@@ -154,10 +175,20 @@
         [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
         [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
       >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
+          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Merge</span>
+            @if (grid.getCountRowSelected() !== 2) {
+            <span class="text-base-content/50 text-[11px]"
+              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+            >
+            }
+          </span>
+        </a>
       </li>
       } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
+      <div class="divider divider-horizontal"></div>
       } @if (!grid.disableImport()) {
       <li>
         <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
@@ -177,181 +208,101 @@
   </pc-grid-tool-btn>
 </ul>
 
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
   }
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
-      <pc-singleselect-filter
-        [label]="'Type'"
-        [options]="narrowTypeOptions()"
-        [selected]="grid.selectedNarrowType()"
-        [radioName]="'narrowType'"
-        (select)="grid.selectNarrowType($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Tags'"
-      [active]="grid.selectedTags().length > 0"
-      (clear)="grid.clearTagsFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Tags'"
-        [options]="grid.filteredAvailableTags()"
-        [selected]="grid.selectedTags()"
-        [searchQuery]="grid.tagSearchQuery()"
-        (searchQueryChange)="grid.tagSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllTags()"
-        (clearVisible)="grid.clearAllTagsVisible()"
-        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Issues'"
-      [active]="grid.selectedIssues().length > 0"
-      (clear)="grid.clearIssuesFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Issues'"
-        [options]="grid.filteredAvailableIssues()"
-        [selected]="grid.selectedIssues()"
-        [searchQuery]="grid.issueSearchQuery()"
-        (searchQueryChange)="grid.issueSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllIssues()"
-        (clearVisible)="grid.clearAllIssuesVisible()"
-        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by List'"
-      [active]="grid.selectedListId() !== null"
-      (clear)="grid.clearListFilter()"
-    >
-      <pc-singleselect-filter
-        [label]="'List'"
-        [options]="listOptions()"
-        [selected]="grid.selectedListId()"
-        [radioName]="'selectedList'"
-        [maxHeight]="14"
-        (select)="grid.selectListFilter($event)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
+</div>

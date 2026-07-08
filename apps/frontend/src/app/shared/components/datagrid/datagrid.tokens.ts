@@ -33,6 +33,10 @@ export interface DataGridConfig {
     exportNavigateWarning: string;
     exportFileName: string;
     exportEntity: QueueExportInputType['entity'] | '';
+
+    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
+    entityNoun?: string;
+    entityNounPlural?: string;
   };
   pageSize: number;
 }

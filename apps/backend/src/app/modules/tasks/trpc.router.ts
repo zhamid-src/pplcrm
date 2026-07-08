@@ -42,6 +42,8 @@ export const TasksRouter = router({
     }),
 
   count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
+  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
+  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
   delete: authProcedure
     .input(idSchema)
     .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),

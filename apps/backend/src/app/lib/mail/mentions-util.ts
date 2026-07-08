@@ -1,5 +1,6 @@
-import { TransactionalEmailService } from './transactional-mail.service';
 import { logger } from '../../logger';
+import { notificationEnabled } from '../profile-preferences';
+import { TransactionalEmailService } from './transactional-mail.service';
 
 export async function processMentions(
   db: any,
@@ -11,7 +12,7 @@ export async function processMentions(
   if (!commentText || !commentText.trim()) return;
 
   // Find matches for @username (characters, numbers, dots, dashes, underscores)
-  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].map((m) => m[1]!.toLowerCase());
+  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].flatMap((m) => (m[1] ? [m[1].toLowerCase()] : []));
   if (matches.length === 0) return;
 
   try {
@@ -19,7 +20,12 @@ export async function processMentions(
     const users = await db
       .selectFrom('authusers')
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .select([
+        'authusers.id',
+        'authusers.email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
       .where('authusers.tenant_id', '=', tenantId)
       .execute();
 
@@ -37,23 +43,10 @@ export async function processMentions(
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
 
       if (isMentioned && user.email) {
-        let optedIn = true;
-        const profileJson = user.profile_json;
-        if (profileJson) {
-          try {
-            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-            if (json?.notifications?.mention_in_comment === false) {
-              optedIn = false;
-            }
-          } catch (e) {
-            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
-          }
-        }
-
-        if (optedIn) {
+        if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {
           await mailService.sendMail({
             to: user.email,
-            subject: 'You were mentioned in CampaignRaven',
+            subject: 'You were mentioned in PplCRM',
             text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
             html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
           });

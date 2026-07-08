@@ -4,6 +4,7 @@ import type { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { loadingGate } from '@uxcommon/loading-gate';
 
 import { DataGridConfig } from '../datagrid.tokens';
+import type { GridRow } from '../types';
 
 @Injectable({ providedIn: 'root' })
 export class DataGridActionsService {
@@ -72,9 +73,10 @@ export class DataGridActionsService {
     dialogs: ConfirmDialogService;
     alertSvc: AlertService;
     config: DataGridConfig;
-    getRowsForExport?: () => Array<Record<string, any>>;
+    getRowsForExport?: () => GridRow[];
     requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
     queueFullExport?: () => Promise<void>;
+    logInstantExport?: (rowCount: number) => void;
     displayedCount?: number;
     totalCount?: number;
   }) {
@@ -129,13 +131,11 @@ export class DataGridActionsService {
       }
       const rowCount = rows.length;
       const headers = Object.keys(rows[0]!);
-      const escape = (v: any) => {
+      const escape = (v: unknown) => {
         const s = v == null ? '' : String(v);
         return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
       };
-      const csv = [headers.join(',')]
-        .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
-        .join('\n');
+      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
 
       const fileName = messages.exportFileName || 'export.csv';
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -147,6 +147,7 @@ export class DataGridActionsService {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      deps.logInstantExport?.(rowCount);
       deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
     } catch {
       deps.alertSvc.showError(messages.exportFailed);
@@ -161,5 +162,5 @@ type DeleteCtx = {
   dialogs: ConfirmDialogService;
   gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
 
-  getSelectedRows: () => (Partial<any> & { id: string })[];
+  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
 };

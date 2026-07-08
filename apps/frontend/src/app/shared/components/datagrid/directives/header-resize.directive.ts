@@ -1,7 +1,8 @@
 import { Directive, ElementRef, inject, input } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
 import { ResizingController } from '../controllers/resizing.controller';
 import { PinningController } from '../controllers/pinning.controller';
-import type { HeaderRef } from '../types';
+import type { GridRow, HeaderRef } from '../types';
 
 @Directive({
   selector: '[pcHeaderResize]',
@@ -20,7 +21,7 @@ export class HeaderResizeDirective {
   public readonly pcHeaderResize = input.required<{
     header: HeaderRef; // TanStack header ref
     getColWidth: (id: string) => number | null;
-    setWidth: (col: any, id: string, px: number) => void;
+    setWidth: (col: HeaderRef['column'], id: string, px: number) => void;
     requestPersist: () => void;
     selectionWidth: () => number;
     setSuppressHeaderDrag: (v: boolean) => void;
@@ -41,7 +42,11 @@ export class HeaderResizeDirective {
       cfg.getColWidth,
       (col, id, w) => {
         cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(h?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
       },
       () => {
         try {
@@ -68,7 +73,11 @@ export class HeaderResizeDirective {
       cfg.getColWidth,
       (col, id, w) => {
         cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(h?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
       },
       () => {
         try {
@@ -97,12 +106,16 @@ export class HeaderResizeDirective {
   private applyWidth(nextWidth: number) {
     const cfg = this.pcHeaderResize();
     const header = cfg.header;
-    const col = header?.column as { id?: string; setSize?: (value: number) => void } | undefined;
+    const col = header?.column;
     const id = col?.id == null ? '' : String(col.id);
     if (!id || !col) return;
 
     cfg.setWidth(col, id, nextWidth);
-    this.pinning.updatePinOffsets(header?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
+    this.pinning.updatePinOffsets(
+      header?.table as Table<GridRow> | undefined,
+      (cid) => cfg.getColWidth(cid) ?? 0,
+      cfg.selectionWidth(),
+    );
     try {
       cfg.requestPersist();
     } catch {}

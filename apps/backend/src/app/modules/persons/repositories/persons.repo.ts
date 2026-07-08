@@ -1,11 +1,10 @@
 import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {
@@ -154,8 +153,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('companies', 'persons.company_id', 'companies.id')
         .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
         .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
           qb.where('persons.id', 'in', (eb: any) =>
             eb
@@ -167,16 +166,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
           return qb.where(
             sql<boolean>`(
-            LOWER(persons.first_name) LIKE ${text} OR
-            LOWER(persons.last_name) LIKE ${text} OR
-            LOWER(persons.email) LIKE ${text} OR
-            LOWER(persons.mobile) LIKE ${text} OR
-            LOWER(households.city) LIKE ${text} OR
-            LOWER(households.street1) LIKE ${text} OR
-            LOWER(companies.name) LIKE ${text} OR
-            LOWER(tags.name) LIKE ${text}
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
           )`,
           );
         });
@@ -383,6 +385,29 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return Number(result?.total ?? 0);
   }
 
+  /**
+   * Tenant-scoped resolution by opaque public_id for /people/:slug URLs
+   * (spec §1). `public_id` is the canonical person key — the decorative name in
+   * the URL is ignored — so a stale name in an old link still resolves.
+   */
+  public getByPublicId(input: { tenant_id: string; public_id: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('public_id', '=', input.public_id)
+      .executeTakeFirst();
+  }
+
+  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
+  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', 'is not', null)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
   public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
     return this.getSelect()
       .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
@@ -413,8 +438,28 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
   }
 
+  /**
+   * Batched email-identity lookup for the CSV import wizard's Review step
+   * (spec §17) — given a set of candidate emails, return the existing person
+   * each one matches (if any), so the wizard can show "3 rows match people
+   * you already have" with a door to each matched person.
+   */
+  public async findManyByEmails(input: { tenant_id: string; emails: string[] }) {
+    const normalized = Array.from(
+      new Set(input.emails.map((email) => email.trim().toLowerCase()).filter((email) => email.length > 0)),
+    );
+    if (normalized.length === 0) return [];
+
+    return this.getSelect()
+      .select(['id', 'first_name', 'last_name', 'email', 'slug'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, 'in', normalized)
+      .execute();
+  }
+
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // eslint-disable-next-line local/no-unscoped-db-query -- tenant_id filtered inside subquery
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -438,7 +483,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-    // eslint-disable-next-line local/no-unscoped-db-query -- tenant_id filtered inside subquery
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -479,6 +525,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const rows = await this.db
       .selectFrom('potential_duplicates')
       .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
       .select([
         'potential_duplicates.group_key',
         'potential_duplicates.reason',
@@ -492,10 +539,32 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'persons.company_id',
         'persons.household_id',
         'persons.created_at',
+        'households.ward',
       ])
       .where('potential_duplicates.tenant_id', '=', tenant_id)
       .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
+
+    // Field-grid comparison (spec §9.3 pair card) wants each person's tags too — fetched
+    // separately rather than joined in (a join would multiply the row per tag).
+    const personIds = rows.map((r) => String(r.id));
+    const tagsByPerson = new Map<string, string[]>();
+    if (personIds.length > 0) {
+      const tagRows = await this.db
+        .selectFrom('map_peoples_tags')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .select(['map_peoples_tags.person_id', 'tags.name'])
+        .where('map_peoples_tags.tenant_id', '=', tenant_id)
+        .where('map_peoples_tags.person_id', 'in', personIds)
+        .where('tags.type', '=', 'tag')
+        .execute();
+      for (const t of tagRows) {
+        const key = String(t.person_id);
+        const list = tagsByPerson.get(key) ?? [];
+        list.push(t.name);
+        tagsByPerson.set(key, list);
+      }
+    }
 
     const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
     for (const row of rows) {
@@ -509,11 +578,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       groupsMap.get(groupKey)?.persons.push({
         ...row,
         id: String(row.id),
+        tags: tagsByPerson.get(String(row.id)) ?? [],
       });
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
 
     return { groups: sortedGroups, total };

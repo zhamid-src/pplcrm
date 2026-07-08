@@ -179,6 +179,8 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       insertedCount: row.inserted_count,
       errorCount: row.error_count,
       skippedCount: row.skipped_count,
+      mergedCount: row.merged_count,
+      tagsApplied: row.tags_applied,
       rowCount: row.row_count,
       householdsCreated: row.households_created,
       contactCount: row.contact_count,
@@ -188,6 +190,9 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       status: row.status,
       errorMessage: row.error_message,
       canDeleteContacts,
+      sourceFileSize: row.source_file_size,
+      canDownloadSource: !!row.source_file_key,
+      canDownloadSkipped: row.skip_reasons.length > 0,
     };
   }
 }

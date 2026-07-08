@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
@@ -11,6 +11,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 import { UserService } from '../../../services/user.service';
@@ -22,6 +23,8 @@ import { AddressType, Persons, Households } from '../../../../../../../libs/comm
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-person-form',
@@ -39,6 +42,7 @@ export class PersonForm implements OnInit {
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
@@ -94,6 +98,7 @@ export class PersonForm implements OnInit {
     mobile: '',
     notes: '',
     company_id: '',
+    preferred_contact: '',
     linkedin: '',
     twitter: '',
     facebook: '',
@@ -105,9 +110,36 @@ export class PersonForm implements OnInit {
     validateStandardSchema(p, UpdatePersonsObj);
   });
 
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
   protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
 
   public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
 
@@ -117,6 +149,15 @@ export class PersonForm implements OnInit {
   protected readonly formName = computed(() => {
     const v = this.payload();
     return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
+    }
+    return [people, { label: 'New person' }];
   });
 
   protected readonly formInitials = computed(() => {
@@ -142,9 +183,14 @@ export class PersonForm implements OnInit {
       .catch(() => void 0);
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
     await this.loadPerson();
     await this.loadCompanies();
+    void this.loadSuggestionNames();
     if (this.isNewMode()) {
       const state = window.history.state;
       if (state && state.cloneData) {
@@ -159,6 +205,7 @@ export class PersonForm implements OnInit {
           mobile: data.mobile ?? '',
           notes: data.notes ?? '',
           company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
           linkedin: data.linkedin ?? '',
           twitter: data.twitter ?? '',
           facebook: data.facebook ?? '',
@@ -172,6 +219,15 @@ export class PersonForm implements OnInit {
     }
   }
 
+  private async loadSuggestionNames() {
+    try {
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
+    } catch (err) {
+      console.error('Failed to load tag/issue suggestions', err);
+    }
+  }
+
   private async loadCompanies() {
     try {
       const res = await this.companiesSvc.getAll();
@@ -182,7 +238,8 @@ export class PersonForm implements OnInit {
   }
 
   protected async deletePerson() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     const confirmed = await this.confirmDlg.confirm({
       title: 'Delete Person',
       message: 'Are you sure you want to delete this person? This action cannot be undone.',
@@ -192,26 +249,47 @@ export class PersonForm implements OnInit {
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      await this.personsSvc.delete(this.id()!);
+      await this.personsSvc.delete(id);
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
       end();
     }
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
+  }
+
   public save(done?: () => void) {
     this.form().markAsTouched();
-    if (this.form().invalid()) return;
+    if (this.form().invalid()) {
+      // §4: Save never disables — instead of blocking, surface the errors and
+      // move focus to the first invalid field so the user knows what to fix.
+      queueMicrotask(() => {
+        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
+        el?.focus();
+      });
+      return;
+    }
     const raw = this.payload();
     const data = {
       ...raw,
       company_id: raw.company_id || null,
       assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
     } as UpdatePersonsType;
     return this.id() ? this.update(data, done) : this.add(data, done);
   }
@@ -224,8 +302,9 @@ export class PersonForm implements OnInit {
   }
 
   protected async assignToHousehold(household_id: string) {
+    const id = this.id();
     // NEW PERSON: just store the pending selection; it will be sent on save
-    if (!this.id()) {
+    if (!id) {
       this.pendingHouseholdId.set(household_id);
       this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
       this.closeAssignDrawer();
@@ -250,7 +329,7 @@ export class PersonForm implements OnInit {
         await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
       } else {
         // Only move this person
-        await this.personsSvc.update(this.id()!, { household_id } as UpdatePersonsType);
+        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
       }
 
       // update local state for current person and UI
@@ -259,7 +338,7 @@ export class PersonForm implements OnInit {
       this.alertSvc.showSuccess('Assigned to selected household');
       this.closeAssignDrawer();
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
     } finally {
       end();
     }
@@ -298,7 +377,7 @@ export class PersonForm implements OnInit {
   protected navigateToHousehold() {
     const household_id = this.householdId();
     if (household_id) {
-      this.router.navigate(['households', household_id]);
+      void this.router.navigate(['households', household_id]);
     }
   }
 
@@ -316,8 +395,9 @@ export class PersonForm implements OnInit {
   }
 
   protected async removeAddress() {
+    const id = this.id();
     // New person: just clear the pending household — no API call needed yet
-    if (!this.id()) {
+    if (!id) {
       this.pendingHouseholdId.set(null);
       return;
     }
@@ -335,20 +415,23 @@ export class PersonForm implements OnInit {
 
     const end = this._loading.begin();
     try {
-      await this.personsSvc.removeHousehold(this.id()!);
+      await this.personsSvc.removeHousehold(id);
       this.person.update((p) => (p ? { ...p, household_id: null } : p));
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
     } finally {
       end();
     }
   }
 
   protected async tagAdded(tag: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.personsSvc.attachTag(this.id()!, tag, 'tag');
+      await this.personsSvc.attachTag(id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to attach tag:', err);
@@ -356,7 +439,8 @@ export class PersonForm implements OnInit {
   }
 
   protected async tagRemoved(tag: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
 
     const normalized = tag.trim().toLowerCase();
     const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
@@ -365,7 +449,7 @@ export class PersonForm implements OnInit {
       if (normalized === 'volunteer') {
         let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
         try {
-          teams = await this.teamsSvc.getTeamsForVolunteer(this.id()!);
+          teams = await this.teamsSvc.getTeamsForVolunteer(id);
         } catch (err) {
           console.error('Failed to load teams for volunteer tag removal', err);
         }
@@ -390,7 +474,7 @@ export class PersonForm implements OnInit {
           }
         }
 
-        const result = await this.personsSvc.detachTag(this.id()!, tag, 'tag');
+        const result = await this.personsSvc.detachTag(id, tag, 'tag');
         await this.updateTags();
         await this.tagOptionsSvc.invalidate('tag');
         if (result?.removed_teams && result.removed_teams.length > 0) {
@@ -400,7 +484,7 @@ export class PersonForm implements OnInit {
         return;
       }
 
-      await this.personsSvc.detachTag(this.id()!, tag, 'tag');
+      await this.personsSvc.detachTag(id, tag, 'tag');
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
@@ -410,9 +494,10 @@ export class PersonForm implements OnInit {
   }
 
   protected async issueAdded(issue: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.personsSvc.attachTag(this.id()!, issue, 'issue');
+      await this.personsSvc.attachTag(id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to attach issue:', err);
@@ -420,12 +505,13 @@ export class PersonForm implements OnInit {
   }
 
   protected async issueRemoved(issue: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
 
     const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
 
     try {
-      await this.personsSvc.detachTag(this.id()!, issue, 'issue');
+      await this.personsSvc.detachTag(id, issue, 'issue');
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
@@ -446,7 +532,7 @@ export class PersonForm implements OnInit {
     this.personsSvc
       .add(data, { context: { skipErrorHandler: true } })
       .then(() => {
-        this.alertSvc.showSuccess('Person added');
+        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
         this.personsSvc.triggerRefresh();
         if (done) {
           done();
@@ -460,7 +546,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());
@@ -489,7 +575,7 @@ export class PersonForm implements OnInit {
       const res = await this.householdsSvc.getAll(opts);
       this.householdResults.set(res.rows || []);
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
       this.householdResults.set([]);
     } finally {
       this.householdsLoading.set(false);
@@ -516,11 +602,12 @@ export class PersonForm implements OnInit {
   }
 
   private async loadPerson() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
 
     const end = this._loading.begin();
     try {
-      this.person.set((await this.personsSvc.getById(this.id()!)) as Persons);
+      this.person.set((await this.personsSvc.getById(id)) as Persons);
 
       await this.updateTags();
       await this.loadVolunteerInfo();
@@ -545,6 +632,7 @@ export class PersonForm implements OnInit {
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
       company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
       linkedin: person.linkedin ?? '',
       twitter: person.twitter ?? '',
       facebook: person.facebook ?? '',
@@ -553,15 +641,59 @@ export class PersonForm implements OnInit {
     });
   }
 
+  // Friendly labels for the field-naming save toast (§4).
+  private readonly fieldLabels: Record<string, string> = {
+    first_name: 'first name',
+    middle_names: 'middle name',
+    last_name: 'last name',
+    email: 'email',
+    email2: 'secondary email',
+    mobile: 'mobile phone',
+    home_phone: 'home phone',
+    company_id: 'company',
+    preferred_contact: 'preferred contact',
+    assigned_to: 'owner',
+    notes: 'notes',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  };
+
+  private changedFieldLabels(): string[] {
+    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
+    return Object.keys(this.fieldLabels)
+      .filter((k) => {
+        try {
+          return !!f[k]?.().dirty?.();
+        } catch {
+          return false;
+        }
+      })
+      .map((k) => this.fieldLabels[k]!);
+  }
+
+  private joinWithAnd(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
   private update(data: Partial<UpdatePersonsType>, done?: () => void) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
+
+    const changed = this.changedFieldLabels();
+    const savedName = this.formName() || 'person';
 
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .update(this.id()!, data, { context: { skipErrorHandler: true } })
+      .update(id, data, { context: { skipErrorHandler: true } })
       .then(() => {
-        this.alertSvc.showSuccess('Person updated successfully.');
+        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
+        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
+        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
         this.form().reset();
         this.personsSvc.triggerRefresh();
         if (done) {
@@ -572,7 +704,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());
@@ -581,22 +713,28 @@ export class PersonForm implements OnInit {
   private async updateTags() {
     if (!this.person()) return;
 
-    const tags = this.id() ? await this.personsSvc.getTags(this.id()!, 'tag') : [];
+    const id = this.id();
+    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
     this.tags.set(tags);
 
-    const issues = this.id() ? await this.personsSvc.getTags(this.id()!, 'issue') : [];
+    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
     this.issues.set(issues);
   }
 
   private async loadVolunteerInfo() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      const stats = await this.volunteerSvc.getVolunteerStats(this.id()!);
+      const stats = await this.volunteerSvc.getVolunteerStats(id);
       this.volunteerStats.set(stats);
-      const history = await this.volunteerSvc.getHistoryForPerson(this.id()!);
+      const history = await this.volunteerSvc.getHistoryForPerson(id);
       this.volunteerHistory.set(history || []);
     } catch (err) {
       console.error('Failed to load volunteer info', err);
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

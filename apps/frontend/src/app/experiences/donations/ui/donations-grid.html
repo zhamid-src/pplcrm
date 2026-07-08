@@ -6,9 +6,7 @@
         <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
         Donations
       </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Track campaign contributions, donor residency checks, and issued tax credits.
-      </p>
+      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
     </div>
     <div class="flex gap-2 items-center">
       <button
@@ -21,6 +19,18 @@
       >
         <pc-icon name="arrow-path" [size]="4"></pc-icon>
         Refresh
+      </button>
+      <button
+        routerLink="/donation-pages/add"
+        class="btn btn-ghost btn-sm gap-2"
+        title="Create a public form that charges cards through Stripe and records every gift here"
+      >
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        New donation form
+      </button>
+      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Record donation
       </button>
     </div>
   </div>
@@ -47,27 +57,53 @@
   <progress class="progress w-full text-primary mb-6"></progress>
   }
 
-  <!-- Stats Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Total Funds Collected
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
         </div>
-        <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
-          {{ totalDonated() | currency:'USD':'symbol':'1.2-2' }}
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
         </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Succeeded donations to date</div>
       </div>
     </div>
 
-    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Total Transactions
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
         </div>
-        <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">{{ successCount() }}</div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful checkout counts</div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
       </div>
     </div>
   </div>
@@ -78,16 +114,18 @@
       <thead>
         <tr class="bg-base-200/50">
           <th>Donor</th>
-          <th>Amount</th>
-          <th>Tax Credit</th>
-          <th>Status</th>
-          <th>Residency</th>
-          <th class="text-right">Donated Date</th>
+          <th class="text-right">Amount</th>
+          <th>Method</th>
+          <th>Date</th>
+          <th>Receipt</th>
         </tr>
       </thead>
       <tbody>
-        @for (d of donations(); track d.id) {
-        <tr class="hover:bg-base-200/30 transition-all duration-200">
+        @for (d of recentGifts(); track d.id) {
+        <tr
+          class="hover:bg-base-200/30 transition-all duration-200"
+          [class.animate-saved-flash]="highlightId() === d.id"
+        >
           <td>
             <div class="flex flex-col">
               <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
@@ -96,38 +134,47 @@
               <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
             </div>
           </td>
-          <td class="font-bold text-base-content text-sm">{{ formatCurrency(d.amount) }}</td>
-          <td class="text-sm text-base-content/85">{{ formatCurrency(d.tax_credit_amount) }}</td>
+          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
           <td>
-            @if (d.status === 'succeeded') {
-            <span class="badge badge-success text-xs font-semibold px-2.5 py-1">Succeeded</span>
-            } @else if (d.status === 'failed') {
-            <span class="badge badge-error text-xs font-semibold px-2.5 py-1">Failed</span>
-            } @else if (d.status === 'pending') {
-            <span class="badge badge-warning text-xs font-semibold px-2.5 py-1">Pending</span>
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
+              >{{ methodLabel(d.method) }}</span
+            >
+          </td>
+          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+          <td>
+            @if (d.receipt_sent) {
+            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Receipted
+            </span>
             } @else {
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">{{ d.status || 'unknown' }}</span>
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
             }
           </td>
-          <td>
-            <span class="text-xs font-mono uppercase bg-base-200 px-2 py-0.5 rounded font-bold">
-              {{ d.country }} @if (d.state) { - {{ d.state }} }
-            </span>
-          </td>
-          <td class="text-right text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
         </tr>
         } @empty {
         <tr>
           <td colspan="5" class="text-center py-16 text-base-content/50">
             <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
             <h3 class="font-semibold text-base-content/70">No donations found</h3>
-            <p class="text-xs text-base-content/50 mt-1">
-              Configure your Stripe integration and set up a donation form to get started.
+            <p class="text-xs text-base-content/50 mt-1 mb-3">
+              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
             </p>
+            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+              <pc-icon name="plus" [size]="4"></pc-icon>
+              Record donation
+            </button>
           </td>
         </tr>
         }
       </tbody>
     </table>
+    @if (totalGiftCount() > recentGifts().length) {
+    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
   </div>
 </div>
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>

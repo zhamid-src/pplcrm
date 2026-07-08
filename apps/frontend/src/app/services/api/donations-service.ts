@@ -39,6 +39,15 @@ export class DonationsService extends TRPCService<'donations'> {
     return this.api.donations.confirmDonation.mutate({ sessionId });
   }
 
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer. */
+  public recordDonation(payload: {
+    personId: string;
+    amountCents: number;
+    method: 'card' | 'check' | 'cash' | 'bank_transfer';
+  }) {
+    return this.api.donations.recordDonation.mutate(payload);
+  }
+
   public confirmMockDonation(payload: {
     personId: string;
     amountCents: number;
@@ -109,5 +118,15 @@ export class DonationsService extends TRPCService<'donations'> {
 
   public deleteDonationPeriod(id: string) {
     return this.api.donations.deleteDonationPeriod.mutate({ id });
+  }
+
+  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
+
+  public getWebhookTokenStatus() {
+    return this.api.donations.getWebhookTokenStatus.query();
+  }
+
+  public regenerateWebhookToken() {
+    return this.api.donations.regenerateWebhookToken.mutate();
   }
 }

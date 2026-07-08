@@ -9,14 +9,18 @@ import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 
+import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-household-form',
@@ -29,6 +33,7 @@ import { PersonsService } from '../../persons/services/persons-service';
     PcDetailHeader,
     PcEntityOverview,
     PcAddressFormGroup,
+    GeocodeChip,
   ],
   templateUrl: './household-form.html',
 })
@@ -42,7 +47,16 @@ export class HouseholdForm implements OnInit {
 
   private _loading = createLoadingGate();
 
-  protected readonly household = signal<Households | null>(null);
+  protected readonly household = signal<Selectable<Households> | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const households: PcBreadcrumb = { label: 'Households', route: '/households' };
+    const id = this.household()?.id;
+    if (id) {
+      return [households, { label: 'Household', route: ['/households', String(id)] }, { label: 'Edit' }];
+    }
+    return [households, { label: 'New household' }];
+  });
 
   protected addressVerified = false;
 
@@ -70,6 +84,8 @@ export class HouseholdForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdateHouseholdsObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected readonly addressString = computed(() => {
     const raw = this.payload();
@@ -130,7 +146,11 @@ export class HouseholdForm implements OnInit {
     }
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
     await this.loadHousehold();
     if (this.isNewMode()) {
       const state = window.history.state;
@@ -164,11 +184,12 @@ export class HouseholdForm implements OnInit {
   }
 
   protected async deleteHousehold() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     const end = this._loading.begin();
     try {
       // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id()!, { columns: ['id'] })) as Array<{ id: string }>;
+      const people = (await this.personsSvc.getByHouseholdId(id, { columns: ['id'] })) as Array<{ id: string }>;
       const personIds = people.map((p) => p.id);
       const peopleCount = personIds.length;
 
@@ -204,16 +225,28 @@ export class HouseholdForm implements OnInit {
         if (!confirmed) return;
       }
 
-      await this.householdsSvc.delete(this.id()!);
+      await this.householdsSvc.delete(id);
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete household';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
       end();
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.addressString() || 'this household');
   }
 
   protected save(done?: () => void) {
@@ -246,9 +279,10 @@ export class HouseholdForm implements OnInit {
   }
 
   protected async tagAdded(tag: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.householdsSvc.attachTag(this.id()!, tag, 'tag');
+      await this.householdsSvc.attachTag(id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to attach tag:', err);
@@ -256,9 +290,10 @@ export class HouseholdForm implements OnInit {
   }
 
   protected async tagRemoved(tag: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.householdsSvc.detachTag(this.id()!, tag, 'tag');
+      await this.householdsSvc.detachTag(id, tag, 'tag');
       await this.tagOptionsSvc.invalidate('tag');
     } catch (err) {
       console.error('Failed to detach tag:', err);
@@ -266,9 +301,10 @@ export class HouseholdForm implements OnInit {
   }
 
   protected async issueAdded(issue: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.householdsSvc.attachTag(this.id()!, issue, 'issue');
+      await this.householdsSvc.attachTag(id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to attach issue:', err);
@@ -276,9 +312,10 @@ export class HouseholdForm implements OnInit {
   }
 
   protected async issueRemoved(issue: string) {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
     try {
-      await this.householdsSvc.detachTag(this.id()!, issue, 'issue');
+      await this.householdsSvc.detachTag(id, issue, 'issue');
       await this.tagOptionsSvc.invalidate('issue');
     } catch (err) {
       console.error('Failed to detach issue:', err);
@@ -286,20 +323,22 @@ export class HouseholdForm implements OnInit {
   }
 
   private async getTags() {
-    if (!this.household() || !this.id()) {
+    const id = this.id();
+    if (!this.household() || !id) {
       return;
     }
-    this.tags = await this.householdsSvc.getTags(this.id()!, 'tag');
-    this.issues = await this.householdsSvc.getTags(this.id()!, 'issue');
+    this.tags = await this.householdsSvc.getTags(id, 'tag');
+    this.issues = await this.householdsSvc.getTags(id, 'issue');
   }
 
   private async loadHousehold() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
 
     const end = this._loading.begin();
 
     try {
-      this.household.set((await this.householdsSvc.getById(this.id()!)) as Households);
+      this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
       await this.getTags();
       this.refreshForm();
     } finally {
@@ -331,13 +370,14 @@ export class HouseholdForm implements OnInit {
   }
 
   private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
-    if (!this.id()) {
+    const id = this.id();
+    if (!id) {
       return;
     }
 
     const end = this._loading.begin();
-    this.householdsSvc
-      .update(this.id()!, data)
+    void this.householdsSvc
+      .update(id, data)
       .then(() => {
         this.alertSvc.showSuccess('Household updated successfully.');
         this.form().reset();
@@ -348,4 +388,8 @@ export class HouseholdForm implements OnInit {
       })
       .finally(() => end());
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

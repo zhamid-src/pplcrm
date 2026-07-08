@@ -39,7 +39,11 @@ export class DonationsSettingsComponent implements OnInit {
   protected readonly donationLimit = signal(1000);
   protected readonly restrictResidency = signal(false);
   protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
+  // The webhook token is generated server-side and shown once (SECURITY-REVIEW 2.4). `webhookToken`
+  // only holds the just-generated plaintext; on reload we only know whether one is configured.
   protected readonly webhookToken = signal('');
+  protected readonly webhookConfigured = signal(false);
+  protected readonly isRegeneratingWebhook = signal(false);
 
   // Donation periods
   protected readonly donationPeriods = signal<DonationPeriod[]>([]);
@@ -279,10 +283,24 @@ export class DonationsSettingsComponent implements OnInit {
     return lines;
   });
 
-  async ngOnInit() {
+  ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
     this.loadValues();
     await this.loadPeriods();
+    await this.loadWebhookStatus();
+  }
+
+  private async loadWebhookStatus(): Promise<void> {
+    try {
+      const status = await this.donationsSvc.getWebhookTokenStatus();
+      this.webhookConfigured.set(!!status?.configured);
+    } catch {
+      // non-fatal — leave as "not configured" if the status can't be read
+    }
   }
 
   private async loadPeriods() {
@@ -333,8 +351,8 @@ export class DonationsSettingsComponent implements OnInit {
       this.newPeriodLimit.set(1000);
       this.showAddPeriod.set(false);
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to create donation period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
     } finally {
       this.isSavingPeriod.set(false);
     }
@@ -344,8 +362,8 @@ export class DonationsSettingsComponent implements OnInit {
     try {
       await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to update period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
     }
   }
 
@@ -362,8 +380,8 @@ export class DonationsSettingsComponent implements OnInit {
       await this.donationsSvc.deleteDonationPeriod(period.id);
       this.alerts.showSuccess('Period deleted');
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to delete period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
     }
   }
 
@@ -413,12 +431,9 @@ export class DonationsSettingsComponent implements OnInit {
     }
     this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
 
-    // Load or generate webhook token
-    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
-    if (!token) {
-      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    }
-    this.webhookToken.set(token);
+    // The webhook token is no longer stored in plaintext, so it can't be re-read here — it's
+    // generated server-side and shown once via regenerateWebhookToken(). Clear any stale plaintext.
+    this.webhookToken.set('');
   }
 
   protected selectCountry(country: { code: string; name: string }) {
@@ -506,13 +521,16 @@ export class DonationsSettingsComponent implements OnInit {
         { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
         { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
         { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
-        { key: 'donations.webhook_token', value: this.webhookToken() },
+        // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
+        // shown once by regenerateWebhookToken(), never round-tripped through the client.
       ];
 
       await this.settingsSvc.upsert(entries);
       this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to save donations configuration');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
     } finally {
       this.isSaving.set(false);
     }
@@ -523,5 +541,31 @@ export class DonationsSettingsComponent implements OnInit {
       .writeText(this.webhookUrl())
       .then(() => this.alerts.showSuccess('Webhook URL copied!'))
       .catch(() => this.alerts.showError('Failed to copy webhook URL'));
+  }
+
+  protected async regenerateWebhookToken() {
+    if (this.webhookConfigured()) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Generate a new webhook token?',
+        message:
+          'This invalidates the current token. Any Stripe webhook still using the old URL will stop working until you paste the new URL into Stripe. The new token is shown only once.',
+        confirmText: 'Generate new token',
+        cancelText: 'Cancel',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+    }
+
+    this.isRegeneratingWebhook.set(true);
+    try {
+      const { token } = await this.donationsSvc.regenerateWebhookToken();
+      this.webhookToken.set(token);
+      this.webhookConfigured.set(true);
+      this.alerts.showSuccess('Webhook token generated. Copy the URL now — it will not be shown again.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to generate webhook token');
+    } finally {
+      this.isRegeneratingWebhook.set(false);
+    }
   }
 }

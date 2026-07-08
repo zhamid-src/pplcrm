@@ -1,0 +1,177 @@
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary:
+      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
+          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization** — your name, contact details, and mailing address.',
+          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access** — default role for invitations and the MFA requirement.',
+          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance** — default theme and date format for the workspace.',
+          '**Integrations & API** — webhook keys and connected services.',
+          '**Billing** — your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+];

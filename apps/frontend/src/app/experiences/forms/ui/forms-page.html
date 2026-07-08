@@ -1,0 +1,630 @@
+<!-- Preview panel (shared by browse + edit) ---------------------------------->
+<ng-template #previewPanel let-showEdit="showEdit">
+  @if (selected(); as form) {
+  <div class="rounded-2xl border border-base-300 bg-base-100">
+    <!-- Actions row -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-4 py-3">
+      <div class="join">
+        <button
+          class="btn join-item btn-sm"
+          [class.btn-active]="tab() === 'form'"
+          (click)="setTab('form')"
+          type="button"
+        >
+          Form
+        </button>
+        <button
+          class="btn join-item btn-sm"
+          [class.btn-active]="tab() === 'responses'"
+          (click)="setTab('responses')"
+          type="button"
+        >
+          Responses
+          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        @if (showEdit) {
+        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          Edit form
+        </button>
+        } @switch (form.status) { @case ('draft') {
+        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
+          Publish
+        </button>
+        } @case ('published') {
+        <button class="btn btn-outline btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+          Unpublish
+        </button>
+        } @case ('archived') {
+        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
+          Restore
+        </button>
+        } }
+      </div>
+    </div>
+
+    <!-- Public link row -->
+    <div class="flex items-center gap-3 bg-base-200/60 px-4 py-2.5">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openPublicLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
+          type="button"
+          aria-label="Open public page"
+        >
+          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="copyLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
+          type="button"
+          aria-label="Copy public link"
+        >
+          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openEmbed()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
+          type="button"
+          aria-label="Embed form"
+        >
+          <pc-icon name="file-code" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- State banner -->
+    @if (form.status === 'draft') {
+    <div class="border-b border-base-200 bg-info/10 px-4 py-2 text-xs text-info-content/80">
+      Draft — only your team can see this preview. Publish to accept responses.
+    </div>
+    } @else if (form.status === 'archived') {
+    <div class="border-b border-base-200 bg-base-200 px-4 py-2 text-xs text-base-content/70">
+      Archived — the public link shows a closed notice. Restore to edit or publish again.
+    </div>
+    }
+
+    <!-- Tab content -->
+    @if (tab() === 'form') {
+    <div class="bg-base-200/40 p-6">
+      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
+    </div>
+    } @else {
+    <div class="p-4">
+      @if (submissionsLoading()) {
+      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      } @else if (submissions().length > 0) {
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Person</th>
+              <th>Submitted</th>
+              <th>Answers</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of submissions(); track row.id) {
+            <tr>
+              <td>
+                <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
+                  {{ row.person_name || 'View person' }}
+                </a>
+              </td>
+              <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
+              <td class="text-base-content/70">{{ answerSummary(row) }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
+        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
+      </div>
+      <p class="mt-2 px-1 text-xs text-base-content/50">
+        Each response created or updated a person, applied the form’s tags and joined its lists.
+      </p>
+      } @else {
+      <div class="flex flex-col items-center gap-2 py-12 text-center">
+        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
+        @switch (form.status) { @case ('draft') {
+        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
+        } @case ('published') {
+        <p class="text-sm text-base-content/60">
+          Share the link to start collecting responses — each one becomes a person.
+        </p>
+        } @case ('archived') {
+        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
+        } }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</ng-template>
+
+<!-- Page ---------------------------------------------------------------------->
+@if (loading() && forms().length === 0) {
+<div class="flex flex-col gap-4">
+  <div class="skeleton h-10 w-48"></div>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <div class="flex flex-col gap-3">
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+    </div>
+    <div class="skeleton h-96 w-full"></div>
+  </div>
+</div>
+} @else if (mode() === 'browse') {
+<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Forms</h1>
+      <p class="mt-1 text-sm text-base-content/60">{{ countSentence() }}</p>
+    </div>
+    <button class="btn btn-primary gap-1" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="5"></pc-icon>
+      New form
+    </button>
+  </div>
+
+  @if (forms().length === 0) {
+  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="10" class="text-base-content/30"></pc-icon>
+    <p class="text-base-content/60">No forms yet — create one to start collecting signups, RSVPs and more.</p>
+    <button class="btn btn-primary btn-sm gap-1" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <!-- Left rail -->
+    <div class="flex flex-col gap-2">
+      @for (form of activeForms(); track form.id) {
+      <button
+        class="flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors"
+        [class.border-primary]="form.id === selectedId()"
+        [class.bg-primary]="form.id === selectedId()"
+        [class.bg-opacity-[0.06]]="form.id === selectedId()"
+        [class.border-base-300]="form.id !== selectedId()"
+        [class.hover:border-base-content]="form.id !== selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-base-content">{{ form.name }}</span>
+          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
+          <span
+            class="badge badge-sm"
+            [class.badge-success]="form.status === 'published'"
+            [class.badge-ghost]="form.status !== 'published'"
+          >
+            {{ form.status === 'published' ? 'Published' : 'Draft' }}
+          </span>
+        </div>
+        <span class="text-xs text-base-content/50">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
+          form.updated_at | date: 'MMM d' }}
+        </span>
+      </button>
+      } @if (archivedForms().length > 0) {
+      <button
+        class="mt-2 flex items-center gap-1 px-1 text-sm text-base-content/60 hover:text-base-content"
+        (click)="toggleArchived()"
+        type="button"
+      >
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="4"></pc-icon>
+        Archived ({{ archivedForms().length }})
+      </button>
+      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
+      <button
+        class="flex flex-col gap-1 rounded-xl border border-base-300 p-3 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.border-primary]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-base-content">{{ form.name }}</span>
+          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-sm badge-ghost">Archived</span>
+        </div>
+        <span class="text-xs text-base-content/50">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+        </span>
+      </button>
+      } } }
+
+      <p class="mt-3 px-1 text-xs text-base-content/40">
+        Responses land in People with the form’s tag applied — no copy-paste step.
+      </p>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
+  </div>
+  }
+</div>
+} @else if (selected(); as form) {
+<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <button
+        class="mb-1 flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
+        (click)="exitEdit()"
+        type="button"
+      >
+        <pc-icon name="arrow-left" [size]="4"></pc-icon>
+        All forms
+      </button>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-semibold text-base-content">{{ form.name }}</h1>
+        <span class="badge badge-info badge-sm">Editing</span>
+      </div>
+      <p class="mt-1 text-sm text-base-content/60">Changes apply to the live form instantly — nothing to save.</p>
+    </div>
+    <button class="btn btn-primary gap-1" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="5"></pc-icon>
+      Done editing
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+    <!-- Settings column -->
+    <div class="flex flex-col gap-6">
+      <!-- FORM -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Form name</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.name"
+            (input)="editName($any($event.target).value)"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Public description</span>
+          <textarea
+            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
+            (input)="editDescription($any($event.target).value)"
+          >
+{{ form.description }}</textarea
+          >
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.redirect_url ?? ''"
+            (input)="editRedirect($any($event.target).value)"
+            placeholder="https://…"
+          />
+          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Submit button label</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.submit_label ?? ''"
+            (input)="editSubmitLabel($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <!-- AFTER SUBMIT -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.send_confirmation"
+            (change)="toggleConfirmEmail($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Confirmation email</span>
+            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
+            @if (form.send_confirmation) {
+            <button
+              class="mt-1 self-start text-xs text-primary hover:underline"
+              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
+              type="button"
+            >
+              Edit the confirmation email
+            </button>
+            }
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.notify_team_on"
+            (change)="toggleNotifyTeam($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Notify the team</span>
+            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
+          </span>
+        </label>
+      </section>
+
+      <!-- FIELDS -->
+      <section class="flex flex-col gap-2">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        @for (field of form.fields; track field.key) {
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            [checked]="field.on"
+            [disabled]="field.key === 'email'"
+            (change)="toggleField(field.key, $any($event.target).checked)"
+          />
+          <span
+            class="flex-1 text-sm text-base-content"
+            [class.text-base-content]="field.on"
+            [class.text-base-content/40]="!field.on"
+          >
+            {{ field.label }}
+          </span>
+          <button
+            class="badge badge-sm"
+            [class.badge-primary]="field.required"
+            [class.badge-ghost]="!field.required"
+            (click)="toggleRequired(field.key)"
+            type="button"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+        </div>
+        }
+        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+      </section>
+
+      <!-- AUDIENCE -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
+          <select
+            class="select select-bordered select-sm w-full"
+            (change)="addList($any($event.target).value); $any($event.target).value = ''"
+          >
+            <option value="">Choose a list…</option>
+            @for (list of lists(); track list.id) {
+            <option [value]="list.id">{{ list.name }}</option>
+            }
+          </select>
+        </label>
+        @if (form.target_lists.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (id of form.target_lists; track id) {
+          <span class="badge badge-outline gap-1">
+            {{ listName(id) }}
+            <button (click)="removeList(id)" type="button" aria-label="Remove list">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            placeholder="Add a tag, press Enter"
+            #tagInput
+            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
+          />
+        </label>
+        @if (form.target_tags.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (tag of form.target_tags; track tag) {
+          <span class="badge badge-primary badge-outline gap-1">
+            {{ tag }}
+            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+        <p class="text-xs text-base-content/50">
+          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
+          applied automatically.
+        </p>
+      </section>
+
+      <!-- ARCHIVE -->
+      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        @if (canDelete(form)) {
+        <p class="text-xs text-base-content/60">
+          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
+        </p>
+        } @else {
+        <p class="text-xs text-base-content/60">
+          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
+        </p>
+        }
+        <div class="flex gap-2">
+          @if (form.status !== 'archived') {
+          <button class="btn btn-outline btn-sm gap-1" (click)="archiveForm()" [disabled]="mutating()" type="button">
+            <pc-icon name="archive-box" [size]="4"></pc-icon>
+            Archive form
+          </button>
+          } @if (canDelete(form)) {
+          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
+            <pc-icon name="trash-forever" [size]="4"></pc-icon>
+            Delete draft
+          </button>
+          }
+        </div>
+      </section>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
+  </div>
+</div>
+}
+
+<!-- New form dialog ----------------------------------------------------------->
+<dialog #newFormDialog class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      </div>
+      <h3 class="text-lg font-semibold text-base-content">New form</h3>
+    </div>
+
+    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Form name</span>
+        <input
+          class="input input-bordered w-full"
+          [class.input-error]="!!newFormError()"
+          [value]="newFormName()"
+          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
+          placeholder="June phone bank signup"
+          autofocus
+        />
+        @if (newFormError()) {
+        <span class="text-xs text-error">{{ newFormError() }}</span>
+        }
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Start from</span>
+        <select
+          class="select select-bordered w-full"
+          [value]="newFormType()"
+          (change)="newFormType.set($any($event.target).value)"
+        >
+          @for (opt of templateOptions; track opt.type) {
+          <option [value]="opt.type">{{ opt.label }}</option>
+          }
+        </select>
+        <span class="text-xs text-base-content/50"
+          >Starts as a draft with the template’s fields — publish when it’s ready.</span
+        >
+      </label>
+
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
+        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Embed dialog -------------------------------------------------------------->
+<dialog #embedDialog class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
+        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
+        Embed this form
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="join mb-3">
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'iframe'"
+        (click)="embedMode.set('iframe')"
+        type="button"
+      >
+        Embed (iframe)
+      </button>
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'html'"
+        (click)="embedMode.set('html')"
+        type="button"
+      >
+        Raw HTML form
+      </button>
+    </div>
+
+    <p class="mb-2 text-xs text-base-content/60">
+      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
+      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    </p>
+
+    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+    >
+
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        Copy code
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Confirmation-email dialog ------------------------------------------------->
+<dialog #confirmEmailDialog class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Subject</span>
+        <input
+          class="input input-bordered w-full"
+          [value]="confirmSubjectDraft()"
+          (input)="confirmSubjectDraft.set($any($event.target).value)"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Body</span>
+        <textarea
+          class="textarea textarea-bordered min-h-[140px] w-full"
+          [value]="confirmBodyDraft()"
+          (input)="confirmBodyDraft.set($any($event.target).value)"
+        ></textarea>
+      </label>
+      <p class="text-xs text-base-content/50">
+        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
+        greeting.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>

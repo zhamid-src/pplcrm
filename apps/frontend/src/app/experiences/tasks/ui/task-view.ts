@@ -3,7 +3,7 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untra
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUser } from '../../../../../../../libs/common/src';
+import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { QuillModule } from 'ngx-quill';
@@ -20,6 +20,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { UserService } from '../../../services/user.service';
 
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-task-view',
@@ -95,11 +96,12 @@ export class TaskView {
 
   // Priority classes and options for display/inputs
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   constructor() {
     effect(() => {
-      untracked(() => this.load());
+      void untracked(() => this.load());
     });
   }
 
@@ -127,7 +129,7 @@ export class TaskView {
       // Load subtasks, comments, attachments
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } catch (err) {
-      this.alertSvc.showError('Failed to load task details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
     } finally {
       end();
     }
@@ -176,7 +178,7 @@ export class TaskView {
       this.alertSvc.showSuccess('Task updated successfully');
       this.refreshActivities();
     } catch (err) {
-      this.alertSvc.showError('Failed to update task: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
     }
   }
 
@@ -305,7 +307,7 @@ export class TaskView {
   protected assignToMe() {
     const me = this.auth.getUser();
     if (!me?.id) return;
-    this.update({ assigned_to: me.id });
+    void this.update({ assigned_to: me.id });
   }
 
   protected isArchived() {
@@ -340,7 +342,7 @@ export class TaskView {
           this.alertSvc.showError('Failed to delete task.');
         }
       } catch (err) {
-        this.alertSvc.showError('Failed to delete task: ' + String(err));
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
       } finally {
         end();
       }
@@ -384,7 +386,7 @@ export class TaskView {
     if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault();
       ev.stopPropagation();
-      this.addComment();
+      void this.addComment();
       return;
     }
     this.mc.handleKeydown(ev, (u) => this.selectMention(u));
@@ -422,22 +424,28 @@ export class TaskView {
     return parsed.toISOString().slice(0, 10);
   }
 
+  protected statusLabel(status: string): string {
+    return isTaskStatus(status) ? TASK_STATUS_LABELS[status] : this.toTitleCase(status);
+  }
+
   // Styling helper classes
   protected getStatusBadgeClass(status: string): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
+    if (!isTaskStatus(status)) return 'badge-ghost'; // unrecognized/corrupt data — neutral, not a crash
+    switch (status) {
       case 'done':
         return 'badge-success text-success-content';
       case 'in_progress':
         return 'badge-info text-info-content';
-      case 'blocked':
+      case 'waiting':
         return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
       case 'archived':
-        return 'badge-warning text-warning-content';
-      default:
+        return 'badge-neutral text-neutral-content';
+      case 'todo':
         return 'badge-ghost';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
     }
   }
 

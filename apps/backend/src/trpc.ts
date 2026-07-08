@@ -3,11 +3,10 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import type { Context } from './context';
-import { toTRPCError } from './app/errors/to-trpc-errors';
+import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
 import superjson from 'superjson';
 import { logger } from './app/logger';
-
-const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
+import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
 
 const trpc = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -51,7 +50,7 @@ const trpc = initTRPC.context<Context>().create({
     }
 
     if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
-      return { ...finalShape, message: GENERIC_LOGIN_MSG };
+      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
     }
 
     // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
@@ -67,11 +66,24 @@ const trpc = initTRPC.context<Context>().create({
 export const middleware = trpc.middleware;
 
 const errorMappingMiddleware = middleware(async (opts) => {
+  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
+  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
+  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
+  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
+  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
+  // is kept as a safety net in case a future path throws synchronously.
+  let result: Awaited<ReturnType<typeof opts.next>>;
   try {
-    return await opts.next();
+    result = await opts.next();
   } catch (err) {
     throw toTRPCError(err);
   }
+
+  if (!result.ok && isAppErrorLike(result.error.cause)) {
+    throw toTRPCError(result.error.cause);
+  }
+
+  return result;
 });
 
 export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
@@ -79,6 +91,8 @@ export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
 export const router = trpc.router;
 
 import { BaseRepository } from './app/lib/base.repo';
+import { runWithTenant } from './app/lib/tenant-context';
+import { hashToken } from './app/lib/token-hash';
 
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
@@ -86,47 +100,78 @@ const isAuthed = middleware(async (opts) => {
   if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
+  // Capture the narrowed, non-null auth so the closure below keeps the narrowing.
+  const auth = ctx.auth;
 
-  let user: { role: string | null; verified: boolean } | undefined;
-  if (/^\d+$/.test(ctx.auth.user_id)) {
-    const record = await BaseRepository.dbInstance
-      .selectFrom('authusers')
-      .select(['role', 'verified'])
-      .where('id', '=', ctx.auth.user_id)
-      .where('tenant_id', '=', ctx.auth.tenant_id)
+  // S-1 (schema review 2026-07-06 §6): bind the tenant to the async context for
+  // the remainder of the request. The runtime pool's onReserveConnection hook
+  // (base.repo.ts) reads it and sets the `app.tenant_id` GUC on every connection
+  // checkout, so Postgres RLS scopes every query — a backstop beneath the
+  // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
+  // harmless (they are already tenant-scoped) and covers all downstream resolvers.
+  return runWithTenant(auth.tenant_id, async () => {
+    let user: { role: string | null; verified: boolean } | undefined;
+    if (/^\d+$/.test(auth.user_id)) {
+      const record = await BaseRepository.dbInstance
+        .selectFrom('authusers')
+        .select(['role', 'verified'])
+        .where('id', '=', auth.user_id)
+        .where('tenant_id', '=', auth.tenant_id)
+        .executeTakeFirst();
+      if (record) {
+        user = {
+          role: record.role,
+          verified: record.verified === true || String(record.verified) === 'true',
+        };
+      }
+    }
+
+    if (!user) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    // Enforce session revocation. The access token embeds the plaintext session_id;
+    // its hash must still map to an active, unexpired row in `sessions`. Deleting the
+    // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
+    // therefore invalidates the access token immediately instead of leaving it usable
+    // until the ~30-minute JWT expiry.
+    const session = await BaseRepository.dbInstance
+      .selectFrom('sessions')
+      .select(['id', 'expires_at'])
+      .where('session_id', '=', hashToken(auth.session_id))
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'active')
       .executeTakeFirst();
-    if (record) {
-      user = {
-        role: record.role,
-        verified: record.verified === true || String(record.verified) === 'true',
-      };
+
+    if (!session) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
-  }
-
-  if (!user) {
-    throw new TRPCError({ code: 'UNAUTHORIZED' });
-  }
-
-  if (opts.type === 'mutation' && user.role === 'viewer') {
-    const isExempt =
-      opts.path === 'cancelEmailChange' ||
-      opts.path.endsWith('.cancelEmailChange') ||
-      opts.path === 'signOut' ||
-      opts.path.endsWith('.signOut');
-    if (!isExempt) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Viewers are not allowed to make changes.',
-      });
+    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
-  }
 
-  const authWithRole = {
-    ...ctx.auth,
-    role: user.role,
-  };
+    if (opts.type === 'mutation' && user.role === 'viewer') {
+      const isExempt =
+        opts.path === 'cancelEmailChange' ||
+        opts.path.endsWith('.cancelEmailChange') ||
+        opts.path === 'signOut' ||
+        opts.path.endsWith('.signOut');
+      if (!isExempt) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Viewers are not allowed to make changes.',
+        });
+      }
+    }
 
-  return opts.next({ ctx: { ...ctx, auth: authWithRole } });
+    const authWithRole = {
+      ...auth,
+      role: user.role,
+    };
+
+    return opts.next({ ctx: { ...ctx, auth: authWithRole } });
+  });
 });
 
 export const authProcedure = publicProcedure.use(isAuthed);

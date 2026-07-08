@@ -1,54 +1,113 @@
-<div class="p-4">
-  <div class="flex items-center gap-2 mb-4">
-    <pc-icon name="view-kanban"></pc-icon>
-    <h2 class="text-xl font-semibold">Task Board</h2>
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Task board</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <button type="button" class="btn btn-outline btn-sm gap-1.5" (click)="openList()">
+      <pc-icon name="queue-list" [size]="4"></pc-icon>
+      Open list
+    </button>
   </div>
 
-  <div class="grid gap-4" [class]="gridColsClass">
-    @for (col of statuses; track col) {
-    <div class="bg-base-200 rounded-lg p-3 min-h-72 flex flex-col">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="font-semibold">{{ toLabel(col) }}</h3>
-        <span class="badge badge-sm">{{ (grouped()[col] ?? []).length || 0 }}</span>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    @for (col of columns; track col) {
+    <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
+        <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
       </div>
-      <div
-        class="flex-1 overflow-auto"
-        [attr.data-status]="col"
-        (dragover)="onDragOver($event)"
-        (drop)="onDrop($event, col)"
-      >
-        <div class="flex flex-wrap gap-2 pb-6" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)">
-          @for (t of (grouped()[col] ?? []); track t.id) {
-          <div
-            class="card bg-warning/10 border border-warning/20 shadow-sm cursor-move w-32 md:w-36 aspect-square relative"
-            draggable="true"
-            (dragstart)="onDragStart($event, t)"
-            (dblclick)="openTask(t)"
-            (dragover)="onDragOver($event)"
-            (drop)="onDrop($event, col)"
-          >
-            <div class="card-body p-3">
-              <div class="flex items-center gap-2 mb-1 w-full">
-                <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
+
+      <div class="flex flex-1 flex-col gap-2 overflow-auto">
+        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div
+          class="card bg-base-100 border-line cursor-pointer border shadow-sm"
+          [class.animate-saved-flash]="isFlashed(t.id)"
+          (click)="openTask(t)"
+        >
+          <div class="card-body gap-1.5 p-3">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-sm font-medium break-words">{{ t.name }}</span>
+              @if (t.priority) {
+              <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+              }
+            </div>
+
+            @if (t.team_name || t.due_at) {
+            <div class="text-base-content/60 text-xs">
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @if (t.team_name && t.due_at) {
+              <span> · </span>
+              } @if (t.due_at) {
+              <span>Due {{ dateLabel(t.due_at) }}</span>
+              }
+            </div>
+            } @if (reason) {
+            <div class="text-warning flex items-center gap-1 text-xs">
+              <pc-icon name="clock" [size]="3"></pc-icon>
+              <span class="break-words">{{ reason }}</span>
+            </div>
+            } @if (pill) {
+            <span
+              class="badge badge-xs w-fit"
+              [class.badge-error]="pill.tone === 'error'"
+              [class.badge-warning]="pill.tone === 'warning'"
+              [class.badge-ghost]="pill.tone === 'neutral'"
+            >
+              {{ pill.text }}
+            </span>
+            }
+
+            <div class="mt-1 flex items-center justify-between gap-2">
+              @if (t.assigned_to) {
+              <span
+                class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
+                [attr.title]="assignee"
+                >{{ assigneeInitial(t.assigned_to) }}</span
+              >
+              } @else {
+              <button
+                type="button"
+                class="badge badge-outline border-dashed text-xs"
+                title="Take this task — one click assigns it to you"
+                (click)="takeTask(t); $event.stopPropagation()"
+              >
+                Unassigned
+              </button>
+              }
+
+              <div class="flex items-center gap-1">
                 <button
-                  (click)="openTask(t); $event.stopPropagation()"
-                  class="btn btn-ghost btn-xs btn-circle ml-auto"
-                  title="View Details"
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, -1)"
+                  [disabled]="!canMove(t.status, -1)"
+                  [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
+                  (click)="moveCard(t, -1); $event.stopPropagation()"
                 >
-                  <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+                  <pc-icon name="chevron-left" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, 1)"
+                  [disabled]="!canMove(t.status, 1)"
+                  [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
+                  (click)="moveCard(t, 1); $event.stopPropagation()"
+                >
+                  <pc-icon name="chevron-right" [size]="4"></pc-icon>
                 </button>
               </div>
-              <span class="badge badge-xs absolute bottom-2 right-2" [class]="priorityBadgeClass(t.priority)">
-                {{ t.priority || '' }}
-              </span>
-              <div class="text-sm font-medium break-words overflow-hidden">{{ t.name }}</div>
-              <div class="mt-auto text-xs opacity-70">{{ dateLabel(t.due_at) }}</div>
             </div>
           </div>
-          }
-          <!-- Spacer drop zone at bottom of column -->
-          <div class="w-full h-16" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)"></div>
         </div>
+        } @empty {
+        <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
+        }
       </div>
     </div>
     }

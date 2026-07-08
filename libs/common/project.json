@@ -1,14 +1,23 @@
 {
   "name": "common",
   "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "common/src",
+  "sourceRoot": "libs/common/src",
   "projectType": "library",
   "targets": {
     "lint": {
       "executor": "@nx/eslint:lint",
       "outputs": ["{options.outputFile}"],
       "options": {
-        "lintFilePatterns": ["common/**/*.ts"]
+        "lintFilePatterns": ["libs/common/**/*.ts"]
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/libs/common"],
+      "options": {
+        "cwd": "libs/common",
+        "command": "vitest run"
       }
     }
   },

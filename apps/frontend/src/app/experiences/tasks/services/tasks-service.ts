@@ -29,6 +29,21 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
     return this.api.tasks.count.query();
   }
 
+  /** Live count of open tasks past the working-hours SLA target — sidebar badge + count sentences (spec §4). */
+  public countSlaBreaches(): Promise<number> {
+    return this.api.tasks.countSlaBreaches.query();
+  }
+
+  /** The count-sentence numbers in one call: open total, unassigned, assigned-to-me, SLA breaches. */
+  public getSummaryCounts(): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    return this.api.tasks.getSummaryCounts.query();
+  }
+
   public detachTag(_id: string, _tag_name: string) {
     return Promise.resolve(false);
   }

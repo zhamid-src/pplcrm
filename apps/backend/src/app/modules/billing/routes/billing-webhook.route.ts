@@ -12,9 +12,10 @@ const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     try {
       await controller.handleWebhook(payload, signature);
       return reply.code(200).send({ received: true });
-    } catch (err: any) {
-      logger.error(`Webhook error: ${err.message}`);
-      return reply.code(400).send({ error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook error: ${message}`);
+      return reply.code(400).send({ error: message });
     }
   });
 

@@ -1,5 +1,6 @@
 import { inject, signal, Service } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
 import { EmailsService } from '../emails-service';
@@ -86,7 +87,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not delete the email. Please try again.'));
       throw e;
     }
   }
@@ -106,7 +107,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not restore the email. Please try again.'));
       throw e;
     }
   }
@@ -155,7 +156,7 @@ export class EmailActionsStore {
 
       return created;
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not send the email. Please try again.'));
       throw e;
     } finally {
       this.sendingCount.update((c) => c - 1);
@@ -199,7 +200,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not move the email. Please try again.'));
       throw e;
     }
   }

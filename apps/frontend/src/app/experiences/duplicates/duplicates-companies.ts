@@ -15,7 +15,7 @@ export class CompanyDuplicatesComponent extends BaseDuplicateManager<any> implem
   private companiesSvc = inject(CompaniesService);
 
   ngOnInit() {
-    this.loadDuplicates();
+    void this.loadDuplicates();
   }
   protected getEntityName() {
     return 'company';

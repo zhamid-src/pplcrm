@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { BaseRepository } from '../../lib/base.repo';
+import { hashToken } from '../../lib/token-hash';
 import { logger } from '../../logger';
 
 export type ZapierEventType =
@@ -64,30 +65,27 @@ export class ZapierService {
     return BaseRepository.dbInstance;
   }
 
-  async getOrCreateApiKey(tenant_id: string): Promise<string> {
+  /** Whether the tenant has a Zapier API key configured. The key itself is never
+   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
+  async getApiKeyStatus(tenant_id: string): Promise<{ configured: boolean }> {
     const row = await this.db
       .selectFrom('settings')
-      .select('value')
+      .select('tenant_id')
       .where('tenant_id', '=', tenant_id)
       .where('key', '=', 'zapier.api_key')
       .executeTakeFirst();
-
-    if (row?.value) {
-      const raw = row.value;
-      return typeof raw === 'string' ? raw.replace(/^"|"$/g, '') : String(raw);
-    }
-
-    return this.regenerateApiKey(tenant_id);
+    return { configured: !!row };
   }
 
+  /** Generate a new key, persist ONLY its hash, and return the plaintext once so the
+   * caller can show it to the user. Any previous key is invalidated. */
   async regenerateApiKey(tenant_id: string): Promise<string> {
     const key = 'zap_' + crypto.randomBytes(32).toString('hex');
+    const hashed = JSON.stringify(hashToken(key));
     await this.db
       .insertInto('settings')
-      .values({ tenant_id, key: 'zapier.api_key', value: JSON.stringify(key) })
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(key), updated_at: new Date() }),
-      )
+      .values({ tenant_id, key: 'zapier.api_key', value: hashed })
+      .onConflict((oc) => oc.columns(['tenant_id', 'key']).doUpdateSet({ value: hashed, updated_at: new Date() }))
       .execute();
     return key;
   }
@@ -144,12 +142,14 @@ export class ZapierService {
   }
 
   async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
-    // eslint-disable-next-line local/no-unscoped-db-query -- resolving which tenant owns this API key; cross-tenant by design
+    // Compare against the stored hash, never the plaintext (SECURITY-REVIEW.md 2.4).
+    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
+    // eslint-disable-next-line local/no-unscoped-db-query
     const row = await this.db
       .selectFrom('settings')
       .select('tenant_id')
       .where('key', '=', 'zapier.api_key')
-      .where('value', '=', JSON.stringify(apiKey))
+      .where('value', '=', JSON.stringify(hashToken(apiKey)))
       .executeTakeFirst();
 
     return row ? String(row.tenant_id) : null;

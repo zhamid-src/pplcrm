@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 
 @Component({
@@ -19,7 +19,13 @@ import { FormField } from '@angular/forms/signals';
         "
       >
         <ng-content select="[pc-prefix]"></ng-content>
-        <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />
+        <input
+          [type]="type()"
+          [placeholder]="placeholder()"
+          [formField]="formField()"
+          class="grow"
+          (blur)="blurred.emit()"
+        />
         <ng-content select="[pc-suffix]"></ng-content>
       </label>
 
@@ -37,4 +43,5 @@ export class Input {
   public placeholder = input<string>('');
   public formField = input.required<any>();
   public hasError = input<boolean>(false);
+  public blurred = output<void>();
 }
