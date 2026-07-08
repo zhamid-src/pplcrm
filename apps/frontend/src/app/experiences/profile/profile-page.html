@@ -126,8 +126,8 @@
       <!-- Edit Profile Card (takes 2 cols on lg) -->
       <div class="lg:col-span-2 space-y-6 rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
         <header class="border-b border-base-200 pb-5">
-          <h2 class="text-xl font-semibold tracking-tight">Edit Profile</h2>
-          <p class="text-sm text-base-content/60 mt-0.5">Update your personal information and contact details.</p>
+          <h2 class="text-xl font-semibold tracking-tight">Your profile</h2>
+          <p class="text-sm text-base-content/60 mt-0.5">Your name appears on tasks, notes and the Activity log.</p>
         </header>
 
         <form (submit)="save($event)" class="space-y-6" novalidate>
@@ -156,139 +156,37 @@
             ></pc-input>
           </div>
 
-          <!-- Notification Preferences Section -->
-          <div class="border-t border-base-200 pt-5 mt-6">
-            <h3 class="text-lg font-semibold tracking-tight text-base-content/85">Notification Preferences</h3>
-            <p class="text-xs text-base-content/50 mt-0.5 mb-4">
-              Choose which email notifications you would like to receive.
+          <!-- Form Action Footer: dirty state narrated, save/reset dim when clean (§2) -->
+          <div class="border-t border-base-200 pt-5 flex items-center justify-between gap-3">
+            <p class="text-xs text-base-content/60">
+              @if (dirtyFieldCount() > 0) {
+              <span class="inline-flex items-center gap-1.5 text-warning font-medium">
+                <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
+              </span>
+              } @else {
+              <span>All changes saved.</span>
+              }
             </p>
-
-            <div class="grid gap-3 sm:grid-cols-2">
-              <!-- Mentioned in Comment -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+            <div class="flex items-center gap-3">
+              <button
+                class="btn btn-ghost hover:bg-base-200"
+                type="button"
+                (click)="resetForm()"
+                [disabled]="saving() || !form().dirty()"
               >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.mention_in_comment"
-                  id="pref_mention_in_comment"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Mentioned in Comment</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5"
-                    >Alerts when someone mentions you in a thread</span
-                  >
-                </div>
-              </label>
-
-              <!-- Task Assigned -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
+                Reset
+              </button>
+              <button
+                class="btn btn-primary min-w-[120px]"
+                type="submit"
+                [disabled]="saving() || loading() || form().invalid() || !form().dirty() || isViewer()"
               >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.task_assigned"
-                  id="pref_task_assigned"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Task Assigned</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5">Alerts when a task is assigned to you</span>
-                </div>
-              </label>
-
-              <!-- Task Overdue / Due Today -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.task_due"
-                  id="pref_task_due"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Task Due Today / Overdue</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5">Daily reminder check of active tasks due</span>
-                </div>
-              </label>
-
-              <!-- Person Assigned -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.person_assigned"
-                  id="pref_person_assigned"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Person Assigned</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5"
-                    >Alerts when a contact ownership is assigned to you</span
-                  >
-                </div>
-              </label>
-
-              <!-- Export Ready -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.export_ready"
-                  id="pref_export_ready"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Export Ready</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5"
-                    >Receive download link when CSV export finishes</span
-                  >
-                </div>
-              </label>
-
-              <!-- Import Summary -->
-              <label
-                class="flex items-start gap-3 p-3 rounded-xl border border-base-200 bg-base-100 hover:bg-base-200/40 cursor-pointer transition-colors duration-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary mt-0.5 shrink-0"
-                  [formField]="form.import_summary"
-                  id="pref_import_summary"
-                />
-                <div class="flex flex-col">
-                  <span class="font-semibold text-xs text-base-content">Import Summary</span>
-                  <span class="text-[11px] text-base-content/60 mt-0.5"
-                    >Spreadsheet import completion stats report</span
-                  >
-                </div>
-              </label>
+                @if (saving()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Save
+              </button>
             </div>
-          </div>
-
-          <!-- Form Action Footer -->
-          <div class="border-t border-base-200 pt-5 flex items-center justify-end gap-3">
-            <button
-              class="btn btn-ghost hover:bg-base-200"
-              type="button"
-              (click)="resetForm()"
-              [disabled]="saving() || !form().dirty()"
-            >
-              Reset
-            </button>
-            <button
-              class="btn btn-primary min-w-[120px]"
-              type="submit"
-              [disabled]="saving() || loading() || form().invalid() || !form().dirty() || isViewer()"
-            >
-              @if (saving()) {
-              <span class="loading loading-spinner loading-xs mr-2"></span>
-              } Save
-            </button>
           </div>
         </form>
       </div>
@@ -313,7 +211,57 @@
               [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
             ></pc-detail-item>
           </div>
+
+          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
+          <p class="mt-5 border-t border-base-200 pt-4 text-[11px] leading-relaxed text-base-content/50">
+            Roles are managed in Users — you can’t demote yourself.
+          </p>
         </div>
+      </div>
+    </div>
+
+    <!-- Email notifications — instant-apply card (§20): each toggle saves on change, no Save button -->
+    <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
+      <header class="border-b border-base-200 pb-5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-xl font-semibold tracking-tight">Email notifications</h2>
+          <span class="text-xs font-medium text-base-content/50">Changes apply immediately.</span>
+        </div>
+        <p class="text-sm text-base-content/60 mt-0.5">Choose which emails pplcrm sends you.</p>
+      </header>
+
+      <div class="mt-6 grid gap-8 sm:grid-cols-2">
+        @for (group of notifGroups; track group.heading) {
+        <div class="space-y-3">
+          <h3 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/45">{{ group.heading }}</h3>
+          <div class="space-y-2">
+            @for (item of group.items; track item.key) {
+            <label
+              class="flex items-center justify-between gap-3 rounded-xl border border-base-200 bg-base-100 p-3 transition-colors duration-200 hover:bg-base-200/40"
+              [class.cursor-pointer]="!isViewer()"
+              [class.opacity-60]="isViewer()"
+            >
+              <div class="flex flex-col">
+                <span class="text-xs font-semibold text-base-content">{{ item.title }}</span>
+                <span class="text-[11px] text-base-content/60 mt-0.5">{{ item.description }}</span>
+              </div>
+              <span class="flex items-center gap-2 shrink-0">
+                @if (savingNotif() === item.key) {
+                <span class="loading loading-spinner loading-xs text-primary"></span>
+                }
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-sm"
+                  [checked]="notifPrefs()[item.key]"
+                  [disabled]="isViewer() || savingNotif() !== null"
+                  (change)="toggleNotif(item.key)"
+                />
+              </span>
+            </label>
+            }
+          </div>
+        </div>
+        }
       </div>
     </div>
 
