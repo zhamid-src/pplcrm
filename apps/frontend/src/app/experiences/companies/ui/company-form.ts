@@ -3,6 +3,7 @@ import { Router, RouterModule } from '@angular/router';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { Icon as PcIcon } from '@icons/icon';
 import { CompanyInputObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -17,7 +18,7 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
+  imports: [PcInput, PcTextarea, PcIcon, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
   templateUrl: './company-form.html',
 })
 export class CompanyForm implements OnInit {
@@ -61,6 +62,15 @@ export class CompanyForm implements OnInit {
 
   public mode = input<'new' | 'edit'>('edit');
   protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  /** True while an add-time Google lookup is in flight (shows an inline hint). */
+  protected readonly lookingUp = signal(false);
+  /** True when another company already uses this name (advisory hint, not a block). */
+  protected readonly duplicateName = signal(false);
+  /** Last name we looked up, so repeated blurs on the same name don't re-hit Google. */
+  private lastLookedUpName = '';
+
+  private static readonly MIN_LOOKUP_NAME_LENGTH = 2;
 
   public ngOnInit(): void {
     void this.loadOnInit();
@@ -107,6 +117,76 @@ export class CompanyForm implements OnInit {
       console.error('Failed to load company details:', err);
     } finally {
       end();
+    }
+  }
+
+  /**
+   * On name blur in the New Company form, ask Google Places for this company and
+   * pre-fill only the fields the user left blank. Non-blocking and best-effort:
+   * enrichment is a convenience, so a failed lookup never interrupts adding a
+   * company. Auto-filled values are shown for the user to review and edit before
+   * saving — nothing is persisted until they hit Create.
+   */
+  protected onNameBlur(): void {
+    const name = this.payload().name.trim();
+    if (name.length < CompanyForm.MIN_LOOKUP_NAME_LENGTH) {
+      this.duplicateName.set(false);
+      return;
+    }
+    // Duplicate check runs in both new and edit modes; Google auto-fill is new-only.
+    void this.checkDuplicateName(name);
+    if (this.isNewMode()) {
+      void this.runNameLookup(name);
+    }
+  }
+
+  /** Advisory duplicate-name check — updates the hint, never blocks saving. */
+  private async checkDuplicateName(name: string): Promise<void> {
+    try {
+      const exists = await this.companiesSvc.checkNameExists(name, this.id());
+      this.duplicateName.set(exists);
+    } catch (err) {
+      // Best-effort: a failed check just hides the hint, never blocks the form.
+      console.error('Duplicate company-name check failed:', err);
+      this.duplicateName.set(false);
+    }
+  }
+
+  private async runNameLookup(name: string): Promise<void> {
+    if (name === this.lastLookedUpName) return;
+    this.lastLookedUpName = name;
+
+    this.lookingUp.set(true);
+    try {
+      const result = await this.companiesSvc.lookupEnrichment(name);
+      const current = this.payload();
+      const next = { ...current };
+      const filled: string[] = [];
+      if (!current.website.trim() && result.website) {
+        next.website = result.website;
+        filled.push('website');
+      }
+      if (!current.phone.trim() && result.phone) {
+        next.phone = result.phone;
+        filled.push('phone');
+      }
+      if (!current.industry.trim() && result.industry) {
+        next.industry = result.industry;
+        filled.push('industry');
+      }
+      if (!current.description.trim() && result.description) {
+        next.description = result.description;
+        filled.push('description');
+      }
+      if (filled.length > 0) {
+        this.payload.set(next);
+        this.alertSvc.showSuccess(`Filled in ${filled.join(', ')} from Google — review before saving`);
+      }
+    } catch (err) {
+      // Best-effort only: never block adding a company on a Google lookup.
+      console.error('Google company lookup failed:', err);
+    } finally {
+      this.lookingUp.set(false);
     }
   }
 
@@ -157,6 +237,9 @@ export class CompanyForm implements OnInit {
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company updated successfully');
+          // Mark the form pristine so the deactivate guard doesn't prompt
+          // "Leave without saving?" on the post-save navigation.
+          this.form().reset();
           if (typeof done === 'function') {
             done();
           } else {
@@ -183,6 +266,9 @@ export class CompanyForm implements OnInit {
         .then(() => {
           this.companiesSvc.triggerRefresh();
           this.alertSvc.showSuccess('Company added successfully');
+          // Mark the form pristine so the deactivate guard doesn't prompt
+          // "Leave without saving?" on the post-save navigation.
+          this.form().reset();
           if (typeof done === 'function') {
             done();
           } else {

@@ -51,6 +51,16 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.enrich.mutate({ id, force });
   }
 
+  /** Add-time preview: fetch Google Places fields for a name without persisting. */
+  public lookupEnrichment(name: string): Promise<RouterOutputs['companies']['lookupEnrichment']> {
+    return this.api.companies.lookupEnrichment.mutate({ name });
+  }
+
+  /** Advisory duplicate-name check for the add/edit form (case-insensitive, tenant-scoped). */
+  public checkNameExists(name: string, excludeId?: string): Promise<RouterOutputs['companies']['nameExists']> {
+    return this.api.companies.nameExists.query({ name, excludeId });
+  }
+
   public getTags(_id: string) {
     return Promise.resolve([]);
   }
