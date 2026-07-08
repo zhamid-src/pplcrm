@@ -216,7 +216,84 @@
       </div>
     </div>
 
-    @if (r.doors === 0) {
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
     <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
       No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
       hand.

@@ -108,7 +108,15 @@ NOTHING` means an offline re-send never double-counts.
   wraps `api.canvassing.*`. Router: `modules/canvassing/trpc.router.ts`, registered
   as `canvassing:` in `modules/trpc.ts`.
 - `ui/canvassing-page.ts` — the /canvassing page (Turfs & assignments + Field
-  report tabs, `pc-map` turf-centroid markers tinted by status).
+  report tabs, `pc-map` turf-centroid markers tinted by status). The Field report
+  tab's **Coverage** card (§13.3) has a Street map / By ward toggle: `getCoverage`
+  (router + `controller.getCoverage`) returns one door per geocoded turf household
+  coloured by window knock status (`conversation`/`attempted`/`not_yet`), a
+  convex-hull dashed boundary per turf, and a by-ward roll-up. It renders whenever
+  turfs have geocoded doors — independently of `report.doors` — so a freshly-cut
+  universe reads as an all-grey map before the first knock. Aggregation lives in
+  `controller.getCoverage` (+ the module-level `convexHull`); the raw per-door rows
+  come from `TurfHouseholdsRepo.getCoverageRows` (`CoverageDoorRow`).
 - `ui/cut-turfs-dialog.ts` — universe select (reuses `ListsService.getAllWithCounts`),
   presets, live preview.
 - Sidebar entry: `layout/sidebar/sidebar-items.ts` under FIELD (icon `map-pin`,
@@ -131,8 +139,11 @@ NOTHING` means an offline re-send never double-counts.
 
 ## What's deferred (and why)
 
-- **Filled turf polygons** on the map — needs a per-turf door hull; the list row
-  only carries the centroid, so the map pins tinted centroids honestly instead.
+- **Filled turf polygons on the _turf strip_** (Turfs & assignments tab) — the
+  turf list row only carries the centroid, so that map still pins tinted centroids
+  honestly. The **Coverage** map (Field report tab) _does_ draw per-turf boundaries,
+  computing the convex hull of each turf's door coordinates on the fly in
+  `getCoverage` — reuse that if you want hulls on the turf strip too.
 - **Sub-ward barrier avoidance** — no highway/rail/water linework in the shipped
   GIS data; ward boundary is the honest proxy (see engine).
 - **Team-target picker UI** — the backend fully supports `team_id`; the page

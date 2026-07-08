@@ -6,11 +6,12 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { Icon } from '@icons/icon';
 import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
 
 import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
 import {
   CanvassingService,
+  type Coverage,
   type FieldReport,
   type FieldSummary,
   type InFieldToday,
@@ -21,6 +22,21 @@ import { CutTurfsDialog } from './cut-turfs-dialog';
 type TurfStatus = TurfListItem['status'];
 type Tab = 'turfs' | 'report';
 type ReportRange = FieldReportRangeType['range'];
+type CoverageStatus = Coverage['doors'][number]['status'];
+type CoverageView = 'map' | 'ward';
+
+/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
+const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
+  conversation: 'success',
+  attempted: 'warning',
+  not_yet: 'muted',
+};
+
+const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
+  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
+  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
+  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
+];
 
 const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
   draft: 'neutral',
@@ -74,12 +90,15 @@ export class CanvassingPage implements OnInit {
 
   protected readonly reportRange = signal<ReportRange>('week');
   protected readonly report = signal<FieldReport | null>(null);
+  protected readonly coverage = signal<Coverage | null>(null);
+  protected readonly coverageView = signal<CoverageView>('map');
 
   protected readonly cutOpen = signal(false);
 
   protected readonly ranges = RANGES;
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly statusBadge = STATUS_BADGE;
+  protected readonly coverageLegend = COVERAGE_LEGEND;
 
   ngOnInit(): void {
     void this.loadTurfs();
@@ -162,14 +181,40 @@ export class CanvassingPage implements OnInit {
 
   protected async loadReport(): Promise<void> {
     const end = this._loading.begin();
+    const range = { range: this.reportRange(), from: null, to: null };
     try {
-      this.report.set(await this.svc.getFieldReport({ range: this.reportRange(), from: null, to: null }));
+      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
+      this.report.set(report);
+      this.coverage.set(coverage);
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
     } finally {
       end();
     }
   }
+
+  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
+  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.doors.map((d) => ({
+      position: { lat: d.lat, lng: d.lng },
+      variant: COVERAGE_VARIANT[d.status],
+    }));
+  });
+
+  /** Dashed turf boundaries (convex hull of each turf's doors). */
+  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.turfs.map((t) => ({
+      path: t.path,
+      variant: 'neutral' as const,
+      dashed: true,
+      label: t.name,
+      id: t.id,
+    }));
+  });
 
   protected selectTab(tab: Tab): void {
     this.tab.set(tab);

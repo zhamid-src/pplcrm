@@ -45,4 +45,7 @@ export const CanvassingRouter = router({
   exportFieldReport: authProcedure
     .input(FieldReportRangeObj)
     .query(({ ctx, input }) => controller.exportFieldReportCsv(ctx.auth, input)),
+  getCoverage: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
 });
