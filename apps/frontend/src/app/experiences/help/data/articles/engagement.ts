@@ -247,15 +247,15 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
   {
     id: 'deliveries',
     category: 'engagement',
-    title: 'Yard-sign deliveries and volunteer routes',
+    title: 'Deliveries and volunteer routes',
     summary:
-      'Collect yard-sign requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
     keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
     related: ['events-shifts', 'teams', 'forms', 'households'],
     blocks: [
       {
         kind: 'p',
-        text: 'Deliveries turns yard-sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route.',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
       },
       { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
       {
@@ -274,7 +274,8 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Click Plan routes · N ready',
-            detail: 'Set the start address drivers leave from. It’s remembered for next time.',
+            detail:
+              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
           },
           {
             title: 'Preview routes',

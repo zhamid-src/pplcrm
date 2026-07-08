@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { Icon } from '@icons/icon';
 
@@ -16,7 +17,7 @@ import { DeliveriesRequestsService, type DeliveryPlanPreview } from '../services
 @Component({
   selector: 'pc-deliveries-plan',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, StatusBadge, Icon],
+  imports: [FormsModule, RouterLink, AddressAutocomplete, StatusBadge, Icon],
   templateUrl: './deliveries-plan.html',
 })
 export class DeliveriesPlan implements OnInit {
