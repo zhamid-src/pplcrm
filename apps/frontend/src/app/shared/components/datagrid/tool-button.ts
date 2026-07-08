@@ -22,7 +22,7 @@ import { PcIconNameType } from '@icons/icons.index';
     >
       @if (hasDropdown()) {
         <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary class="list-none cursor-pointer" (click)="onSummaryClick($event)">
+          <summary class="list-none cursor-pointer" [class.pc-no-caret]="hideCaret()" (click)="onSummaryClick($event)">
             <div class="flex items-center justify-center ">
               <a role="button" class="relative pointer-events-none ">
                 <pc-icon
@@ -59,6 +59,11 @@ import { PcIconNameType } from '@icons/icons.index';
       :host {
         display: contents;
       }
+      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
+         dropdown buttons that opt out via [hideCaret]. */
+      summary.pc-no-caret::after {
+        display: none;
+      }
     `,
   ],
 })
@@ -76,6 +81,8 @@ export class GridActionComponent {
   public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
   public hasDropdown = input(false);
   public dropdownEnd = input(true);
+  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
+  public hideCaret = input(false);
   public badge = input<number | undefined>(undefined);
 
   public emitClick() {
