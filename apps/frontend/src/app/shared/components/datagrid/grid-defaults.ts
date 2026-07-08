@@ -39,6 +39,18 @@ export interface ColumnDef {
   valueGetter?: (p: CellParams) => unknown;
   valueSetter?: (p: CellParams) => boolean;
   minWidth?: number;
+  /**
+   * Preferred fixed width (px) when the user hasn't manually resized the column. Short columns
+   * (a date, a count) should set this so they don't stretch to fill leftover space. Ignored for
+   * `flex` columns. Only honored on grids that declare at least one `flex` column.
+   */
+  width?: number;
+  /**
+   * Marks a column as elastic: it absorbs leftover horizontal space instead of the browser
+   * spreading slack across every column. Use it for the primary text columns (the door, a long
+   * description) so short columns stay content-sized. Multiple flex columns share the slack.
+   */
+  flex?: boolean;
 }
 
 type CellRendererResult = string | HTMLElement;

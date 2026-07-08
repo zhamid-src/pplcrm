@@ -384,7 +384,7 @@
             (dragstart)="onHeaderDragStart(h, $event)"
             (dragover)="onHeaderDragOver(h, $event)"
             (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.width.px]="fixedWidthPx(h.column.id)"
             [style.minWidth.px]="columnMinWidthPx(h.column.id)"
           >
             <div class="flex items-center gap-2" data-header-content>
@@ -646,7 +646,7 @@
             [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.width.px]="fixedWidthPx(cell.column.id)"
             [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
           >
             @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if

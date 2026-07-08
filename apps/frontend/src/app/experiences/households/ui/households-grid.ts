@@ -27,6 +27,7 @@ import { HouseholdsService } from '../services/households-service';
         #grid
         [showToolbar]="!inline()"
         [grainLayout]="!inline()"
+        [fitColumns]="true"
         title="Households"
         i18n-title
         description="Manage household groups, track shared addresses, and organize family relationships."
@@ -173,7 +174,8 @@ export class HouseholdsGrid implements OnInit {
       editable: false,
       doorColumn: true,
       noHide: true,
-      minWidth: 200,
+      width: 260,
+      minWidth: 180,
       valueGetter: (params: CellParams) => this.addressString(params.data),
       doorSubtitle: (params: CellParams) => {
         const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
@@ -184,13 +186,16 @@ export class HouseholdsGrid implements OnInit {
       field: 'members',
       headerName: 'Members',
       editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
       minWidth: 200,
       // Each member name is a link to their person card. The renderer output is
       // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
       cellRenderer: (params: CellParams) => this.renderMembers(params.value),
       onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
     },
-    { field: 'city', headerName: 'City', editable: true },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
     {
       field: 'tags',
       headerName: 'Tags',
@@ -240,7 +245,7 @@ export class HouseholdsGrid implements OnInit {
       field: 'updated_at',
       headerName: 'Last touch',
       editable: false,
-      minWidth: 140,
+      minWidth: 120,
       valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
     },
     {
@@ -248,6 +253,7 @@ export class HouseholdsGrid implements OnInit {
       headerName: 'Notes',
       editable: true,
       hide: true,
+      width: 280,
       cellEditorParams: { textarea: true, rows: 5 },
     },
   ];
