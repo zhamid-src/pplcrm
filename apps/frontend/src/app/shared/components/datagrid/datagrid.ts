@@ -210,6 +210,35 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly selectionColumnWidthPx = 72;
   private readonly headerAutoSizeBufferPx = 8;
 
+  /** Fields that should elastically absorb leftover width when visible, highest priority first. */
+  private static readonly GROW_TEXT_FIELDS = ['description', 'notes'] as const;
+
+  /**
+   * Under {@link fitColumns}, exactly one visible column stretches to fill the leftover width so
+   * short columns stay content-sized and the row still spans full width. Preference: a visible
+   * description/notes column, else a column the grid flagged with `flex: true`, else the last
+   * visible column. Returns `null` when content-fit sizing is off (legacy proportional stretch).
+   */
+  protected growColumnId(): string | null {
+    if (!this.fitColumns()) return null;
+    const headers = this.leafHeaders();
+    if (!headers.length) return null;
+    const textCol = headers.find((h) => DataGrid.GROW_TEXT_FIELDS.includes(h.column.id as never));
+    if (textCol) return textCol.column.id;
+    const flagged = headers.find((h) => this.getColDefById(h.column.id)?.flex === true);
+    if (flagged) return flagged.column.id;
+    return headers[headers.length - 1]?.column.id ?? null;
+  }
+
+  /**
+   * The fixed width to pin a header/cell to, or `null` to leave it elastic (`width:auto`). The
+   * single {@link growColumnId} returns `null` so it soaks up the table's leftover width.
+   */
+  protected fixedWidthPx(colId: string | null | undefined): number | null {
+    if (colId && this.growColumnId() === colId) return null;
+    return this.columnWidthPx(colId);
+  }
+
   protected columnWidthPx(colId: string | null | undefined): number {
     if (!colId) return this.columnMinWidthPx(colId);
     return this.getColWidth(colId) ?? this.columnMinWidthPx(colId);
@@ -218,16 +247,29 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected columnMinWidthPx(colId: string | null | undefined): number {
     if (!colId) return 40;
     const colDef = this.getColDefById(colId);
+    const typeFloor = this.typeMinWidthPx(colDef);
     const configuredMin = colDef?.minWidth;
     if (typeof configuredMin === 'number' && configuredMin > 0) {
-      return configuredMin;
+      return Math.max(configuredMin, typeFloor);
     }
     const minMap = this.headerMinWidths();
     const measured = minMap[colId];
     if (typeof measured === 'number' && measured > 0) {
-      return Math.max(40, Math.ceil(measured));
+      return Math.max(40, Math.ceil(measured), typeFloor);
     }
-    return 40;
+    return Math.max(40, typeFloor);
+  }
+
+  /**
+   * A presentation floor for column kinds whose content reads badly when squeezed: tag/issue
+   * chips wrap a letter per line, and free text collapses to "[…". Keeps them legible even when
+   * a column has no explicit width and its header is short.
+   */
+  private typeMinWidthPx(colDef: ColDef | undefined): number {
+    if (!colDef) return 0;
+    if (colDef.tagColumn) return 120;
+    if (colDef.field === 'notes' || colDef.field === 'description') return 200;
+    return 0;
   }
 
   private clampColumnWidth(id: string, px: number): number {
@@ -687,6 +729,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
    * toolbar share one band, and the count sentence renders below the filter row.
    */
   public grainLayout = input<boolean>(false);
+
+  /**
+   * Content-fit column sizing. When true, columns render at their content/configured width
+   * instead of the browser stretching every column to fill the table, and a blank trailing
+   * cell absorbs the leftover width so short columns stay tight and the row still spans full
+   * width. Off by default so existing grids keep their proportional-stretch layout.
+   */
+  public fitColumns = input<boolean>(false);
 
   private readonly countFormatter = new Intl.NumberFormat();
 
@@ -1558,12 +1608,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public getColWidth(id: string): number | null {
-    const col = this.tsTable?.getColumn?.(id);
-    const size = typeof col?.getSize === 'function' ? Number(col.getSize()) : undefined;
     const min = this.columnMinWidthPx(id);
-    if (size && size > 0) return Math.max(size, min);
+    // A user-resized width always wins (persisted in colWidths, mirrored into columnSizing).
     const stored = this.colWidths()[id];
-    if (typeof stored === 'number') return Math.max(stored, min);
+    if (typeof stored === 'number' && stored > 0) return Math.max(stored, min);
+    // An explicit per-column preferred width comes next.
+    const colDef = this.getColDefById(id);
+    if (typeof colDef?.width === 'number' && colDef.width > 0) return Math.max(colDef.width, min);
+    // On content-fit grids, unsized columns fall to their content/min width and the grow column
+    // soaks up the slack — so short columns stay tight instead of stretching to fill.
+    if (this.fitColumns()) return min;
+    // Legacy grids keep TanStack's default column size so existing layouts don't shift.
+    const size = this.tsTable?.getColumn?.(id)?.getSize?.();
+    if (typeof size === 'number' && size > 0) return Math.max(size, min);
     return min;
   }
 

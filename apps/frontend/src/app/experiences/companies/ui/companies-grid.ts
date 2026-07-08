@@ -17,6 +17,7 @@ import { CompaniesService } from '../services/companies-service';
       <pc-datagrid
         #grid
         [grainLayout]="true"
+        [fitColumns]="true"
         title="Companies"
         i18n-title
         description="Manage corporate contacts, associate people with companies, and track organization profiles."
@@ -98,7 +99,8 @@ export class CompaniesGrid {
       editable: false,
       doorColumn: true,
       noHide: true,
-      minWidth: 200,
+      width: 240,
+      minWidth: 180,
     },
     {
       // Employee count from persons.company_id (§7). Plain, non-interactive text — only
@@ -106,11 +108,12 @@ export class CompaniesGrid {
       field: 'persons_count',
       headerName: 'People',
       editable: false,
-      minWidth: 120,
+      width: 110,
+      minWidth: 90,
       valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
     },
-    { field: 'website', headerName: 'Website', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
+    { field: 'website', headerName: 'Website', editable: true, width: 240 },
+    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
   ];
 
   /** Formats the employee count as "N people" (singular/plural). */

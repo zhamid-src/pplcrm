@@ -68,6 +68,7 @@ export class PersonsGrid implements OnInit {
       editable: false,
       doorColumn: true,
       noHide: true,
+      width: 220,
       minWidth: 160,
       valueGetter: (params: CellParams) => {
         const data = params?.data as Record<string, unknown> | undefined;
@@ -84,6 +85,9 @@ export class PersonsGrid implements OnInit {
       field: 'address',
       headerName: 'Address',
       editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
       onCellClicked: this.onAddressCellClicked.bind(this),
       onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
       isCellInteractive: (row: any) => !row.household_is_placeholder,
@@ -103,8 +107,10 @@ export class PersonsGrid implements OnInit {
         return parts.join(', ').trim();
       },
     },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
     { field: 'company_name', headerName: 'Company', editable: false, hide: true },
     {
       field: 'home_phone',
