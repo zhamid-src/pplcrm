@@ -18,6 +18,23 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     return !!row;
   }
 
+  /**
+   * Case-insensitive check for an existing company of the same name in the tenant.
+   * Powers the "a company by that name already exists" hint on the add/edit form.
+   * `excludeId` lets an edit ignore the record being edited.
+   */
+  public async nameExists(tenant_id: string, name: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect()
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where(sql<boolean>`lower(name) = lower(${name})`);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
   /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
   public getOneBySlug(input: { tenant_id: string; slug: string }) {
     return this.getSelect()

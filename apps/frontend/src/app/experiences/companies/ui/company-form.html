@@ -27,7 +27,23 @@
       <!-- Form Section -->
       <pc-card class="lg:col-span-2">
         <!-- Name -->
-        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
+        <pc-input
+          label="Company Name"
+          placeholder="e.g. Acme Corp"
+          [formField]="form.name"
+          (blurred)="onNameBlur()"
+        ></pc-input>
+        @if (lookingUp()) {
+        <p class="text-xs text-base-content/60 mt-1 pl-1 flex items-center gap-1">
+          <span class="loading loading-spinner loading-xs"></span>
+          Looking up details on Google…
+        </p>
+        } @else if (duplicateName()) {
+        <p class="text-xs text-warning mt-1 pl-1 flex items-center gap-1">
+          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+          A company with this name already exists — you can still save if this is a separate record.
+        </p>
+        }
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Website -->
