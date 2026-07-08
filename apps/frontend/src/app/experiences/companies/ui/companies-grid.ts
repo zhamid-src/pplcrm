@@ -1,5 +1,6 @@
 import { Component, signal, inject, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -68,6 +69,9 @@ export class CompaniesGrid {
   protected readonly totalSentence = signal<string | null>(null);
 
   constructor() {
+    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
     void this.loadGrainSentence();
   }
 
