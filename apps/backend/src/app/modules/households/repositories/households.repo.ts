@@ -476,6 +476,27 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
+  /**
+   * Real households the tenant has, excluding the permanent placeholder household
+   * (the one on `tenants.placeholder_household_id`, which just holds people with
+   * no address and is hidden from the grid). Mirrors the exclusion `getAll` uses,
+   * so the grain-tab count and count sentence match the visible rows.
+   */
+  public async countExcludingPlaceholder(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where((eb) =>
+        eb.or([
+          eb('tenants.placeholder_household_id', 'is', null),
+          eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+        ]),
+      )
+      .select(({ fn }) => [fn.count<number>('households.id').as('count')])
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
   public async countDistinctWards(tenant_id: string): Promise<number> {
     const result = await this.getSelect()
       .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])

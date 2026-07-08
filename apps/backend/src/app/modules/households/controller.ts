@@ -31,6 +31,14 @@ export class HouseholdsController extends BaseController<'households', Household
     super(new HouseholdRepo());
   }
 
+  /**
+   * Household count for the grain tabs + count sentence — excludes the tenant's
+   * permanent placeholder household so the number matches the rows the grid shows.
+   */
+  public override getCount(tenant_id: string): Promise<number> {
+    return this.getRepo().countExcludingPlaceholder(tenant_id);
+  }
+
   public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
     // Filter out any placeholder households — they are permanent and undeletable
     const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
