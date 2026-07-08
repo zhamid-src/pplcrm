@@ -125,11 +125,27 @@ export class UsersGridComponent {
       },
     },
     {
-      field: 'verified',
-      headerName: 'Verified',
+      field: 'status',
+      headerName: 'Status',
       editable: false,
-      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
-      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+      valueGetter: (p: CellParams) => this.statusOf(p.data).label,
+      cellRenderer: (p: CellParams) => {
+        const status = this.statusOf(p.data);
+        // Deactivated reads as inert (neutral, dimmed); Invited is in-progress (warning); Active is good (success).
+        return `<span class="badge badge-sm badge-outline font-semibold ${status.badgeClass}">${escapeHtml(status.label)}</span>`;
+      },
+    },
+    {
+      field: 'two_factor_enabled',
+      headerName: 'MFA',
+      editable: false,
+      valueGetter: (p: CellParams) => (this.coerceBoolean(p.data?.['two_factor_enabled']) ? 'Enabled' : 'Off'),
+      cellRenderer: (p: CellParams) => {
+        const on = this.coerceBoolean(p.data?.['two_factor_enabled']);
+        return on
+          ? `<span class="inline-flex items-center gap-1 text-success font-medium">Enabled</span>`
+          : `<span class="text-base-content/50">Off</span>`;
+      },
     },
     {
       field: 'updated_at',
@@ -148,7 +164,14 @@ export class UsersGridComponent {
   public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
     if (!col.editable) return false;
 
-    const currentUserRole = this.auth.getUser()?.role;
+    const currentUser = this.auth.getUser();
+    const currentUserRole = currentUser?.role;
+
+    // Self-lock (§18): you can't change your own role — no accidental self-demotion or lockout.
+    // (Deactivation lives in the ⋯ menu, also guarded there.)
+    if (currentUser?.id != null && String(row['id']) === String(currentUser.id) && col.field === 'role') {
+      return false;
+    }
 
     if (currentUserRole === 'admin') {
       if (row['role'] === 'owner') {
@@ -160,6 +183,17 @@ export class UsersGridComponent {
 
     return true;
   };
+
+  // Derive an honest account status from the fields the list already returns — no schema change.
+  private statusOf(data: GridRow | undefined): { label: string; badgeClass: string } {
+    if (data?.['deletion_scheduled_at']) {
+      return { label: 'Deactivated', badgeClass: 'text-base-content/45 border-base-content/25' };
+    }
+    if (!this.coerceBoolean(data?.['verified'])) {
+      return { label: 'Invited', badgeClass: 'badge-warning text-warning' };
+    }
+    return { label: 'Active', badgeClass: 'badge-success text-success' };
+  }
 
   private formatDate(value: unknown): string {
     if (!value) return '';

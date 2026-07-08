@@ -49,6 +49,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
       },
+      {
+        kind: 'p',
+        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+      },
       { kind: 'h2', id: 'roles', text: 'The three roles' },
       {
         kind: 'list',
