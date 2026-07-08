@@ -14,6 +14,7 @@ import { CompaniesService } from '../services/companies-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         #grid
+        [grainLayout]="true"
         title="Companies"
         i18n-title
         description="Manage corporate contacts, associate people with companies, and track organization profiles."

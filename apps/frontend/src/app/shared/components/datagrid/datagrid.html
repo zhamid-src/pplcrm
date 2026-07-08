@@ -1,5 +1,14 @@
-<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
-  @if (displayTitle()) {
+<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle() || grainLayout()">
+  @if (grainLayout()) {
+  <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
+       (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
+  <div class="mb-3 flex items-center justify-between gap-4">
+    <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
+    @if (showToolbar()) {
+    <div class="shrink-0"><pc-dg-toolbar /></div>
+    }
+  </div>
+  } @else { @if (displayTitle()) {
   <pc-grid-header
     [title]="displayTitle()!"
     [open]="showDescription()"
@@ -8,10 +17,7 @@
     [filtered]="anyFilterActive()"
     [totalSentence]="totalSentence()"
   ></pc-grid-header>
-  }
-  <!-- Below-header slot: the People grain tabs (spec §5) project here. -->
-  <ng-content select="[pcGridBelowHeader]"></ng-content>
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  } @if (showToolbar()) { <pc-dg-toolbar /> } } @if (showNarrowTypeFilter()) {
   <!-- System views: segmented control with per-view counts (composes AND with filters) -->
   <div class="mb-2 flex flex-wrap items-center gap-2">
     <div class="join border border-base-300 rounded-lg">
@@ -241,6 +247,10 @@
     </details>
     }
   </div>
+  }
+  <!-- Count sentence: below the filter row in grain layout (owner screenshot). -->
+  @if (grainLayout() && countSentence()) {
+  <p class="mb-3 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ countSentence() }}</p>
   } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
     <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"

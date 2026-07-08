@@ -27,6 +27,7 @@ import { PcIconNameType } from '@icons/icons.index';
               <a role="button" class="relative pointer-events-none ">
                 <pc-icon
                   [name]="icon()"
+                  [size]="4"
                   class="group-hover:text-primary"
                   [class]="spinning() ? 'animate-spin inline-block' : ''"
                 ></pc-icon>
@@ -44,6 +45,7 @@ import { PcIconNameType } from '@icons/icons.index';
         <a
           ><pc-icon
             [name]="icon()"
+            [size]="4"
             class="group-hover:text-primary"
             [class]="spinning() ? 'animate-spin inline-block' : ''"
           ></pc-icon

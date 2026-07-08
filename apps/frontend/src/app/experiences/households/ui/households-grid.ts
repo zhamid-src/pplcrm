@@ -24,6 +24,7 @@ import { HouseholdsService } from '../services/households-service';
       <pc-datagrid
         #grid
         [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
         title="Households"
         i18n-title
         description="Manage household groups, track shared addresses, and organize family relationships."

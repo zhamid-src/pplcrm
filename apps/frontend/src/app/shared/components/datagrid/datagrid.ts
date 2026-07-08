@@ -678,6 +678,29 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
    */
   public totalSentence = input<string | null>(null);
 
+  /**
+   * Grain-tab layout (People/Households/Companies grids, spec §5 + owner screenshot):
+   * no in-grid title/ⓘ (redundant with the sidebar + breadcrumb) — the grain tabs and
+   * toolbar share one band, and the count sentence renders below the filter row.
+   */
+  public grainLayout = input<boolean>(false);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  /** The "43 match your filters · 5,012 people total" sentence, rendered below the filter row in grain layout. */
+  public readonly countSentence = computed<string | null>(() => {
+    const count = this.hasInitiatedLoad() ? this.totalCountAll() : null;
+    const sentence = this.totalSentence();
+    if (count !== null && this.anyFilterActive()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
+    }
+    if (sentence) return sentence;
+    if (count === null) return null;
+    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
+  });
+
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
   // ── Tag / Issue filter — delegated to GridTagFilterService ───────────────
