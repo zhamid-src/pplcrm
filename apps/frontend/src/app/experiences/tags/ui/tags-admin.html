@@ -2,7 +2,7 @@
   <div class="flex items-start justify-between gap-4">
     <div>
       <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
-      @if (!loading()) {
+      @if (loaded()) {
       <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
@@ -12,7 +12,7 @@
     </a>
   </div>
 
-  @if (!loading() && unusedRows().length > 0) {
+  @if (loaded() && unusedRows().length > 0) {
   <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
     <div class="flex items-center gap-3">
       <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
