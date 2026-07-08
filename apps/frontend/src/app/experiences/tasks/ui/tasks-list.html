@@ -40,7 +40,7 @@
     }
   </nav>
 
-  @if (!loading() && !filtered().length) {
+  @if (loaded() && !filtered().length) {
   <div class="flex flex-col items-center gap-3 py-16 text-center">
     <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
     @switch (tab()) { @case ('all') {

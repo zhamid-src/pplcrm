@@ -50,6 +50,7 @@ export class TasksList implements OnInit {
   private readonly _loading = createLoadingGate();
 
   protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
   protected readonly tab = signal<ListTab>('all');
   protected readonly tasks = signal<ListTask[]>([]);
   protected readonly usersById = signal<Map<string, string>>(new Map());
