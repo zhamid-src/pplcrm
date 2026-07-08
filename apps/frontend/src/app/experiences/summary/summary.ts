@@ -159,7 +159,7 @@ export class Summary implements OnInit {
     void this.loadStats();
   }
 
-  protected async loadStats() {
+  protected async loadStats(announce = false) {
     if (this.isRefreshing()) return;
     this.isRefreshing.set(true);
     const start = Date.now();
@@ -334,6 +334,10 @@ export class Summary implements OnInit {
         }
       }
       this.xAxisLabels.set(xLabels);
+
+      if (announce) {
+        this.alertSvc.showSuccess('Stats reloaded — all figures current as of now');
+      }
     } catch {
       this.alertSvc.showError('Failed to load dashboard metrics');
     } finally {

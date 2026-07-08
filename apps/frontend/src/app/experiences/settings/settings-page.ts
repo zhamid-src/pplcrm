@@ -211,6 +211,42 @@ export class SettingsPage implements OnInit {
     this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
   }
 
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
+  }
+
   protected getNotificationGroups(section: SectionState) {
     const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
     const fields = section.fields;
@@ -554,6 +590,9 @@ export class SettingsPage implements OnInit {
       }
       case 'date':
         return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
       case 'email':
       case 'tel':
       case 'password':
@@ -584,6 +623,8 @@ export class SettingsPage implements OnInit {
       }
       case 'date':
         return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
       case 'textarea':
       case 'text':
       case 'email':

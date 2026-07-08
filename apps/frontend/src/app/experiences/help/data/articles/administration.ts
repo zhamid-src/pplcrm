@@ -22,7 +22,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Open them from **Settings** in the avatar menu; every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
@@ -48,6 +48,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
       },
       { kind: 'h2', id: 'roles', text: 'The three roles' },
       {
@@ -157,6 +161,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
       },
       {
         kind: 'callout',
