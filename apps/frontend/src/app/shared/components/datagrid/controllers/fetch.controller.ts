@@ -19,10 +19,9 @@ export class FetchController {
   }
 
   async loadPage(index: number, append?: boolean): Promise<void> {
+    // begin() flips the gate's `started` signal, which the grid reads as
+    // hasInitiatedLoad — no separate bookkeeping needed.
     const end = this.grid._loading.begin();
-    // A real fetch has started — reliably mark it (the isLoading() effect can miss
-    // this when the loading gate suppresses a sub-300ms spinner).
-    this.grid.hasInitiatedLoad.set(true);
     try {
       const pageSize = this.store.pageSize();
       const startRow = index * pageSize;
