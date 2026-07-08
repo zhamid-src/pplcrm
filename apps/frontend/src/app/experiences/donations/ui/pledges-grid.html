@@ -6,16 +6,9 @@
         <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
         Monthly Pledges
       </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Recurring monthly donation subscriptions from your supporters.
-      </p>
+      <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
     </div>
-    <button
-      class="btn btn-outline btn-sm gap-2"
-      pcSpinOnClick
-      [disabled]="_loading.visible()"
-      (click)="refresh()"
-    >
+    <button class="btn btn-outline btn-sm gap-2" pcSpinOnClick [disabled]="_loading.visible()" (click)="refresh()">
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Refresh
     </button>
@@ -23,7 +16,13 @@
 
   <!-- Tabs -->
   <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a routerLink="/donations" routerLinkActive="tab-active" [routerLinkActiveOptions]="{exact:true}" role="tab" class="tab font-semibold gap-1.5">
+    <a
+      routerLink="/donations"
+      routerLinkActive="tab-active"
+      [routerLinkActiveOptions]="{exact:true}"
+      role="tab"
+      class="tab font-semibold gap-1.5"
+    >
       <pc-icon name="currency-dollar" [size]="4"></pc-icon>
       One-time
     </a>
@@ -41,15 +40,15 @@
   <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
     <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
       <div class="stat-title text-xs">Active Pledges</div>
-      <div class="stat-value text-2xl text-success">{{ activePledgeCount() }}</div>
+      <div class="stat-value text-2xl text-success tabular-nums">{{ activePledgeCount() }}</div>
     </div>
     <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
       <div class="stat-title text-xs">Monthly Committed</div>
-      <div class="stat-value text-2xl text-primary">${{ totalMonthlyCommitted().toFixed(2) }}</div>
+      <div class="stat-value text-2xl text-primary tabular-nums">${{ totalMonthlyCommitted().toFixed(2) }}</div>
     </div>
     <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
       <div class="stat-title text-xs">Total Pledges</div>
-      <div class="stat-value text-2xl">{{ pledges().length }}</div>
+      <div class="stat-value text-2xl tabular-nums">{{ pledges().length }}</div>
     </div>
   </div>
 
@@ -98,9 +97,8 @@
           <td class="text-base-content/70">{{ formatDate(pledge.started_at) }}</td>
           <td class="text-base-content/70">{{ formatDate(pledge.next_billing_date) }}</td>
           <td class="text-base-content/60">
-            @if (pledge.state || pledge.country) {
-            {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{ pledge.country }}
-            } @else { — }
+            @if (pledge.state || pledge.country) { {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{
+            pledge.country }} } @else { — }
           </td>
           <td class="text-right">
             @if (pledge.status === 'active' || pledge.status === 'past_due') {
@@ -112,9 +110,7 @@
             >
               @if (cancelling() === toStr(pledge.id)) {
               <span class="loading loading-spinner loading-xs"></span>
-              } @else {
-              Cancel
-              }
+              } @else { Cancel }
             </button>
             }
           </td>

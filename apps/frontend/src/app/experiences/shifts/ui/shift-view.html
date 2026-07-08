@@ -64,12 +64,12 @@
             Coordinator Contact
           </div>
           @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+          <pc-detail-row icon="envelope" iconClass="text-primary">
             <span>Email:</span>
             <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
           </pc-detail-row>
           } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
+          <pc-detail-row icon="phone" iconClass="text-primary">
             <span>Phone:</span>
             <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
           </pc-detail-row>
