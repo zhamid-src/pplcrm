@@ -453,6 +453,8 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   state: string | null;
   zip: string | null;
   country: string | null;
+  method: Generated<string>;
+  receipt_sent: Generated<boolean>;
 }
 
 export interface DonationPeriods extends RecordType {

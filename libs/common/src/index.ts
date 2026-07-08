@@ -218,7 +218,13 @@ export {
   DELIVERY_STOP_STATUSES,
   DELIVERY_SOURCES,
   DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
 } from './lib/schema';
+
+export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
