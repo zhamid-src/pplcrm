@@ -69,6 +69,7 @@ export const icons = {
   'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
   'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
   'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
   'at-symbol': 'assets/icons/at-symbol.svg',
   'attach-fat': 'assets/icons/attach-fat.svg',
   'attach-file-off': 'assets/icons/attach-file-off.svg',
