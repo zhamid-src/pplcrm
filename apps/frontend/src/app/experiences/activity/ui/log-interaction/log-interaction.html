@@ -1,0 +1,68 @@
+<!-- Split-button: primary action opens the menu of interaction types -->
+<div class="dropdown dropdown-end">
+  <div tabindex="0" role="button" class="btn btn-primary btn-xs gap-1.5">
+    <pc-icon name="plus" [size]="4"></pc-icon>
+    <span>{{ label() }}</span>
+    <pc-icon name="chevron-down" [size]="4"></pc-icon>
+  </div>
+  <ul
+    tabindex="0"
+    class="dropdown-content menu z-10 mt-1 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+  >
+    @for (option of options; track option.value) {
+    <li>
+      <button type="button" class="gap-2 btwn-xs text-xs" (click)="choose(option)">
+        <pc-icon [name]="option.icon" [size]="4" class="text-primary"></pc-icon>
+        {{ option.label }}
+      </button>
+    </li>
+    }
+  </ul>
+</div>
+
+<!-- Note-capture modal for the chosen interaction type -->
+@if (open() && selected(); as option) {
+<div class="modal modal-open z-50">
+  <div class="modal-box max-w-md rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl">
+    <div class="mb-4 flex items-center justify-between border-b border-base-200 pb-3">
+      <h3 class="flex items-center gap-2 text-lg font-bold text-base-content">
+        <pc-icon [name]="option.icon" [size]="5" class="text-primary"></pc-icon>
+        Log {{ option.label.toLowerCase() }}
+      </h3>
+      <button type="button" class="btn btn-xs btn-circle btn-ghost" [disabled]="saving()" (click)="close()">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="interaction_note" class="text-xs font-semibold text-base-content/90">Note (optional)</label>
+      <textarea
+        #noteInput
+        id="interaction_note"
+        rows="4"
+        class="textarea textarea-bordered w-full text-xs focus:textarea-primary"
+        placeholder="What happened? (e.g. left a voicemail, spoke at the door)"
+        [value]="note()"
+        (input)="note.set(noteInput.value)"
+      ></textarea>
+    </div>
+
+    <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
+      <button type="button" class="btn btn-ghost text-xs font-semibold" [disabled]="saving()" (click)="close()">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[110px] text-xs btn-xs font-semibold"
+        [disabled]="saving()"
+        (click)="save()"
+      >
+        @if (saving()) {
+        <span class="loading loading-spinner loading-xs mr-1.5"></span>
+        Saving… } @else { Log {{ option.label.toLowerCase() }} }
+      </button>
+    </div>
+  </div>
+  <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
+</div>
+}

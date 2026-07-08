@@ -1,6 +1,7 @@
 <pc-detail-layout
   [title]="fullName() || 'Person'"
   [eyebrow]="'Person'"
+  [avatarText]="initials()"
   [statusChip]="statusChip()"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
@@ -36,65 +37,53 @@
   </li>
 
   @if (person()) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'persons'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (person()) {
   <!-- Main Content Grid -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact Card & Bio -->
+    <!-- Left Column: Contact rail -->
     <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Contact Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Company -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
-        @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-2 font-medium">
-          <pc-icon name="briefcase" [size]="4"></pc-icon>
-          {{ person().company_name }}
-        </div>
-        }
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
 
-        <!-- Social Media Buttons (quiet, semantic tokens; muted when a URL isn't set) -->
-        <div class="flex justify-center gap-2 w-full border-y border-base-200 py-3 my-4">
-          @for (link of socialLinks(); track link.name) {
-          <a
-            [attr.href]="link.url || null"
-            [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' not set'"
-            class="btn btn-ghost btn-sm btn-circle tooltip"
-            [class]="link.url ? 'text-base-content/60 hover:text-primary' : 'text-base-content/25 pointer-events-none'"
-          >
-            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
-          </a>
-          }
-        </div>
-
-        <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm">
+        <div class="flex w-full flex-col text-xs">
           <pc-detail-item
             label="Primary Email"
             [value]="person().email"
             icon="envelope"
             [copyable]="true"
           ></pc-detail-item>
+          @if (person().email2) {
           <pc-detail-item
             label="Secondary Email"
             [value]="person().email2"
             icon="envelope"
             [copyable]="true"
           ></pc-detail-item>
+          }
           <pc-detail-item
             label="Mobile Phone"
             [value]="person().mobile"
             icon="phone"
             [copyable]="true"
           ></pc-detail-item>
+          @if (person().home_phone) {
           <pc-detail-item
             label="Home Phone"
             [value]="person().home_phone"
             icon="home"
             [copyable]="true"
           ></pc-detail-item>
+          }
           <pc-detail-item
             label="Address"
-            [value]="addressString()"
+            [value]="addressDisplay()"
             icon="map-pin"
             [link]="!!householdId() && !isPlaceholderHousehold()"
             (linkClicked)="navigateToHousehold()"
@@ -109,17 +98,17 @@
         </div>
 
         <!-- Tags & Issues of Interest -->
-        <div class="w-full flex flex-col gap-3 border-t border-base-200 pt-4 mt-2">
+        <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
           <div>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5">Tags</span>
+            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Tags</span>
             @if (tags().length > 0) {
             <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            <span class="text-xs italic text-base-content/40">No tags assigned</span>
             }
           </div>
           <div>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5"
+            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50"
               >Issues of Interest</span
             >
             @if (issues().length > 0) {
@@ -144,20 +133,48 @@
           [updatedAt]="person().updated_at"
           [updatedBy]="getUserName(person().updatedby_id)"
         ></pc-system-metadata>
-      </pc-profile-card>
+      </pc-card>
 
       <!-- Internal Notes (own card) -->
       @if (person().notes) {
-      <pc-card title="Internal notes">
-        <p class="text-sm text-base-content/80 whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
       </pc-card>
       }
     </div>
 
-    <!-- Right Column: Multi-Tab Activity Feed -->
+    <!-- Right Column: pill tab bar + content card -->
     <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Activities, Interactions & History Tabs -->
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of personTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
+
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
         <pc-tab-panel id="activity" [activeTab]="activeTab()">
           <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
             <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
@@ -473,7 +490,7 @@
             </div>
           </div>
         </pc-tab-panel>
-      </pc-tabs>
+      </div>
     </div>
   </div>
   }

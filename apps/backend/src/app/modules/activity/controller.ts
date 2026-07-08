@@ -1,7 +1,12 @@
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
-import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  InteractionType,
+} from '../../../../../../libs/common/src';
 import { ExportsRepo } from '../exports/repositories/exports.repo';
 
 export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {
@@ -20,6 +25,28 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     options?: { startRow?: number; endRow?: number },
   ) {
     return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
+  }
+
+  /**
+   * Record a human-authored interaction (call / door knock / note / meeting)
+   * against a record. Writes a single `user_activity` row attributed to the
+   * signed-in user; the free-text note + occurrence time ride in `metadata`.
+   */
+  public async logInteraction(
+    auth: IAuthKeyPayload,
+    input: { entity: string; entityId: string; type: InteractionType; note?: string; occurredAt?: Date },
+  ): Promise<void> {
+    await this.getRepo().log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: input.type,
+      entity: input.entity,
+      entity_id: input.entityId,
+      metadata: {
+        note: input.note?.trim() || null,
+        occurred_at: (input.occurredAt ?? new Date()).toISOString(),
+      },
+    });
   }
 
   // The Activity log page promises "the last 90 days" to every user, so retention is a

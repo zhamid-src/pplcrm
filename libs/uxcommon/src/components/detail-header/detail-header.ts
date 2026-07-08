@@ -10,10 +10,16 @@ import { FormActions } from '../form-actions/form-actions';
   selector: 'pc-detail-header',
   imports: [Icon, FormActions],
   template: `
-    <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex min-w-0 items-center gap-3">
-          @if (icon()) {
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
             <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
           }
           <div class="min-w-0">
@@ -41,10 +47,39 @@ import { FormActions } from '../form-actions/form-actions';
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle  btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
           <ng-content select="[pc-actions-prefix]"></ng-content>
           @if (showActions()) {
             <pc-form-actions
-              class="w-full"
+              class="w-full btn-xs"
               [isLoading]="isLoading()"
               [signalForm]="form()"
               [disabled]="disabled()"
@@ -104,6 +139,8 @@ export class DetailHeader {
   public form = input<any>();
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
   public isLoading = input.required<boolean>();
   public showActions = input<boolean>(true);
   public showDelete = input<boolean>(false);
@@ -128,15 +165,16 @@ export class DetailHeader {
   );
 
   constructor() {
-    // The breadcrumb trail + record pager render in the navbar, not the page body.
-    // Publish this page's trail whenever its inputs change; clear it on destroy so
-    // the strip empties when navigating to a page (e.g. a grid) that owns no trail.
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
     effect(() => {
       this.breadcrumbs.set({
         crumbs: this.crumbs(),
-        positionLabel: this.positionLabel(),
-        hasPrev: this.hasPrev(),
-        hasNext: this.hasNext(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
         prevLabel: this.prevLabel(),
         nextLabel: this.nextLabel(),
         onPrev: () => this.prevRecord.emit(),

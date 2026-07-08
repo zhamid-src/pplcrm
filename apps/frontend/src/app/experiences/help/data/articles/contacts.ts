@@ -66,11 +66,15 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
       },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives on household and company pages (a household frames its feed as “Activity at this door”).',
+      },
       { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
       {
         kind: 'list',
         items: [
-          '**Activity** — the audit trail of changes and touches on this record, newest first.',
+          '**Activity** — the running history of this record: interactions you log (calls, door knocks, notes, meetings) alongside the audit trail of edits, newest first.',
           '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
           '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
           '**Volunteer** — their shift history and hours.',

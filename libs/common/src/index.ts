@@ -222,7 +222,13 @@ export {
   DONATION_METHOD_LABELS,
   donationMethodSchema,
   RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
 } from './lib/schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 
 export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
 

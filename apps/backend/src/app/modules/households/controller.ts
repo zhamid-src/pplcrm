@@ -311,6 +311,31 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
   }
 
+  /**
+   * Most recent canvass at this household's door — powers the "Canvassed <date>"
+   * segment of the household header subtitle. Returns null when the household has
+   * no knock on record (the subtitle then honestly drops the segment).
+   */
+  public async getLastCanvass(
+    id: string,
+    auth: IAuthKeyPayload,
+  ): Promise<{ knocked_at: Date; canvasser_name: string | null; outcome: string } | null> {
+    const row = await this.getRepo()
+      .db.selectFrom('turf_knocks')
+      .select(['knocked_at', 'canvasser_name', 'outcome'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', id)
+      .orderBy('knocked_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      knocked_at: new Date(row.knocked_at as unknown as string),
+      canvasser_name: row.canvasser_name ?? null,
+      outcome: row.outcome,
+    };
+  }
+
   public countDistinctWards(auth: IAuthKeyPayload) {
     return this.getRepo().countDistinctWards(auth.tenant_id);
   }

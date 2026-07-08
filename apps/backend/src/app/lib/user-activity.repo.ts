@@ -246,5 +246,11 @@ export type UserActivityType =
   | 'merge'
   | 'close'
   | 'reopen'
-  | 'send';
+  | 'send'
+  // Human-authored interactions logged from a record page ("Log an interaction").
+  // Keep in sync with INTERACTION_TYPES in libs/common activity.schema.ts.
+  | 'call'
+  | 'door_knock'
+  | 'note'
+  | 'meeting';
 import type { QueryParams } from './base.repo';

@@ -1,19 +1,18 @@
 import { Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
 import { PeopleInCompany } from './people-in-company';
 import { CompaniesService } from '../services/companies-service';
 import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
@@ -27,11 +26,9 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     RouterModule,
     PeopleInCompany,
     RecordActivities,
+    LogInteraction,
     DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
+    PcCard,
     DetailItem,
     SystemMetadata,
     Icon,
@@ -43,6 +40,7 @@ export class CompanyView {
   readonly id = input.required<string>();
 
   protected readonly recordNav = injectRecordNavigation('company', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
 
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);
@@ -70,15 +68,7 @@ export class CompanyView {
   });
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
-
+  /** Up-to-two-letter initials for the header avatar (e.g. "HC" for Harborview Clinic). */
   protected readonly initials = computed(() => {
     const name = this.company()?.name || '';
     if (!name) return '?';
@@ -106,10 +96,14 @@ export class CompanyView {
     return !!enrichment.google_enriched;
   });
 
-  /** Header subtitle — people count (§7). */
+  /** Header subtitle — industry · people count (§7). Parts drop out honestly when absent. */
   protected readonly subtitle = computed(() => {
+    const parts: string[] = [];
+    const industry = this.company()?.industry;
+    if (industry) parts.push(industry);
     const n = this.employeeCount();
-    return `${n} ${n === 1 ? 'person' : 'people'}`;
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    return parts.join(' · ');
   });
 
   /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
@@ -143,6 +137,11 @@ export class CompanyView {
       end();
       this.initialized.set(true);
     }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
   }
 
   protected editCompany() {

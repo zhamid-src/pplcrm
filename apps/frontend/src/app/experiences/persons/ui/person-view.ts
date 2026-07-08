@@ -1,11 +1,12 @@
 import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
 import { PeopleInHousehold } from './people-in-household';
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -18,23 +19,15 @@ import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-}
 
 @Component({
   selector: 'pc-person-view',
@@ -45,12 +38,11 @@ interface SocialLinkDef {
     PeopleInHousehold,
     Icon,
     RecordActivities,
+    LogInteraction,
     DetailLayout,
     PcCard,
-    Tabs,
     TabPanel,
     StatusBadge,
-    ProfileCard,
     DetailItem,
     SystemMetadata,
     Tags,
@@ -62,6 +54,7 @@ export class PersonView {
   readonly id = input.required<string>();
 
   protected readonly recordNav = injectRecordNavigation('person', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -140,6 +133,14 @@ export class PersonView {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
 
+  /** Address plus ward for the contact row (e.g. "312 Alder Street … · Ward 3"). */
+  protected readonly addressDisplay = computed(() => {
+    const base = this.addressString();
+    if (base === 'No Address Assigned') return base;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
+  });
+
   // Contact initials and full name computation
   protected readonly initials = computed(() => {
     const first = this.person()?.first_name || '';
@@ -181,17 +182,6 @@ export class PersonView {
       default:
         return null;
     }
-  });
-
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
-    return [
-      { name: 'LinkedIn', url: p.linkedin, icon: 'linkedin' },
-      { name: 'X', url: p.twitter, icon: 'x' },
-      { name: 'Facebook', url: p.facebook, icon: 'facebook' },
-      { name: 'Instagram', url: p.instagram, icon: 'instagram' },
-    ];
   });
 
   // Active tab state
@@ -382,6 +372,11 @@ export class PersonView {
       end();
       this.initialized.set(true);
     }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
   }
 
   protected openCollectDonation() {
