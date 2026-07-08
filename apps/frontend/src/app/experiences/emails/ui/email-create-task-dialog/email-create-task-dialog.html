@@ -10,6 +10,12 @@
       </button>
     </div>
 
+    <!-- Reassure the user the thread isn't lost when they leave the inbox for a task (§3) -->
+    <p class="-mt-3 mb-5 flex items-center gap-1.5 text-xs text-base-content/60">
+      <pc-icon name="paper-clip" [size]="4" class="text-base-content/40"></pc-icon>
+      The email thread stays linked to the task.
+    </p>
+
     <form class="space-y-4" (submit)="$event.preventDefault(); submit()" novalidate>
       <!-- Task Name -->
       <div class="form-control w-full">

@@ -10,7 +10,8 @@ export type SettingsFieldType =
   | 'toggle'
   | 'password'
   | 'url'
-  | 'date';
+  | 'date'
+  | 'day-toggles';
 
 export interface SettingsOptionConfig {
   label: string;
@@ -281,8 +282,8 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       },
       {
         key: 'sla.working_days',
-        label: 'Working days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
-        type: 'text',
+        label: 'Working days',
+        type: 'day-toggles',
         defaultValue: '1,2,3,4,5',
         helper: 'Days of the week counted towards the SLA response and resolution calculations.',
       },

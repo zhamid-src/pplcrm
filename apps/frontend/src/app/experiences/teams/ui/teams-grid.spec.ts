@@ -5,6 +5,7 @@ import { signal } from '@angular/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TeamsGridComponent } from './teams-grid';
 import { TeamsService } from '../services/teams-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 class MockTeamsService {
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
@@ -12,73 +13,82 @@ class MockTeamsService {
   refreshCount = signal(0);
 }
 
+class MockAlertService {
+  showError = vi.fn();
+  showSuccess = vi.fn();
+}
+
 describe('TeamsGridComponent', () => {
   let component: TeamsGridComponent;
   let fixture: ComponentFixture<TeamsGridComponent>;
+  let teamsSvc: MockTeamsService;
 
   beforeEach(async () => {
+    teamsSvc = new MockTeamsService();
     await TestBed.configureTestingModule({
       imports: [TeamsGridComponent],
-      providers: [provideRouter([]), { provide: TeamsService, useValue: new MockTeamsService() }],
+      providers: [
+        provideRouter([]),
+        { provide: TeamsService, useValue: teamsSvc },
+        { provide: AlertService, useValue: new MockAlertService() },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TeamsGridComponent);
     component = fixture.componentInstance;
   });
 
-  function getFormatter(field: string) {
-    const col = component['col'].find((c: { field: string }) => c.field === field);
-    const formatter = col?.valueFormatter;
-    if (typeof formatter !== 'function') {
-      throw new Error(`Column "${field}" has no valueFormatter function`);
-    }
-    return formatter;
-  }
-
-  function getValueGetter(field: string) {
-    const col = component['col'].find((c: { field: string }) => c.field === field);
-    const valueGetter = col?.valueGetter;
-    if (typeof valueGetter !== 'function') {
-      throw new Error(`Column "${field}" has no valueGetter function`);
-    }
-    return valueGetter;
-  }
-
-  it('should create and define the team columns', () => {
+  it('should create', () => {
     expect(component).toBeTruthy();
-    expect(component['col'].map((c: { field: string }) => c.field)).toEqual([
-      'name',
-      'description',
-      'team_captain_name',
-      'volunteer_count',
-      'updated_at',
-    ]);
   });
 
-  it('should read the team captain name from row data via valueGetter', () => {
-    const getter = getValueGetter('team_captain_name');
-    expect(getter({ data: { team_captain_name: 'Jane Smith' } } as never)).toBe('Jane Smith');
+  it('should map getAll rows into typed team cards on init', async () => {
+    teamsSvc.getAll.mockResolvedValueOnce({
+      rows: [
+        { id: 7, name: 'Door knockers', description: 'Ward 3', team_captain_name: 'Jane Smith', volunteer_count: 12 },
+      ],
+      count: 1,
+    });
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const cards = component['teams']();
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      id: '7',
+      name: 'Door knockers',
+      description: 'Ward 3',
+      leadName: 'Jane Smith',
+      volunteerCount: 12,
+    });
   });
 
-  it('should default the team captain name to an empty string when missing', () => {
-    const getter = getValueGetter('team_captain_name');
-    expect(getter({ data: {} } as never)).toBe('');
-    expect(getter({ data: undefined } as never)).toBe('');
+  it('should surface a null lead when the team has no captain', async () => {
+    teamsSvc.getAll.mockResolvedValueOnce({
+      rows: [{ id: 1, name: 'Phone bank', description: null, team_captain_name: '', volunteer_count: 0 }],
+      count: 1,
+    });
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['teams']()[0]?.leadName).toBeNull();
   });
 
-  it('should format the updated_at date using the value when present', () => {
-    const format = getFormatter('updated_at');
-    expect(format({ value: '2026-05-01T00:00:00Z', data: {} } as never)).toContain('2026');
+  it('should compute initials from a lead name', () => {
+    expect(component['initialsOf']('Jane Smith')).toBe('JS');
+    expect(component['initialsOf']('Cher')).toBe('C');
+    expect(component['initialsOf']('')).toBe('?');
   });
 
-  it('should fall back to row data for updated_at when no value is provided', () => {
-    const format = getFormatter('updated_at');
-    expect(format({ value: undefined, data: { updated_at: '2026-05-01T00:00:00Z' } } as never)).toContain('2026');
-  });
+  it('should mark the feed loaded even when the request fails', async () => {
+    teamsSvc.getAll.mockRejectedValueOnce(new Error('boom'));
 
-  it('should return an empty string for missing or invalid updated_at values', () => {
-    const format = getFormatter('updated_at');
-    expect(format({ value: null, data: {} } as never)).toBe('');
-    expect(format({ value: 'garbage', data: {} } as never)).toBe('');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component['loaded']()).toBe(true);
+    expect(component['teams']()).toEqual([]);
   });
 });

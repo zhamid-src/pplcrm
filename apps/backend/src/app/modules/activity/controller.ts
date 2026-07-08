@@ -22,14 +22,16 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
   }
 
+  // The Activity log page promises "the last 90 days" to every user, so retention is a
+  // flat 90 days for all tenants (was 7 free / 28 paid) to keep that copy honest.
+  public static readonly ACTIVITY_RETENTION_DAYS = 90;
+
   public async deleteOldActivities(): Promise<void> {
-    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'subscription_plan']).execute();
+    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id']).execute();
+
+    const thresholdDate = new Date(Date.now() - ActivityController.ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
     for (const tenant of tenants) {
-      const isHigherPlan = tenant.subscription_plan && tenant.subscription_plan !== 'free';
-      const days = isHigherPlan ? 28 : 7;
-      const thresholdDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
       await this.getRepo()
         .db.deleteFrom('user_activity')
         .where('tenant_id', '=', tenant.id)
