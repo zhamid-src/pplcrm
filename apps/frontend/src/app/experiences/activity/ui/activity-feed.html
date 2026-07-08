@@ -27,7 +27,7 @@
         } @else {
         <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
         }
-        <span>Export Feed</span>
+        <span>Export log</span>
       </button>
       <button
         class="btn btn-outline btn-sm gap-2"
@@ -47,17 +47,17 @@
   <!-- Filters -->
   <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
     <div class="card-body p-4 flex flex-col md:flex-row gap-4 items-end">
-      <!-- User filter -->
+      <!-- Actor filter -->
       <div class="w-full">
         <label class="label py-1"
-          ><span class="label-text font-semibold text-xs text-base-content/70">User</span></label
+          ><span class="label-text font-semibold text-xs text-base-content/70">Actor</span></label
         >
         <select
           class="select select-bordered select-sm w-full font-medium"
           [value]="selectedUser()"
           (change)="onUserChange($event)"
         >
-          <option value="">All Users</option>
+          <option value="">Everyone</option>
           @for (u of users(); track u.id) {
           <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
           }
@@ -171,61 +171,103 @@
 
   <!-- Feed Timeline -->
   @if (activities().length > 0) {
-  <div class="space-y-4">
-    <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
-      @for (act of activities(); track act.id) {
-      <div class="relative group">
-        <!-- Icon Indicator -->
-        <div
-          [class]="
-                    'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' +
-                    getActivityClass(act.activity)
-                  "
-        >
-          <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
-        </div>
+  <div class="space-y-6">
+    <!-- Retention summary (§2 disclosure + §19): what's shown and how far back we keep it -->
+    <p class="text-xs text-base-content/50">
+      Showing {{ totalShown() }} {{ totalShown() === 1 ? 'event' : 'events' }} · pplcrm keeps the last 90 days of
+      activity.
+    </p>
 
-        <!-- Activity Card -->
-        <div
-          class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200"
-        >
-          <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
-            <!-- User Avatar -->
-            <div class="avatar placeholder hidden sm:flex">
-              <div
-                class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs flex items-center justify-center font-semibold"
-              >
-                {{ getUserInitials(act) }}
-              </div>
-            </div>
+    @for (group of groupedActivities(); track group.key) {
+    <section class="space-y-3">
+      <!-- Day group header -->
+      <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/45">{{ group.label }}</h2>
 
-            <!-- Event Details -->
-            <div class="flex-1 min-w-0">
-              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                <p class="text-sm font-medium text-base-content">
-                  <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                  {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
-                  <a
-                    [routerLink]="link.path"
-                    [queryParams]="link.params"
-                    class="text-primary hover:underline font-semibold"
-                  >
-                    {{ getEntityLabelText(act) }}
-                  </a>
-                  } @else {
-                  <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
-                  } {{ getActivitySuffix(act) }}
-                </p>
-                <span class="text-[11px] text-base-content/40 whitespace-nowrap"
-                  >{{ act.created_at | date: 'short' }}</span
+      <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
+        @for (act of group.items; track act.id) {
+        <div class="relative group">
+          <!-- Icon Indicator -->
+          <div
+            [class]="
+                      'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' +
+                      getActivityClass(act.activity)
+                    "
+          >
+            <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
+          </div>
+
+          <!-- Activity Card -->
+          <div
+            class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200"
+          >
+            <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
+              <!-- User Avatar -->
+              <div class="avatar placeholder hidden sm:flex">
+                <div
+                  class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs flex items-center justify-center font-semibold"
                 >
+                  {{ getUserInitials(act) }}
+                </div>
+              </div>
+
+              <!-- Event Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <!-- Kind chip + sentence -->
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span
+                      [class]="
+                        'badge badge-sm badge-outline font-semibold shrink-0 ' + getActivityClass(act.activity)
+                      "
+                      >{{ getKindLabel(act.activity) }}</span
+                    >
+                    @if (getCustomMessage(act); as msg) {
+                    <!-- Honest attribution: backend-authored sentence surfaced verbatim -->
+                    <p class="text-sm font-medium text-base-content">
+                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
+                      @if (getEntityLink(act); as link) { —
+                      <a
+                        [routerLink]="link.path"
+                        [queryParams]="link.params"
+                        class="text-primary hover:underline font-semibold"
+                        >{{ msg }}</a
+                      >
+                      } @else { — <span class="text-base-content/85">{{ msg }}</span> }
+                    </p>
+                    } @else {
+                    <p class="text-sm font-medium text-base-content">
+                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
+                      {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
+                      <a
+                        [routerLink]="link.path"
+                        [queryParams]="link.params"
+                        class="text-primary hover:underline font-semibold"
+                      >
+                        {{ getEntityLabelText(act) }}
+                      </a>
+                      } @else {
+                      <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
+                      } {{ getActivitySuffix(act) }}
+                    </p>
+                    } @if (getViaLabel(act); as via) {
+                    <span class="badge badge-sm badge-ghost gap-1 text-base-content/60">
+                      <pc-icon name="globe-americas" [size]="3"></pc-icon>
+                      {{ via }}
+                    </span>
+                    }
+                  </div>
+                  <span class="text-[11px] text-base-content/40 whitespace-nowrap"
+                    >{{ act.created_at | date: 'short' }}</span
+                  >
+                </div>
               </div>
             </div>
           </div>
         </div>
+        }
       </div>
-      }
-    </div>
+    </section>
+    }
 
     <!-- Load More Button -->
     @if (hasMore()) {

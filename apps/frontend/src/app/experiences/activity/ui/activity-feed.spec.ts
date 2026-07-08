@@ -151,7 +151,7 @@ describe('ActivityFeed', () => {
     await component['exportFeed']();
 
     expect(mockActivitySvc.exportCsv).toHaveBeenCalled();
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Activity feed exported successfully');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Exported 1 event to activity-log.csv');
     expect(component['isLoadingExport']()).toBe(false);
   });
 
@@ -164,7 +164,7 @@ describe('ActivityFeed', () => {
     await component['exportFeed']();
 
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(
-      'Activity feed export has been queued. You will receive an email once it is complete.',
+      'Export queued — we’ll email you activity-log.csv once it’s ready.',
     );
   });
 
