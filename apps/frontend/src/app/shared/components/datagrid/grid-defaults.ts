@@ -44,3 +44,9 @@ export interface ColumnDef {
 type CellRendererResult = string | HTMLElement;
 
 export const SELECTION_COLUMN: ColumnDef = {};
+
+/**
+ * Muted text color for a grid's secondary columns, so the bold door column reads as the
+ * primary way into the record and everything else recedes. Apply as a column `cellClass`.
+ */
+export const SECONDARY_CELL_CLASS = 'text-base-content/70';

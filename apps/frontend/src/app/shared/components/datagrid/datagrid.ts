@@ -1873,6 +1873,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return !!col.cellRenderer;
   }
 
+  /** Resolves a column's optional `cellClass` (static string or per-row function) for the cell `<td>`. */
+  protected cellClassFor(col: ColDef, row: GridRow): string {
+    const cc = col.cellClass;
+    if (!cc) return '';
+    return (typeof cc === 'function' ? cc({ data: row, colDef: col }) : cc) ?? '';
+  }
+
   protected hasValueFormatter(col: ColDef): boolean {
     return typeof col.valueFormatter === 'function';
   }

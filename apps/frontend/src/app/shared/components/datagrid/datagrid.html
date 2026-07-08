@@ -641,6 +641,7 @@
             [style.zIndex]="pinState(cell) !== false ? 10 : null"
             [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
             [class.overflow-visible]="isTagColumn(col) && isEditing"
+            [class]="cellClassFor(col, r.original)"
             class="min-w-0 px-2 border-r border-base-300 relative"
             [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
@@ -770,7 +771,7 @@
             <div class="flex flex-col gap-0.5">
               @if (rawValue) {
               <span
-                class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+                class="cursor-pointer font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
                 >{{ rawValue }}</span
               >
               } @else {
