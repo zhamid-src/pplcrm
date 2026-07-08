@@ -1,0 +1,93 @@
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <!-- Header -->
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">Volunteers</p>
+      <h1 class="text-xl font-bold tracking-tight" i18n>Teams</h1>
+      <p class="text-sm text-base-content/60" i18n>
+        Group volunteers under a lead who owns shift questions and escalations.
+      </p>
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2 shrink-0">
+      <pc-icon name="add-group" [size]="4"></pc-icon>
+      <span i18n>Add team</span>
+    </a>
+  </header>
+
+  <!-- Loading skeleton (first load only, gated to avoid sub-300ms flicker) -->
+  @if (!loaded()) {
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (i of [1, 2, 3]; track i) {
+    <div class="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="skeleton mb-3 h-5 w-1/2"></div>
+      <div class="skeleton mb-2 h-3 w-full"></div>
+      <div class="skeleton h-3 w-2/3"></div>
+    </div>
+    }
+  </div>
+  } @else if (teams().length === 0) {
+  <!-- Empty state: icon + cause + one action (§3) -->
+  <div
+    class="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center"
+  >
+    <pc-icon name="add-group" class="text-base-content/30" [size]="10"></pc-icon>
+    <h2 class="text-base font-semibold text-base-content/80" i18n>No teams yet</h2>
+    <p class="text-sm text-base-content/55" i18n>
+      Teams let you hand a group of volunteers to a lead who fields their questions.
+    </p>
+    <a routerLink="add" class="btn btn-primary btn-sm mt-1 gap-2">
+      <pc-icon name="add-group" [size]="4"></pc-icon>
+      <span i18n>Add team</span>
+    </a>
+  </div>
+  } @else {
+  <!-- Team cards (Fig 17) -->
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (team of teams(); track team.id) {
+    <a
+      [routerLink]="[team.id]"
+      class="group flex flex-col gap-4 rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+    >
+      <!-- Title + volunteer count -->
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="truncate text-[15px] font-semibold text-base-content group-hover:text-primary">{{ team.name }}</h2>
+          @if (team.description) {
+          <p class="mt-0.5 line-clamp-2 text-xs text-base-content/55">{{ team.description }}</p>
+          }
+        </div>
+        <span class="badge badge-ghost shrink-0 gap-1 font-medium">
+          <pc-icon name="user-group" [size]="3"></pc-icon>
+          <span class="tabular-nums">{{ team.volunteerCount }}</span>
+        </span>
+      </div>
+
+      <!-- Lead line / No-lead warning -->
+      @if (team.leadName; as lead) {
+      <div class="flex items-center gap-2 border-t border-base-200 pt-3">
+        <span
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary"
+        >
+          {{ initialsOf(lead) }}
+        </span>
+        <div class="min-w-0">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-base-content/45" i18n>Lead</p>
+          <p class="truncate text-sm font-medium text-base-content">{{ lead }}</p>
+        </div>
+      </div>
+      } @else {
+      <div class="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+        <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+        <div class="space-y-0.5">
+          <p class="text-xs font-semibold text-warning" i18n>No lead</p>
+          <p class="text-[11px] leading-snug text-base-content/70" i18n>
+            Shift questions and escalations have nowhere to go — pick a lead.
+          </p>
+        </div>
+      </div>
+      }
+    </a>
+    }
+  </div>
+  }
+</div>

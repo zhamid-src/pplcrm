@@ -215,12 +215,16 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
       },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead** — the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go — pick a lead”); open the team and set a lead to clear it.',
+      },
       { kind: 'h2', id: 'create', text: 'Set up a team' },
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Teams](/teams)', detail: 'The grid shows every team at a glance.' },
-          { title: 'Click the + button', detail: 'Name the team and describe its purpose.' },
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
           { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
           {
             title: 'Give it work',
