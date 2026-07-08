@@ -22,9 +22,24 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
 export class DataGridToolbarComponent {
   public readonly grid = inject(DataGrid);
 
+  private readonly countFormatter = new Intl.NumberFormat();
+
   readonly listOptions = computed<SingleSelectOption[]>(() =>
     this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
+
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
 
   /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
    *  grid config carries no specific entity noun. */
