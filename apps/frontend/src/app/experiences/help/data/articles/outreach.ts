@@ -25,6 +25,12 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           },
         ],
       },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail — `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
       { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
         kind: 'p',
