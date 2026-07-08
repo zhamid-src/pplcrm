@@ -33,6 +33,8 @@ export interface TurfListItem {
   list_id: string | null;
   list_name: string | null;
   ward: string | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
   door_count: number;
   attempted: number;
   conversations: number;
@@ -109,6 +111,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
         list_id: r.list_id,
         list_name: r.list_name,
         ward: r.ward,
+        centroid_lat: r.centroid_lat,
+        centroid_lng: r.centroid_lng,
         door_count: r.door_count,
         attempted,
         conversations: p?.conversations ?? 0,

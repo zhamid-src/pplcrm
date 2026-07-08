@@ -25,6 +25,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/companies',
   '/duplicates',
   '/teams',
+  '/canvassing',
   '/donations',
   '/forms',
   '/events/shifts',

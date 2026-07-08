@@ -55,6 +55,11 @@ export const appRoutes = [
       import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
   },
   {
+    // Canvass Companion — tokenised, account-less volunteer app (§13.4).
+    path: 'companion',
+    loadComponent: () => import('./experiences/canvassing/ui/companion-page').then((m) => m.CompanionPage),
+  },
+  {
     path: 'verify-email',
     loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },
