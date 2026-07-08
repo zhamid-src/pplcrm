@@ -691,7 +691,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly countSentence = computed<string | null>(() => {
     const count = this.hasInitiatedLoad() ? this.totalCountAll() : null;
     const sentence = this.totalSentence();
-    if (count !== null && this.anyFilterActive()) {
+    // Show "N match your filters" whenever the chip row has chips — the same
+    // source the user sees. (Tying this to the visible chips keeps the sentence
+    // in lock-step with them, rather than to a separately-derived filter flag.)
+    const isFiltered = this.filterChips().length > 0;
+    if (count !== null && isFiltered) {
       const matched =
         count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
       return sentence ? `${matched} · ${sentence}` : matched;
@@ -1497,6 +1501,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       totalCount: this.totalCountAll(),
       getRowsForExport: () => this.rows().map((r) => ({ ...r })),
       queueFullExport: () => this.queueFullExport(),
+      logInstantExport: (rowCount) => this.logInstantExport(rowCount),
     });
   }
   public doConfirmExport() {
@@ -2664,6 +2669,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       columns: this.visibleColumnFields(),
       fileName: this.config.messages.exportFileName,
     });
+  }
+
+  /** Records a direct browser-download export in Exports history so it's consistently listed
+   * alongside queued exports — see pplcrm-datagrid. Fire-and-forget: never blocks or fails the
+   * download the user already has. */
+  private logInstantExport(rowCount: number): void {
+    void this.gridSvc
+      .logInstantExport({
+        entity: (this.config.messages.exportEntity ||
+          this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
+        fileName: this.config.messages.exportFileName,
+        rowCount,
+      })
+      .catch(() => {
+        // Best-effort logging only — the user already has their file.
+      });
   }
 
   private visibleColumnFields(): string[] {
