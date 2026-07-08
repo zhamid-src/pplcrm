@@ -305,6 +305,11 @@ export const dashboardRoutes: Routes = [
   { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
 
   {
+    path: 'canvassing',
+    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+  },
+
+  {
     path: 'teams',
     children: [
       {

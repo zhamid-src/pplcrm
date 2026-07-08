@@ -12,6 +12,8 @@ export interface TurfRow {
   list_name: string | null;
   ward: string | null;
   target_doors: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
   updated_at: Date | null;
   door_count: number;
   team_id: string | null;
@@ -45,6 +47,8 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
         'lists.name as list_name',
         'turfs.ward as ward',
         'turfs.target_doors as target_doors',
+        'turfs.centroid_lat as centroid_lat',
+        'turfs.centroid_lng as centroid_lng',
         'turfs.updated_at as updated_at',
         'ta.team_id as team_id',
         'teams.name as team_name',
@@ -62,6 +66,8 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
       list_name: r.list_name ? String(r.list_name) : null,
       ward: r.ward ? String(r.ward) : null,
       target_doors: r.target_doors == null ? null : Number(r.target_doors),
+      centroid_lat: r.centroid_lat == null ? null : Number(r.centroid_lat),
+      centroid_lng: r.centroid_lng == null ? null : Number(r.centroid_lng),
       updated_at: r.updated_at ? new Date(String(r.updated_at)) : null,
       door_count: counts.get(String(r.id)) ?? 0,
       team_id: r.team_id == null ? null : String(r.team_id),
