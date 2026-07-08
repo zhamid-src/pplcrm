@@ -449,7 +449,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return val !== undefined && val !== null && val !== '';
   }
-  protected readonly hasInitiatedLoad = signal(false);
+  // Public so the fetch controller can flip it the moment a real fetch runs.
+  // (The isLoading() effect below is a fallback; the loading gate suppresses
+  // sub-300ms spinners, so on a fast fetch isLoading() may never flip true.)
+  public readonly hasInitiatedLoad = signal(false);
   public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
@@ -691,11 +694,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly countSentence = computed<string | null>(() => {
     const count = this.hasInitiatedLoad() ? this.totalCountAll() : null;
     const sentence = this.totalSentence();
-    // Show "N match your filters" whenever the chip row has chips — the same
-    // source the user sees. (Tying this to the visible chips keeps the sentence
-    // in lock-step with them, rather than to a separately-derived filter flag.)
-    const isFiltered = this.filterChips().length > 0;
-    if (count !== null && isFiltered) {
+    if (count !== null && this.anyFilterActive()) {
       const matched =
         count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
       return sentence ? `${matched} · ${sentence}` : matched;
