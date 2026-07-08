@@ -245,6 +245,16 @@ describe('HouseholdsController', () => {
     expect(Number(row['persons_count'])).toBe(2);
   });
 
+  it('should count unhoused people (placeholder household members) via getUnhoused', async () => {
+    const before = await controller.getUnhoused(auth);
+    await createPerson(db, tenantId, campaignId, placeholderHouseholdId, userId);
+    await createPerson(db, tenantId, campaignId, placeholderHouseholdId, userId);
+
+    const after = await controller.getUnhoused(auth);
+    expect(after.count).toBe(before.count + 2);
+    expect(String(after.household_id)).toBe(String(placeholderHouseholdId));
+  });
+
   it('should delete a household and reassign its members to the placeholder household', async () => {
     const created = (await controller.addHousehold({ street1: '5 Willow Way' }, auth)) as { id: string };
     const personId = await createPerson(db, tenantId, campaignId, created.id, userId);

@@ -1293,6 +1293,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.getCellValue(row, col);
   }
 
+  /** Muted second line under a door cell (e.g. "3 people" under a household address). */
+  protected callDoorSubtitle(row: GridRow, col: ColDef): string | null {
+    const fn = col.doorSubtitle;
+    if (typeof fn !== 'function') return null;
+    return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
+  }
+
   // canNext/canPrev are computed
   protected cancelEdit() {
     this.editingCell.set(null);
@@ -1835,7 +1842,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
-  protected handleCellClick(row: GridRow, col: ColDef) {
+  protected handleCellClick(row: GridRow, col: ColDef, event?: Event) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     // The door cell (e.g. Name) opens the record, routing through view() so the
     // filtered record-navigation context (prev/next, "N of M") is captured.
@@ -1845,7 +1852,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       return;
     }
     if (typeof col.onCellClicked === 'function') {
-      col.onCellClicked({ data: row, colDef: col });
+      col.onCellClicked({ data: row, colDef: col, event });
     }
   }
 

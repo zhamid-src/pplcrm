@@ -6,6 +6,8 @@ export interface CellParams {
   value?: unknown;
   newValue?: unknown;
   colDef?: ColumnDef;
+  /** Native DOM event, present on click callbacks so a renderer's inner links can be resolved. */
+  event?: Event;
 }
 
 // Lightweight column definition used by DataGrid
@@ -18,6 +20,8 @@ export interface ColumnDef {
   comparator?: (a: unknown, b: unknown) => number;
   /** Clicking any cell in this column opens the record (the "name is the door" cell). */
   doorColumn?: boolean;
+  /** Optional muted second line under a door cell (e.g. "3 people" under a household address). */
+  doorSubtitle?: (p: CellParams) => string | null;
   editable?: boolean;
   equals?: (a: unknown, b: unknown) => boolean;
   field?: string;
