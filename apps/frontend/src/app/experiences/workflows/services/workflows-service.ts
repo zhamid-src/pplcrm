@@ -8,6 +8,7 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import type { SequenceStepPayload } from '../models/automations.model';
 
 @Service()
 export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWorkflowType> {
@@ -53,11 +54,26 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
     return this.normalize(record);
   }
 
+  // Spec §16 list (/automations) — enriched rows (recipe data + RUNS 30D + LAST RUN) + summary.
+  public async list() {
+    return this.api.workflows.list.query(undefined, { signal: this.ac.signal });
+  }
+
+  // Spec §16 STATUS toggle — pause/resume an automation.
+  public async setStatus(id: string, status: 'active' | 'paused') {
+    return this.api.workflows.setStatus.mutate({ id, status });
+  }
+
+  // Spec §16 RECENT RUNS — the last executed steps for one automation.
+  public async getRuns(workflowId: string, limit?: number) {
+    return this.api.workflows.getRuns.query({ workflowId, limit });
+  }
+
   public async getSteps(id: string) {
     return this.api.workflows.getSteps.query(id);
   }
 
-  public async saveSteps(workflowId: string, steps: any[]) {
+  public async saveSteps(workflowId: string, steps: SequenceStepPayload[]) {
     return this.api.workflows.saveSteps.mutate({ workflowId, steps });
   }
 

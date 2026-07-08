@@ -141,6 +141,8 @@ async function seedStep(
       tenant_id: args.tenantId,
       workflow_id: args.workflowId,
       step_number: args.stepNumber ?? 1,
+      kind: 'send_email',
+      config: null,
       delay_days: args.delayDays ?? 0,
       delay_unit: 'days',
       subject: 'Follow up',
@@ -302,8 +304,9 @@ describe('WorkflowsController Integration', () => {
       tenantId,
       workflowId,
       [
-        { delay_days: 0, delay_unit: 'hours', subject: 'Step A' },
-        { delay_days: 3, delay_unit: 'days', subject: 'Step B' },
+        // Spec §16: only a `wait` step carries a delay; action steps (send_email) do not.
+        { kind: 'wait', delay_days: 2, delay_unit: 'hours' },
+        { kind: 'send_email', delay_days: 0, delay_unit: 'days', subject: 'Step B' },
       ],
       userId,
     );
@@ -319,8 +322,10 @@ describe('WorkflowsController Integration', () => {
       .execute();
 
     expect(steps).toHaveLength(2);
-    expect(steps[0].subject).toBe('Step A');
+    expect(steps[0].kind).toBe('wait');
+    expect(steps[0].delay_days).toBe(2);
     expect(steps[0].delay_unit).toBe('hours');
+    expect(steps[1].kind).toBe('send_email');
     expect(steps[1].subject).toBe('Step B');
     expect(steps[1].step_number).toBe(2);
 
