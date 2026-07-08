@@ -97,8 +97,9 @@ export class PublicRoute implements OnInit {
     return { type: 'neutral', label: 'Not started' };
   }
 
-  protected selectStop(marker: PcMapMarker<PublicStop>): void {
-    this.selectedStopId.set(marker.payload?.id ?? null);
+  protected selectStop(marker: PcMapMarker): void {
+    // pc-map's markerClicked emits PcMapMarker<unknown>; the marker id carries our stop id.
+    this.selectedStopId.set(marker.id ?? null);
   }
 
   protected navigate(stop: PublicStop): void {
