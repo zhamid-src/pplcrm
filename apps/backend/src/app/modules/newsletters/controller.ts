@@ -3,10 +3,12 @@ import type { Models, OperationDataType } from '../../../../../../libs/common/sr
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
 const DEFAULT_FROM_NAME = 'PeopleCRM Team';
 const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
@@ -373,14 +375,21 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
     const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
 
+    // Apply the same send-time render as the real send so the test reflects what recipients receive:
+    // block-JSON stripped, relative images made absolute, merge tokens resolved (to their fallbacks
+    // here, since a test address carries no person record).
+    const html = renderNewsletterHtml(input.html, { baseUrl: env.appUrl, previewText: null });
+    const mergeTokens = extractMergeTokens(input.subject, html, input.text);
+    const substitutions = mergeTokens.length ? resolveMergeSubstitutions(mergeTokens, { email: input.to }) : undefined;
+
     const mailSvc = new NewsletterEmailService();
     const delivered = await mailSvc.sendNewsletter({
       fromName,
       fromEmail,
       replyTo,
-      recipients: [input.to],
+      recipients: [{ email: input.to, substitutions }],
       subject: input.subject,
-      html: input.html,
+      html,
       text: input.text,
       sendgridApiKey,
       subuserUsername,

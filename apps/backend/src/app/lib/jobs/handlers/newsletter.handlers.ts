@@ -1,8 +1,11 @@
 import type { ExpressionBuilder, Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../../env';
 import { logger } from '../../../logger';
+import type { NewsletterRecipient } from '../../mail/newsletter-mail.service';
 import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
 import { UserActivityRepo } from '../../user-activity.repo';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
@@ -101,22 +104,49 @@ export async function handleSendNewsletter(
     settingsMap['communications.footer_disclaimer'],
   );
 
+  // Render the stored editor HTML into email-ready HTML once (block-JSON stripped, relative image
+  // URLs made absolute against APP_URL, preview text injected as a hidden preheader). Merge tokens
+  // are left in the content and resolved per-recipient via SendGrid substitutions below.
+  const renderedHtml = renderNewsletterHtml(newsletter.html_content || '', {
+    baseUrl: env.appUrl,
+    previewText: newsletter.preview_text,
+  });
+  const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
+  const finalHtml = renderedHtml + footer.html;
+  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
+
   while (offset < totalRecipients) {
-    // Query a chunk of recipients dynamically using LIMIT and OFFSET
-    // We order by persons.email asc to ensure consistent pagination ordering
+    // Query a chunk of recipients dynamically using LIMIT and OFFSET.
+    // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
+    // while still carrying the person fields the merge tokens need.
     const chunkRows = await baseQuery
-      .select(['persons.email'])
-      .distinct()
+      .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
+      .distinctOn('persons.email')
       .orderBy('persons.email', 'asc')
       .limit(NEWSLETTER_BATCH_SIZE)
       .offset(offset)
       .execute();
 
-    const chunk: string[] = Array.from(
-      new Set(chunkRows.map((r: { email: string | null }) => r.email?.trim()).filter(Boolean)),
-    );
+    const seen = new Set<string>();
+    const recipients: NewsletterRecipient[] = [];
+    for (const r of chunkRows) {
+      const email = r.email?.trim();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      recipients.push({
+        email,
+        substitutions: mergeTokens.length
+          ? resolveMergeSubstitutions(mergeTokens, {
+              email,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              phone: r.mobile || r.home_phone,
+            })
+          : undefined,
+      });
+    }
 
-    if (chunk.length === 0) {
+    if (recipients.length === 0) {
       break;
     }
 
@@ -124,10 +154,10 @@ export async function handleSendNewsletter(
       fromName,
       fromEmail,
       replyTo,
-      recipients: chunk,
+      recipients,
       subject: newsletter.subject || 'Newsletter',
-      html: (newsletter.html_content || '') + footer.html,
-      text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
+      html: finalHtml,
+      text: finalText,
       sendgridApiKey,
       subuserUsername,
       newsletterId,
