@@ -20,7 +20,7 @@
     <!-- Virtual Folders (Filters) -->
     @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
     <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
       (click)="selectFolder(folder)"
       [class.bg-primary/10]="isSelected(folder)"
       [class.text-primary]="isSelected(folder)"
@@ -51,7 +51,7 @@
     <!-- Real Folders -->
     @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
     <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
       (click)="selectFolder(folder)"
       [class.bg-primary/10]="isSelected(folder)"
       [class.text-primary]="isSelected(folder)"
