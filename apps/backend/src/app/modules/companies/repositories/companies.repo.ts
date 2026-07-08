@@ -27,6 +27,35 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       .executeTakeFirst();
   }
 
+  /**
+   * Grid feed for the Companies list. Adds a per-company employee count (`persons_count`)
+   * on top of the base column projection so the grid's "People" column can render
+   * "N people". `persons.company_id` is the employer link (§7). The subquery is exposed
+   * as a real SELECT alias so the grid can also sort by it. Count/pagination behaviour is
+   * otherwise identical to the base implementation.
+   */
+  public override async getAllWithCounts(
+    input: { tenant_id: TypeTenantId<'companies'>; options?: any },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+    const tenant_id = input.tenant_id;
+    const [rows, count] = await Promise.all([
+      this.getSelectWithColumns(input.options, trx)
+        .where('tenant_id', '=', tenant_id)
+        .select((eb) => [
+          eb
+            .selectFrom('persons')
+            .whereRef('persons.company_id', '=', 'companies.id')
+            .where('persons.tenant_id', '=', tenant_id)
+            .select(({ fn }) => fn.count<number>('persons.id').as('persons_count'))
+            .as('persons_count'),
+        ])
+        .execute(),
+      this.count(tenant_id, trx),
+    ]);
+    return { rows: rows as Record<string, any>[], count };
+  }
+
   public async getDuplicateCount(tenant_id: string): Promise<number> {
     // Note: tenant ID is taken in the subquery
     // eslint-disable-next-line local/no-unscoped-db-query
