@@ -156,6 +156,23 @@ describe('HouseholdsController', () => {
     expect(second.id).toBe(first.id);
   });
 
+  it('getCount excludes the placeholder household from the grain/count number', async () => {
+    await controller.addHousehold({ street1: '1 Real St', city: 'Springfield', state: 'IL', zip: '62701' }, auth);
+    await controller.addHousehold({ street1: '2 Real St', city: 'Springfield', state: 'IL', zip: '62701' }, auth);
+
+    // Three rows exist (2 real + the permanent placeholder)...
+    const raw = await db
+      .selectFrom('households')
+      .select((eb: any) => eb.fn.countAll().as('n'))
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    expect(Number(raw.n)).toBe(3);
+
+    // ...but the count shown to the user excludes the placeholder.
+    const count = await controller.getCount(tenantId);
+    expect(count).toBe(2);
+  });
+
   it('should flag the placeholder household when fetched by id', async () => {
     const fetched = (await controller.getOneById({ tenant_id: tenantId, id: placeholderHouseholdId })) as
       | { is_placeholder: boolean }
