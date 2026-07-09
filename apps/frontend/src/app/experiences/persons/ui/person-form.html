@@ -1,8 +1,6 @@
 <!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
-
-  <div class="w-full max-w-4xl">
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-3xl">
     <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
@@ -20,117 +18,72 @@
       (delete)="deletePerson()"
     ></pc-detail-header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-      <div class="lg:col-span-2">
-        <form (submit)="save()" novalidate class="flex flex-col gap-5">
-          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-            @if (!person()?.id) {
-            <label class="label text-xs text-base-content/50 -mb-2"
-              >All fields are optional, but try to add as much as possible</label
-            >
-            }
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
 
-            <!-- Name Inputs -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="First name"
-                aria-label="First name"
-                [formField]="form.first_name"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Last name"
-                aria-label="Last name"
-                [formField]="form.last_name"
-              ></pc-input>
-            </div>
+    <form (submit)="save()" novalidate class="mt-6">
+      <fieldset [disabled]="isLoading()">
+        <pc-card>
+          @if (!person()?.id) {
+          <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+          }
+
+          <!-- Name -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+            <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+          </div>
+
+          <!-- Emails -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <pc-input
-              placeholder="Middle name(s)"
-              aria-label="Middle name(s)"
-              [formField]="form.middle_names"
+              label="Primary email"
+              type="email"
+              placeholder="name@example.com"
+              [formField]="form.email"
+              [hasError]="!!emailError()"
             ></pc-input>
+            <pc-input label="Secondary email" type="email" placeholder="Optional" [formField]="form.email2"></pc-input>
+          </div>
+          @if (emailError()) {
+          <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+            <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+            {{ emailError() }}
+          </div>
+          }
 
-            <!-- Emails -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email"
-                aria-label="Email Address"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email 2"
-                aria-label="Secondary Email Address"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
+          <!-- Phones -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+            <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+          </div>
 
-            <!-- Phones -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Mobile Phone"
-                aria-label="Mobile Phone"
-                [formField]="form.mobile"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Home Phone"
-                aria-label="Home Phone"
-                [formField]="form.home_phone"
-              ></pc-input>
-            </div>
-
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <pc-select placeholder="-- Select company --" aria-label="Company" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-
-              <pc-select
-                placeholder="No preference"
-                aria-label="Preferred contact"
-                [formField]="form.preferred_contact"
-              >
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select contact owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-              @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+          <!-- Company & Preferred contact -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+              @for (c of companies(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
               }
             </pc-select>
+            <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+              <option value="email">Email</option>
+              <option value="mobile">Mobile phone</option>
+              <option value="home_phone">Home phone</option>
+            </pc-select>
+          </div>
 
-            <!-- Address & Household Assignment -->
+          <!-- Address & Household Assignment -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
             @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="flex items-center gap-3 text-sm bg-base-200 p-3 rounded-lg border border-base-300">
-              <pc-icon name="map-pin" [size]="4" class="text-base-content/40 shrink-0"></pc-icon>
-              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
-              <button type="button" class="link link-primary text-xs shrink-0" (click)="navigateToHousehold()">
+            <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+              <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+              <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+              <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
                 Edit on household
               </button>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip shrink-0"
+                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
                 data-tip="Change household"
                 (click)="openAssignDrawer()"
               >
@@ -138,7 +91,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip shrink-0"
+                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
                 data-tip="Remove address"
                 (click)="removeAddress()"
               >
@@ -147,138 +100,115 @@
             </div>
             } @else {
             <div
-              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
+              class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
             >
               <div class="flex items-center gap-2">
                 <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="text-base-content/50 italic">No address assigned</span>
+                <span class="italic text-base-content/50">No address assigned</span>
               </div>
               <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
                 <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign Household
+                Assign household
               </button>
             </div>
             }
-            <p
-              class="pl-1 text-xs text-base-content/50"
-              i18n="PersonForm|Explains why address is edited via the household@@person.address.reason"
-            >
+            <p class="pl-1 text-xs text-base-content/50">
               Addresses belong to households, so everyone at the same address stays in sync.
             </p>
+          </div>
 
-            <!-- Social Media Profile Links -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Social Media Profiles
-            </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="LinkedIn URL"
-                aria-label="LinkedIn URL"
-                [formField]="form.linkedin"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Twitter/X URL"
-                aria-label="Twitter/X URL"
-                [formField]="form.twitter"
-              ></pc-input>
-            </div>
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="Facebook URL"
-                aria-label="Facebook URL"
-                [formField]="form.facebook"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Instagram URL"
-                aria-label="Instagram URL"
-                [formField]="form.instagram"
-              ></pc-input>
-            </div>
-
-            <!-- Tags & Segmentation -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Tags & Issues
-            </div>
-
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
+          <!-- Tags -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              placeholder="Type and press Enter to add"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+            @if (tagSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of tagSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addTagSuggestion(s)"
+              >
+                {{ s }}
+              </button>
               }
             </div>
+            }
+          </div>
 
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
+          <!-- Issues of interest -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="What does this person care about? Enter to add"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+            @if (issueSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of issueSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addIssueSuggestion(s)"
+              >
+                {{ s }}
+              </button>
               }
             </div>
+            }
+          </div>
 
-            <!-- Internal Notes -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
+          <!-- Internal notes -->
+          <pc-textarea
+            label="Internal notes"
+            placeholder="Anything the team should know about this person…"
+            [formField]="form.notes"
+            [rows]="3"
+          ></pc-textarea>
 
-            <pc-textarea
-              placeholder="Internal Notes..."
-              aria-label="Notes"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </fieldset>
-        </form>
-      </div>
+          <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+          <details class="group border-t border-base-200 pt-3">
+            <summary
+              class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+            >
+              <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+              More details
+            </summary>
+            <div class="mt-4 flex flex-col gap-4">
+              <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
 
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
-        }
-      </div>
-    </div>
+              <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                @for (u of users(); track u.id) {
+                <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                }
+              </pc-select>
+
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+              </div>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+              </div>
+            </div>
+          </details>
+        </pc-card>
+      </fieldset>
+    </form>
 
     <!-- Back to the person record -->
     @if (person()?.id) {
