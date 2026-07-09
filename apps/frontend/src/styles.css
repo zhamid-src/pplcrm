@@ -421,6 +421,14 @@ body {
 :focus:not(:focus-visible) {
   outline: none;
 }
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
 
 /* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
 @media (prefers-reduced-motion: reduce) {
