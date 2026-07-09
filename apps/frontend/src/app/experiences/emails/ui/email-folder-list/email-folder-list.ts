@@ -4,12 +4,13 @@ import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
-import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailsStore } from '../../services/store/emailstore';
 
 @Component({
   selector: 'pc-email-folder-list',
   imports: [Swap, Icon, TimeAgoPipe],
+  host: { class: 'block h-full' },
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
@@ -23,14 +24,14 @@ export class EmailFolderList implements OnInit {
 
   public readonly foldersCollapsed = signal(false);
 
-  public readonly realFoldersCollapsed = signal(true);
+  public readonly realFoldersCollapsed = signal(false);
 
   public readonly newEmail = output<void>();
 
   // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
   protected readonly asideClass = computed(
     () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'bg-base-100 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
       'w-full md:w-12 ' +
       (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
   );

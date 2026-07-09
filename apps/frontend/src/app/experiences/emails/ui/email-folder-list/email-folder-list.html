@@ -1,9 +1,9 @@
 <aside [class]="asideClass()">
   <!-- Header and expand / collapse icon -->
-  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
-    <h2 class="text-xs font-semibold text-neutral-content">
-      <span [class]="labelClass()">Filters</span>
-    </h2>
+  <div class="flex items-center justify-between pl-4">
+    <div class="text-xs text-accent uppercase">
+      <span [class]="labelClass()">Triage</span>
+    </div>
 
     <pc-swap
       swapOffIcon="chevron-double-right"
@@ -12,67 +12,16 @@
       [checked]="!foldersCollapsed()"
       (click)="toggleFolders()"
       [size]="4"
-      class="hover:text-primary invisible lg:visible"
+      class="text-accent hover:text-primary invisible lg:visible"
     ></pc-swap>
   </div>
-
-  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
-    <!-- Virtual Folders (Filters) -->
-    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } }
-
-    <!-- Separator & Collapsible Header -->
-    <li [class]="separatorClass()" role="separator"></li>
-    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
-      <span>Folders</span>
-      <pc-swap
-        swapOffIcon="chevron-right"
-        swapOnIcon="chevron-down"
-        animation="flip"
-        [checked]="!realFoldersCollapsed()"
-        [size]="3"
-        (click)="toggleRealFolders()"
-      ></pc-swap>
-    </li>
-
-    <!-- Real Folders -->
-    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } } }
-  </ul>
-
-  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
+  <div class="p-2 border-b border-base-300 flex flex-col gap-2 shrink-0">
+    <button class="btn btn-sm btn-primary w-full" (click)="emitNewEmail()" title="New email">
       <pc-icon name="pencil-square"></pc-icon>
       <span [class]="buttonLabelClass()">New email</span>
     </button>
     <button
-      class="btn btn-outline btn-primary w-full"
+      class="btn btn-sm btn-outline btn-primary w-full"
       [disabled]="store.isSyncing()"
       (click)="store.syncEmails()"
       title="Sync now"
@@ -87,4 +36,55 @@
     </span>
     }
   </div>
+
+  <ul class="flex-1 text-xs overflow-y-auto email-scrollbar">
+    <!-- Virtual Folders (Filters) -->
+    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-1.5 min-h-11 md:min-h-0 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+      [class.font-semibold]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } }
+
+    <!-- Separator & Collapsible Header -->
+    <li [class]="separatorClass()" role="separator"></li>
+    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()" class="pr-0">
+      <span>Folders</span>
+      <pc-swap
+        swapOffIcon="chevron-right"
+        swapOnIcon="chevron-down"
+        animation="flip"
+        [checked]="!realFoldersCollapsed()"
+        [size]="3"
+        (click)="toggleRealFolders()"
+      ></pc-swap>
+    </li>
+
+    <!-- Real Folders -->
+    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-1.5 min-h-11 md:min-h-0 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } } }
+  </ul>
 </aside>

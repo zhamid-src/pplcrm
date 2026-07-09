@@ -114,28 +114,28 @@ export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
 // ---------- Configuration (validated against STRICT type) ----------
 export const EMAIL_FOLDERS = [
   // Virtual
+  { id: '9', name: 'Starred', icon: 'star', sort_order: 1, is_default: false, is_virtual: true, code: 'FAVOURITES' },
   {
     id: '8',
     name: 'Unassigned',
     icon: 'inbox',
-    sort_order: 1,
+    sort_order: 2,
     is_default: false,
     is_virtual: true,
     code: 'UNASSIGNED',
   },
   {
     id: '6',
-    name: 'Assigned to me',
+    name: 'Mine',
     icon: 'user-circle',
-    sort_order: 2,
+    sort_order: 3,
     is_default: true,
     is_virtual: true,
     code: 'ASSIGNED_TO_ME',
   },
-  { id: '9', name: 'Favourites', icon: 'star', sort_order: 3, is_default: false, is_virtual: true, code: 'FAVOURITES' },
   {
     id: '1',
-    name: 'All Open',
+    name: 'Open',
     icon: 'document-duplicate',
     sort_order: 4,
     is_default: false,
@@ -144,7 +144,7 @@ export const EMAIL_FOLDERS = [
   },
   {
     id: '2',
-    name: 'Completed',
+    name: 'Closed',
     icon: 'document-check',
     sort_order: 5,
     is_default: false,

@@ -48,8 +48,8 @@ export class EmailClient {
 
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10 bg-base-100'
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10 bg-base-100',
   );
 
   /** The person context rail (§5) shows only for a real selection on desktop. */

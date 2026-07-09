@@ -6,7 +6,7 @@
     <pc-email-assign [email]="email()"></pc-email-assign>
     <div class="min-w-0 flex-1"></div>
 
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
+    <div class="flex items-center gap-1 text-xs text-base-content/70">
       <span class="whitespace-nowrap pr-2">
         {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
       </span>
@@ -250,6 +250,7 @@
             <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
           </button>
           <div
+            #personDropdownContent
             tabindex="0"
             class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
           >
@@ -262,9 +263,61 @@
                     </span>
                   </div>
                 </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
+                <div class="min-w-0 flex-1">
+                  @if (editingName()) {
+                  <div class="flex items-center gap-1">
+                    <input
+                      #firstNameInput
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="First name"
+                      [value]="nameDraft().first_name"
+                      (input)="nameDraft.set({ first_name: $any($event.target).value, last_name: nameDraft().last_name })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="Last name"
+                      [value]="nameDraft().last_name"
+                      (input)="nameDraft.set({ first_name: nameDraft().first_name, last_name: $any($event.target).value })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Save name"
+                      (click)="saveName(person.id)"
+                    >
+                      <pc-icon name="check-circle" [size]="4" class="text-success"></pc-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Cancel"
+                      (click)="cancelEditName()"
+                    >
+                      <pc-icon name="x-mark" [size]="4" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @else {
+                  <div class="group flex items-center gap-1.5">
+                    <h3 class="font-bold text-sm">
+                      {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name ||
+                      '')).trim() : 'Add a name' }}
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label="Edit name"
+                      (click)="startEditName(person)"
+                    >
+                      <pc-icon name="pencil-square" [size]="3" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @if (person.company_name) {
                   <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
                   }
                 </div>
@@ -340,16 +393,6 @@
         <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
       </div>
 
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
-
       <div class="text-xs text-base-content/60 mt-1">
         to
         <div class="dropdown inline-block">
@@ -373,30 +416,42 @@
 
             @if (getToRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
+            @for (recipient of getToRecipients(); track recipient.email) { @if (recipient.name) {
             <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
             </li>
             } } @if (getCcRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
+            @for (recipient of getCcRecipients(); track recipient.email) { @if (recipient.name) {
             <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
             </li>
             } } @if (getBccRecipients().length > 0) {
             <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
+            @for (recipient of getBccRecipients(); track recipient.email) { @if (recipient.name) {
             <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
             </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+
             } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
             0) {
             <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
             }
 
             <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
+            <li class="menu-title text-xs border-t border-base-300">Email Details</li>
 
             <li>
               <div class="flex flex-col gap-1 py-1">
@@ -435,8 +490,7 @@
             </li>
 
             <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
+            <li class="menu-title text-xs border-t border-base-300">Technical Details</li>
 
             <li>
               <div class="flex flex-col gap-1 py-1">
