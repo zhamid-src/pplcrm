@@ -50,6 +50,9 @@ export class FormActions implements OnInit {
 
   public buttonsToShow = input<'two' | 'three'>('three');
 
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
+
   public isLoading = input.required<boolean>();
 
   protected get isSaveDisabled(): boolean {
