@@ -1,6 +1,7 @@
 import type { Transaction } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
+import type { FormType } from '../../../../../../libs/common/src';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 
 export async function seedOnboardingData(
@@ -185,9 +186,9 @@ export async function seedOnboardingData(
       },
       {
         tenant_id: tenant_id,
-        name: 'Share your sign-up form with supporters [SAMPLE]',
+        name: 'Publish a sample form to start collecting responses [SAMPLE]',
         details:
-          'A sample web form called "Newsletter Sign-Up" has been created under Forms. Copy the public link and put it on your website so new contacts land directly in this CRM.',
+          'Six sample forms — Volunteer signup, Newsletter signup, Recurring donation, One-time donation, Yard sign request and Issues survey — have been created under Forms as drafts. Open one, customize it, then publish it to get a public link for your website.',
         status: 'todo' as const,
         priority: 'medium' as const,
         position: 3,
@@ -197,32 +198,114 @@ export async function seedOnboardingData(
     ])
     .execute();
 
-  // ── 5. Sample web sign-up form ────────────────────────────────────────────
+  // ── 5. Sample forms (draft) ───────────────────────────────────────────────
+  const sampleForms: {
+    key: FormType;
+    formType: 'standard' | 'donation' | 'recurring_donation';
+    name: string;
+    slug: string;
+    description: string;
+    submitLabel: string;
+    thanksBody: string;
+    confirmSubject: string;
+    confirmBody: string;
+  }[] = [
+    {
+      key: 'signup',
+      formType: 'standard',
+      name: 'Volunteer Signup [SAMPLE]',
+      slug: 'volunteer-signup',
+      description: 'Sample volunteer signup form for your website. Customize the fields or delete and create your own.',
+      submitLabel: FORM_TEMPLATES.signup.submitLabel,
+      thanksBody: 'You’re signed up — we’ll be in touch soon.',
+      confirmSubject: 'Thanks for signing up',
+      confirmBody: 'Hi [First name],\n\nThanks for signing up to volunteer — we’ll be in touch soon.',
+    },
+    {
+      key: 'signup',
+      formType: 'standard',
+      name: 'Newsletter Sign-Up [SAMPLE]',
+      slug: 'newsletter-sign-up',
+      description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
+      submitLabel: FORM_TEMPLATES.signup.submitLabel,
+      thanksBody: 'You’re on the list — thanks for signing up.',
+      confirmSubject: 'Thanks for signing up',
+      confirmBody: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
+    },
+    {
+      key: 'pledge',
+      formType: 'recurring_donation',
+      name: 'Recurring Donation [SAMPLE]',
+      slug: 'recurring-donation',
+      description: 'Sample monthly-giving form. Customize the fields or delete and create your own.',
+      submitLabel: 'Set up recurring gift',
+      thanksBody: 'Your recurring gift means a lot to us.',
+      confirmSubject: 'Thanks for your recurring gift',
+      confirmBody: 'Hi [First name],\n\nThanks for setting up a recurring gift — we’ll send a receipt each month.',
+    },
+    {
+      key: 'pledge',
+      formType: 'donation',
+      name: 'One-Time Donation [SAMPLE]',
+      slug: 'one-time-donation',
+      description: 'Sample one-time donation form. Customize the fields or delete and create your own.',
+      submitLabel: 'Give now',
+      thanksBody: 'Your gift means a lot to us.',
+      confirmSubject: 'Thanks for your gift',
+      confirmBody: 'Hi [First name],\n\nThanks for your gift — a receipt is on its way.',
+    },
+    {
+      key: 'request',
+      formType: 'standard',
+      name: 'Yard Sign Request [SAMPLE]',
+      slug: 'yard-sign-request',
+      description:
+        'Sample yard sign request form for your website. Customize the fields or delete and create your own.',
+      submitLabel: FORM_TEMPLATES.request.submitLabel,
+      thanksBody: 'We’ll deliver your yard sign soon.',
+      confirmSubject: 'Your yard sign request',
+      confirmBody: 'Hi [First name],\n\nThanks for your request — a volunteer will drop off your sign soon.',
+    },
+    {
+      key: 'survey',
+      formType: 'standard',
+      name: 'Issues Survey [SAMPLE]',
+      slug: 'issues-survey',
+      description: 'Sample issues survey for your website. Customize the fields or delete and create your own.',
+      submitLabel: FORM_TEMPLATES.survey.submitLabel,
+      thanksBody: 'Thanks for sharing your priorities with us.',
+      confirmSubject: 'Thanks for your input',
+      confirmBody: 'Hi [First name],\n\nThanks for filling out our survey — your input helps shape our priorities.',
+    },
+  ];
+
   await trx
     .insertInto('web_forms')
-    .values({
-      tenant_id: tenant_id,
-      campaign_id,
-      name: 'Newsletter Sign-Up [SAMPLE]',
-      description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
-      fields: JSON.stringify(fieldsForTemplate('signup')),
-      target_tags: JSON.stringify([]),
-      target_lists: JSON.stringify([]),
-      status: 'published',
-      type: 'signup',
-      slug: 'newsletter-sign-up',
-      submit_label: FORM_TEMPLATES.signup.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'You’re on the list — thanks for signing up.',
-      confirm_subject: 'Thanks for signing up',
-      confirm_body: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      form_type: 'standard',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
+    .values(
+      sampleForms.map((f) => ({
+        tenant_id: tenant_id,
+        campaign_id,
+        name: f.name,
+        description: f.description,
+        fields: JSON.stringify(fieldsForTemplate(f.key)),
+        target_tags: JSON.stringify([]),
+        target_lists: JSON.stringify([]),
+        status: 'draft' as const,
+        type: f.key,
+        slug: f.slug,
+        submit_label: f.submitLabel,
+        thanks_title: 'Thank you!',
+        thanks_body: f.thanksBody,
+        confirm_subject: f.confirmSubject,
+        confirm_body: f.confirmBody,
+        send_confirmation: true,
+        send_alert: false,
+        notify_team_on: false,
+        form_type: f.formType,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })),
+    )
     .execute();
 
   // ── 6. Sample list (Supporters) with Alex pre-added ──────────────────────

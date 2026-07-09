@@ -3,11 +3,12 @@
   @if (selected(); as form) {
   <div class="rounded-2xl border border-base-300 bg-base-100">
     <!-- Actions row -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-4 py-3">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
       <div class="join">
         <button
           class="btn join-item btn-sm"
-          [class.btn-active]="tab() === 'form'"
+          [class.bg-base-100]="tab() === 'form'"
+          [class.text-neutral-500]="tab() !== 'form'"
           (click)="setTab('form')"
           type="button"
         >
@@ -15,7 +16,8 @@
         </button>
         <button
           class="btn join-item btn-sm"
-          [class.btn-active]="tab() === 'responses'"
+          [class.bg-base-100]="tab() === 'responses'"
+          [class.text-neutral-500]="tab() !== 'responses'"
           (click)="setTab('responses')"
           type="button"
         >
@@ -47,7 +49,7 @@
     </div>
 
     <!-- Public link row -->
-    <div class="flex items-center gap-3 bg-base-200/60 px-4 py-2.5">
+    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
       <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
       <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
       <div class="flex items-center gap-1">
@@ -86,18 +88,18 @@
 
     <!-- State banner -->
     @if (form.status === 'draft') {
-    <div class="border-b border-base-200 bg-info/10 px-4 py-2 text-xs text-info-content/80">
+    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
       Draft — only your team can see this preview. Publish to accept responses.
     </div>
     } @else if (form.status === 'archived') {
-    <div class="border-b border-base-200 bg-base-200 px-4 py-2 text-xs text-base-content/70">
+    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
       Archived — the public link shows a closed notice. Restore to edit or publish again.
     </div>
     }
 
     <!-- Tab content -->
     @if (tab() === 'form') {
-    <div class="bg-base-200/40 p-6">
+    <div class="bg-base-200/40 p-8">
       <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
     </div>
     } @else {
@@ -157,7 +159,7 @@
 
 <!-- Page ---------------------------------------------------------------------->
 @if (loading() && forms().length === 0) {
-<div class="flex flex-col gap-4">
+<div class="flex flex-col gap-4 p-4">
   <div class="skeleton h-10 w-48"></div>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
     <div class="flex flex-col gap-3">
@@ -170,86 +172,88 @@
 </div>
 } @else if (mode() === 'browse') {
 <!-- ── Browse mode ─────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-semibold text-base-content">Forms</h1>
-      <p class="mt-1 text-sm text-base-content/60">{{ countSentence() }}</p>
+      <h2 class="text-xl font-semibold">Forms</h2>
+      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
     </div>
-    <button class="btn btn-primary gap-1" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="5"></pc-icon>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
       New form
     </button>
   </div>
 
   @if (forms().length === 0) {
   <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="10" class="text-base-content/30"></pc-icon>
-    <p class="text-base-content/60">No forms yet — create one to start collecting signups, RSVPs and more.</p>
-    <button class="btn btn-primary btn-sm gap-1" (click)="openNewForm()" type="button">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    <span class="text-base font-medium">No forms yet — create one to start collecting signups, RSVPs and more.</span>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
       <pc-icon name="add-form" [size]="4"></pc-icon>
       New form
     </button>
   </div>
   } @else {
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
     <!-- Left rail -->
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-1 divide-y divide-base-200">
       @for (form of activeForms(); track form.id) {
       <button
-        class="flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors"
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
         [class.border-primary]="form.id === selectedId()"
-        [class.bg-primary]="form.id === selectedId()"
-        [class.bg-opacity-[0.06]]="form.id === selectedId()"
-        [class.border-base-300]="form.id !== selectedId()"
-        [class.hover:border-base-content]="form.id !== selectedId()"
+        [class.bg-primary/10]="form.id === selectedId()"
         (click)="select(form.id)"
         type="button"
       >
         <div class="flex items-center gap-2">
-          <span class="font-medium text-base-content">{{ form.name }}</span>
-          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
+          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
+            >{{ form.name }}</span
+          >
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
           <span
-            class="badge badge-sm"
+            class="badge badge-xs shrink-0"
             [class.badge-success]="form.status === 'published'"
             [class.badge-ghost]="form.status !== 'published'"
           >
             {{ form.status === 'published' ? 'Published' : 'Draft' }}
           </span>
         </div>
-        <span class="text-xs text-base-content/50">
+        <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
           form.updated_at | date: 'MMM d' }}
         </span>
       </button>
-      } @if (archivedForms().length > 0) {
+      }
+
       <button
-        class="mt-2 flex items-center gap-1 px-1 text-sm text-base-content/60 hover:text-base-content"
+        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
         (click)="toggleArchived()"
         type="button"
       >
-        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="4"></pc-icon>
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
         Archived ({{ archivedForms().length }})
       </button>
       @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
       <button
-        class="flex flex-col gap-1 rounded-xl border border-base-300 p-3 text-left opacity-[0.78] transition-colors hover:opacity-100"
-        [class.border-primary]="form.id === selectedId()"
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.text-primary]="form.id === selectedId()"
         (click)="select(form.id)"
         type="button"
       >
         <div class="flex items-center gap-2">
-          <span class="font-medium text-base-content">{{ form.name }}</span>
-          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-sm badge-ghost">Archived</span>
+          <span class="truncate text-sm font-medium">{{ form.name }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
         </div>
-        <span class="text-xs text-base-content/50">
+        <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
         </span>
       </button>
-      } } }
+      } } @if (archivedOpen() && archivedForms().length === 0) {
+      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
+      }
 
-      <p class="mt-3 px-1 text-xs text-base-content/40">
+      <p class="mt-2 px-1 text-xs text-base-content/40">
         Responses land in People with the form’s tag applied — no copy-paste step.
       </p>
     </div>
@@ -261,25 +265,25 @@
 </div>
 } @else if (selected(); as form) {
 <!-- ── Edit mode ───────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
       <button
-        class="mb-1 flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
+        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
         (click)="exitEdit()"
         type="button"
       >
-        <pc-icon name="arrow-left" [size]="4"></pc-icon>
+        <pc-icon name="arrow-left" [size]="3"></pc-icon>
         All forms
       </button>
       <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-semibold text-base-content">{{ form.name }}</h1>
-        <span class="badge badge-info badge-sm">Editing</span>
+        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
+        <span class="badge badge-info badge-xs">Editing</span>
       </div>
-      <p class="mt-1 text-sm text-base-content/60">Changes apply to the live form instantly — nothing to save.</p>
+      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
     </div>
-    <button class="btn btn-primary gap-1" (click)="exitEdit()" type="button">
-      <pc-icon name="check-circle" [size]="5"></pc-icon>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
       Done editing
     </button>
   </div>
@@ -467,7 +471,12 @@
         }
         <div class="flex gap-2">
           @if (form.status !== 'archived') {
-          <button class="btn btn-outline btn-sm gap-1" (click)="archiveForm()" [disabled]="mutating()" type="button">
+          <button
+            class="btn btn-outline btn-accent btn-sm gap-1"
+            (click)="archiveForm()"
+            [disabled]="mutating()"
+            type="button"
+          >
             <pc-icon name="archive-box" [size]="4"></pc-icon>
             Archive form
           </button>
