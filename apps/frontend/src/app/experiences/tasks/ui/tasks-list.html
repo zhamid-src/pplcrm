@@ -3,7 +3,7 @@
     <div>
       <h2 class="text-xl font-semibold">Tasks</h2>
       @if (countSentence()) {
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      <p class="text-base-content/60 mt-0.5 text-xs tabular-nums">{{ countSentence() }}</p>
       }
     </div>
     <div class="flex items-center gap-2">
@@ -74,10 +74,10 @@
         <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
       </div>
 
-      <div class="flex flex-col divide-y divide-base-200">
-        @for (t of group.rows; track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
         assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-2 px-1" [class.animate-saved-flash]="isFlashed(t.id)">
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
           <button
             type="button"
             class="btn btn-ghost btn-xs btn-circle shrink-0"
@@ -85,35 +85,31 @@
             [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
             (click)="toggleDone(t)"
           >
-            <pc-icon name="check-circle" [size]="5"></pc-icon>
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
           </button>
 
           <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
             <div
-              class="truncate text-sm font-medium"
+              class="truncate text-xs font-medium"
               [class.line-through]="t.status === 'done'"
               [class.opacity-50]="t.status === 'done'"
             >
               {{ t.name }}
             </div>
             @if (reason) {
-            <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
-              <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="truncate">{{ reason }}</span>
-            </div>
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
             }
           </div>
 
           @if (t.priority) {
           <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (pill) {
+          } @if (badge) {
           <span
             class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="pill.tone === 'error'"
-            [class.badge-warning]="pill.tone === 'warning'"
-            [class.badge-ghost]="pill.tone === 'neutral'"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
           >
-            {{ pill.text }}
+            {{ badge.text }}
           </span>
           } @if (t.due_at) {
           <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"

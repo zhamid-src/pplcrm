@@ -29,11 +29,14 @@ interface ListTask {
 
 const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
   overdue: { label: 'Overdue', tone: 'error' },
-  today: { label: 'Today', tone: 'warning' },
-  upcoming: { label: 'Upcoming', tone: 'info' },
+  today: { label: 'Due Today', tone: 'warning' },
+  upcoming: { label: 'Coming Up', tone: 'info' },
   none: { label: 'No due date', tone: 'neutral' },
 };
 const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
 
 @Component({
   selector: 'pc-tasks-list',
@@ -207,8 +210,9 @@ export class TasksList implements OnInit {
     return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
   }
 
-  protected slaPill(t: ListTask) {
-    return computeTaskSla({
+  /** Short scan-friendly badge for the list row; the full honest breakdown still lives on the detail page (task-view). */
+  protected slaBadge(t: ListTask): { text: string; tone: 'error' | 'warning' } | null {
+    const pill = computeTaskSla({
       status: t.status,
       createdAt: t.created_at ? new Date(t.created_at) : null,
       tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
@@ -216,11 +220,37 @@ export class TasksList implements OnInit {
       workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
       workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
     });
+    if (!pill) return null;
+    if (pill.tone === 'error') return { text: 'SLA breached', tone: 'error' };
+    if (pill.tone === 'warning') return { text: 'Due soon', tone: 'warning' };
+    return null;
   }
 
+  /** "Due 4h ago" / "Due yesterday" / "Due today, 5:00" / "Due tomorrow" / "Due Thursday" (spec §4). */
   protected dateLabel(v?: string | null): string {
     if (!v) return '';
-    return this.dateOnly(v);
+    const due = new Date(v);
+    const now = new Date();
+    const dueDay = this.dateOnly(v);
+    const today = this.dateOnly(now.toISOString());
+
+    if (dueDay < today) {
+      const hoursAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_HOUR);
+      if (hoursAgo < 24) return `Due ${hoursAgo}h ago`;
+      if (hoursAgo < 48) return 'Due yesterday';
+      const daysAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_DAY);
+      return `Due ${daysAgo}d ago`;
+    }
+
+    if (dueDay === today) {
+      const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `Due today, ${time}`;
+    }
+
+    const daysAhead = Math.round((new Date(dueDay).getTime() - new Date(today).getTime()) / MS_PER_DAY);
+    if (daysAhead === 1) return 'Due tomorrow';
+    if (daysAhead < 7) return `Due ${WEEKDAY_NAMES[due.getDay()]}`;
+    return `Due ${due.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
   }
 
   protected priorityBadgeClass(p?: string | null): string {
