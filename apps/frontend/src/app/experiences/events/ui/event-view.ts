@@ -64,7 +64,7 @@ export class EventViewComponent {
   protected readonly registrations = signal<any[]>([]);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Events', route: '/events/pages' },
+    { label: 'Forms', route: '/forms' },
     { label: this.event()?.name || 'Event' },
   ]);
 
@@ -162,7 +162,7 @@ export class EventViewComponent {
       await this.eventsFrontendSvc.delete(this.id());
       this.eventsFrontendSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
+      await this.router.navigate(['/forms']);
     } catch (err) {
       this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {

@@ -202,18 +202,8 @@ export const dashboardRoutes: Routes = [
     path: 'events',
     children: [
       {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
         path: 'shifts',
         children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
           {
             path: 'add',
             loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
@@ -233,11 +223,6 @@ export const dashboardRoutes: Routes = [
       {
         path: 'pages',
         children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
           {
             path: 'add',
             loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
@@ -419,12 +404,6 @@ export const dashboardRoutes: Routes = [
     path: 'donation-pages',
     children: [
       {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
         path: 'add',
         loadComponent: () =>
           import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
@@ -432,7 +411,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id',
         loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
+        data: { backRoute: '/donations' },
       },
       {
         path: ':id/edit',

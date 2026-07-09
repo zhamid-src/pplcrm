@@ -59,7 +59,7 @@ export class ShiftViewComponent {
   protected readonly roster = signal<any[]>([]);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Shifts', route: '/events/shifts' },
+    { label: 'Forms', route: '/forms' },
     { label: this.event()?.name || 'Volunteer event' },
   ]);
 
@@ -135,7 +135,7 @@ export class ShiftViewComponent {
       await this.volunteerEventsSvc.delete(this.id());
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events/shifts']);
+      await this.router.navigate(['/forms']);
     } catch (err) {
       const message =
         err instanceof Error && err.message

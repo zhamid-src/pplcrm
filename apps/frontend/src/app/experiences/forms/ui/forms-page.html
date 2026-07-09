@@ -534,6 +534,23 @@
         <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
       </div>
     </form>
+
+    <div class="divider my-1 text-xs text-base-content/40">or</div>
+
+    <div class="flex flex-col gap-2">
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToFundraisingForm()" type="button">
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        Create a fundraising form
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToEventForm()" type="button">
+        <pc-icon name="ticket" [size]="4"></pc-icon>
+        Create an event page
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToShiftForm()" type="button">
+        <pc-icon name="add-schedule" [size]="4"></pc-icon>
+        Create a volunteer shift
+      </button>
+    </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>

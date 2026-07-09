@@ -61,7 +61,7 @@ export class EventFormComponent implements OnInit {
   protected readonly detail = signal<any>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
+    const events: PcBreadcrumb = { label: 'Forms', route: '/forms' };
     const id = this.id();
     if (id) {
       return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
@@ -185,7 +185,7 @@ export class EventFormComponent implements OnInit {
       await this.eventsFrontendSvc.delete(this.id()!);
       this.eventsFrontendSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
+      await this.router.navigate(['/forms']);
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
