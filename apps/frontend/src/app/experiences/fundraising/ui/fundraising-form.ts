@@ -222,7 +222,7 @@ export class FundraisingFormComponent implements OnInit {
       await this.formsSvc.delete(id);
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Donation page deleted');
-      await this.router.navigate(['/donation-pages']);
+      await this.router.navigate(['/donations']);
     } catch (err) {
       const message =
         err instanceof Error && err.message

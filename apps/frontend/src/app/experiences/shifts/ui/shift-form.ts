@@ -70,7 +70,7 @@ export class ShiftFormComponent implements OnInit {
   protected readonly detail = signal<any>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
+    const shifts: PcBreadcrumb = { label: 'Forms', route: '/forms' };
     const id = this.id();
     if (id) {
       return [
@@ -237,7 +237,7 @@ export class ShiftFormComponent implements OnInit {
       await this.volunteerEventsSvc.delete(this.id()!);
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/shifts']);
+      await this.router.navigate(['/forms']);
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {

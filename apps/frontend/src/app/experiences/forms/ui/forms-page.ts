@@ -9,7 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -38,6 +38,7 @@ interface TemplateOption {
 export class FormsPageComponent implements OnInit {
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
   private readonly settings = inject(SettingsService);
   private readonly alerts = inject(AlertService);
   private readonly confirm = inject(ConfirmDialogService);
@@ -233,6 +234,21 @@ export class FormsPageComponent implements OnInit {
 
   protected closeNewForm(): void {
     this.newFormDialog()?.nativeElement.close();
+  }
+
+  protected goToFundraisingForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/donation-pages/add');
+  }
+
+  protected goToEventForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/events/pages/add');
+  }
+
+  protected goToShiftForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/events/shifts/add');
   }
 
   protected async createForm(): Promise<void> {

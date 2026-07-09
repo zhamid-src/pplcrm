@@ -335,7 +335,7 @@
         @for (ev of upcomingEvents(); track ev.id) {
         <li>
           <a
-            routerLink="/events/shifts"
+            [routerLink]="['/events/shifts', ev.id]"
             class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
           >
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -355,7 +355,7 @@
       <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
         <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
         <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts" class="text-sm font-semibold text-primary underline underline-offset-2"
+        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
           >Plan an event</a
         >
       </div>

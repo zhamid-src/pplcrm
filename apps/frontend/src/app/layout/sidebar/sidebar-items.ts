@@ -130,14 +130,6 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'currency-dollar',
         shortcut: 'o',
       },
-      // Wave 3J: Fundraising (donation pages, §12) folds under Donations. Kept
-      // here so the feature stays reachable until the Donations page links to it.
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-        shortcut: 'r',
-      },
     ],
   },
   {
@@ -159,24 +151,10 @@ export const SidebarItems: ISidebarItem[] = [
         // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
       },
       {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-        shortcut: 'e',
-      },
-      {
         name: 'Teams',
         route: '/teams',
         icon: 'user-group',
         shortcut: 't',
-      },
-      // Wave 3K: Shifts (§15) folds into Teams. Kept here so the feature stays
-      // reachable until the Teams page surfaces shifts.
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-        shortcut: 's',
       },
     ],
   },
