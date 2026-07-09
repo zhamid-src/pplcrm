@@ -26,7 +26,7 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return Promise.resolve(true);
   }
 
-  public async getAll(options?: getAllOptionsType) {
+  public async getAll(options?: getAllOptionsType & { entityType?: string; entityId?: string }) {
     return this.api.files.getAll.query(options, {
       signal: this.ac.signal,
     });
@@ -64,8 +64,26 @@ export class FilesService extends AbstractAPIService<'files', any> {
     sizeBytes?: number | null;
     storageKey: string;
     sha256Hex?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
   }): Promise<any> {
     return await this.api.files.registerFile.mutate(data);
+  }
+
+  public async getUsageSummary(): Promise<{
+    usedBytes: number;
+    quotaBytes: number;
+    planLabel: string;
+    largestFiles: {
+      id: string;
+      filename: string;
+      size_bytes: number | null;
+      entity_type: string | null;
+      entity_id: string | null;
+      attachedToLabel: string | null;
+    }[];
+  }> {
+    return (await this.api.files.getUsageSummary.query()) as any;
   }
 
   private async computeSha256(file: File): Promise<string> {
@@ -75,7 +93,7 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  public async uploadFileDirectly(file: File): Promise<any> {
+  public async uploadFileDirectly(file: File, entity?: { entityType: string; entityId: string }): Promise<any> {
     const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
 
     const sha256Hex = await this.computeSha256(file);
@@ -99,6 +117,8 @@ export class FilesService extends AbstractAPIService<'files', any> {
       sizeBytes: file.size,
       storageKey,
       sha256Hex,
+      entityType: entity?.entityType || null,
+      entityId: entity?.entityId || null,
     });
   }
 

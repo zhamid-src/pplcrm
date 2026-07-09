@@ -19,6 +19,7 @@ import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { PasskeySettingsComponent } from './security/passkey-settings';
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -44,6 +45,7 @@ interface SectionState {
     DonationsSettingsComponent,
     AccountSettingsComponent,
     PasskeySettingsComponent,
+    StorageSettingsComponent,
     DatePipe,
     NgClass,
   ],

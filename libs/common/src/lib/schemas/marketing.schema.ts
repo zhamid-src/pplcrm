@@ -33,10 +33,6 @@ export const MarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
   updated_at: z.coerce.date(),
   created_at: z.coerce.date(),
   createdby_id: z.string(),
@@ -69,10 +65,6 @@ export const AddMarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
 });
 
 export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();

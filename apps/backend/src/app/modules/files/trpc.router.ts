@@ -6,8 +6,19 @@ import crypto from 'crypto';
 
 const files = new FilesController();
 
+const filesGetAllOptions = getAllOptions
+  .unwrap()
+  .extend({
+    /** Restrict to files linked to a specific entity, e.g. entityType: 'newsletter'. */
+    entityType: z.string().optional(),
+    entityId: z.string().optional(),
+  })
+  .optional();
+
 export const FilesRouter = router({
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
+  getAll: authProcedure.input(filesGetAllOptions).query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
+
+  getUsageSummary: authProcedure.query(({ ctx }) => files.getUsageSummary(ctx.auth)),
 
   getUploadUrl: authProcedure
     .input(
@@ -31,6 +42,8 @@ export const FilesRouter = router({
         sizeBytes: z.number().nullable().optional(),
         storageKey: z.string(),
         sha256Hex: z.string().nullable().optional(),
+        entityType: z.string().nullable().optional(),
+        entityId: z.string().nullable().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => files.registerFile(input, ctx.auth)),
