@@ -149,6 +149,14 @@ The implementation preference ladder, in order:
    cells flashed (the `flashedCells` signal in `datagrid.ts`); CSS does all the animating
    (`td.cell-flash` in `datagrid.css`).
 
+**`btn-outline` always pairs with a color modifier.** `btn-outline` alone renders in
+`base-content` and reads as a disabled/dead button next to real DaisyUI buttons — pair it with
+the semantic color for what the action means (`btn-primary` for the main action, `btn-error`
+for destructive, `btn-warning` for caution, `btn-secondary`/`btn-neutral` for a real secondary
+color). If no semantic color fits the action, default to `btn-accent` rather than leaving it
+bare. A bare `btn-outline`/`btn-outline btn-sm`/etc. with no color class is never correct —
+fix it on sight.
+
 This is already the house reality — the frontend has **zero** `@angular/animations` usage and
 no JS animation library; keep it that way. Worked example: `pc-swap`
 (`swap.ts`) is a complete animated icon toggle in ~10 lines of template — a DaisyUI

@@ -555,7 +555,7 @@
               >
               <button
                 type="button"
-                class="btn btn-outline btn-sm mt-1"
+                class="btn btn-outline btn-accent btn-sm mt-1"
                 (click)="clearAllFilters()"
                 i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
               >
@@ -786,7 +786,8 @@
             </div>
             } @else if (col.field === 'address') {
             <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
+            <div class="py-1" [attr.title]="rawValue">
               <div
                 class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
                 [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"

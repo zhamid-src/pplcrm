@@ -37,7 +37,7 @@
           Publish
         </button>
         } @case ('published') {
-        <button class="btn btn-outline btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
           Unpublish
         </button>
         } @case ('archived') {
