@@ -49,6 +49,17 @@ The single choke point is `NewslettersController.buildRecipientQuery` — change
   `delivery_routes`. The lists and forms grids apply the filter in their own custom queries.
   Child tables (form submissions, turf households/knocks, delivery route stops, event
   registrations) inherit context via their parent and are never scoped directly.
+- Inbox & mailboxes (per-campaign, §15): `ms_oauth_tokens` / `google_oauth_tokens` are
+  `UNIQUE (tenant_id, campaign_id)` — one Office 365 + one Gmail connection **per campaign**, not
+  per tenant. `emails` and `email_drafts` carry `campaign_id NOT NULL`. These are **not** in
+  `CAMPAIGN_SCOPED_TABLES` (the inbox uses custom queries, not `BaseRepository.getAll`): the OAuth
+  flow binds a connection to the campaign via the HMAC-signed `oauth-state` (`campaignId` field),
+  the `ms_sync`/`google_sync` job payloads carry `campaignId`, and every sync/ingest/read/send path
+  threads `campaignId` explicitly (`getValidToken`, `getConnectionStatus`, `ingestEmail`,
+  `getByFolderWithAttachmentFlag`, the `/api/emails/send` REST route's `campaignId` form field).
+  The child email tables (`email_bodies`, `email_recipients`, `email_headers`, `email_attachments`,
+  `email_read_states`, `email_comments`, `email_trash`) inherit context via `emails.id`. Switching
+  context switches both the connect UI (settings/ms-sync, settings/google-sync) and the visible mail.
 - Backend writes: `CampaignsRepo.resolveForWrite({tenant_id, campaign_id?})` — validates an
   explicit id (exists, tenant-owned, ACTIVE) or falls back to the office. Campaign-scoped fact
   writes go through `assertWritable` (archived → BadRequestError). One deliberate exception:

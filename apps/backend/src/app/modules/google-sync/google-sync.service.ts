@@ -49,8 +49,8 @@ export class GoogleSyncService {
     this.ingester = new EmailIngesterService(db, 'google');
   }
 
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+  public async syncTenant(tenantId: string, campaignId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId, campaignId);
 
     // Map Gmail label names to pplcrm folder IDs
     const syncFolders = [
@@ -64,7 +64,7 @@ export class GoogleSyncService {
     // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
     // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
     // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId, campaignId);
     let deltaMap: Record<string, number> = {};
     if (dbDeltaLink) {
       try {
@@ -129,7 +129,14 @@ export class GoogleSyncService {
       // Process all messages fetched
       for (const msgId of allMessageIds) {
         try {
-          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
+          const wasSaved = await this.syncMessageDetails(
+            accessToken,
+            msgId,
+            tenantId,
+            campaignId,
+            requestedBy,
+            folder.pplcrmId,
+          );
           if (wasSaved) inserted++;
         } catch (err) {
           logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
@@ -147,6 +154,7 @@ export class GoogleSyncService {
           .selectFrom('emails')
           .select(['id', 'preview'])
           .where('tenant_id', '=', tenantId)
+          .where('campaign_id', '=', campaignId)
           .where('folder_id', '=', folder.pplcrmId)
           .where('preview', 'like', 'google:%')
           .execute();
@@ -155,24 +163,25 @@ export class GoogleSyncService {
           const previewKey = localEmail.preview ?? '';
           const googleId = previewKey.replace(/^google:/, '');
           if (!serverGoogleIds.has(googleId)) {
-            await this.ingester.deleteMessage(tenantId, googleId);
+            await this.ingester.deleteMessage(tenantId, campaignId, googleId);
           }
         }
       }
     }
 
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+    await this.oauthSvc.saveDeltaLink(tenantId, campaignId, JSON.stringify(nextDeltaMap));
     return { inserted };
   }
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
+  public async removeAllLocalEmails(tenantId: string, campaignId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId, campaignId);
   }
 
   private async syncMessageDetails(
     accessToken: string,
     msgId: string,
     tenantId: string,
+    campaignId: string,
     requestedBy: string,
     folderId: string,
   ): Promise<boolean> {
@@ -278,7 +287,7 @@ export class GoogleSyncService {
       attachments: mappedAttachments,
     };
 
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+    return this.ingester.ingestEmail(ingestable, tenantId, campaignId, requestedBy, folderId);
   }
 
   private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {

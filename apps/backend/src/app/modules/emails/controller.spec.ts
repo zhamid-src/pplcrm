@@ -60,11 +60,13 @@ describe('EmailsController Integration', () => {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
   let tenantId: string;
   let userId: string;
+  let campaignId: string;
   let emailId: string;
 
   beforeEach(async () => {
     tenantId = rand();
     userId = rand();
+    campaignId = rand();
     emailId = rand();
 
     // 1. Tenant
@@ -92,12 +94,26 @@ describe('EmailsController Integration', () => {
       })
       .execute();
 
-    // 3. Email (folders are code-defined; folder_id is guarded by a CHECK constraint)
+    // 3. Campaign (emails are campaign-scoped, §15)
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaignId,
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Test Campaign',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 4. Email (folders are code-defined; folder_id is guarded by a CHECK constraint)
     await db
       .insertInto('emails')
       .values({
         id: emailId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         folder_id: '11',
         from_email: 'sender@example.com',
         to_email: 'recipient@example.com',
@@ -115,13 +131,14 @@ describe('EmailsController Integration', () => {
     await db.deleteFrom('email_read_states').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('email_trash').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
   });
 
   it('should successfully toggle email read status', async () => {
     // 1. Read count by folder before setting read status (should be 1 because ers row doesn't exist, and is_read coalesces to false, i.e., unread)
-    const countsBefore = await controller.getRepo().getEmailCountsByFolder(userId, tenantId);
+    const countsBefore = await controller.getRepo().getEmailCountsByFolder(userId, tenantId, campaignId);
     expect(countsBefore['11']).toBe(1);
 
     // 2. Set read status to true (read)
@@ -129,11 +146,13 @@ describe('EmailsController Integration', () => {
     expect(resRead).toEqual({ success: true, email_id: emailId, is_read: true });
 
     // 3. Unread count in Inbox should now be 0
-    const countsAfterRead = await controller.getRepo().getEmailCountsByFolder(userId, tenantId);
+    const countsAfterRead = await controller.getRepo().getEmailCountsByFolder(userId, tenantId, campaignId);
     expect(countsAfterRead['11']).toBe(0);
 
     // 4. Get emails by folder and verify is_read is true
-    const emailsAfterRead = await controller.getRepo().getByFolderWithAttachmentFlag(userId, tenantId, '11');
+    const emailsAfterRead = await controller
+      .getRepo()
+      .getByFolderWithAttachmentFlag(userId, tenantId, campaignId, '11');
     expect(emailsAfterRead[0].is_read).toBe(true);
 
     // 5. Set read status to false (unread)
@@ -141,11 +160,13 @@ describe('EmailsController Integration', () => {
     expect(resUnread).toEqual({ success: true, email_id: emailId, is_read: false });
 
     // 6. Unread count in Inbox should be back to 1
-    const countsAfterUnread = await controller.getRepo().getEmailCountsByFolder(userId, tenantId);
+    const countsAfterUnread = await controller.getRepo().getEmailCountsByFolder(userId, tenantId, campaignId);
     expect(countsAfterUnread['11']).toBe(1);
 
     // 7. Get emails by folder and verify is_read is false
-    const emailsAfterUnread = await controller.getRepo().getByFolderWithAttachmentFlag(userId, tenantId, '11');
+    const emailsAfterUnread = await controller
+      .getRepo()
+      .getByFolderWithAttachmentFlag(userId, tenantId, campaignId, '11');
     expect(emailsAfterUnread[0].is_read).toBe(false);
   });
 
@@ -158,6 +179,7 @@ describe('EmailsController Integration', () => {
         .values({
           id: eid,
           tenant_id: tenantId,
+          campaign_id: campaignId,
           folder_id: '11',
           from_email: 'extra@example.com',
           to_email: 'recipient@example.com',
@@ -172,15 +194,15 @@ describe('EmailsController Integration', () => {
     }
 
     // Total emails in inbox should be 4 (1 seeded in beforeEach + 3 extra)
-    const allEmails = await controller.getEmails(userId, tenantId, '11');
+    const allEmails = await controller.getEmails(userId, tenantId, campaignId, '11');
     expect(allEmails.length).toBe(4);
 
     // Test Limit: should return only 2 emails
-    const limitEmails = await controller.getEmails(userId, tenantId, '11', 2);
+    const limitEmails = await controller.getEmails(userId, tenantId, campaignId, '11', 2);
     expect(limitEmails.length).toBe(2);
 
     // Test Limit and Offset: should skip the first 2 and return the remaining 2
-    const pagedEmails = await controller.getEmails(userId, tenantId, '11', 2, 2);
+    const pagedEmails = await controller.getEmails(userId, tenantId, campaignId, '11', 2, 2);
     expect(pagedEmails.length).toBe(2);
 
     // The items returned by pagination should be disjoint from the first page

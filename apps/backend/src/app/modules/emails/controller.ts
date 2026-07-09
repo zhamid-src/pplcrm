@@ -366,10 +366,17 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
-  public async getEmails(user_id: string, tenant_id: string, folder_id: string, limit?: number, offset?: number) {
+  public async getEmails(
+    user_id: string,
+    tenant_id: string,
+    campaign_id: string,
+    folder_id: string,
+    limit?: number,
+    offset?: number,
+  ) {
     try {
       if (folder_id === ALL_FOLDERS.DRAFTS) {
-        const drafts = await this.draftsRepo.listByUser(tenant_id, user_id, limit, offset);
+        const drafts = await this.draftsRepo.listByUser(tenant_id, campaign_id, user_id, limit, offset);
         return drafts.map((d: any) => ({
           id: d.id,
           folder_id,
@@ -386,7 +393,14 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           status: 'open',
         }));
       }
-      return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id, limit, offset);
+      return await this.getRepo().getByFolderWithAttachmentFlag(
+        user_id,
+        tenant_id,
+        campaign_id,
+        folder_id,
+        limit,
+        offset,
+      );
     } catch (err) {
       throw new InternalError('Failed to fetch emails', undefined, { cause: err });
     }
@@ -397,12 +411,12 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     return Promise.resolve(getAllEmailFolders());
   }
 
-  public async getFoldersWithCounts(user_id: string, tenant_id: string) {
+  public async getFoldersWithCounts(user_id: string, tenant_id: string, campaign_id: string) {
     try {
       const [folders, emailCounts, draftCount] = await Promise.all([
         this.getFolders(tenant_id),
-        this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
-        this.draftsRepo.countByUser(tenant_id, user_id),
+        this.getRepo().getEmailCountsByFolder(user_id, tenant_id, campaign_id),
+        this.draftsRepo.countByUser(tenant_id, campaign_id, user_id),
       ]);
 
       return folders.map((folder: any) => ({
@@ -474,6 +488,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public async saveDraft(
     tenant_id: string,
+    campaign_id: string,
     user_id: string,
     draft: {
       id?: string;
@@ -488,7 +503,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       if (draft.body_html) {
         draft.body_html = sanitizeHtml(draft.body_html);
       }
-      const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
+      const saved = await this.draftsRepo.saveDraft(tenant_id, campaign_id, user_id, draft);
       if (!saved) throw new InternalError('Failed to save draft');
       return saved;
     } catch (err) {

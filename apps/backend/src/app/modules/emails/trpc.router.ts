@@ -91,13 +91,21 @@ function getEmails() {
   return authProcedure
     .input(
       z.object({
+        campaignId: idSchema,
         folderId: folderIdSchema,
         limit: z.number().int().min(1).max(100).optional(),
         offset: z.number().int().min(0).optional(),
       }),
     )
     .query(({ input, ctx }) =>
-      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset),
+      emails.getEmails(
+        ctx.auth.user_id,
+        ctx.auth.tenant_id,
+        input.campaignId,
+        input.folderId,
+        input.limit,
+        input.offset,
+      ),
     );
 }
 
@@ -106,7 +114,9 @@ function getFolders() {
 }
 
 function getFoldersWithCounts() {
-  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
+  return authProcedure
+    .input(z.object({ campaignId: idSchema }))
+    .query(({ input, ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id, input.campaignId));
 }
 
 function hasAttachment() {
@@ -135,6 +145,7 @@ function saveDraft() {
   return authProcedure
     .input(
       z.object({
+        campaignId: idSchema,
         id: idSchema.optional(),
         to: z.array(z.string().trim().email('Invalid recipient email address')).optional().default([]),
         cc: z.array(z.string().trim().email('Invalid CC email address')).optional(),
@@ -144,7 +155,7 @@ function saveDraft() {
       }),
     )
     .mutation(({ input, ctx }) =>
-      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
+      emails.saveDraft(ctx.auth.tenant_id, input.campaignId, ctx.auth.user_id, {
         id: input.id,
         to_list: input.to,
         cc_list: input.cc ?? [],

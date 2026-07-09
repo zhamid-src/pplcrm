@@ -15,6 +15,8 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 export interface OAuthStatePayload {
   userId: string;
   tenantId: string;
+  /** The campaign context (§15) the mailbox is being connected under. */
+  campaignId: string;
   returnTo?: string;
 }
 
@@ -61,7 +63,12 @@ export function decodeOAuthState(raw: string | undefined | null): OAuthStatePayl
 
   if (!parsed || typeof parsed.iat !== 'number') return null;
   if (Date.now() - parsed.iat > STATE_TTL_MS) return null;
-  if (!parsed.userId || !parsed.tenantId) return null;
+  if (!parsed.userId || !parsed.tenantId || !parsed.campaignId) return null;
 
-  return { userId: parsed.userId, tenantId: parsed.tenantId, returnTo: parsed.returnTo };
+  return {
+    userId: parsed.userId,
+    tenantId: parsed.tenantId,
+    campaignId: parsed.campaignId,
+    returnTo: parsed.returnTo,
+  };
 }

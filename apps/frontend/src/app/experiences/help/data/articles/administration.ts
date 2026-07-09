@@ -215,6 +215,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
           '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
           '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection** — each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
         ],
       },
       { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },

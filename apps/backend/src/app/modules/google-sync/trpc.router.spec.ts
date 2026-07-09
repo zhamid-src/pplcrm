@@ -43,6 +43,7 @@ function installMockDb(options: { activeJob?: unknown } = {}) {
 }
 
 const AUTH = { tenant_id: '10', user_id: '20', session_id: 's1' };
+const CAMPAIGN = '30';
 
 describe('GoogleSyncRouter', () => {
   let originalDb: unknown;
@@ -59,7 +60,7 @@ describe('GoogleSyncRouter', () => {
   it('rejects unauthenticated callers', async () => {
     installMockDb();
     const caller = GoogleSyncRouter.createCaller({ auth: undefined } as any);
-    await expect(caller.getAuthUrl({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(caller.getAuthUrl({ campaignId: CAMPAIGN })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
   it('getAuthUrl signs a state binding the caller and delegates to the oauth service', async () => {
@@ -69,14 +70,19 @@ describe('GoogleSyncRouter', () => {
       .mockReturnValue('https://accounts.google.com/o/oauth2/mock');
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getAuthUrl({ returnTo: '/settings/integrations' });
+    const result = await caller.getAuthUrl({ campaignId: CAMPAIGN, returnTo: '/settings/integrations' });
 
     expect(result.url).toBe('https://accounts.google.com/o/oauth2/mock');
     expect(spy).toHaveBeenCalledTimes(1);
 
     const state = spy.mock.calls[0][0] as string;
     const decoded = decodeOAuthState(state);
-    expect(decoded).toMatchObject({ userId: '20', tenantId: '10', returnTo: '/settings/integrations' });
+    expect(decoded).toMatchObject({
+      userId: '20',
+      tenantId: '10',
+      campaignId: CAMPAIGN,
+      returnTo: '/settings/integrations',
+    });
   });
 
   it('getConnectionStatus reports syncing=false when no background job is active', async () => {
@@ -90,7 +96,7 @@ describe('GoogleSyncRouter', () => {
     });
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getConnectionStatus();
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
 
     expect(result.connected).toBe(true);
     expect(result.googleEmail).toBe('user@example.com');
@@ -108,7 +114,7 @@ describe('GoogleSyncRouter', () => {
     });
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getConnectionStatus();
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
 
     expect(result.syncing).toBe(true);
   });
@@ -117,7 +123,7 @@ describe('GoogleSyncRouter', () => {
     const db = installMockDb({ activeJob: undefined });
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
 
-    const result = await caller.syncNow();
+    const result = await caller.syncNow({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ inserted: 0, queued: true });
     expect(db.insertInto).toHaveBeenCalledWith('background_jobs');
@@ -127,7 +133,7 @@ describe('GoogleSyncRouter', () => {
     const db = installMockDb({ activeJob: { id: '5' } });
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
 
-    const result = await caller.syncNow();
+    const result = await caller.syncNow({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ inserted: 0, queued: true });
     expect(db.insertInto).not.toHaveBeenCalled();
@@ -139,11 +145,11 @@ describe('GoogleSyncRouter', () => {
     const disconnectSpy = vi.spyOn(GoogleOAuthService.prototype, 'disconnect').mockResolvedValue(undefined);
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.disconnect({ removeLocalEmails: true });
+    const result = await caller.disconnect({ campaignId: CAMPAIGN, removeLocalEmails: true });
 
     expect(result).toEqual({ success: true });
-    expect(removeSpy).toHaveBeenCalledWith('10');
-    expect(disconnectSpy).toHaveBeenCalledWith('10');
+    expect(removeSpy).toHaveBeenCalledWith('10', CAMPAIGN);
+    expect(disconnectSpy).toHaveBeenCalledWith('10', CAMPAIGN);
   });
 
   it('disconnect skips local email removal by default', async () => {
@@ -152,7 +158,7 @@ describe('GoogleSyncRouter', () => {
     vi.spyOn(GoogleOAuthService.prototype, 'disconnect').mockResolvedValue(undefined);
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    await caller.disconnect({});
+    await caller.disconnect({ campaignId: CAMPAIGN });
 
     expect(removeSpy).not.toHaveBeenCalled();
   });
@@ -162,7 +168,7 @@ describe('GoogleSyncRouter', () => {
     vi.spyOn(GoogleOAuthService.prototype, 'disconnect').mockRejectedValue(new Error('db unavailable'));
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    await expect(caller.disconnect({})).rejects.toThrow();
+    await expect(caller.disconnect({ campaignId: CAMPAIGN })).rejects.toThrow();
   });
 
   it('resetSync marks the delta link as needing a full resync', async () => {
@@ -170,9 +176,9 @@ describe('GoogleSyncRouter', () => {
     const spy = vi.spyOn(GoogleOAuthService.prototype, 'saveDeltaLink').mockResolvedValue(undefined);
 
     const caller = GoogleSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.resetSync();
+    const result = await caller.resetSync({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ success: true });
-    expect(spy).toHaveBeenCalledWith('10', NEEDS_FULL_SYNC);
+    expect(spy).toHaveBeenCalledWith('10', CAMPAIGN, NEEDS_FULL_SYNC);
   });
 });

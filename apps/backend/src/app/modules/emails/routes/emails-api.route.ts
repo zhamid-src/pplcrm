@@ -88,6 +88,7 @@ function getOAuthService(db: any) {
 export async function saveLocalEmail(
   db: any,
   tenantId: string,
+  campaignId: string,
   userId: string,
   fromEmail: string,
   fromName: string,
@@ -105,6 +106,7 @@ export async function saveLocalEmail(
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
+        campaign_id: campaignId,
         folder_id: ALL_FOLDERS.OUTBOX,
         from_email: fromEmail,
         to_email: toList.join(', '),
@@ -296,6 +298,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       }
     }
 
+    // §15 — the active campaign context is sent by the client; the outbound
+    // mail and the mailbox it is dispatched through both belong to it.
+    const campaignId = fields.campaignId ? String(fields.campaignId) : null;
+    if (!campaignId) {
+      return reply.status(400).send({ status: 'error', message: 'Missing campaign context.' });
+    }
+
     // Parse recipient lists and content fields
     const toList = fields.to ? JSON.parse(fields.to) : [];
     const ccList = fields.cc ? JSON.parse(fields.cc) : [];
@@ -337,14 +346,14 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       .selectFrom('ms_oauth_tokens')
       .select(['user_id', 'ms_email'])
       .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     const googleToken = await db
       .selectFrom('google_oauth_tokens')
       .select(['user_id', 'google_email'])
       .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     const hasMsConnected = !!msToken;
@@ -369,6 +378,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       emailRow = await saveLocalEmail(
         db,
         tenantId,
+        campaignId,
         userId,
         fromEmail,
         fromName,
@@ -405,7 +415,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         const oauthSvc = getOAuthService(db);
         let msDraftId: string | null = null;
         try {
-          const accessToken = await oauthSvc.getValidToken(userId);
+          const accessToken = await oauthSvc.getValidToken(tenantId, campaignId);
           const client = Client.init({
             authProvider: (done) => done(null, accessToken),
           });
@@ -477,7 +487,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           // Trigger background sync to get folders/Sent items synchronized
           const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+          syncSvc.syncTenant(tenantId, campaignId, userId).catch((err: any) => {
             fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
           });
 
@@ -510,7 +520,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         });
 
         try {
-          const accessToken = await oauthSvc.getValidToken(userId);
+          const accessToken = await oauthSvc.getValidToken(tenantId, campaignId);
 
           const rawMessageBuffer = buildRawMime({
             fromName,
@@ -568,7 +578,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .executeTakeFirstOrThrow();
 
           const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+          googleSyncSvc.syncTenant(tenantId, campaignId, userId).catch((err: any) => {
             fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
           });
 

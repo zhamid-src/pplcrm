@@ -54,6 +54,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
   public async getByFolderWithAttachmentFlag(
     user_id: string,
     tenant_id: string,
+    campaign_id: string,
     folder_id: string,
     limit?: number,
     offset?: number,
@@ -99,6 +100,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       )
       .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
       .where('emails.tenant_id', '=', tenant_id)
+      .where('emails.campaign_id', '=', campaign_id)
       .where((eb) => whereForFolder(eb))
       .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
 
@@ -118,12 +120,17 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .execute();
   }
 
-  public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
+  public async getEmailCountsByFolder(
+    user_id: string,
+    tenant_id: string,
+    campaign_id: string,
+  ): Promise<Record<string, number>> {
     // 1) Regular per-folder counts
     const regular = await this.getSelect()
       .select(['folder_id'])
       .select((eb) => eb.fn.count('id').as('count'))
       .where('tenant_id', '=', tenant_id)
+      .where('campaign_id', '=', campaign_id)
       .groupBy('folder_id')
       .execute();
 
@@ -152,6 +159,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         ),
       ])
       .where('emails.tenant_id', '=', tenant_id)
+      .where('emails.campaign_id', '=', campaign_id)
       .executeTakeFirst();
 
     const counts: Record<string, number> = {};
