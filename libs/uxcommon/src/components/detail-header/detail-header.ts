@@ -53,7 +53,7 @@ import { FormActions } from '../form-actions/form-actions';
             <div class="mr-1 flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                class="btn btn-circle  btn-xs"
+                class="btn btn-circle btn-ghost btn-xs"
                 [attr.aria-label]="prevLabel()"
                 [disabled]="!hasPrev()"
                 [class.btn-ghost]="!hasPrev()"
