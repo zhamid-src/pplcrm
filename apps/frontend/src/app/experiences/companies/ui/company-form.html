@@ -1,17 +1,9 @@
-<div class="p-6 max-w-4xl">
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading company details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
     <pc-detail-header
-      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
-      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Edit company'"
+      [eyebrow]="isNewMode() ? 'New company' : 'Edit company'"
       [crumbs]="crumbs()"
-      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
       [form]="form"
       [isLoading]="isLoading()"
       buttonsToShow="two"
@@ -23,83 +15,108 @@
       (delete)="deleteCompany()"
     ></pc-detail-header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
       <!-- Form Section -->
-      <pc-card class="lg:col-span-2">
-        <!-- Name -->
-        <pc-input
-          label="Company Name"
-          placeholder="e.g. Acme Corp"
-          [formField]="form.name"
-          (blurred)="onNameBlur()"
-        ></pc-input>
-        @if (lookingUp()) {
-        <p class="text-xs text-base-content/60 mt-1 pl-1 flex items-center gap-1">
-          <span class="loading loading-spinner loading-xs"></span>
-          Looking up details on Google…
-        </p>
-        } @else if (duplicateName()) {
-        <p class="text-xs text-warning mt-1 pl-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          A company with this name already exists — you can still save if this is a separate record.
-        </p>
-        }
+      <form (submit)="save($event)" novalidate class="lg:col-span-2">
+        <fieldset [disabled]="isLoading()">
+          <pc-card>
+            <!-- Name -->
+            <div class="flex flex-col gap-1.5">
+              <pc-input
+                label="Company name"
+                placeholder="e.g. Acme Corp"
+                [formField]="form.name"
+                (blurred)="onNameBlur()"
+              ></pc-input>
+              @if (lookingUp()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-base-content/60">
+                <span class="loading loading-spinner loading-xs"></span>
+                Looking up details on Google…
+              </p>
+              } @else if (duplicateName()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-warning">
+                <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+                A company with this name already exists — you can still save if this is a separate record.
+              </p>
+              }
+            </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Website -->
-          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Website"
+                type="url"
+                placeholder="https://example.com"
+                [formField]="form.website"
+              ></pc-input>
+              <pc-input label="Industry" placeholder="e.g. Healthcare" [formField]="form.industry"></pc-input>
+            </div>
 
-          <!-- Industry -->
-          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
-        </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+              <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+            </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Email -->
-          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+            <!-- Description -->
+            <div class="flex flex-col gap-1.5">
+              <pc-textarea
+                label="Description"
+                placeholder="Company description…"
+                [formField]="form.description"
+                [rows]="3"
+              ></pc-textarea>
+              <p class="pl-1 text-xs text-base-content/55">
+                Shown on the company page. Google enrichment fills this if left blank.
+              </p>
+            </div>
 
-          <!-- Phone -->
-          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-        </div>
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Any additional notes…"
+              [formField]="form.notes"
+              [rows]="4"
+            ></pc-textarea>
+          </pc-card>
+        </fieldset>
+      </form>
 
-        <!-- Description -->
-        <pc-textarea
-          label="Description"
-          placeholder="Company description..."
-          [formField]="form.description"
-          [rows]="3"
-        ></pc-textarea>
-
-        <!-- Notes -->
-        <pc-textarea
-          label="Internal Notes"
-          placeholder="Any additional notes..."
-          [formField]="form.notes"
-          [rows]="4"
-        ></pc-textarea>
-      </pc-card>
-
-      <!-- Members & Info Panel -->
-      <div class="space-y-6">
-        <!-- Employee List (Only when edit mode) -->
-        @if (!isNewMode() && id()) {
-        <pc-card title="Associated Employees" icon="user-group">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton w-full h-32"></div>
-          }
-        </pc-card>
-        }
-
-        <!-- Metadata Card -->
+      <!-- Overview rail -->
+      <div class="flex flex-col gap-6">
         @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="company()?.created_at"
-          [updatedAt]="company()?.updated_at"
-        ></pc-entity-overview>
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">{{ employeeCount() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Enrichment</dt>
+              <dd>
+                @if (isEnriched()) {
+                <pc-status-badge type="success">Enriched</pc-status-badge>
+                } @else {
+                <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+                }
+              </dd>
+            </div>
+          </dl>
+        </pc-card>
         }
       </div>
     </div>
+
+    <!-- Back to the company record -->
+    @if (!isNewMode() && id()) {
+    <a
+      [routerLink]="['/companies', id()]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ company()?.name || 'company' }}
+    </a>
+    }
   </div>
-  }
 </div>

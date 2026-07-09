@@ -12,7 +12,7 @@ import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -28,7 +28,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-person-form',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
+  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcCard],
   templateUrl: './person-form.html',
 })
 export class PersonForm implements OnInit {
@@ -67,6 +67,14 @@ export class PersonForm implements OnInit {
 
   protected readonly isPlaceholderHousehold = computed(() => {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
+  protected readonly addressWithWard = computed(() => {
+    const base = this.addressString();
+    if (!base) return null;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
   });
 
   // Drawer state for assigning household
