@@ -17,6 +17,7 @@ import { Households } from '../../../../../../../libs/common/src/lib/kysely.mode
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -35,6 +36,7 @@ type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: s
     LogInteraction,
     DetailLayout,
     PcCard,
+    TabPanel,
     PcMap,
     GeocodeChip,
     DatePipe,
@@ -64,6 +66,13 @@ export class HouseholdView {
 
   protected readonly peopleCount = signal(0);
   protected readonly lastCanvass = signal<LastCanvass>(null);
+
+  // Tabbed right column (matches person view): Members is the default tab.
+  protected readonly activeTab = signal<string>('members');
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: 'Members', badge: this.peopleCount() || undefined },
+    { id: 'activity', label: 'Activity' },
+  ]);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
     { label: 'Households', route: '/households' },
