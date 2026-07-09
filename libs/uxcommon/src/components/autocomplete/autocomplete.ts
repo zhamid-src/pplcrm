@@ -3,16 +3,23 @@ import { debounce } from '../../../../common/src';
 
 @Component({
   selector: 'pc-autocomplete',
-  template: ` <input
-      #inputEl
-      type="text"
-      class="input w-full"
-      [placeholder]="placeholder()"
-      (keyup)="onKey($event)"
-      (input)="onInput($event)"
-      (focus)="showAutoCompleteList()"
-      (blur)="hideAutoCompleteList()"
-    />
+  template: ` <div
+      class="input w-full flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5 cursor-text"
+      (click)="focusInput()"
+    >
+      <ng-content></ng-content>
+      <input
+        #inputEl
+        type="text"
+        class="grow basis-0 min-w-0 border-none bg-transparent p-0 focus:outline-none"
+        [placeholder]="placeholder()"
+        (keyup)="onKey($event)"
+        (keydown)="onKeyDown($event)"
+        (input)="onInput($event)"
+        (focus)="showAutoCompleteList()"
+        (blur)="hideAutoCompleteList()"
+      />
+    </div>
     @if (matches().length && !hideAutoComplete()) {
       <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
         @for (match of matches(); track match) {
@@ -29,6 +36,9 @@ export class AutoComplete {
   protected hideAutoComplete = signal(true);
 
   public readonly valueChange = output<string>();
+
+  /** Emitted when Backspace is pressed while the text field is empty — lets the host pop the last chip. */
+  public readonly backspaceEmpty = output<void>();
 
   public filterSvc = input<TFILTER | null>(null);
   public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
@@ -59,6 +69,17 @@ export class AutoComplete {
     if (event.key === 'Enter' || event.key === ',') {
       this.reset(target.value);
     }
+  }
+
+  protected onKeyDown(event: KeyboardEvent) {
+    const target = event.target as HTMLInputElement;
+    if (event.key === 'Backspace' && target.value.length === 0) {
+      this.backspaceEmpty.emit();
+    }
+  }
+
+  protected focusInput() {
+    this.inputRef()?.nativeElement.focus();
   }
 
   protected reset(key: string) {

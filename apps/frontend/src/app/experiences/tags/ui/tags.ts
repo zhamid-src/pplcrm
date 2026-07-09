@@ -14,23 +14,31 @@ interface TagView {
 @Component({
   selector: 'pc-tags',
   imports: [TagItem, AutoComplete],
-  template: `@if (!readonly()) {
+  template: `@let tagViews = displayTags();
+    @if (!readonly()) {
+      <!-- Editable: chips live inside the input box, before the text field (combobox / token input) -->
       <pc-autocomplete
         (valueChange)="add($event)"
+        (backspaceEmpty)="removeLast()"
         [placeholder]="placeholder()"
         [filterSvc]="enableAutoComplete() ? this : null"
-      ></pc-autocomplete>
-    }
-    @let tagViews = displayTags();
-    @if (tagViews.length) {
-      <div class="my-1"></div>
-      <div class="contents" [class.mt-2]="!readonly()">
-        @if (!readonly()) {
-          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues:' : 'Tags:' }}</span>
-        }
+      >
         @for (tag of tagViews; track tag.name) {
           <pc-tagitem
-            class="mr-1 mb-1"
+            [name]="tag.name"
+            [color]="tag.color"
+            [canDelete]="canDelete()"
+            [compact]="true"
+            (click)="clicked(tag.name)"
+            (close)="closed(tag.name)"
+          ></pc-tagitem>
+        }
+      </pc-autocomplete>
+    } @else if (tagViews.length) {
+      <!-- Readonly: chips only, in their own row -->
+      <div class="flex flex-wrap items-center gap-1">
+        @for (tag of tagViews; track tag.name) {
+          <pc-tagitem
             [name]="tag.name"
             [color]="tag.color"
             [canDelete]="canDelete()"
@@ -42,7 +50,7 @@ interface TagView {
         @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
           @let remainingCount = tags().length - limit()!;
           <span
-            class="badge badge-neutral badge-sm cursor-pointer mb-1 align-middle hover:bg-neutral-focus"
+            class="badge badge-neutral badge-sm cursor-pointer align-middle hover:bg-neutral-focus"
             (click)="expanded.set(true); $event.stopPropagation()"
           >
             +{{ remainingCount }}
@@ -140,6 +148,15 @@ export class Tags implements OnInit {
 
   protected clicked(tag: string) {
     this.tagClicked.emit(tag);
+  }
+
+  /** Remove the chip nearest the cursor (the last/rightmost one) — Backspace on an empty field. */
+  protected removeLast() {
+    const tags = this.tags();
+    if (tags.length) {
+      const last = tags[tags.length - 1];
+      if (last) this.remove(last);
+    }
   }
 
   protected closed(tag: string) {
