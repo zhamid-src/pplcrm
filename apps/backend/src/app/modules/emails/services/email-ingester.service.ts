@@ -37,11 +37,12 @@ export class EmailIngesterService {
     private readonly prefix: string, // 'ms' or 'google'
   ) {}
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+  public async removeAllLocalEmails(tenantId: string, campaignId: string): Promise<void> {
     const matchedEmails = await this.db
       .selectFrom('emails')
       .select('id')
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .where('preview', 'like', `${this.prefix}:%`)
       .execute();
 
@@ -87,12 +88,13 @@ export class EmailIngesterService {
     await this.purgeOrphanedFiles(tenantId, fileIds);
   }
 
-  public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
+  public async deleteMessage(tenantId: string, campaignId: string, remoteId: string): Promise<void> {
     const dedupeKey = `${this.prefix}:${remoteId}`;
     const existing = await this.db
       .selectFrom('emails')
       .select('id')
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .where('preview', '=', dedupeKey)
       .executeTakeFirst();
 
@@ -189,16 +191,20 @@ export class EmailIngesterService {
   public async ingestEmail(
     email: IngestableEmail,
     tenantId: string,
+    campaignId: string,
     requestedBy: string,
     folderId: string,
   ): Promise<boolean> {
     const dedupeKey = `${this.prefix}:${email.id}`;
 
-    // Dedup: use remote message ID stored in email preview field (prefixed)
+    // Dedup: use remote message ID stored in email preview field (prefixed).
+    // Scoped to the campaign so the same mailbox connected under two contexts
+    // ingests into each context's Inbox independently (§15).
     const existing = await this.db
       .selectFrom('emails')
       .select('id')
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .where('preview', '=', dedupeKey)
       .executeTakeFirst();
 
@@ -215,6 +221,7 @@ export class EmailIngesterService {
         .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
         .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
         .where('emails.tenant_id', '=', tenantId)
+        .where('emails.campaign_id', '=', campaignId)
         .where('email_headers.tenant_id', '=', tenantId)
         .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
         .execute();
@@ -290,6 +297,7 @@ export class EmailIngesterService {
         .insertInto('emails')
         .values({
           tenant_id: tenantId,
+          campaign_id: campaignId,
           folder_id: folderId,
           from_email: email.fromEmail,
           to_email: email.toEmail,

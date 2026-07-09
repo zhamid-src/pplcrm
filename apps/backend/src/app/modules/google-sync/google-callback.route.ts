@@ -47,11 +47,11 @@ const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       return reply.redirect(`${returnBase}${sep(returnBase)}google_error=invalid_state`);
     }
 
-    const { userId, tenantId } = parsedState;
+    const { userId, tenantId, campaignId } = parsedState;
 
     try {
       const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId, tenantId);
+      await oauthSvc.handleCallback(code, userId, tenantId, campaignId);
       return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
     } catch (err) {
       // Log the real cause server-side; never reflect internal error text back

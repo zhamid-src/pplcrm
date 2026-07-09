@@ -1,14 +1,28 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
 
 import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../environments/environment';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 
 @Service()
 export class EmailsService extends TRPCService<'emails' | 'email_list'> {
+  private readonly campaignContext = inject(CampaignContextService);
+
+  /**
+   * Campaigns §15 — the Inbox is per-campaign: connections, synced mail and
+   * drafts all belong to the active context. Every backend inbox endpoint
+   * requires it, so resolve it (ensuring context is loaded) before each call.
+   */
+  private async campaignId(): Promise<string> {
+    await this.campaignContext.ensureLoaded();
+    const id = this.campaignContext.activeCampaignId();
+    if (!id) throw new Error('No active campaign selected');
+    return id;
+  }
   public addComment(id: string, author_id: string, comment: string) {
     return this.api.emails.addComment.mutate({ id, author_id, comment });
   }
@@ -62,16 +76,18 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
   }
 
   // TODO: paging and infinite scrolling
-  public getEmails(folderId: string, limit?: number, offset?: number) {
-    return this.api.emails.getEmails.query({ folderId, limit, offset });
+  public async getEmails(folderId: string, limit?: number, offset?: number) {
+    const campaignId = await this.campaignId();
+    return this.api.emails.getEmails.query({ campaignId, folderId, limit, offset });
   }
 
   public getFolders() {
     return this.api.emails.getFolders.query();
   }
 
-  public getFoldersWithCounts() {
-    return this.api.emails.getFoldersWithCounts.query();
+  public async getFoldersWithCounts() {
+    const campaignId = await this.campaignId();
+    return this.api.emails.getFoldersWithCounts.query({ campaignId });
   }
 
   public hasAttachment(id: string) {
@@ -93,13 +109,16 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
     return this.api.emails.moveToFolder.mutate({ id, folderId });
   }
 
-  public saveDraft(input: DraftPayload) {
-    return this.api.emails.saveDraft.mutate(input);
+  public async saveDraft(input: DraftPayload) {
+    const campaignId = await this.campaignId();
+    return this.api.emails.saveDraft.mutate({ ...input, campaignId });
   }
 
   // Fetch/FormData fallback
   public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    const campaignId = await this.campaignId();
     const fd = new FormData();
+    fd.set('campaignId', campaignId);
     fd.set('to', JSON.stringify(input.to));
     fd.set('cc', JSON.stringify(input.cc));
     fd.set('bcc', JSON.stringify(input.bcc));
@@ -128,6 +147,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
   }
 
   public async syncEmails(): Promise<{ inserted: number }> {
+    const campaignId = await this.campaignId();
     let msResult = { inserted: 0 };
     let googleResult = { inserted: 0 };
     let msConnected = false;
@@ -135,12 +155,12 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
 
     // Check MS connection status
     try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      const msStatus = await this.api.msSync.getConnectionStatus.query({ campaignId });
       if (msStatus?.connected) {
         msConnected = true;
         msResult = await (
           this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
+        )({ campaignId }, { context: { skipErrorHandler: true } });
       }
     } catch (e) {
       console.error('MS sync failed:', e);
@@ -148,12 +168,12 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
 
     // Check Google connection status
     try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query({ campaignId });
       if (googleStatus?.connected) {
         googleConnected = true;
         googleResult = await (
           this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
+        )({ campaignId }, { context: { skipErrorHandler: true } });
       }
     } catch (e) {
       console.error('Google sync failed:', e);
@@ -166,20 +186,22 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
     return { inserted: msResult.inserted + googleResult.inserted };
   }
 
-  public getConnectionStatus() {
-    return this.api.msSync.getConnectionStatus.query();
+  public async getConnectionStatus() {
+    const campaignId = await this.campaignId();
+    return this.api.msSync.getConnectionStatus.query({ campaignId });
   }
 
   public async isAnySyncing(): Promise<boolean> {
+    const campaignId = await this.campaignId();
     let isSyncing = false;
     try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      const msStatus = await this.api.msSync.getConnectionStatus.query({ campaignId });
       if (msStatus?.syncing) isSyncing = true;
     } catch (_e) {
       // ignore
     }
     try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query({ campaignId });
       if (googleStatus?.syncing) isSyncing = true;
     } catch (_e) {
       // ignore

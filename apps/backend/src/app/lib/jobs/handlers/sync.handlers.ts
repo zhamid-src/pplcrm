@@ -23,7 +23,7 @@ export async function handleGoogleSync(payload: JobPayloadOf<'google_sync'>, db:
     redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
   });
   const syncSvc = new GoogleSyncService(db, oauthSvc);
-  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+  await syncSvc.syncTenant(payload.tenantId, payload.campaignId, payload.requestedBy);
 }
 
 export async function handleMsSync(payload: JobPayloadOf<'ms_sync'>, db: Kysely<Models>): Promise<void> {
@@ -34,28 +34,30 @@ export async function handleMsSync(payload: JobPayloadOf<'ms_sync'>, db: Kysely<
     redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
   });
   const syncSvc = new MsSyncService(db, oauthSvc);
-  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+  await syncSvc.syncTenant(payload.tenantId, payload.campaignId, payload.requestedBy);
 }
 
 async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
   try {
-    // Find all tenants with a connected Google account
-    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
+    // §15 — connections are per-campaign, so schedule one sync job per connected
+    // (tenant, campaign) mailbox rather than one per tenant.
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select(['tenant_id', 'campaign_id']).execute();
 
     for (const token of googleTokens) {
       const tenantId = String(token.tenant_id);
+      const campaignId = String(token.campaign_id);
 
-      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs')
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'google_sync')
         .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .where(sql`payload->>'campaignId'`, '=', campaignId)
         .executeTakeFirst();
 
       if (!existing) {
-        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
+        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId} campaign ${campaignId}`);
         await db
           .insertInto('background_jobs')
           .values({
@@ -65,6 +67,7 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
             payload: JSON.stringify({
               type: 'google_sync',
               tenantId,
+              campaignId,
               requestedBy: 'system',
             }),
             run_at: new Date(),
@@ -74,23 +77,23 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
       }
     }
 
-    // Find all tenants with a connected Microsoft account
-    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select(['tenant_id', 'campaign_id']).execute();
 
     for (const token of msTokens) {
       const tenantId = String(token.tenant_id);
+      const campaignId = String(token.campaign_id);
 
-      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs')
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'ms_sync')
         .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .where(sql`payload->>'campaignId'`, '=', campaignId)
         .executeTakeFirst();
 
       if (!existing) {
-        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
+        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId} campaign ${campaignId}`);
         await db
           .insertInto('background_jobs')
           .values({
@@ -100,6 +103,7 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
             payload: JSON.stringify({
               type: 'ms_sync',
               tenantId,
+              campaignId,
               requestedBy: 'system',
             }),
             run_at: new Date(),

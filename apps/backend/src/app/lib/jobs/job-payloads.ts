@@ -67,11 +67,13 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('google_sync'),
     tenantId: idSchema,
+    campaignId: idSchema,
     requestedBy: z.string().default('system'),
   }),
   z.object({
     type: z.literal('ms_sync'),
     tenantId: idSchema,
+    campaignId: idSchema,
     requestedBy: z.string().default('system'),
   }),
 

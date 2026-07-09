@@ -9,77 +9,106 @@ describe('DashboardController Closed Emails Attribution', () => {
   let tenantId: string;
   let user1Id: string; // Zee (closer)
   let user2Id: string; // Zeeshan (assignee)
+  let campaignId: string;
   let emailId: string;
 
   beforeEach(async () => {
     tenantId = rand();
     user1Id = rand();
     user2Id = rand();
+    campaignId = rand();
     emailId = rand();
 
     // 1. Tenant
-    await db.insertInto('tenants').values({
-      id: tenantId,
-      name: 'Stats Test Tenant',
-    }).execute();
+    await db
+      .insertInto('tenants')
+      .values({
+        id: tenantId,
+        name: 'Stats Test Tenant',
+      })
+      .execute();
 
     // 2. Users
-    await db.insertInto('authusers').values([
-      {
-        id: user1Id,
+    await db
+      .insertInto('authusers')
+      .values([
+        {
+          id: user1Id,
+          tenant_id: tenantId,
+          email: `zee-${user1Id}@example.com`,
+          password: 'password',
+          first_name: 'Zee',
+          last_name: 'Hamid',
+          verified: true,
+          createdby_id: user1Id,
+          updatedby_id: user1Id,
+        },
+        {
+          id: user2Id,
+          tenant_id: tenantId,
+          email: `zeeshan-${user2Id}@example.com`,
+          password: 'password',
+          first_name: 'Zeeshan',
+          last_name: 'Ali',
+          verified: true,
+          createdby_id: user2Id,
+          updatedby_id: user2Id,
+        },
+      ])
+      .execute();
+
+    // 3. Campaign (emails are campaign-scoped, §15)
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaignId,
         tenant_id: tenantId,
-        email: `zee-${user1Id}@example.com`,
-        password: 'password',
-        first_name: 'Zee',
-        last_name: 'Hamid',
-        verified: true,
+        admin_id: user1Id,
+        name: 'Stats Test Campaign',
         createdby_id: user1Id,
         updatedby_id: user1Id,
-      },
-      {
-        id: user2Id,
+      })
+      .execute();
+
+    // 4. Email in Inbox (folder_id '11'), assigned to Zeeshan (user2Id), but closed
+    await db
+      .insertInto('emails')
+      .values({
+        id: emailId,
         tenant_id: tenantId,
-        email: `zeeshan-${user2Id}@example.com`,
-        password: 'password',
-        first_name: 'Zeeshan',
-        last_name: 'Ali',
-        verified: true,
+        campaign_id: campaignId,
+        folder_id: '11',
+        from_email: 'customer@example.com',
+        to_email: 'support@example.com',
+        subject: 'Issue Inquiry',
+        preview: 'Preview',
+        is_favourite: false,
+        status: 'closed',
+        assigned_to: user2Id,
         createdby_id: user2Id,
         updatedby_id: user2Id,
-      }
-    ]).execute();
+      })
+      .execute();
 
-    // 3. Email in Inbox (folder_id '11'), assigned to Zeeshan (user2Id), but closed
-    await db.insertInto('emails').values({
-      id: emailId,
-      tenant_id: tenantId,
-      folder_id: '11',
-      from_email: 'customer@example.com',
-      to_email: 'support@example.com',
-      subject: 'Issue Inquiry',
-      preview: 'Preview',
-      is_favourite: false,
-      status: 'closed',
-      assigned_to: user2Id,
-      createdby_id: user2Id,
-      updatedby_id: user2Id,
-    }).execute();
-
-    // 4. Activity log recording that Zee (user1Id) closed the email
-    await db.insertInto('user_activity').values({
-      tenant_id: tenantId,
-      user_id: user1Id,
-      activity: 'close',
-      entity: 'email',
-      entity_id: emailId,
-      createdby_id: user1Id,
-      updatedby_id: user1Id,
-    }).execute();
+    // 5. Activity log recording that Zee (user1Id) closed the email
+    await db
+      .insertInto('user_activity')
+      .values({
+        tenant_id: tenantId,
+        user_id: user1Id,
+        activity: 'close',
+        entity: 'email',
+        entity_id: emailId,
+        createdby_id: user1Id,
+        updatedby_id: user1Id,
+      })
+      .execute();
   });
 
   afterEach(async () => {
     await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
   });

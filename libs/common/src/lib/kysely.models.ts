@@ -621,6 +621,8 @@ interface Tenants extends RecordType, AddressType {
 }
 
 interface Emails extends RecordType {
+  /** The campaign context this email was synced into (§15). */
+  campaign_id: string;
   folder_id: string;
   from_email: string | null;
   /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
@@ -766,6 +768,8 @@ interface EmailAttachments extends RecordType {
 }
 
 interface EmailDrafts extends RecordType {
+  /** The campaign context this draft belongs to (§15). */
+  campaign_id: string;
   user_id: string;
   thread_id: string | null;
   to_list: JsonValue | null;
@@ -904,6 +908,8 @@ export interface DismissedDuplicateGroups {
 interface MsOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;
@@ -920,6 +926,8 @@ interface MsOauthTokens {
 export interface GoogleOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;

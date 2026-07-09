@@ -81,6 +81,12 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
       },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
+      },
       { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
       {
         kind: 'list',

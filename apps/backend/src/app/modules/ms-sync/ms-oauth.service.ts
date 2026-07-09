@@ -42,7 +42,7 @@ export class MsOAuthService {
     });
   }
 
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+  public async handleCallback(code: string, connectedBy: string, tenantId: string, campaignId: string): Promise<void> {
     const request: AuthorizationCodeRequest = {
       code,
       scopes: MS_SCOPES,
@@ -68,6 +68,7 @@ export class MsOAuthService {
         .insertInto('ms_oauth_tokens')
         .values({
           tenant_id: tenantId,
+          campaign_id: campaignId,
           user_id: connectedBy,
           access_token: encryptSecret(response.accessToken),
           refresh_token: encryptSecret(refreshToken),
@@ -77,7 +78,7 @@ export class MsOAuthService {
           synced_at: null,
         })
         .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
+          oc.columns(['tenant_id', 'campaign_id']).doUpdateSet({
             user_id: connectedBy,
             access_token: encryptSecret(response.accessToken),
             refresh_token: encryptSecret(refreshToken),
@@ -98,7 +99,7 @@ export class MsOAuthService {
           tenant_id: tenantId,
           queue: 'default',
           status: 'pending',
-          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
+          payload: JSON.stringify({ type: 'ms_sync', tenantId, campaignId, requestedBy: connectedBy }),
           run_at: new Date(),
           max_attempts: 3,
         })
@@ -106,15 +107,16 @@ export class MsOAuthService {
     });
   }
 
-  public async getValidToken(tenantId: string): Promise<string> {
+  public async getValidToken(tenantId: string, campaignId: string): Promise<string> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')
       .selectAll()
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     if (!row) {
-      throw new Error('No Microsoft account connected for this tenant');
+      throw new Error('No Microsoft account connected for this campaign');
     }
 
     // Decrypt at the DB read boundary so the rest of this method works in plaintext.
@@ -153,12 +155,16 @@ export class MsOAuthService {
         updated_at: new Date(),
       })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
 
     return response.accessToken;
   }
 
-  public async getConnectionStatus(tenantId: string): Promise<{
+  public async getConnectionStatus(
+    tenantId: string,
+    campaignId: string,
+  ): Promise<{
     connected: boolean;
     msEmail: string | null;
     syncedAt: Date | null;
@@ -169,6 +175,7 @@ export class MsOAuthService {
       .selectFrom('ms_oauth_tokens')
       .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     return {
@@ -180,11 +187,15 @@ export class MsOAuthService {
     };
   }
 
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  public async disconnect(tenantId: string, campaignId: string): Promise<void> {
+    await this.db
+      .deleteFrom('ms_oauth_tokens')
+      .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
+      .execute();
   }
 
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+  public async saveDeltaLink(tenantId: string, campaignId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('ms_oauth_tokens')
       .set({
@@ -195,31 +206,35 @@ export class MsOAuthService {
         updated_at: new Date(),
       })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+  public async recordSyncError(tenantId: string, campaignId: string, error: string): Promise<void> {
     await this.db
       .updateTable('ms_oauth_tokens')
       .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
+  public async getDeltaLink(tenantId: string, campaignId: string): Promise<string | null> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')
       .select('delta_link')
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
     return row?.delta_link ?? null;
   }
 
-  public async resetDeltaLink(tenantId: string): Promise<void> {
+  public async resetDeltaLink(tenantId: string, campaignId: string): Promise<void> {
     await this.db
       .updateTable('ms_oauth_tokens')
       .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 }

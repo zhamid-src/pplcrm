@@ -74,6 +74,11 @@ describe('EmailsService', () => {
     service = Object.create(EmailsService.prototype) as EmailsService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // §15 — the Inbox is campaign-scoped; stub the context the service reads.
+    (service as any).campaignContext = {
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      activeCampaignId: () => 'camp-1',
+    };
   });
 
   describe('Initialization', () => {
@@ -89,7 +94,7 @@ describe('EmailsService', () => {
 
       const result = await service.getEmails('folder1');
 
-      expect(mockApi.emails.getEmails.query).toHaveBeenCalledWith({ folderId: 'folder1' });
+      expect(mockApi.emails.getEmails.query).toHaveBeenCalledWith({ campaignId: 'camp-1', folderId: 'folder1' });
       expect(result).toEqual(mockEmails);
     });
 
@@ -242,7 +247,7 @@ describe('EmailsService', () => {
 
       const result = await service.getConnectionStatus();
 
-      expect(mockApi.msSync.getConnectionStatus.query).toHaveBeenCalled();
+      expect(mockApi.msSync.getConnectionStatus.query).toHaveBeenCalledWith({ campaignId: 'camp-1' });
       expect(result).toEqual(mockStatus);
     });
   });
