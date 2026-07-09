@@ -59,10 +59,7 @@ export class PersonsService {
 
     let household_id = payload.household_id as string | undefined;
     if (!household_id) {
-      const existingBlank = await households.getBlankHousehold({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-      });
+      const existingBlank = await households.getBlankHousehold({ tenant_id: auth.tenant_id });
       if (existingBlank?.id) {
         household_id = String(existingBlank.id);
       } else {
@@ -853,7 +850,7 @@ export class PersonsService {
           // 2a. Resolve blank household once for the whole chunk
           if (validEntries.some((e) => e.isBlankAddress)) {
             if (!localBlankHouseholdId) {
-              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
+              const existingBlank = await households.getBlankHousehold({ tenant_id }, trx);
               if (existingBlank?.id) {
                 localBlankHouseholdId = String(existingBlank.id);
               } else {
@@ -885,7 +882,6 @@ export class PersonsService {
               .selectFrom('households')
               .select(['id', 'address_fp_full'])
               .where('tenant_id', '=', tenant_id)
-              .where('campaign_id', '=', campaign_id)
               .where('address_fp_full', 'in', uniqueFps)
               .execute();
             for (const h of existingHouseholds) {

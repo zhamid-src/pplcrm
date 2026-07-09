@@ -30,6 +30,7 @@ import {
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { logger } from '../../logger';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
 import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
 import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
@@ -66,6 +67,7 @@ function deriveRouteName(firstAddress: string, date: Date): string {
 
 export class DeliveriesController {
   private readonly requestsRepo = new DeliveryRequestsRepo();
+  private readonly campaignsRepo = new CampaignsRepo();
   private readonly routesRepo = new DeliveryRoutesRepo();
   private readonly stopsRepo = new DeliveryRouteStopsRepo();
   private readonly userActivity = new UserActivityRepo();
@@ -98,6 +100,11 @@ export class DeliveriesController {
     const personId = input.person_id ? String(input.person_id) : null;
     const row = {
       tenant_id: auth.tenant_id,
+      // The context this yard-sign request belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
       household_id: input.household_id,
       person_id: personId,
       web_form_id: null,
@@ -247,8 +254,18 @@ export class DeliveriesController {
         if (params.includeReturnLeg) totalKm += roadKm(cursor, start);
 
         const firstAddress = eligibleById.get(ordered[0] ?? '')?.address ?? '';
+        // A route inherits the campaign of the requests it serves (§15); the
+        // eligibility query keeps plans single-campaign, so the first stop is
+        // representative.
+        const firstRequest = await trx
+          .selectFrom('delivery_requests')
+          .select(['campaign_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', String(ordered[0]))
+          .executeTakeFirstOrThrow();
         const routeRow = {
           tenant_id: auth.tenant_id,
+          campaign_id: String(firstRequest.campaign_id),
           name: deriveRouteName(firstAddress, now),
           status: 'draft',
           volunteer_person_id: null,

@@ -1,10 +1,50 @@
 import { createPublicKey, createVerify } from 'crypto';
 import type { FastifyPluginCallback } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
+import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
 import { env } from '../../../../env';
 import { sql } from 'kysely';
 
 const db = new BaseRepository('newsletters').db;
+const subscriptions = new CampaignSubscriptionsRepo();
+
+/**
+ * Consent/suppression side-effects of a SendGrid event (§15):
+ *  - unsubscribe → unsubscribed in the CAMPAIGN whose newsletter carried the link
+ *  - bounce → global hard_bounce suppression (address is dead everywhere)
+ *  - spamreport → global spam_complaint suppression
+ */
+async function applyConsentSideEffects(
+  tenantId: string,
+  newsletterId: string,
+  eventType: string,
+  email: string,
+  occurredAt: Date,
+): Promise<void> {
+  if (!email) return;
+  if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
+    const newsletter = await db
+      .selectFrom('newsletters')
+      .select(['campaign_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .executeTakeFirst();
+    if (newsletter?.campaign_id) {
+      await subscriptions.unsubscribeByEmail({
+        tenant_id: tenantId,
+        campaign_id: String(newsletter.campaign_id),
+        email,
+      });
+    }
+  } else if (eventType === 'bounce' || eventType === 'spamreport') {
+    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
+    await db
+      .insertInto('email_suppressions')
+      .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
+      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
+      .execute();
+  }
+}
 
 const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
 const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
@@ -95,6 +135,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
             .execute();
 
           processedNewsletters.add(`${tenantId}:${newsletterId}`);
+
+          await applyConsentSideEffects(String(tenantId), String(newsletterId), eventType, email, timestamp);
         } catch (insertErr) {
           req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
         }

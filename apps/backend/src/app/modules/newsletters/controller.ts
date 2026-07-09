@@ -5,6 +5,7 @@ import { sql } from 'kysely';
 
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
@@ -23,6 +24,8 @@ export interface SendTestEmailInput {
 }
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
   constructor() {
     super(new NewslettersRepo());
   }
@@ -33,6 +36,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * the transition, but nothing reads it for behavior anymore).
    */
   public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    // Every newsletter belongs to a campaign (§15). Callers that predate the
+    // context switcher fall back to the tenant's office context.
+    const pending = row as Record<string, unknown>;
+    if (!pending['campaign_id']) {
+      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
+      const office = campaigns.find((c) => c.kind === 'office');
+      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
+      pending['campaign_id'] = String(office.id);
+    }
     const result = await super.add(row, trx);
     const rowObj = row as Record<string, unknown>;
     const resultObj = result as Record<string, unknown> | undefined;
@@ -213,13 +225,41 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     }
 
     const db = this.getRepo().db;
+    const campaignId = String(newsletter.campaign_id);
     let query = db
       .selectFrom('persons')
       .where('persons.tenant_id', '=', tenant_id)
       .where('persons.email', 'is not', null)
       .where('persons.email', '!=', '')
-      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
-      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
+      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
+      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
+      .where((eb) =>
+        eb.exists(
+          db
+            .selectFrom('campaign_subscriptions')
+            .select('campaign_subscriptions.person_id')
+            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
+            .where('campaign_subscriptions.campaign_id', '=', campaignId)
+            .where('campaign_subscriptions.status', '=', 'subscribed')
+            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
+        ),
+      )
+      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('email_suppressions')
+              .select('email_suppressions.id')
+              .where('email_suppressions.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`email_suppressions.email = persons.email`),
+          ),
+        ),
+      )
+      // 3. Person-level do-not-contact (null channel list = all channels).
+      .where(
+        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
+      );
 
     query = query.where((eb) => {
       const conditions = [];

@@ -1,4 +1,4 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddMarketingEmailType,
   ExportCsvInputType,
@@ -9,13 +9,19 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
   protected override readonly endpointName = 'newsletters';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddMarketingEmailType) {
-    return this.api.newsletters.create.mutate(row);
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
   }
 
   public addMany(_rows: AddMarketingEmailType[]) {
@@ -35,7 +41,10 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   }
 
   public async getAll(options?: getAllOptionsType) {
-    const result = await this.api.newsletters.getAllWithCounts.query(options, { signal: this.ac.signal });
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
     const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
     const count = result?.count != null ? Number(result.count) : rows.length;
     return { rows, count };

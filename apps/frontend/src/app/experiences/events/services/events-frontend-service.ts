@@ -1,4 +1,4 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import type {
   AddEventType,
   UpdateEventType,
@@ -7,13 +7,18 @@ import type {
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class EventsFrontendService extends AbstractAPIService<'events', UpdateEventType> {
   protected override readonly endpointName = 'events';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddEventType) {
-    return this.api.events.add.mutate(row);
+    // Created in the context the user is working in (§15); backend defaults to the office.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.events.add.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
   }
 
   public addMany(_rows: AddEventType[]) {
@@ -33,11 +38,17 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.api.events.getAll.query(options, { signal: this.ac.signal });
+    return this.api.events.getAll.query(this.scoped(options), { signal: this.ac.signal });
   }
 
   public getAllArchived(options?: getAllOptionsType) {
-    return this.api.events.getAll.query({ ...options, includeArchived: true }, { signal: this.ac.signal });
+    return this.api.events.getAll.query({ ...this.scoped(options), includeArchived: true }, { signal: this.ac.signal });
+  }
+
+  /** Campaigns §15 — the events pages show the active context's events. */
+  private scoped(options?: getAllOptionsType): getAllOptionsType {
+    const campaignId = this.campaignContext.activeCampaignId();
+    return campaignId ? { ...(options ?? {}), campaignId } : options;
   }
 
   public getById(id: string) {

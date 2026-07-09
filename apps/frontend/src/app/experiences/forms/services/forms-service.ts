@@ -1,4 +1,4 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddWebFormType,
   CreateFormType,
@@ -13,6 +13,7 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 /** A form as consumed by the new Forms experience (fields normalized to objects by the server). */
 export interface FormDetail {
@@ -50,6 +51,8 @@ export interface FormSubmissionRow {
 export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
   protected override readonly endpointName = 'webForms';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddWebFormType) {
     return this.api.webForms.add.mutate(row);
   }
@@ -71,7 +74,10 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
   }
 
   public async getAll(options?: getAllOptionsType) {
-    const result = await this.api.webForms.getAllWithCounts.query(options, { signal: this.ac.signal });
+    // Campaigns §15 — the forms page shows the active context's forms.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.webForms.getAllWithCounts.query(scoped, { signal: this.ac.signal });
     const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
     const count = result?.count != null ? Number(result.count) : rows.length;
     return { rows, count };
@@ -109,7 +115,9 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
   }
 
   public createForm(input: CreateFormType): Promise<FormDetail> {
-    return this.api.webForms.create.mutate(input) as Promise<FormDetail>;
+    const campaignId = this.campaignContext.activeCampaignId();
+    const stamped = campaignId ? { ...input, campaign_id: campaignId } : input;
+    return this.api.webForms.create.mutate(stamped) as Promise<FormDetail>;
   }
 
   public updateLive(id: string, data: UpdateFormType): Promise<FormDetail> {

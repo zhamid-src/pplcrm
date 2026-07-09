@@ -22,6 +22,9 @@ describe('NewslettersService', () => {
     service = Object.create(NewslettersService.prototype) as NewslettersService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests — add() then sends the payload unstamped
+    // and the backend falls back to the office campaign (§15).
+    (service as any).campaignContext = { activeCampaignId: () => null };
   });
 
   it('should create a newsletter', async () => {

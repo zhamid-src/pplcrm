@@ -31,6 +31,10 @@ export class ListsRepo extends BaseRepository<'lists'> {
         .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')
         .leftJoin('authusers', 'authusers.id', 'lists.createdby_id')
         .where('lists.tenant_id', '=', tenantId)
+        // Campaigns §15 — the lists page shows the active context's segments.
+        .$if(!!(options as { campaignId?: string }).campaignId, (qb) =>
+          qb.where('lists.campaign_id', '=', (options as { campaignId?: string }).campaignId as string),
+        )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(

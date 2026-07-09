@@ -76,7 +76,7 @@ export async function seedOnboardingData(
         last_name: '[Sample]',
         email: 'alex.sample@example.com',
         mobile: '555-0101',
-        notes: '[SAMPLE] Tagged as Supporter. Delete when ready to use real contacts.',
+        notes: '[SAMPLE] Marked as a strong supporter. Delete when ready to use real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
       },
@@ -100,7 +100,7 @@ export async function seedOnboardingData(
         last_name: '[Sample]',
         email: 'jordan.sample@example.com',
         mobile: '555-0103',
-        notes: '[SAMPLE] Tagged as Non-Supporter. Delete when ready to use real contacts.',
+        notes: '[SAMPLE] Marked as against. Delete when ready to use real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
       },
@@ -110,40 +110,52 @@ export async function seedOnboardingData(
 
   const [alexId, samId, jordanId] = persons.map((p) => p.id) as [string, string, string];
 
-  // ── 3. Tag assignments ────────────────────────────────────────────────────
+  // ── 3. Tag + support-level assignments ────────────────────────────────────
+  // Support is a per-campaign fact (§15), not a tag: Alex/Jordan get facts rows
+  // in the office context. Sam keeps the volunteer tag — that one is still a tag.
   const tagRows = await trx
     .selectFrom('tags')
     .select(['id', 'name'])
     .where('tenant_id', '=', tenant_id)
-    .where('name', 'in', ['supporter', 'volunteer', 'non-supporter'])
+    .where('name', '=', 'volunteer')
     .where('type', '=', 'tag')
     .execute();
 
-  const tagMap = new Map(tagRows.map((t) => [String(t.name), t.id]));
-  const supporterTagId = tagMap.get('supporter');
-  const volunteerTagId = tagMap.get('volunteer');
-  const nonSupporterTagId = tagMap.get('non-supporter');
-
-  const tagMappings = [
-    supporterTagId ? { person_id: alexId, tag_id: supporterTagId } : null,
-    volunteerTagId ? { person_id: samId, tag_id: volunteerTagId } : null,
-    nonSupporterTagId ? { person_id: jordanId, tag_id: nonSupporterTagId } : null,
-  ].filter((m): m is { person_id: string; tag_id: string } => m !== null);
-
-  if (tagMappings.length > 0) {
+  const volunteerTagId = tagRows[0]?.id;
+  if (volunteerTagId) {
     await trx
       .insertInto('map_peoples_tags')
-      .values(
-        tagMappings.map(({ person_id, tag_id }) => ({
-          tenant_id: tenant_id,
-          person_id: person_id,
-          tag_id: tag_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        })),
-      )
+      .values({
+        tenant_id: tenant_id,
+        person_id: samId,
+        tag_id: volunteerTagId,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })
       .execute();
   }
+
+  await trx
+    .insertInto('campaign_person_facts')
+    .values(
+      (
+        [
+          { person_id: alexId, support_level: 'strong' },
+          { person_id: jordanId, support_level: 'against' },
+        ] as const
+      ).map(({ person_id, support_level }) => ({
+        tenant_id: tenant_id,
+        campaign_id,
+        person_id,
+        support_level,
+        support_source: 'import',
+        support_recorded_by: user_id,
+        support_recorded_at: new Date(),
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })),
+    )
+    .execute();
 
   // ── 4. Sample tasks ───────────────────────────────────────────────────────
   await trx
@@ -164,7 +176,7 @@ export async function seedOnboardingData(
         tenant_id: tenant_id,
         name: 'Explore tags and lists to segment your contacts [SAMPLE]',
         details:
-          'Tags like "supporter", "volunteer", and "donor" are already set up. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
+          'Tags like "volunteer", "staff", and "vip" are already set up — support level and email consent live on the person record per campaign. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
         status: 'todo' as const,
         priority: 'low' as const,
         position: 2,
@@ -190,10 +202,11 @@ export async function seedOnboardingData(
     .insertInto('web_forms')
     .values({
       tenant_id: tenant_id,
+      campaign_id,
       name: 'Newsletter Sign-Up [SAMPLE]',
       description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
       fields: JSON.stringify(fieldsForTemplate('signup')),
-      target_tags: JSON.stringify(['subscriber']),
+      target_tags: JSON.stringify([]),
       target_lists: JSON.stringify([]),
       status: 'published',
       type: 'signup',
@@ -217,6 +230,7 @@ export async function seedOnboardingData(
     .insertInto('lists')
     .values({
       tenant_id: tenant_id,
+      campaign_id,
       name: 'Supporters [SAMPLE]',
       description:
         'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
@@ -286,6 +300,7 @@ export async function seedOnboardingData(
     .insertInto('newsletters')
     .values({
       tenant_id: tenant_id,
+      campaign_id,
       name: 'Welcome Newsletter [SAMPLE]',
       status: 'draft',
       subject: 'Welcome — we are glad you are here!',

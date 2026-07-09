@@ -18,6 +18,11 @@ export type {
   AddMarketingEmailType,
   AddTaskType,
   AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
   InviteAuthUserType,
   Verify2FAType,
   PERSONINHOUSEHOLDTYPE,
@@ -99,6 +104,21 @@ export {
   isTaskStatus,
   isTaskBoardStatus,
   AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
   InviteAuthUserObj,
   Verify2FAObj,
   PersonsObj,
@@ -227,6 +247,17 @@ export {
   interactionTypeSchema,
   LogInteractionObj,
 } from './lib/schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel } from './lib/schemas/persons.schema';
 
 export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 

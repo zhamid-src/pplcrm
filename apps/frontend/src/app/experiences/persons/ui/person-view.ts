@@ -15,6 +15,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { EventsService } from '../../../services/api/events-service';
 import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonCampaignFacts } from './person-campaign-facts';
 import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -46,6 +47,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     DetailItem,
     SystemMetadata,
     Tags,
+    PersonCampaignFacts,
     PersonConnections,
   ],
   templateUrl: './person-view.html',
@@ -160,11 +162,12 @@ export class PersonView {
     { label: this.fullName() || 'Person' },
   ]);
 
-  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge
+  // outranks one-off gifts; "Donor" is DERIVED from donation history (§15), not a tag.
   protected readonly statusChip = computed<string | null>(() => {
     if (this.hasActivePledge()) return 'Monthly donor';
+    if (this.donationHistory().length > 0) return 'Donor';
     const tags = this.tags().map((t) => t.toLowerCase());
-    if (tags.includes('donor')) return 'Donor';
     if (tags.includes('volunteer')) return 'Volunteer';
     if (tags.includes('host')) return 'Host';
     return null;

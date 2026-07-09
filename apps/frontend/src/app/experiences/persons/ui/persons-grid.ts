@@ -6,7 +6,12 @@ import { DataGridUtilsService } from '@frontend/shared/components/datagrid/servi
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
 
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
@@ -111,6 +116,25 @@ export class PersonsGrid implements OnInit {
     // is intentionally a fixed, wrapping column). Notes/description still win when shown.
     { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
     { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
     { field: 'company_name', headerName: 'Company', editable: false, hide: true },
     {
       field: 'home_phone',

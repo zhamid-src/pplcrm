@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
+import { idSchema, nameSchema, descriptionSchema } from './core.schema';
 
 export const AddWebFormObj = z.object({
   name: nameSchema('Web Form name', 100),
@@ -243,6 +243,8 @@ export function fieldsForTemplate(type: FormType): FormField[] {
 export const CreateFormObj = z.object({
   name: nameSchema('Form name', 100),
   type: FormTypeEnum,
+  /** Campaigns §15 — the context this form collects consent for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
 });
 
 /** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */

@@ -104,6 +104,10 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .where('web_forms.tenant_id', '=', tenantId)
+        // Campaigns §15 — the forms page shows the active context's forms.
+        .$if(!!(options as { campaignId?: string }).campaignId, (qb: any) =>
+          qb.where('web_forms.campaign_id', '=', (options as { campaignId?: string }).campaignId as string),
+        )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(
