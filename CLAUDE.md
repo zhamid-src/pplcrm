@@ -1,6 +1,12 @@
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
+# Claude Code Automation Rules
+
+- When executing Bash commands, always append silent flags (e.g., `git status -s`, `npm install --silent`).
+- Minimize printing verbose tool execution details in your text responses.
+- Combine necessary steps into concise compound scripts to reduce terminal output spam.
+
 ## General Guidelines for working with Nx
 
 - For navigating/exploring the workspace, invoke the `nx-workspace` skill first - it has patterns for querying projects, targets, and dependencies
