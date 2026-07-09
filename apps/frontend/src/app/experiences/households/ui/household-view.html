@@ -127,21 +127,47 @@
       </pc-card>
     </div>
 
-    <!-- Right Column: Members & Activity at this door -->
+    <!-- Right Column: pill tab bar + content card (matches person view) -->
     <div class="flex flex-col gap-6 lg:col-span-2">
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Members</h3>
-        <pc-people-in-household [householdId]="id()"></pc-people-in-household>
-      </pc-card>
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of householdTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
 
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Activity at this door
-        </h3>
-        <div class="flex max-h-[450px] flex-col gap-4 overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'households'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'households'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <pc-people-in-household [householdId]="id()"></pc-people-in-household>
+        </pc-tab-panel>
+      </div>
     </div>
   </div>
   } }

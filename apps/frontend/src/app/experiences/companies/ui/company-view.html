@@ -33,6 +33,12 @@
     <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
     {{ enrichLabel() }}
   </button>
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'companies'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
   } @if (company(); as c) {
   <!-- Main Content Grid -->
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -81,47 +87,62 @@
       </pc-card>
     </div>
 
-    <!-- Right Column: About, People, Activity -->
+    <!-- Right Column: pill tab bar + content card (matches person view) -->
     <div class="flex flex-col gap-6 lg:col-span-2">
-      <!-- About card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">About</h3>
-        @if (c.description) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
-        } @else {
-        <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of companyTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
         }
-      </pc-card>
+      </div>
 
-      <!-- People card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          People <span class="ml-1 font-normal normal-case text-base-content/40">· {{ subtitle() }}</span>
-        </h3>
-        @defer (on viewport) {
-        <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-        } @placeholder {
-        <div class="skeleton h-32 w-full"></div>
-        }
-        <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
-          Grouped from the employer field — edit a person’s employer and they move companies.
-        </p>
-      </pc-card>
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
 
-      <!-- Activity card -->
-      <pc-card>
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Activity</h3>
-          <pc-log-interaction
-            [entity]="'companies'"
-            [entityId]="id()"
-            (logged)="onInteractionLogged()"
-          ></pc-log-interaction>
-        </div>
-        <div class="flex max-h-[450px] flex-col gap-4 overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
+        <pc-tab-panel id="people" [activeTab]="activeTab()">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton h-32 w-full"></div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
+            Grouped from the employer field — edit a person’s employer and they move companies.
+          </p>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="about" [activeTab]="activeTab()">
+          @if (c.description) {
+          <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
+          } @else {
+          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+          }
+        </pc-tab-panel>
+      </div>
     </div>
   </div>
   }
