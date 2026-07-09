@@ -26,11 +26,7 @@
     }
 
     <!-- Body owns the space (§5) -->
-    <pc-email-body
-      class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
-      [email]="email()!"
-    >
-    </pc-email-body>
+    <pc-email-body class="flex-1 min-h-0 rounded-lg bg-base-100" [email]="email()!"> </pc-email-body>
 
     @if (!store.isBodyExpanded()) {
     <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
@@ -101,8 +97,8 @@
   </div>
   } @else if (showNoEmailMsg()){
   <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
-    <img class="max-w-64" src="assets/waiting.svg" />
-    <span>No emails here!</span>
+    <pc-icon name="exclamation-circle" [size]="16" class="text-base-300"></pc-icon>
+    <span>Please select an email</span>
   </div>
   }
 </section>

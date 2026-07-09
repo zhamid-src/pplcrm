@@ -1,17 +1,17 @@
 import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Tags } from '@experiences/tags/ui/tags';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PersonsService } from '@experiences/persons/services/persons-service';
 
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
 import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-header',
@@ -42,6 +42,52 @@ export class EmailHeader {
     const person = this.headerData()?.person;
     return person?.issues?.map((t: any) => t.name) ?? [];
   });
+
+  protected editingName = signal(false);
+  protected nameDraft = signal({ first_name: '', last_name: '' });
+  private savingName = false;
+
+  private readonly firstNameInput = viewChild<ElementRef<HTMLInputElement>>('firstNameInput');
+  private readonly personDropdownContent = viewChild<ElementRef<HTMLElement>>('personDropdownContent');
+
+  // DaisyUI's dropdown is visible only while something inside it holds focus (`:focus-within`);
+  // losing focus even for one render flips `.dropdown-content` to `display: none`, and a
+  // `display: none` element can't be focused back into view — so the fix is to never let focus
+  // leave the subtree in the first place. We hold focus on the always-present wrapper *before*
+  // toggling which button/input gets rendered, then hand focus off to the fresh element once it
+  // exists.
+  private holdDropdownFocus(): void {
+    this.personDropdownContent()?.nativeElement.focus();
+  }
+
+  protected startEditName(person: { first_name?: string | null; last_name?: string | null }): void {
+    this.holdDropdownFocus();
+    this.nameDraft.set({ first_name: person.first_name ?? '', last_name: person.last_name ?? '' });
+    this.editingName.set(true);
+    setTimeout(() => this.firstNameInput()?.nativeElement.focus());
+  }
+
+  protected cancelEditName(): void {
+    this.holdDropdownFocus();
+    this.editingName.set(false);
+  }
+
+  protected async saveName(personId: string): Promise<void> {
+    if (this.savingName) return;
+    const { first_name, last_name } = this.nameDraft();
+    this.savingName = true;
+    try {
+      await this.personsSvc.update(personId, { first_name: first_name.trim(), last_name: last_name.trim() });
+      this.store.refreshEmailHeader(this.email().id);
+      this.holdDropdownFocus();
+      this.editingName.set(false);
+    } catch (e) {
+      console.error('Failed to update name:', e);
+      this.alertSvc.showError('Failed to update name');
+    } finally {
+      this.savingName = false;
+    }
+  }
 
   protected async onTagAdded(tagName: string) {
     const person = this.headerData()?.person;
