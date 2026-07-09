@@ -63,13 +63,14 @@ export class TeamViewComponent {
   ]);
 
   // Active tab state
-  protected activeTab = signal<string>('activity');
+  protected activeTab = signal<string>('volunteers');
 
   protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
     { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
     { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
     { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
   ]);
 
   protected readonly captainName = computed(() => {

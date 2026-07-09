@@ -21,7 +21,64 @@
     <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
 
     <form (submit)="save()" novalidate class="mt-6">
-      <fieldset [disabled]="isLoading()">
+      <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+        <!-- Tags & issues — standalone card, first section -->
+        <pc-card>
+          <!-- Tags -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              placeholder="Type and press Enter to add"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+            @if (tagSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of tagSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addTagSuggestion(s)"
+              >
+                {{ s }}
+              </button>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Issues of interest -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="What does this person care about? Enter to add"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+            @if (issueSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of issueSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addIssueSuggestion(s)"
+              >
+                {{ s }}
+              </button>
+              }
+            </div>
+            }
+          </div>
+        </pc-card>
+
         <pc-card>
           @if (!person()?.id) {
           <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
@@ -115,60 +172,6 @@
             <p class="pl-1 text-xs text-base-content/50">
               Addresses belong to households, so everyone at the same address stays in sync.
             </p>
-          </div>
-
-          <!-- Tags -->
-          <div class="flex flex-col gap-1.5">
-            <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-            <pc-tags
-              [tags]="tags()"
-              type="tag"
-              [enableAutoComplete]="true"
-              placeholder="Type and press Enter to add"
-              (tagAdded)="tagAdded($event)"
-              (tagRemoved)="tagRemoved($event)"
-            ></pc-tags>
-            @if (tagSuggestions().length) {
-            <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-base-content/50">Suggestions:</span>
-              @for (s of tagSuggestions(); track s) {
-              <button
-                type="button"
-                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                (click)="addTagSuggestion(s)"
-              >
-                {{ s }}
-              </button>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Issues of interest -->
-          <div class="flex flex-col gap-1.5">
-            <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-            <pc-tags
-              [tags]="issues()"
-              type="issue"
-              [enableAutoComplete]="true"
-              placeholder="What does this person care about? Enter to add"
-              (tagAdded)="issueAdded($event)"
-              (tagRemoved)="issueRemoved($event)"
-            ></pc-tags>
-            @if (issueSuggestions().length) {
-            <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-base-content/50">Suggestions:</span>
-              @for (s of issueSuggestions(); track s) {
-              <button
-                type="button"
-                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                (click)="addIssueSuggestion(s)"
-              >
-                {{ s }}
-              </button>
-              }
-            </div>
-            }
           </div>
 
           <!-- Internal notes -->

@@ -135,6 +135,9 @@
         ></pc-system-metadata>
       </pc-card>
 
+      <!-- Campaign standing: support level + voting status per context, DNC override (§15) -->
+      <pc-person-campaign-facts [personId]="id()" [dncFlag]="!!person().do_not_contact"></pc-person-campaign-facts>
+
       <!-- Internal Notes (own card) -->
       @if (person().notes) {
       <pc-card>
@@ -448,51 +451,40 @@
         </pc-tab-panel>
 
         <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-6">
-            <!-- Household members -->
-            <div class="flex flex-col gap-4">
-              @if (householdId() && !isPlaceholderHousehold()) { @defer {
-              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-              } @placeholder {
-              <div class="skeleton w-full h-32"></div>
-              } } @else {
-              <div class="flex flex-col items-center gap-3 py-10 text-center">
-                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-                <div class="flex flex-col gap-1">
-                  <span
-                    class="font-medium text-base-content"
-                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                    >Not part of a household yet</span
-                  >
-                  <span
-                    class="max-w-sm text-sm text-base-content/50"
-                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                    >Households group people who share an address, so everyone at the same address stays in sync.</span
-                  >
-                </div>
-                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                  <pc-icon name="home" [size]="4"></pc-icon>
-                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                    >Assign household</ng-container
-                  >
-                </button>
+          <!-- Household members -->
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="flex flex-col items-center gap-3 py-10 text-center">
+              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+              <div class="flex flex-col gap-1">
+                <span
+                  class="font-medium text-base-content"
+                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                  >Not part of a household yet</span
+                >
+                <span
+                  class="max-w-sm text-sm text-base-content/50"
+                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                  >Households group people who share an address, so everyone at the same address stays in sync.</span
+                >
               </div>
-              }
+              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                <pc-icon name="home" [size]="4"></pc-icon>
+                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                  >Assign household</ng-container
+                >
+              </button>
             </div>
-
-            <!-- Connections (folded into Household) -->
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
-              <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/60">
-                Connections @if (connectionCount() > 0) {
-                <span class="badge badge-sm badge-neutral">{{ connectionCount() }}</span>
-                }
-              </span>
-              <pc-person-connections
-                [personId]="id()"
-                (countChange)="connectionCount.set($event)"
-              ></pc-person-connections>
-            </div>
+            }
           </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
         </pc-tab-panel>
       </div>
     </div>

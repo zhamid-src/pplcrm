@@ -64,8 +64,9 @@ export class CompanyView {
   protected readonly activeTab = signal<string>('people');
   protected readonly companyTabs = computed<PcTabOption[]>(() => [
     { id: 'people', label: 'People', badge: this.employeeCount() || undefined },
-    { id: 'activity', label: 'Activity' },
     { id: 'about', label: 'About' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity' },
   ]);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [

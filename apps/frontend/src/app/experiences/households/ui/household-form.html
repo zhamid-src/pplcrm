@@ -33,6 +33,39 @@
       <!-- Form Section -->
       <form (submit)="$event.preventDefault()" class="flex flex-col gap-6 lg:col-span-2">
         <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)" class="flex flex-col gap-6">
+          <!-- Segmentation (tags & issues) — first section, standalone card -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
+              <pc-tags
+                [tags]="tags"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Add a tag — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="Add an issue — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+            </div>
+          </pc-card>
+
           <!-- Address -->
           <pc-card>
             <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Address</h3>
@@ -80,39 +113,6 @@
                 <pc-address-form-group [form]="form"></pc-address-form-group>
               </div>
             </details>
-          </pc-card>
-
-          <!-- Segmentation -->
-          <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
-
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
-              <pc-tags
-                [tags]="tags"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Add a tag — Enter"
-                [readonly]="household()?.is_placeholder ?? false"
-                [canDelete]="!(household()?.is_placeholder ?? false)"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="Add an issue — Enter"
-                [readonly]="household()?.is_placeholder ?? false"
-                [canDelete]="!(household()?.is_placeholder ?? false)"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-            </div>
           </pc-card>
 
           <!-- Door notes -->
