@@ -65,7 +65,11 @@
             <div class="mb-1 text-xs font-medium text-base-content/60">Talked — how did they lean?</div>
             <div class="flex flex-wrap gap-2">
               @for (r of responses; track r.key) {
-              <button type="button" class="btn btn-sm btn-outline" (click)="logKnock(door, 'conversation', r.key)">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-accent"
+                (click)="logKnock(door, 'conversation', r.key)"
+              >
                 {{ r.label }}
               </button>
               }

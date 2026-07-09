@@ -21,7 +21,11 @@
         or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
       </span>
     </div>
-    <button type="button" class="btn btn-outline btn-sm shrink-0" (click)="showUnusedOnly.set(!showUnusedOnly())">
+    <button
+      type="button"
+      class="btn btn-outline btn-accent btn-sm shrink-0"
+      (click)="showUnusedOnly.set(!showUnusedOnly())"
+    >
       {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
     </button>
   </div>
@@ -52,7 +56,7 @@
                 {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
               </p>
               @if (showUnusedOnly()) {
-              <button type="button" class="btn btn-sm btn-outline" (click)="showUnusedOnly.set(false)">
+              <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="showUnusedOnly.set(false)">
                 Show all tags
               </button>
               } @else {

@@ -280,6 +280,7 @@
                   class="btn btn-sm min-w-12 font-medium"
                   [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
                   [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
                   [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
                   (click)="toggleDay(section, field.controlName, day.value)"
                 >
@@ -300,7 +301,7 @@
                 />
                 <button
                   type="button"
-                  class="btn btn-square btn-outline hover:btn-primary shrink-0"
+                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
                   (click)="copyToClipboard(section.form[field.controlName]().value())"
                   title="Copy to clipboard"
                 >

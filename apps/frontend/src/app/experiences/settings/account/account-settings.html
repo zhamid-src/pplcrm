@@ -98,12 +98,12 @@
   @if (status()!.deletion_scheduled_at) {
   <div class="space-y-3">
     <p class="text-sm text-error font-medium">
-      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being
-      permanently removed.
+      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
+      removed.
     </p>
     <button
       type="button"
-      class="btn btn-outline btn-sm"
+      class="btn btn-outline btn-warning btn-sm"
       (click)="cancelDeletion()"
       [disabled]="actionPending()"
     >
@@ -113,12 +113,7 @@
     </button>
   </div>
   } @else {
-  <button
-    type="button"
-    class="btn btn-error btn-sm"
-    (click)="deleteAccount()"
-    [disabled]="actionPending()"
-  >
+  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
     @if (actionPending()) {
     <span class="loading loading-spinner loading-xs"></span>
     }

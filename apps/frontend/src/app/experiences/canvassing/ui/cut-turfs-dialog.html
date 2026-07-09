@@ -38,6 +38,7 @@
           class="btn btn-sm"
           [class.btn-primary]="doorsPerTurf() === p"
           [class.btn-outline]="doorsPerTurf() !== p"
+          [class.btn-accent]="doorsPerTurf() !== p"
           (click)="setDoors(p)"
         >
           {{ p }}

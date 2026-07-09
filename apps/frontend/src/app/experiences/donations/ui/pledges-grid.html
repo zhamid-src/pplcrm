@@ -8,7 +8,12 @@
       </h1>
       <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
     </div>
-    <button class="btn btn-outline btn-sm gap-2" pcSpinOnClick [disabled]="_loading.visible()" (click)="refresh()">
+    <button
+      class="btn btn-outline btn-accent btn-sm gap-2"
+      pcSpinOnClick
+      [disabled]="_loading.visible()"
+      (click)="refresh()"
+    >
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Refresh
     </button>
