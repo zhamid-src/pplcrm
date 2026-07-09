@@ -187,10 +187,10 @@ export class PersonView {
   // Active tab state
   protected activeTab = signal<string>('household');
 
-  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
+  // Seven tabs (§3): Newsletters fold into Emails; Household and Connections are distinct concepts, own tabs each.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
     { id: 'household', label: 'Household', icon: 'home' },
-    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
     { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
     {
       id: 'donations',
@@ -200,6 +200,8 @@ export class PersonView {
     },
     { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
     { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
   ]);
 
   /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
