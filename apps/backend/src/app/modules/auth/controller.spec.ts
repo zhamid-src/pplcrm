@@ -24,7 +24,6 @@ async function cleanup(db: any, user_id: string, tenant_id: string) {
   await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
 
   const tenantUserIds = db.selectFrom('authusers').select('id').where('tenant_id', '=', tenant_id);
 
@@ -38,6 +37,8 @@ async function cleanup(db: any, user_id: string, tenant_id: string) {
   await db.deleteFrom('teams').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('volunteer_events').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('web_forms').where('tenant_id', '=', tenant_id).execute();
+  // Campaigns are referenced by newsletters/lists/web_forms/events/… (§15), so they go last.
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('sessions').where('user_id', 'in', tenantUserIds).execute();
 
   await db

@@ -39,6 +39,26 @@ import Cursor from 'pg-cursor';
 // corrupt context can never smuggle SQL or a non-numeric GUC into the session.
 const TENANT_ID_PATTERN = /^\d+$/;
 
+/**
+ * Tables whose rows belong to exactly one campaign context (Campaigns §15).
+ * getAll/getAllWithCounts filter these by `options.campaignId` when provided;
+ * everything else (the shared rolodex: persons, households, companies, tags,
+ * tasks, …) ignores the option. Children (form_submissions, turf_*, stops,
+ * event_registrations) inherit context via their parent and stay off this list.
+ */
+const CAMPAIGN_SCOPED_TABLES = new Set<string>([
+  'newsletters',
+  'donations',
+  'donation_pledges',
+  'donation_periods',
+  'web_forms',
+  'lists',
+  'events',
+  'turfs',
+  'delivery_requests',
+  'delivery_routes',
+]);
+
 const dialect = new PostgresDialect({
   // P-4 (schema review 2026-07-06, §5): make the pool explicit instead of pg's
   // silent defaults (max 10, no timeouts). Without a connection timeout, a burst
@@ -200,7 +220,23 @@ export class BaseRepository<T extends keyof Models> {
     if (this.table !== 'tenants') {
       query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
     }
+    const campaignId = this.campaignScope(input.options);
+    if (campaignId) {
+      query = query.where('campaign_id' as ReferenceExpression<Models, T>, '=', campaignId);
+    }
     return query.execute();
+  }
+
+  /**
+   * Campaigns §15 — the active-context filter. Returns the campaign id to scope
+   * by when (a) the caller passed one and (b) this table's rows belong to
+   * exactly one campaign. Shared rolodex tables (persons, households, …) are
+   * never scoped here.
+   */
+  protected campaignScope(options?: QueryParams<T>): string | null {
+    const campaignId = (options as { campaignId?: string } | undefined)?.campaignId;
+    if (!campaignId) return null;
+    return CAMPAIGN_SCOPED_TABLES.has(String(this.table)) ? campaignId : null;
   }
 
   public async getAllWithCounts(
@@ -218,9 +254,25 @@ export class BaseRepository<T extends keyof Models> {
     // with a count query that mirrors their WHERE clause.)
     const [rows, count] = await Promise.all([
       this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx),
-      this.count(input.tenant_id, trx),
+      this.countScoped(input.tenant_id, input.options as QueryParams<T>, trx),
     ]);
     return { rows: rows as Record<string, any>[], count };
+  }
+
+  /** Total count mirroring getAll's campaign scoping (§15) so grid pagination stays honest. */
+  private async countScoped(
+    tenant_id: TypeTenantId<T>,
+    options?: QueryParams<T>,
+    trx?: Transaction<Models>,
+  ): Promise<number> {
+    const campaignId = this.campaignScope(options);
+    if (!campaignId) return this.count(tenant_id, trx);
+    const result = await this.getSelect(trx)
+      .select(({ fn }) => [fn.countAll<number>().as('count')])
+      .where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id)
+      .where('campaign_id' as ReferenceExpression<Models, T>, '=', campaignId)
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
   }
 
   protected selectBy<C extends ColName<T>>(

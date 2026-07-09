@@ -15,6 +15,8 @@ describe('DonationPagesService', () => {
     service = Object.create(DonationPagesService.prototype) as DonationPagesService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests (§15): reads go unscoped, writes unstamped.
+    (service as any).campaignContext = { activeCampaignId: () => null };
   });
 
   it('should only return donation and recurring_donation form types', async () => {

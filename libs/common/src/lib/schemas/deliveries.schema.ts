@@ -21,6 +21,8 @@ export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
 
 // ---- Requests --------------------------------------------------------------
 export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
   household_id: idSchema,
   person_id: idSchema.or(z.literal('')).nullable().optional(),
   notes: notesSchema,

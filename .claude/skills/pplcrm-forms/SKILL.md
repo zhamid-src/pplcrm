@@ -128,6 +128,20 @@ SPA (`/f/:slug`) and payment (`/d/:slug`) cases from one route. Until then, trea
 show in the Forms page" as **won't-fix by design**, not a bug — the non-obvious traps below explain
 the mechanics; this section is why they're intentional and haven't been scheduled for removal.
 
+## Campaigns (§15) — how forms interact with contexts
+
+- `web_forms.campaign_id` (NOT NULL): every form belongs to one campaign context. `createForm`
+  stamps the caller's active context (frontend `FormsService.createForm`); backend falls back to
+  the office via `CampaignsRepo.resolveForWrite`.
+- **Submissions write consent into `campaign_subscriptions` for the FORM's campaign**, not the
+  legacy `persons.opt_in_status` (dropped 2026-07-15 migration). Double opt-in → `status='pending'`;
+  the confirm link flips every pending row for the person to `subscribed` (allowed even if the
+  campaign was archived meanwhile). An existing row — including a deliberate `unsubscribed` —
+  wins over a re-submit (`ON CONFLICT DO NOTHING`).
+- Donation-form submits no longer apply a `donor` tag: donor is DERIVED from the donations table.
+- The forms grid filters by the active context (`options.campaignId` → web-forms repo).
+  See `pplcrm-campaigns` for the full contexts model.
+
 ## After changes
 
 Update the Forms Help Center article (`experiences/help/data/articles/engagement.ts`, id `forms`) and

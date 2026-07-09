@@ -148,3 +148,13 @@ NOTHING` means an offline re-send never double-counts.
   GIS data; ward boundary is the honest proxy (see engine).
 - **Team-target picker UI** — the backend fully supports `team_id`; the page
   currently issues the tokenised-link assignment ("Copy a link instead" path).
+
+## Campaigns (§15) — turfs belong to a context
+
+- `turfs.campaign_id` (NOT NULL): turfs are cut FOR a campaign; `cutTurfs`/`addTurf` resolve the
+  explicit `campaign_id` input or fall back to the tenant's office context.
+- **Knock outcomes with a stance upsert `campaign_person_facts.support_level` for the TURF's
+  campaign** (`source='canvass'`; mapping strong_support→strong, lean_support→leaning,
+  undecided→undecided, opposed→against) — see `KNOCK_RESPONSE_TO_SUPPORT` in the controller.
+  A writ-period knock updates the election campaign's read on the voter, never the office's.
+  See `pplcrm-campaigns` for the full contexts model.

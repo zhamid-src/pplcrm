@@ -77,7 +77,6 @@ export class HouseholdsController extends BaseController<'households', Household
     if (fp_street || fp_full) {
       const existing = await this.getRepo().findByFingerprint({
         tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
         fp_street: fp_street,
         fp_full: fp_full,
       });

@@ -1,0 +1,66 @@
+<!-- Context switcher (Campaigns §15) — always answers "where am I working?" -->
+@if (context.loaded() && active(); as current) {
+<div class="dropdown w-full">
+  <div
+    tabindex="0"
+    role="button"
+    class="border-line hover:border-primary/40 flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors"
+    aria-label="Switch campaign context"
+    i18n-aria-label="@@campaignSwitcher.triggerAriaLabel"
+  >
+    <pc-icon name="square-3-stack-3d" [size]="4" class="text-primary flex-none"></pc-icon>
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-[12px] font-semibold leading-tight">{{ current.name }}</span>
+      <span class="text-base-content/50 block text-[10px] uppercase tracking-[0.08em] leading-tight">
+        {{ kindLabel(current.kind) }}@if (current.status === 'archived') {<ng-container
+          i18n="@@campaignSwitcher.archivedSuffix"
+        >
+          · Archived</ng-container
+        >}
+      </span>
+    </span>
+    <pc-icon name="chevron-down" [size]="3" class="text-base-content/40 flex-none"></pc-icon>
+  </div>
+
+  <ul
+    tabindex="0"
+    class="dropdown-content menu bg-base-100 border-base-200/50 rounded-box z-[60] mt-1 w-56 border p-1.5 shadow-xl"
+  >
+    @for (campaign of activeCampaigns(); track campaign.id) {
+    <li>
+      <button type="button" class="flex items-center gap-2" (click)="select(campaign.id)">
+        <span class="min-w-0 flex-1 truncate text-[13px]" [class.font-semibold]="campaign.id === current.id">
+          {{ campaign.name }}
+        </span>
+        <span class="badge badge-ghost badge-xs uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+        @if (campaign.id === current.id) {
+        <pc-icon name="check-circle" [size]="4" class="text-primary flex-none"></pc-icon>
+        }
+      </button>
+    </li>
+    } @if (archivedCampaigns().length) {
+    <li class="menu-title px-2 pt-2 text-[10px] uppercase tracking-[0.08em]">
+      <span i18n="@@campaignSwitcher.archivedHeading">Archived</span>
+    </li>
+    @for (campaign of archivedCampaigns(); track campaign.id) {
+    <li>
+      <button type="button" class="flex items-center gap-2 opacity-70" (click)="select(campaign.id)">
+        <pc-icon name="archive-box" [size]="3" class="flex-none opacity-60"></pc-icon>
+        <span class="min-w-0 flex-1 truncate text-[13px]" [class.font-semibold]="campaign.id === current.id">
+          {{ campaign.name }}
+        </span>
+        @if (campaign.id === current.id) {
+        <pc-icon name="check-circle" [size]="4" class="text-primary flex-none"></pc-icon>
+        }
+      </button>
+    </li>
+    } }
+    <li class="border-base-200/60 mt-1 border-t pt-1">
+      <a routerLink="/campaigns" class="text-[13px]">
+        <pc-icon name="cog-6-tooth" [size]="4"></pc-icon>
+        <ng-container i18n="@@campaignSwitcher.manageLink">Manage campaigns…</ng-container>
+      </a>
+    </li>
+  </ul>
+</div>
+}

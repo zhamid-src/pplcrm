@@ -4,12 +4,16 @@ import type {
   CutTurfsType,
   FieldReportRangeType,
   IAuthKeyPayload,
+  KnockResponse,
   LogKnockType,
+  SupportLevel,
   UpdateTurfType,
 } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
+import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { ListsController } from '../lists/controller';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import {
@@ -22,6 +26,14 @@ import { TurfHouseholdsRepo, type CoverageDoorRow } from './repositories/turf-ho
 import { TurfAssignmentsRepo, generateTurfToken } from './repositories/turf-assignments.repo';
 import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositories/turf-knocks.repo';
 import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
+
+/** What a voter said at the door → the campaign support scale (§15). */
+const KNOCK_RESPONSE_TO_SUPPORT: Record<KnockResponse, SupportLevel> = {
+  strong_support: 'strong',
+  lean_support: 'leaning',
+  undecided: 'undecided',
+  opposed: 'against',
+};
 
 /** Derived display status — computed from stored lifecycle + knock activity. */
 export type TurfDisplayStatus = 'draft' | 'assigned' | 'in_field' | 'complete' | 'retired';
@@ -121,6 +133,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
   private readonly assignments = new TurfAssignmentsRepo();
   private readonly knocks = new TurfKnocksRepo();
   private readonly lists = new ListsController();
+  private readonly campaignsRepo = new CampaignsRepo();
+  private readonly factsRepo = new CampaignPersonFactsRepo();
 
   constructor() {
     super(new TurfsRepo());
@@ -284,11 +298,15 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     const existing = await repo.getTurfs(auth.tenant_id);
     let n = existing.length;
 
+    // Turfs are cut FOR a campaign (§15); defaults to the office context.
+    const campaignId = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id });
+
     await repo.transaction().execute(async (trx) => {
       for (const cluster of plan.turfs) {
         n += 1;
         const row = {
           tenant_id: auth.tenant_id,
+          campaign_id: campaignId,
           name: `Turf ${n}`,
           status: 'draft',
           list_id: input.list_id,
@@ -426,6 +444,11 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
   public async addTurf(auth: IAuthKeyPayload, input: AddTurfType): Promise<{ id: string }> {
     const row = {
       tenant_id: auth.tenant_id,
+      // The context this turf is knocked for (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
       name: input.name,
       status: 'draft',
       list_id: input.list_id != null ? String(input.list_id) : null,
@@ -552,9 +575,40 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
         metadata,
         performed_by: actor,
       });
+
+      // A conversation with a stance feeds the support level of the campaign
+      // the TURF was cut for (§15) — a writ-period knock updates the election
+      // campaign's read on the voter, never the office's.
+      if (input.response) {
+        const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
+        if (campaignId) {
+          await this.factsRepo.upsertFact({
+            tenant_id,
+            campaign_id: campaignId,
+            person_id: String(input.person_id),
+            user_id: actor,
+            support_level: KNOCK_RESPONSE_TO_SUPPORT[input.response],
+            source: 'canvass',
+          });
+        }
+      }
     }
 
     return { recorded: true };
+  }
+
+  /** The campaign a knock's support reading belongs to: the turf's own context. */
+  private async resolveKnockCampaignId(tenant_id: string, turf_id: string): Promise<string | null> {
+    const turf = await this.knocks.db
+      .selectFrom('turfs')
+      .select(['campaign_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', turf_id)
+      .executeTakeFirst();
+    if (turf?.campaign_id) return String(turf.campaign_id);
+    const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id });
+    const office = campaigns.find((c) => c.kind === 'office');
+    return office ? String(office.id) : null;
   }
 
   // ----------------------------------------------------------- helpers ------

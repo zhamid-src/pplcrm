@@ -1,0 +1,110 @@
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <!-- Header -->
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Workspace</p>
+      <h1 class="text-xl font-bold tracking-tight" i18n>Campaigns</h1>
+      <p class="text-sm text-base-content/60" i18n>
+        Your office is the permanent workspace; election campaigns come and go around it. Supporter data, email consent,
+        and outreach stay separate per campaign.
+      </p>
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2 shrink-0">
+      <pc-icon name="square-3-stack-3d" [size]="4"></pc-icon>
+      <span i18n>New campaign</span>
+    </a>
+  </header>
+
+  <!-- Loading skeleton (first load only, gated to avoid sub-300ms flicker) -->
+  @if (!loaded()) {
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (i of [1, 2]; track i) {
+    <div class="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="skeleton mb-3 h-5 w-1/2"></div>
+      <div class="skeleton mb-2 h-3 w-full"></div>
+      <div class="skeleton h-3 w-2/3"></div>
+    </div>
+    }
+  </div>
+  } @else {
+  <!-- Active contexts -->
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (campaign of current(); track campaign.id) {
+    <a
+      [routerLink]="[campaign.id]"
+      class="group flex flex-col gap-3 rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="truncate text-[15px] font-semibold text-base-content group-hover:text-primary">
+            {{ campaign.name }}
+          </h2>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : 'ongoing' }}
+            </span>
+            }
+          </p>
+        </div>
+        @if (campaign.kind === 'office') {
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="house-modern" [size]="3"></pc-icon>
+          <span i18n>Permanent</span>
+        </span>
+        }
+      </div>
+
+      <div class="flex items-center justify-between border-t border-base-200 pt-3">
+        @if (activeContextId() === campaign.id + '') {
+        <span class="flex items-center gap-1.5 text-xs font-medium text-primary">
+          <pc-icon name="check-circle" [size]="4"></pc-icon>
+          <span i18n>Current context</span>
+        </span>
+        } @else {
+        <button type="button" class="btn btn-ghost btn-xs gap-1" (click)="switchTo(campaign, $event)">
+          <pc-icon name="arrow-path" [size]="3"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        }
+      </div>
+    </a>
+    }
+  </div>
+
+  <!-- Archived campaigns: read-only history, disclosed rather than hidden (§3) -->
+  @if (archived().length) {
+  <h2 class="mb-3 mt-8 text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Archived</h2>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (campaign of archived(); track campaign.id) {
+    <a
+      [routerLink]="[campaign.id]"
+      class="group flex flex-col gap-3 rounded-2xl border border-base-200 bg-base-100/60 p-5 opacity-80 shadow-sm transition-all duration-200 hover:border-primary/30 hover:opacity-100"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="truncate text-[15px] font-semibold text-base-content/80 group-hover:text-primary">
+            {{ campaign.name }}
+          </h2>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : '…' }}
+            </span>
+            }
+          </p>
+        </div>
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="archive-box" [size]="3"></pc-icon>
+          <span i18n>Read-only</span>
+        </span>
+      </div>
+    </a>
+    }
+  </div>
+  } }
+</div>

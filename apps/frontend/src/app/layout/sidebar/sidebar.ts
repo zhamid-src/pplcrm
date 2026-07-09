@@ -13,6 +13,7 @@ import { filter, map } from 'rxjs';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 
+import { CampaignSwitcher } from '../campaign-switcher/campaign-switcher';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
@@ -23,7 +24,7 @@ import { DeliveriesRequestsService } from '@experiences/deliveries/services/deli
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective, CampaignSwitcher],
   templateUrl: './sidebar.html',
   styles: [
     `

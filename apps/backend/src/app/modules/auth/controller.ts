@@ -1123,7 +1123,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
         await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
 
-        // Create a default campaign for the new tenant
+        // Create the tenant's permanent office context (Campaigns §15). Election
+        // campaigns are added later by the user; this one always exists.
         const campaign = await trx
           .insertInto('campaigns')
           .values({
@@ -1131,7 +1132,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             admin_id: user.id,
             createdby_id: user.id,
             updatedby_id: user.id,
-            name: `${input.organization} Campaign`,
+            name: `${input.organization} Office`,
+            kind: 'office',
+            status: 'active',
           })
           .returning('id')
           .executeTakeFirstOrThrow();

@@ -31,6 +31,8 @@ export const NotificationPreferencesObj = z.object({
 export const ProfilePreferencesObj = z
   .object({
     notifications: NotificationPreferencesObj.partial().optional(),
+    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
+    active_campaign_id: z.string().optional(),
   })
   .catchall(z.unknown());
 

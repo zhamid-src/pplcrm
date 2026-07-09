@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { idSchema } from './core.schema';
+
 export const marketingEmailTopLinkObj = z.object({
   url: z.string(),
   clicks: z.number().int().nonnegative(),
@@ -31,7 +33,10 @@ export const MarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
+  attachments: z
+    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
+    .nullable()
+    .optional(),
   updated_at: z.coerce.date(),
   created_at: z.coerce.date(),
   createdby_id: z.string(),
@@ -39,6 +44,8 @@ export const MarketingEmailObj = z.object({
 });
 
 export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
   name: z.string(),
   status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
   subject: z.string().nullable().optional(),
@@ -62,7 +69,10 @@ export const AddMarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
+  attachments: z
+    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
+    .nullable()
+    .optional(),
 });
 
 export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();

@@ -1,4 +1,4 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -8,11 +8,14 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
 export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
   protected override readonly endpointName = 'persons';
+
+  private readonly campaignContext = inject(CampaignContextService);
 
   public add(row: UpdatePersonsType, options?: any) {
     return this.api.persons.add.mutate(row, options);
@@ -76,7 +79,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   public async getAllWithAddress(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithAddress.query(options, {
+    // Stamp the active context so campaign-scoped columns (support level,
+    // voting status — §15) resolve against the campaign the user is working in.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    return this.api.persons.getAllWithAddress.query(scoped, {
       signal: this.ac.signal,
     });
   }

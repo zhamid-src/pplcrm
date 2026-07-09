@@ -94,10 +94,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const households = new HouseholdRepo();
     return this.transaction().execute(async (trx) => {
       // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
+      const existingBlank = await households.getBlankHousehold({ tenant_id: input.tenant_id }, trx);
       let targetId = existingBlank?.id as string | undefined;
 
       if (!targetId) {
@@ -137,8 +134,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string; campaignId?: string } =
+      input.options || {};
     const tenantId = input.tenant_id;
+    // Campaign-scoped facts join (§15): '0' matches no rows, so without an active
+    // campaign the support/voting columns are simply NULL ("Unknown").
+    const campaignId = options.campaignId ?? '0';
     const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
     const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
@@ -152,6 +153,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
         .leftJoin('companies', 'persons.company_id', 'companies.id')
         .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .leftJoin('campaign_person_facts as cpf', (join) =>
+          join
+            .onRef('cpf.person_id', '=', 'persons.id')
+            .on('cpf.tenant_id', '=', tenantId)
+            .on('cpf.campaign_id', '=', campaignId),
+        )
         .where('households.tenant_id', '=', tenantId)
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
@@ -270,6 +277,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
           .else(false)
           .end()
           .as('household_is_placeholder'),
+        'cpf.support_level',
+        'cpf.voting_status',
         sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
           'tags',
         ),
@@ -302,6 +311,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'households.street_num',
         'households.apt',
         'tenants.placeholder_household_id',
+        'cpf.support_level',
+        'cpf.voting_status',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         (options.sortModel ?? []).reduce((acc, sort) => {

@@ -75,6 +75,32 @@ async function createTestSeed(db: any) {
   return { tenantId, userId, campaignId, householdId };
 }
 
+// Consent rows (§15): a person is only sendable with a subscribed row in the
+// newsletter's campaign.
+async function subscribe(
+  db: any,
+  tenantId: string,
+  campaignId: string,
+  personId: string,
+  email: string,
+  userId: string,
+) {
+  await db
+    .insertInto('campaign_subscriptions')
+    .values({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      person_id: personId,
+      email,
+      status: 'subscribed',
+      consent_source: 'import',
+      consent_at: new Date(),
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
+}
+
 async function cleanTenant(db: any, tenantId: string) {
   await db
     .updateTable('tenants')
@@ -82,15 +108,18 @@ async function cleanTenant(db: any, tenantId: string) {
     .where('id', '=', tenantId)
     .execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaign_subscriptions').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('email_suppressions').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   // map_newsletters_lists rows cascade when newsletters/lists are deleted.
+  // Newsletters reference campaigns (fk_newsletters_campaign), so they go first.
   await db.deleteFrom('newsletters').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
@@ -131,6 +160,8 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
+    await subscribe(db, tenantId, campaignId, personId, 'alice@example.com', userId);
+
     // Create Tag
     tagId = String(Math.floor(Math.random() * 100000000) + 10000000);
     await db
@@ -169,6 +200,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       .values({
         id,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Already Sent Newsletter',
         status: 'sent',
         segments: JSON.stringify(['NewsletterTag']),
@@ -191,6 +223,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       .values({
         id,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'No Recipients Newsletter',
         status: 'draft',
         segments: JSON.stringify(['NonExistentTag']),
@@ -213,6 +246,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       .values({
         id,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Valid Newsletter',
         status: 'draft',
         segments: JSON.stringify(['NewsletterTag']),
@@ -245,6 +279,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       .values({
         id,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Send Worker Newsletter',
         status: 'queuing',
         segments: JSON.stringify(['NewsletterTag']),
@@ -323,6 +358,8 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
+    await subscribe(db, tenantId, campaignId, personId2, 'bob@example.com', userId);
+
     // Map second person to Tag
     await db
       .insertInto('map_peoples_tags')
@@ -341,6 +378,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       .values({
         id,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Multiple Recipients Newsletter',
         status: 'queuing',
         segments: JSON.stringify(['NewsletterTag']),
@@ -418,6 +456,7 @@ describe('NewslettersController list targeting (map_newsletters_lists)', () => {
         .values({
           id,
           tenant_id: tenantId,
+          campaign_id: campaignId,
           name,
           object: 'people',
           is_dynamic: false,
@@ -486,6 +525,8 @@ describe('NewslettersController list targeting (map_newsletters_lists)', () => {
         updatedby_id: userId,
       })
       .execute();
+
+    await subscribe(db, tenantId, campaignId, personId, 'bob@example.com', userId);
     await db
       .insertInto('map_lists_persons')
       .values({ tenant_id: tenantId, list_id: listA, person_id: personId, createdby_id: userId, updatedby_id: userId })
@@ -499,7 +540,7 @@ describe('NewslettersController list targeting (map_newsletters_lists)', () => {
       createdby_id: userId,
       updatedby_id: userId,
     } as any);
-    const newsletter = { id: String((created as any).id), segments: null };
+    const newsletter = { id: String((created as any).id), segments: null, campaign_id: campaignId };
 
     const query = await controller.buildRecipientQuery(tenantId, newsletter);
     const recipients = await query.select('persons.email').execute();

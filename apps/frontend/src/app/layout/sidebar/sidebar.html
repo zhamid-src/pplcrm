@@ -63,6 +63,12 @@
     <span aria-hidden="true">pC</span>
   </a>
 
+  <!-- Context switcher (Campaigns §15) — which office/election context you're working in -->
+  <pc-campaign-switcher
+    class="mx-2 mb-4 block flex-none"
+    [class.hidden]="isEffectivelyNarrow() && !this.isMobileOpen()"
+  ></pc-campaign-switcher>
+
   @for (item of items(); track item.name) {
   <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {

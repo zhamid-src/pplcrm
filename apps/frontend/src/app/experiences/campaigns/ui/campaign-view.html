@@ -1,0 +1,139 @@
+<pc-detail-layout
+  [title]="name() || 'Campaign'"
+  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!campaign()"
+  [showDelete]="false"
+  [showActions]="!isArchived()"
+  [btn1Text]="'Edit campaign'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editCampaign()"
+>
+  @if (campaign()) {
+  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
+  @if (isArchived()) {
+  <div class="alert mb-6 border-warning/40 bg-warning/10">
+    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
+    <div>
+      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
+      <p class="text-xs text-base-content/70" i18n>
+        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
+      </p>
+    </div>
+    <button type="button" class="btn btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
+  </div>
+  }
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: campaign card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="square-3-stack-3d">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
+        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
+          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
+            · Archived</ng-container
+          >}
+        </p>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (description()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
+          }
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>Starts:</span>
+            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
+            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          @if (notes()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
+            {{ notes() }}
+          </div>
+          }
+        </div>
+      </pc-profile-card>
+
+      <!-- Context actions -->
+      <div class="flex flex-col gap-2">
+        @if (isCurrentContext()) {
+        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
+          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
+        </div>
+        } @else {
+        <button type="button" class="btn btn-outline btn-sm gap-2" (click)="workInThis()">
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        } @if (!isOffice() && !isArchived()) {
+        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
+          <pc-icon name="archive-box" [size]="4"></pc-icon>
+          <span i18n>Archive campaign</span>
+        </button>
+        }
+      </div>
+
+      <!-- Carry-over (§15): seed this campaign from a prior one -->
+      @if (!isArchived() && carrySources().length) {
+      <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>
+          Start from a previous campaign
+        </h3>
+        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
+          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
+          behind an explicit confirmation — that judgment is yours.
+        </p>
+        <div class="flex flex-col gap-2">
+          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
+            <option value="" i18n>Choose a campaign…</option>
+            @for (source of carrySources(); track source.id) {
+            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
+            }
+          </select>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySupport()"
+              (change)="carryCopySupport.set(!carryCopySupport())"
+            />
+            <span i18n>Copy support levels (as “carried over”)</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySubscriptions()"
+              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
+            />
+            <span i18n>Copy email subscriptions (requires confirmation)</span>
+          </label>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm mt-1"
+            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
+            (click)="runCarryOver()"
+          >
+            @if (carryRunning()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            }
+            <span i18n>Carry over</span>
+          </button>
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Right: activity log -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
+    </div>
+  </div>
+  }
+</pc-detail-layout>

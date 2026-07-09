@@ -102,6 +102,16 @@ apps/
                 record-activities.ts
               activity-feed.html
               activity-feed.ts
+          campaigns/
+            services/
+              campaigns-service.ts
+            ui/
+              campaign-form.html
+              campaign-form.ts
+              campaign-view.html
+              campaign-view.ts
+              campaigns-page.html
+              campaigns-page.ts
           canvassing/
             services/
               canvassing-service.ts
@@ -314,6 +324,8 @@ apps/
               add-connection-drawer.ts
               connection-card.ts
               people-in-household.ts
+              person-campaign-facts.html
+              person-campaign-facts.ts
               person-connections.ts
               person-form.html
               person-form.ts
@@ -432,6 +444,9 @@ apps/
               workflows-grid.html
               workflows-grid.ts
         layout/
+          campaign-switcher/
+            campaign-switcher.html
+            campaign-switcher.ts
           command-palette/
             command-palette.html
             command-palette.ts
@@ -472,6 +487,7 @@ apps/
             trpc-types.ts
             user-message.ts
             volunteer-service.ts
+          campaign-context.service.ts
           command-palette.service.ts
           error.service.ts
           fullscreen.service.ts
@@ -2870,222 +2886,6 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
 };
 ```
 
-## File: apps/frontend/src/app/experiences/activity/services/activity.service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import type { InteractionType } from '@common';
-import { TRPCService } from '../../../services/api/trpc-service';
-
-@Service()
-export class ActivityService extends TRPCService<any> {
-  public getFeed(options?: any) {
-    return this.api.activity.getFeed.query(options);
-  }
-
-  public getActivities(entity: string, entityId: string, options?: { startRow?: number; endRow?: number }) {
-    return this.api.activity.getActivities.query({ entity, entityId, ...options });
-  }
-
-  public exportCsv(input: any) {
-    return this.api.activity.exportCsv.mutate(input);
-  }
-
-  /** Record a human-authored interaction against a record (Log an interaction). */
-  public logInteraction(input: {
-    entity: string;
-    entityId: string;
-    type: InteractionType;
-    note?: string;
-    occurredAt?: Date;
-  }) {
-    return this.api.activity.logInteraction.mutate(input);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
-
-```html
-<!-- Split-button: primary action opens the menu of interaction types -->
-<div class="dropdown dropdown-end">
-  <div tabindex="0" role="button" class="btn btn-primary btn-sm gap-1.5">
-    <pc-icon name="plus" [size]="4"></pc-icon>
-    <span>{{ label() }}</span>
-    <pc-icon name="chevron-down" [size]="4"></pc-icon>
-  </div>
-  <ul
-    tabindex="0"
-    class="dropdown-content menu z-10 mt-1 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
-  >
-    @for (option of options; track option.value) {
-    <li>
-      <button type="button" class="gap-2" (click)="choose(option)">
-        <pc-icon [name]="option.icon" [size]="4" class="text-primary"></pc-icon>
-        {{ option.label }}
-      </button>
-    </li>
-    }
-  </ul>
-</div>
-
-<!-- Note-capture modal for the chosen interaction type -->
-@if (open() && selected(); as option) {
-<div class="modal modal-open z-50">
-  <div class="modal-box max-w-md rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl">
-    <div class="mb-4 flex items-center justify-between border-b border-base-200 pb-3">
-      <h3 class="flex items-center gap-2 text-lg font-bold text-base-content">
-        <pc-icon [name]="option.icon" [size]="5" class="text-primary"></pc-icon>
-        Log {{ option.label.toLowerCase() }}
-      </h3>
-      <button type="button" class="btn btn-sm btn-circle btn-ghost" [disabled]="saving()" (click)="close()">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="flex flex-col gap-1.5">
-      <label for="interaction_note" class="text-sm font-semibold text-base-content/90">Note (optional)</label>
-      <textarea
-        #noteInput
-        id="interaction_note"
-        rows="4"
-        class="textarea textarea-bordered w-full text-sm focus:textarea-primary"
-        placeholder="What happened? (e.g. left a voicemail, spoke at the door)"
-        [value]="note()"
-        (input)="note.set(noteInput.value)"
-      ></textarea>
-    </div>
-
-    <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
-      <button type="button" class="btn btn-ghost text-sm font-semibold" [disabled]="saving()" (click)="close()">
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[110px] text-sm font-semibold"
-        [disabled]="saving()"
-        (click)="save()"
-      >
-        @if (saving()) {
-        <span class="loading loading-spinner loading-xs mr-1.5"></span>
-        Saving… } @else { Log {{ option.label.toLowerCase() }} }
-      </button>
-    </div>
-  </div>
-  <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="close()"></div>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.ts
-
-```typescript
-import { Component, inject, input, output, signal } from '@angular/core';
-import { INTERACTION_TYPE_LABELS, INTERACTION_TYPES } from '@common';
-import type { InteractionType } from '@common';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { ActivityService } from '@experiences/activity/services/activity.service';
-
-interface InteractionOption {
-  value: InteractionType;
-  label: string;
-  icon: PcIconNameType;
-}
-
-/**
- * Shared "Log an interaction" control: a split-button whose menu offers the
- * four interaction types (call / door knock / note / meeting). Picking one
- * opens a small modal to capture an optional note, then writes a
- * `user_activity` row via `activity.logInteraction` and emits `logged` so the
- * host page can refresh its activity feed. Reused on person, household and
- * company views (households phrase the feed as "Activity at this door").
- */
-@Component({
-  selector: 'pc-log-interaction',
-  imports: [Icon],
-  templateUrl: './log-interaction.html',
-})
-export class LogInteraction {
-  /** DB table the record lives in: 'persons' | 'households' | 'companies'. */
-  public readonly entity = input.required<string>();
-  public readonly entityId = input.required<string>();
-  public readonly label = input<string>('Log an interaction');
-
-  /** Emitted after a successful log so the host can reload its feed. */
-  public readonly logged = output<void>();
-
-  private readonly activitySvc = inject(ActivityService);
-  private readonly alertSvc = inject(AlertService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly saving = this._loading.visible;
-
-  protected readonly options: InteractionOption[] = INTERACTION_TYPES.map((value) => ({
-    value,
-    label: INTERACTION_TYPE_LABELS[value],
-    icon: this.iconFor(value),
-  }));
-
-  protected readonly open = signal(false);
-  protected readonly selected = signal<InteractionOption | null>(null);
-  protected readonly note = signal('');
-
-  protected choose(option: InteractionOption): void {
-    this.selected.set(option);
-    this.note.set('');
-    this.open.set(true);
-    // Close the DaisyUI dropdown (it stays open until the trigger loses focus).
-    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }
-
-  protected close(): void {
-    if (this.saving()) return;
-    this.open.set(false);
-    this.selected.set(null);
-  }
-
-  protected async save(): Promise<void> {
-    const option = this.selected();
-    if (!option) return;
-    const end = this._loading.begin();
-    try {
-      await this.activitySvc.logInteraction({
-        entity: this.entity(),
-        entityId: this.entityId(),
-        type: option.value,
-        note: this.note().trim() || undefined,
-      });
-      this.alertSvc.showSuccess(`${option.label} logged`);
-      this.open.set(false);
-      this.selected.set(null);
-      this.logged.emit();
-    } catch {
-      this.alertSvc.showError('Could not log the interaction. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private iconFor(type: InteractionType): PcIconNameType {
-    switch (type) {
-      case 'call':
-        return 'phone';
-      case 'door_knock':
-        return 'map-pin';
-      case 'note':
-        return 'envelope';
-      case 'meeting':
-        return 'user-group';
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.html
 
 ```html
@@ -3142,819 +2942,845 @@ export class LogInteraction {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.ts
+## File: apps/frontend/src/app/experiences/campaigns/services/campaigns-service.ts
 
 ```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, effect, linkedSignal, resource, untracked } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { ActivityService } from '@experiences/activity/services/activity.service';
+import { Service } from '@angular/core';
+import {
+  AddCampaignType,
+  CarryOverCampaignType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  SetCampaignSubscriptionType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
-@Component({
-  selector: 'pc-record-activities',
-  imports: [DatePipe, Icon],
-  templateUrl: './record-activities.html',
-  host: {
-    // Make the host a flex column that takes up 100% of its parent's height
-    class: 'flex flex-col h-full w-full',
-  },
-})
-export class RecordActivities {
-  private readonly activitySvc = inject(ActivityService);
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterOutputs } from '../../../services/api/trpc-types';
 
-  public entity = input.required<string>();
-  public entityId = input.required<string>();
+export type CampaignListItem = RouterOutputs['campaigns']['getSwitcherList'][number];
+export type CampaignDetail = RouterOutputs['campaigns']['getById'];
+export type PersonCampaignFact = RouterOutputs['campaigns']['getPersonFacts'][number];
+export type PersonSubscriptionsPayload = RouterOutputs['campaigns']['getPersonSubscriptions'];
 
-  protected readonly activities = signal<any[]>([]);
-  protected readonly hasMore = signal(false);
-  protected readonly pageSize = 10;
+@Service()
+export class CampaignsService extends AbstractAPIService<'campaigns', UpdateCampaignType> {
+  protected override readonly endpointName = 'campaigns';
 
-  protected readonly offset = linkedSignal({
-    source: () => ({ entity: this.entity(), entityId: this.entityId() }),
-    computation: () => 0,
-  });
-
-  protected readonly activitiesResource = resource({
-    params: () => ({
-      entity: this.entity(),
-      entityId: this.entityId(),
-      offset: this.offset(),
-    }),
-    loader: async ({ params }) => {
-      if (!params.entity || !params.entityId) {
-        return { rows: [] } as any;
-      }
-      return (await this.activitySvc.getActivities(params.entity, params.entityId, {
-        startRow: params.offset,
-        endRow: params.offset + this.pageSize,
-      })) as any;
-    },
-  });
-
-  protected readonly isLoading = computed(() => this.activitiesResource.isLoading() && this.offset() === 0);
-  protected readonly isLoadingMore = computed(() => this.activitiesResource.isLoading() && this.offset() > 0);
-  protected readonly activityCount = computed(() => this.activities().length);
-
-  constructor() {
-    effect(() => {
-      // Clear activities and hasMore immediately when entity or entityId changes
-      this.entity();
-      this.entityId();
-      untracked(() => {
-        this.activities.set([]);
-        this.hasMore.set(false);
-      });
-    });
-
-    effect(() => {
-      const res = this.activitiesResource.value() as any;
-      if (res) {
-        const newRows = res.rows || [];
-        if (this.offset() === 0) {
-          this.activities.set(newRows);
-        } else {
-          this.activities.update((curr) => {
-            const existingIds = new Set(curr.map((r: any) => r.id));
-            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
-            return [...curr, ...filteredNew];
-          });
-        }
-        this.hasMore.set(newRows.length === this.pageSize);
-      }
-    });
+  public add(row: AddCampaignType): Promise<CampaignDetail> {
+    return this.api.campaigns.add.mutate(row);
   }
 
-  public loadActivities(replace = true): void {
-    if (replace) {
-      this.offset.set(0);
-    }
-    this.activitiesResource.reload();
+  public addMany(_rows: AddCampaignType[]) {
+    return Promise.resolve([]);
   }
 
-  protected loadMore(): void {
-    this.offset.update((c) => c + this.pageSize);
+  public archive(id: string) {
+    return this.api.campaigns.archive.mutate(id);
   }
 
-  protected getActivityIcon(activity: string): PcIconNameType {
-    switch (activity) {
-      case 'create':
-        return 'plus';
-      case 'update':
-        return 'pencil-square';
-      case 'delete':
-        return 'trash';
-      case 'merge':
-        return 'merge';
-      case 'import':
-        return 'arrow-up-tray';
-      case 'export':
-        return 'arrow-down-tray';
-      case 'assign':
-        return 'user-plus';
-      case 'unassign':
-        return 'user-circle';
-      case 'close':
-        return 'check-circle';
-      case 'reopen':
-        return 'arrow-path';
-      // Human-authored interactions (Log an interaction)
-      case 'call':
-        return 'phone';
-      case 'door_knock':
-        return 'map-pin';
-      case 'note':
-        return 'envelope';
-      case 'meeting':
-        return 'user-group';
-      default:
-        return 'information-circle';
-    }
+  public carryOver(input: CarryOverCampaignType) {
+    return this.api.campaigns.carryOver.mutate(input);
   }
 
-  /** True for human-authored interaction types (call/door knock/note/meeting). */
-  protected isInteraction(activity: string): boolean {
-    return activity === 'call' || activity === 'door_knock' || activity === 'note' || activity === 'meeting';
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
   }
 
-  protected getActivityDotClass(activity: string): string {
-    switch (activity) {
-      case 'create':
-        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
-      case 'update':
-        return 'bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400';
-      case 'delete':
-        return 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400';
-      case 'merge':
-        return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400';
-      case 'import':
-        return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400';
-      case 'export':
-        return 'bg-purple-100 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400';
-      case 'assign':
-        return 'bg-teal-100 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400';
-      case 'unassign':
-        return 'bg-gray-100 text-gray-500 dark:bg-neutral/50 dark:text-neutral-content/70';
-      case 'close':
-        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
-      case 'reopen':
-        return 'bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400';
-      // Logged interactions share one soft-primary treatment (semantic, theme-safe).
-      case 'call':
-      case 'door_knock':
-      case 'note':
-      case 'meeting':
-        return 'bg-primary/10 text-primary';
-      default:
-        return 'bg-gray-100 text-gray-400 dark:bg-neutral/30 dark:text-neutral-content/50';
-    }
+  public count(): Promise<number> {
+    return this.getSwitcherList().then((rows) => rows.length);
   }
 
-  private formatValue(val: any): string {
-    if (val === null || val === undefined || val === '') return 'none';
-    if (typeof val === 'boolean') return val ? 'yes' : 'no';
-    if (typeof val === 'object') return JSON.stringify(val);
-    const str = String(val);
-    if (str.length > 40) {
-      return `"${str.substring(0, 40)}..."`;
-    }
-    return `"${str}"`;
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
   }
 
-  /** Append the free-text note of a logged interaction, if any. */
-  private getNoteSuffix(meta: any): string {
-    const note = typeof meta?.['note'] === 'string' ? meta['note'].trim() : '';
-    return note ? ` — “${note}”` : '';
+  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['campaigns']['getAll']> {
+    return this.api.campaigns.getAll.query(options, { signal: this.ac.signal });
   }
 
-  private getChangesSuffix(changes: any): string {
-    if (!changes) return '';
-    const parts: string[] = [];
-    const keys = Object.keys(changes);
-    if (keys.length > 0) {
-      for (const key of keys) {
-        const change = changes[key];
-        const fieldName = key.replace(/_/g, ' ');
-        const fromVal = this.formatValue(change.from);
-        const toVal = this.formatValue(change.to);
-        parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
-      }
-      return ` (changed ${parts.join(', ')})`;
-    }
-    return '';
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
   }
 
-  protected getActivityLabel(act: any): string {
-    const meta = act.metadata ?? {};
-    const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
-    let ent = act.entity ?? 'record';
-    const entLower = ent.toLowerCase();
-    if (entLower === 'persons' || entLower === 'people') ent = 'person';
-    else if (entLower === 'households') ent = 'household';
-    else if (entLower === 'companies') ent = 'company';
-    else if (entLower === 'tasks') ent = 'task';
-    else if (entLower === 'teams') ent = 'team';
-    else if (entLower === 'workflows') ent = 'workflow';
-    else if (entLower === 'lists') ent = 'list';
-    else if (entLower === 'web_forms') ent = 'web form';
-    else if (entLower === 'volunteer_events') ent = 'volunteer event';
+  public getById(id: string): Promise<CampaignDetail> {
+    return this.api.campaigns.getById.query(id);
+  }
 
-    switch (act.activity) {
-      case 'create':
-        return `created this ${ent} record`;
-      case 'update': {
-        if (meta['action'] === 'add_comment') {
-          return `added a comment to this ${ent}`;
-        }
-        if (meta['action'] === 'add_subtask') {
-          return `added subtask "${meta['subtask_name']}" to this ${ent}`;
-        }
-        if (meta['action'] === 'toggle_subtask') {
-          return `${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on this ${ent}`;
-        }
-        if (meta['action'] === 'add_attachment') {
-          return `attached file "${meta['filename']}" to this ${ent}`;
-        }
-        if (meta['action'] === 'change_due_date') {
-          if (meta['due_at']) {
-            const parts = String(meta['due_at']).split('-');
-            let formattedDate = String(meta['due_at']);
-            if (parts.length === 3) {
-              const year = parseInt(parts[0]!, 10);
-              const month = parseInt(parts[1]!, 10) - 1;
-              const day = parseInt(parts[2]!, 10);
-              const dateVal = new Date(year, month, day);
-              formattedDate = dateVal.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              });
-            }
-            return `changed the due date to ${formattedDate} on this ${ent}`;
-          }
-          return `removed the due date on this ${ent}`;
-        }
-        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
-          return `attached tag "${meta['name']}" to this ${ent}`;
-        }
-        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
-          return `detached tag "${meta['name']}" from this ${ent}`;
-        }
-        if (meta['action'] === 'status_update') {
-          return `updated the status of this ${ent}`;
-        }
+  public getSwitcherList(): Promise<RouterOutputs['campaigns']['getSwitcherList']> {
+    return this.api.campaigns.getSwitcherList.query(undefined, { signal: this.ac.signal });
+  }
 
-        // Household address check
-        if (entLower === 'households' || entLower === 'household') {
-          const addressFields = [
-            'apt',
-            'street_num',
-            'street1',
-            'street2',
-            'city',
-            'state',
-            'zip',
-            'country',
-            'formatted_address',
-          ];
-          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
-            return `updated the address of this household` + this.getChangesSuffix(meta.changes);
-          }
-        }
-        return `updated this ${ent} record` + this.getChangesSuffix(meta.changes);
-      }
-      case 'delete':
-        return `deleted ${ent} record${qty}`;
-      case 'merge':
-        return `merged duplicate ${ent} records`;
-      case 'import':
-        return `imported this ${ent}${qty}`;
-      case 'export':
-        return `exported ${ent} data${qty}`;
-      case 'assign': {
-        const assignee = meta['assigned_to_name'] ?? 'someone';
-        return `assigned this ${ent} to ${assignee}`;
-      }
-      case 'unassign':
-        return `unassigned this ${ent}`;
-      case 'close':
-        return `closed this ${ent}`;
-      case 'reopen':
-        return `reopened this ${ent}`;
-      // Human-authored interactions. On households the framing is "at this door".
-      case 'call':
-        return `logged a call${this.getNoteSuffix(meta)}`;
-      case 'door_knock':
-        return `logged a door knock${this.getNoteSuffix(meta)}`;
-      case 'note':
-        return `logged a note${this.getNoteSuffix(meta)}`;
-      case 'meeting':
-        return `logged a meeting${this.getNoteSuffix(meta)}`;
-      default:
-        return `performed ${act.activity} on this ${ent}`;
-    }
+  public getPersonFacts(personId: string): Promise<PersonCampaignFact[]> {
+    return this.api.campaigns.getPersonFacts.query(personId, { signal: this.ac.signal });
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public upsertPersonFact(input: UpsertCampaignPersonFactType) {
+    return this.api.campaigns.upsertPersonFact.mutate(input);
+  }
+
+  public getPersonSubscriptions(personId: string): Promise<PersonSubscriptionsPayload> {
+    return this.api.campaigns.getPersonSubscriptions.query(personId, { signal: this.ac.signal });
+  }
+
+  public setSubscription(input: SetCampaignSubscriptionType) {
+    return this.api.campaigns.setSubscription.mutate(input);
+  }
+
+  public unarchive(id: string) {
+    return this.api.campaigns.unarchive.mutate(id);
+  }
+
+  public update(id: string, data: UpdateCampaignType): Promise<CampaignDetail> {
+    return this.api.campaigns.update.mutate({ id, data });
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('Campaign export is not available'));
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-form.html
+
+```html
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  <ng-container i18n>Loading campaign…</ng-container>
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New campaign' : (detailName() || 'Campaign')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="An election campaign keeps its own supporter data, email consent, and outreach — separate from the office."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create campaign' : 'Save campaign'"
+    [showDelete]="false"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    (save)="save($event)"
+  ></pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input
+          id="campaign-name"
+          label="Campaign name"
+          [formField]="form.name"
+          placeholder="Riverdale 2026"
+        ></pc-input>
+
+        <pc-input id="campaign-start" label="Start date" type="date" [formField]="form.startdate"></pc-input>
+        <pc-input id="campaign-end" label="End date (election day)" type="date" [formField]="form.enddate"></pc-input>
+      </div>
+
+      <pc-textarea
+        id="campaign-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="What race is this? Who's the candidate?"
+      ></pc-textarea>
+
+      <pc-textarea id="campaign-notes" label="Notes" [rows]="3" [formField]="form.notes"></pc-textarea>
+    </pc-card>
+  </form>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-form.ts
+
+```typescript
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddCampaignObj, AddCampaignType, UpdateCampaignType } from '../../../../../../../libs/common/src';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { CampaignDetail, CampaignsService } from '../services/campaigns-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/**
+ * Campaigns §15 — create/edit. New campaigns are always elections: the office
+ * context is permanent and created at signup, so there is never a second one.
+ * Kind is immutable after creation; status changes only via archive/unarchive.
+ */
+@Component({
+  selector: 'pc-campaign-form',
+  imports: [FormField, RouterModule, PcDetailHeader, PcInput, PcTextarea, PcCard],
+  templateUrl: './campaign-form.html',
+})
+export class CampaignFormComponent implements OnInit {
+  readonly id = input<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly context = inject(CampaignContextService);
+
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly detail = signal<CampaignDetail | null>(null);
+  /** getById is loosely typed at the crud-router boundary; read the name defensively. */
+  protected readonly detailName = computed(() => {
+    const name = (this.detail() as Record<string, unknown> | null)?.['name'];
+    return typeof name === 'string' ? name : '';
+  });
+  protected readonly error = signal<string | null>(null);
+  protected readonly saving = signal(false);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const campaigns: PcBreadcrumb = { label: 'Campaigns', route: '/campaigns' };
+    const id = this.id();
+    if (id) {
+      return [campaigns, { label: this.detailName() || 'Campaign', route: ['/campaigns', id] }, { label: 'Edit' }];
+    }
+    return [campaigns, { label: 'New campaign' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    notes: '',
+    kind: 'election' as const,
+    startdate: '',
+    enddate: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddCampaignObj);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  public ngOnInit(): void {
+    void this.loadCampaign();
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detailName() || 'this campaign');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) done.preventDefault();
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    const raw = this.payload();
+    this.saving.set(true);
+    this.error.set(null);
+
+    try {
+      if (this.isNew()) {
+        const payload: AddCampaignType = {
+          name: raw.name.trim(),
+          description: raw.description.trim() || null,
+          notes: raw.notes.trim() || null,
+          kind: 'election',
+          startdate: raw.startdate || null,
+          enddate: raw.enddate || null,
+        };
+        const result = await this.campaignsSvc.add(payload);
+        this.campaignsSvc.triggerRefresh();
+        await this.context.refresh();
+        this.detail.set(result);
+        this.form().reset();
+        this.alerts.showSuccess('Campaign created');
+        if (typeof done === 'function') done();
+        else await this.router.navigate(['/campaigns']);
+      } else {
+        const payload: UpdateCampaignType = {
+          name: raw.name.trim() || undefined,
+          description: raw.description.trim() || null,
+          notes: raw.notes.trim() || null,
+          startdate: raw.startdate || null,
+          enddate: raw.enddate || null,
+        };
+        const result = await this.campaignsSvc.update(this.id()!, payload);
+        this.campaignsSvc.triggerRefresh();
+        await this.context.refresh();
+        this.detail.set(result);
+        this.setForm(result);
+        this.form().reset();
+        this.alerts.showSuccess('Campaign updated');
+        if (typeof done === 'function') done();
+        else await this.router.navigate(['/campaigns', this.id()]);
+      }
+    } catch (err) {
+      const message = getUserErrorMessage(err, 'Unable to save the campaign');
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async loadCampaign(): Promise<void> {
+    if (this.isNew()) return;
+    const end = this._loading.begin();
+    try {
+      const campaign = await this.campaignsSvc.getById(this.id()!);
+      this.detail.set(campaign);
+      this.setForm(campaign);
+    } catch (err) {
+      const message = getUserErrorMessage(err, 'Failed to load the campaign');
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(campaign: CampaignDetail | null) {
+    if (!campaign) return;
+    const c = campaign as Record<string, unknown>;
+    this.payload.set({
+      name: typeof c['name'] === 'string' ? c['name'] : '',
+      description: typeof c['description'] === 'string' ? c['description'] : '',
+      notes: typeof c['notes'] === 'string' ? c['notes'] : '',
+      kind: 'election',
+      startdate: typeof c['startdate'] === 'string' ? c['startdate'] : '',
+      enddate: typeof c['enddate'] === 'string' ? c['enddate'] : '',
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.html
 
 ```html
 <pc-detail-layout
-  [title]="company()?.name || 'Company'"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Company'"
-  [avatarText]="initials()"
+  [title]="name() || 'Campaign'"
+  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!company()"
-  [showDelete]="true"
-  [deleteText]="'Delete company'"
-  [btn1Text]="'Edit company'"
+  [hasRecord]="!initialized() || !!campaign()"
+  [showDelete]="false"
+  [showActions]="!isArchived()"
+  [btn1Text]="'Edit campaign'"
   [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editCompany()"
-  (delete)="deleteCompany()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
+  (save)="editCampaign()"
 >
-  <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
-  @if (company()) {
-  <button
-    pc-actions-prefix
-    type="button"
-    class="btn btn-sm btn-ghost gap-2"
-    [disabled]="enriching()"
-    [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
-    (click)="enrichCompany()"
-  >
-    <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
-    {{ enrichLabel() }}
-  </button>
-  } @if (company(); as c) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Left Column: Contact, Google enrichment, Internal notes -->
-    <div class="flex flex-col gap-6 lg:col-span-1">
-      <!-- Contact card -->
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
-        <div class="flex w-full flex-col text-sm">
-          <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Phone" [value]="c.phone" icon="phone" [copyable]="true"></pc-detail-item>
-        </div>
-        <pc-system-metadata
-          [createdAt]="c.created_at"
-          [createdBy]="getUserName(c.createdby_id)"
-          [updatedAt]="c.updated_at"
-          [updatedBy]="getUserName(c.updatedby_id)"
-        ></pc-system-metadata>
-      </pc-card>
+  @if (campaign()) {
+  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
+  @if (isArchived()) {
+  <div class="alert mb-6 border-warning/40 bg-warning/10">
+    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
+    <div>
+      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
+      <p class="text-xs text-base-content/70" i18n>
+        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
+      </p>
+    </div>
+    <button type="button" class="btn btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
+  </div>
+  }
 
-      <!-- Google enrichment card (§7) -->
-      <pc-card>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
-          @if (isEnriched()) {
-          <pc-status-badge type="success">Enriched</pc-status-badge>
-          } @else {
-          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: campaign card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="square-3-stack-3d">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
+        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
+          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
+            · Archived</ng-container
+          >}
+        </p>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (description()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
+          }
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>Starts:</span>
+            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
+            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          @if (notes()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
+            {{ notes() }}
+          </div>
           }
         </div>
-        <p class="text-sm font-light leading-relaxed text-base-content/65">
-          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
-          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
-        </p>
-      </pc-card>
+      </pc-profile-card>
 
-      <!-- Internal notes card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
-        @if (c.notes) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
+      <!-- Context actions -->
+      <div class="flex flex-col gap-2">
+        @if (isCurrentContext()) {
+        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
+          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
+        </div>
         } @else {
-        <p class="text-sm italic text-base-content/40">No internal notes recorded.</p>
+        <button type="button" class="btn btn-outline btn-sm gap-2" (click)="workInThis()">
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        } @if (!isOffice() && !isArchived()) {
+        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
+          <pc-icon name="archive-box" [size]="4"></pc-icon>
+          <span i18n>Archive campaign</span>
+        </button>
         }
-      </pc-card>
+      </div>
+
+      <!-- Carry-over (§15): seed this campaign from a prior one -->
+      @if (!isArchived() && carrySources().length) {
+      <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>
+          Start from a previous campaign
+        </h3>
+        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
+          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
+          behind an explicit confirmation — that judgment is yours.
+        </p>
+        <div class="flex flex-col gap-2">
+          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
+            <option value="" i18n>Choose a campaign…</option>
+            @for (source of carrySources(); track source.id) {
+            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
+            }
+          </select>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySupport()"
+              (change)="carryCopySupport.set(!carryCopySupport())"
+            />
+            <span i18n>Copy support levels (as “carried over”)</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySubscriptions()"
+              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
+            />
+            <span i18n>Copy email subscriptions (requires confirmation)</span>
+          </label>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm mt-1"
+            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
+            (click)="runCarryOver()"
+          >
+            @if (carryRunning()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            }
+            <span i18n>Carry over</span>
+          </button>
+        </div>
+      </div>
+      }
     </div>
 
-    <!-- Right Column: About, People, Activity -->
-    <div class="flex flex-col gap-6 lg:col-span-2">
-      <!-- About card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">About</h3>
-        @if (c.description) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
-        } @else {
-        <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
-        }
-      </pc-card>
-
-      <!-- People card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          People <span class="ml-1 font-normal normal-case text-base-content/40">· {{ subtitle() }}</span>
-        </h3>
-        @defer (on viewport) {
-        <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-        } @placeholder {
-        <div class="skeleton h-32 w-full"></div>
-        }
-        <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
-          Grouped from the employer field — edit a person’s employer and they move companies.
-        </p>
-      </pc-card>
-
-      <!-- Activity card -->
-      <pc-card>
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Activity</h3>
-          <pc-log-interaction
-            [entity]="'companies'"
-            [entityId]="id()"
-            (logged)="onInteractionLogged()"
-          ></pc-log-interaction>
-        </div>
-        <div class="flex max-h-[450px] flex-col gap-4 overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
+    <!-- Right: activity log -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
     </div>
   </div>
   }
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.ts
 
 ```typescript
-import { Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Icon } from '@icons/icon';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { CampaignDetail, CampaignsService } from '../services/campaigns-service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
+/**
+ * Campaigns §15 — campaign detail. Elections can be archived (read-only history)
+ * and unarchived; the office context is permanent and shows neither action.
+ */
 @Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    LogInteraction,
-    DetailLayout,
-    PcCard,
-    DetailItem,
-    SystemMetadata,
-    Icon,
-    StatusBadge,
-  ],
-  templateUrl: './company-view.html',
+  selector: 'pc-campaign-view',
+  imports: [DatePipe, RouterModule, RecordActivities, DetailLayout, ProfileCard, DetailRow, Icon],
+  templateUrl: './campaign-view.html',
 })
-export class CompanyView {
+export class CampaignViewComponent {
   readonly id = input.required<string>();
 
-  protected readonly recordNav = injectRecordNavigation('company', this.id);
-  protected readonly activityFeed = viewChild(RecordActivities);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
+  private readonly alerts = inject(AlertService);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly context = inject(CampaignContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
+  protected readonly campaign = signal<Record<string, unknown> | null>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Companies', route: '/companies' },
-    { label: this.company()?.name || 'Company' },
+    { label: 'Campaigns', route: '/campaigns' },
+    { label: this.name() || 'Campaign' },
   ]);
 
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+  protected readonly name = computed(() => this.str('name'));
+  protected readonly description = computed(() => this.str('description'));
+  protected readonly notes = computed(() => this.str('notes'));
+  protected readonly kind = computed(() => this.str('kind') || 'election');
+  protected readonly status = computed(() => this.str('status') || 'active');
+  protected readonly startdate = computed(() => this.str('startdate'));
+  protected readonly enddate = computed(() => this.str('enddate'));
+  protected readonly isOffice = computed(() => this.kind() === 'office');
+  protected readonly isArchived = computed(() => this.status() === 'archived');
+  protected readonly isCurrentContext = computed(() => this.context.activeCampaignId() === this.id());
 
-  /** Up-to-two-letter initials for the header avatar (e.g. "HC" for Harborview Clinic). */
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly enriching = signal(false);
-
-  protected readonly isEnriched = computed(() => {
-    const rawEnrichment = this.company()?.enrichment;
-    if (!rawEnrichment) return false;
-
-    let enrichment = null;
-
-    try {
-      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
-    } catch {
-      return false;
-    }
-    return !!enrichment.google_enriched;
-  });
-
-  /** Header subtitle — industry · people count (§7). Parts drop out honestly when absent. */
-  protected readonly subtitle = computed(() => {
-    const parts: string[] = [];
-    const industry = this.company()?.industry;
-    if (industry) parts.push(industry);
-    const n = this.employeeCount();
-    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    return parts.join(' · ');
-  });
-
-  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
-  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
+  // Carry-over (§15): seed this campaign from a prior one.
+  protected readonly carrySourceId = signal('');
+  protected readonly carryCopySupport = signal(true);
+  protected readonly carryCopySubscriptions = signal(false);
+  protected readonly carryRunning = signal(false);
+  protected readonly carrySources = computed(() => this.context.campaigns().filter((c) => c.id !== this.id()));
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.load(currentId));
     });
   }
 
-  protected async loadAllData(id: string) {
+  protected editCampaign() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async workInThis(): Promise<void> {
+    try {
+      await this.context.setActive(this.id());
+      this.alerts.showSuccess(`Now working in ${this.name()}`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not switch campaign. Please try again.'));
+    }
+  }
+
+  protected onCarrySourceChange(event: Event): void {
+    this.carrySourceId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async runCarryOver(): Promise<void> {
+    const sourceId = this.carrySourceId();
+    if (!sourceId) return;
+    if (this.carryCopySubscriptions()) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Copy email subscriptions?',
+        message:
+          'Consent collected by one campaign or the office does not automatically extend to another. Copying subscription lists across contexts is your compliance call — confirm only if you are satisfied the consent carries over.',
+        variant: 'danger',
+        confirmText: 'I understand — copy subscriptions',
+      });
+      if (!confirmed) return;
+    }
+    this.carryRunning.set(true);
+    try {
+      const result = await this.campaignsSvc.carryOver({
+        source_campaign_id: sourceId,
+        target_campaign_id: this.id(),
+        copy_support: this.carryCopySupport(),
+        copy_subscriptions: this.carryCopySubscriptions(),
+      });
+      const r = result as { support_copied?: number; subscriptions_copied?: number };
+      this.alerts.showSuccess(
+        `Carried over ${r.support_copied ?? 0} support level(s) and ${r.subscriptions_copied ?? 0} subscription(s)`,
+      );
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Carry-over failed. Please try again.'));
+    } finally {
+      this.carryRunning.set(false);
+    }
+  }
+
+  protected async archive(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Archive campaign',
+      message:
+        'Archiving makes this campaign read-only: its supporter data, consent, and outreach history stay viewable, but nothing new can be recorded in it. You can unarchive it later.',
+      confirmText: 'Archive',
+    });
+    if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof data?.slug === 'string' && data.slug.length > 0) {
-        this.location.replaceState(`/companies/${data.slug}`);
-      }
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
+      await this.campaignsSvc.archive(this.id());
+      await Promise.all([this.load(this.id()), this.context.refresh()]);
+      this.alerts.showSuccess('Campaign archived');
     } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to archive the campaign'));
+    } finally {
+      end();
+    }
+  }
+
+  protected async unarchive(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      await this.campaignsSvc.unarchive(this.id());
+      await Promise.all([this.load(this.id()), this.context.refresh()]);
+      this.alerts.showSuccess('Campaign unarchived');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to unarchive the campaign'));
+    } finally {
+      end();
+    }
+  }
+
+  private async load(id: string): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const data: CampaignDetail = await this.campaignsSvc.getById(id);
+      this.campaign.set((data ?? null) as Record<string, unknown> | null);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load the campaign. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
     }
   }
 
-  /** Refresh the activity feed after a logged interaction. */
-  protected onInteractionLogged(): void {
-    this.activityFeed()?.loadActivities();
+  private str(key: string): string {
+    const value = this.campaign()?.[key];
+    return typeof value === 'string' ? value : '';
   }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
-  protected async enrichCompany() {
-    const id = this.id();
-    if (!id || this.enriching()) return;
-    this.enriching.set(true);
-    try {
-      await this.companiesSvc.enrich(id, this.isEnriched());
-      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
-    } finally {
-      this.enriching.set(false);
-    }
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete company',
-      message: 'Employees keep their person records — only the employer grouping clears.',
-      variant: 'danger',
-      confirmText: 'Delete company',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaigns-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <!-- Header -->
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Workspace</p>
+      <h1 class="text-xl font-bold tracking-tight" i18n>Campaigns</h1>
+      <p class="text-sm text-base-content/60" i18n>
+        Your office is the permanent workspace; election campaigns come and go around it. Supporter data, email consent,
+        and outreach stay separate per campaign.
+      </p>
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2 shrink-0">
+      <pc-icon name="square-3-stack-3d" [size]="4"></pc-icon>
+      <span i18n>New campaign</span>
+    </a>
+  </header>
+
+  <!-- Loading skeleton (first load only, gated to avoid sub-300ms flicker) -->
+  @if (!loaded()) {
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (i of [1, 2]; track i) {
+    <div class="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="skeleton mb-3 h-5 w-1/2"></div>
+      <div class="skeleton mb-2 h-3 w-full"></div>
+      <div class="skeleton h-3 w-2/3"></div>
+    </div>
+    }
+  </div>
+  } @else {
+  <!-- Active contexts -->
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (campaign of current(); track campaign.id) {
+    <a
+      [routerLink]="[campaign.id]"
+      class="group flex flex-col gap-3 rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="truncate text-[15px] font-semibold text-base-content group-hover:text-primary">
+            {{ campaign.name }}
+          </h2>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : 'ongoing' }}
+            </span>
+            }
+          </p>
+        </div>
+        @if (campaign.kind === 'office') {
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="house-modern" [size]="3"></pc-icon>
+          <span i18n>Permanent</span>
+        </span>
+        }
+      </div>
+
+      <div class="flex items-center justify-between border-t border-base-200 pt-3">
+        @if (activeContextId() === campaign.id + '') {
+        <span class="flex items-center gap-1.5 text-xs font-medium text-primary">
+          <pc-icon name="check-circle" [size]="4"></pc-icon>
+          <span i18n>Current context</span>
+        </span>
+        } @else {
+        <button type="button" class="btn btn-ghost btn-xs gap-1" (click)="switchTo(campaign, $event)">
+          <pc-icon name="arrow-path" [size]="3"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        }
+      </div>
+    </a>
+    }
+  </div>
+
+  <!-- Archived campaigns: read-only history, disclosed rather than hidden (§3) -->
+  @if (archived().length) {
+  <h2 class="mb-3 mt-8 text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Archived</h2>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (campaign of archived(); track campaign.id) {
+    <a
+      [routerLink]="[campaign.id]"
+      class="group flex flex-col gap-3 rounded-2xl border border-base-200 bg-base-100/60 p-5 opacity-80 shadow-sm transition-all duration-200 hover:border-primary/30 hover:opacity-100"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="truncate text-[15px] font-semibold text-base-content/80 group-hover:text-primary">
+            {{ campaign.name }}
+          </h2>
+          <p class="mt-0.5 text-xs text-base-content/55">
+            <span class="font-medium uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+            @if (campaign.startdate || campaign.enddate) {
+            <span>
+              · {{ campaign.startdate ? (campaign.startdate | date: 'MMM d, y') : '…' }} – {{ campaign.enddate ?
+              (campaign.enddate | date: 'MMM d, y') : '…' }}
+            </span>
+            }
+          </p>
+        </div>
+        <span class="badge badge-ghost shrink-0 gap-1">
+          <pc-icon name="archive-box" [size]="3"></pc-icon>
+          <span i18n>Read-only</span>
+        </span>
+      </div>
+    </a>
+    }
+  </div>
+  } }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaigns-page.ts
 
 ```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { PersonsService } from '../../persons/services/persons-service';
-import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { CampaignListItem, CampaignsService } from '../services/campaigns-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/**
+ * Campaigns §15 — manage contexts. The office context is permanent; election
+ * campaigns are created before a race and archived after it. Cards, not a
+ * datagrid: a tenant has a handful of campaigns, ever.
+ */
 @Component({
-  selector: 'pc-people-in-company',
-  imports: [RouterModule],
-  template: `<div class="flex flex-col">
-    @if (!peopleInCompany().length && !isLoading()) {
-      <p i18n class="py-2 text-sm italic text-base-content/40">No people linked to this company yet.</p>
-    }
-    @for (person of peopleInCompany(); track person.id) {
-      <a
-        routerLink="/people/{{ person.id }}"
-        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
-      >
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
-          aria-hidden="true"
-          >{{ initials(person) }}</span
-        >
-        <span class="flex min-w-0 flex-col">
-          <span class="truncate text-sm font-semibold text-base-content">{{
-            person.full_name || 'Unnamed person'
-          }}</span>
-          @if (person.email) {
-            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
-          }
-        </span>
-      </a>
-    }
-    @if (hasMore()) {
-      <button
-        i18n
-        type="button"
-        class="mt-1 self-start text-xs text-primary hover:underline"
-        (click)="loadMore()"
-        [disabled]="isLoading()"
-      >
-        Show more
-      </button>
-    }
-  </div>`,
+  selector: 'pc-campaigns-page',
+  imports: [RouterLink, Icon, DatePipe],
+  templateUrl: './campaigns-page.html',
 })
-export class PeopleInCompany {
-  private personsSvc = inject(PersonsService);
+export class CampaignsPageComponent implements OnInit {
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly context = inject(CampaignContextService);
+  private readonly alerts = inject(AlertService);
 
-  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
-  protected isLoading = signal(false);
-  protected hasMore = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly loaded = signal(false);
+  protected readonly campaigns = signal<CampaignListItem[]>([]);
 
-  private readonly pageSize = 25;
-  private currentOffset = signal(0);
-  private requestSequence = 0;
-  private lastParams: { id: string } | null = null;
+  protected readonly activeContextId = this.context.activeCampaignId;
+  protected readonly current = computed(() => this.campaigns().filter((c) => c.status === 'active'));
+  protected readonly archived = computed(() => this.campaigns().filter((c) => c.status === 'archived'));
 
-  public companyId = input.required<string>();
-
-  constructor() {
-    effect(() => {
-      const id = this.companyId();
-
-      if (!id) {
-        this.resetState();
-        this.lastParams = null;
-        return;
-      }
-
-      if (this.lastParams && this.lastParams.id === id) {
-        return;
-      }
-
-      this.lastParams = { id };
-      this.resetState();
-      void this.fetchPage({ id, offset: 0, replace: true });
-    });
+  public ngOnInit(): void {
+    void this.load();
   }
 
-  protected initials(person: Persons & { full_name: string }): string {
-    const first = person.first_name?.trim()?.[0] ?? '';
-    const last = person.last_name?.trim()?.[0] ?? '';
-    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
+  protected kindLabel(kind: string): string {
+    return kind === 'office' ? 'Office' : 'Election';
   }
 
-  protected async loadMore() {
-    if (this.isLoading() || !this.hasMore()) {
-      return;
-    }
-
-    const id = this.companyId();
-    if (!id) {
-      return;
-    }
-
-    const offset = this.currentOffset();
-    await this.fetchPage({ id, offset, replace: false });
-  }
-
-  private resetState() {
-    this.peopleInCompany.set([]);
-    this.currentOffset.set(0);
-    this.hasMore.set(false);
-    this.isLoading.set(false);
-    this.requestSequence++;
-  }
-
-  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
-    const { id, offset, replace } = params;
-    const requestId = ++this.requestSequence;
-    this.isLoading.set(true);
-
+  protected async switchTo(campaign: CampaignListItem, event: Event): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
     try {
-      const people = (await this.personsSvc.getByCompanyId(id, {
-        limit: this.pageSize,
-        offset,
-        columns: ['first_name', 'last_name', 'email'],
-      })) as Persons[];
+      await this.context.setActive(String(campaign.id));
+      this.alerts.showSuccess(`Now working in ${campaign.name}`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not switch campaign. Please try again.'));
+    }
+  }
 
-      if (requestId !== this.requestSequence) {
-        return;
-      }
-
-      const mapped = people.map((person) => ({
-        ...person,
-        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-      }));
-
-      if (replace) {
-        this.peopleInCompany.set(mapped);
-      } else {
-        this.peopleInCompany.update((current) => [...current, ...mapped]);
-      }
-
-      this.currentOffset.set(offset + people.length);
-      this.hasMore.set(people.length === this.pageSize);
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [rows] = await Promise.all([this.campaignsSvc.getSwitcherList(), this.context.ensureLoaded()]);
+      this.campaigns.set(rows);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load campaigns'));
     } finally {
-      if (requestId === this.requestSequence) {
-        this.isLoading.set(false);
-      }
+      this.loaded.set(true);
+      end();
     }
   }
 }
@@ -8920,7 +8746,7 @@ export class EmailPersonRail {
 ## File: apps/frontend/src/app/experiences/events/services/events-frontend-service.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import type {
   AddEventType,
   UpdateEventType,
@@ -8929,13 +8755,18 @@ import type {
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class EventsFrontendService extends AbstractAPIService<'events', UpdateEventType> {
   protected override readonly endpointName = 'events';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddEventType) {
-    return this.api.events.add.mutate(row);
+    // Created in the context the user is working in (§15); backend defaults to the office.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.events.add.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
   }
 
   public addMany(_rows: AddEventType[]) {
@@ -8955,11 +8786,17 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.api.events.getAll.query(options, { signal: this.ac.signal });
+    return this.api.events.getAll.query(this.scoped(options), { signal: this.ac.signal });
   }
 
   public getAllArchived(options?: getAllOptionsType) {
-    return this.api.events.getAll.query({ ...options, includeArchived: true }, { signal: this.ac.signal });
+    return this.api.events.getAll.query({ ...this.scoped(options), includeArchived: true }, { signal: this.ac.signal });
+  }
+
+  /** Campaigns §15 — the events pages show the active context's events. */
+  private scoped(options?: getAllOptionsType): getAllOptionsType {
+    const campaignId = this.campaignContext.activeCampaignId();
+    return campaignId ? { ...(options ?? {}), campaignId } : options;
   }
 
   public getById(id: string) {
@@ -10830,6 +10667,27 @@ export class PublicEventComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/exports/services/exports-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import type { DataExportRecordType } from '../../../../../../../libs/common/src';
+import { TRPCService } from '../../../services/api/trpc-service';
+
+/** Thin service wrapper over the exports tRPC router — used by the merged Import/export History page (spec §17). */
+@Service()
+export class ExportsService extends TRPCService<unknown> {
+  public list(): Promise<DataExportRecordType[]> {
+    return this.api.exports.list.query();
+  }
+
+  public delete(id: string): Promise<unknown> {
+    return this.api.exports.delete.mutate({ id });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/files/services/files.service.ts
 
 ```typescript
@@ -11232,7 +11090,7 @@ export class DonationPagesService extends FormsService {
 ## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddWebFormType,
   CreateFormType,
@@ -11247,6 +11105,7 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 /** A form as consumed by the new Forms experience (fields normalized to objects by the server). */
 export interface FormDetail {
@@ -11284,6 +11143,8 @@ export interface FormSubmissionRow {
 export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
   protected override readonly endpointName = 'webForms';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddWebFormType) {
     return this.api.webForms.add.mutate(row);
   }
@@ -11305,7 +11166,10 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
   }
 
   public async getAll(options?: getAllOptionsType) {
-    const result = await this.api.webForms.getAllWithCounts.query(options, { signal: this.ac.signal });
+    // Campaigns §15 — the forms page shows the active context's forms.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.webForms.getAllWithCounts.query(scoped, { signal: this.ac.signal });
     const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
     const count = result?.count != null ? Number(result.count) : rows.length;
     return { rows, count };
@@ -11343,7 +11207,9 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
   }
 
   public createForm(input: CreateFormType): Promise<FormDetail> {
-    return this.api.webForms.create.mutate(input) as Promise<FormDetail>;
+    const campaignId = this.campaignContext.activeCampaignId();
+    const stamped = campaignId ? { ...input, campaign_id: campaignId } : input;
+    return this.api.webForms.create.mutate(stamped) as Promise<FormDetail>;
   }
 
   public updateLive(id: string, data: UpdateFormType): Promise<FormDetail> {
@@ -11756,328 +11622,6 @@ export class FormRenderComponent {
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-
-```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-import { AuthService } from '../../../auth/auth-service';
-import { publicPageUrl } from '../../../shared/public-pages';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-form-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './form-view.html',
-})
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  protected readonly recordNav = injectRecordNavigation('form', this.id);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Forms', route: '/forms' },
-    { label: this.formRecord()?.name || 'Form' },
-  ]);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const record = this.formRecord();
-    if (!record?.slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug;
-    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
-    // /f/:slug SPA page on the tenant subdomain.
-    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
-      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
-    }
-    return publicPageUrl(tenantSlug, `f/${record.slug}`);
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
@@ -15545,992 +15089,6 @@ export class HelpRichText {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-form.html
-
-```html
-<!-- Template for household edit form -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <div class="w-full max-w-4xl">
-    @if (household()?.is_placeholder) {
-    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
-      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
-      <div class="flex flex-col">
-        <span class="font-bold">System Placeholder Household</span>
-        <span class="text-xs font-light"
-          >This household is a permanent placeholder for people with no address and cannot be edited.</span
-        >
-      </div>
-    </div>
-    } @else {
-    <pc-detail-header
-      [title]="id() ? 'Edit household' : 'New household'"
-      [eyebrow]="id() ? 'Editing' : 'New'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="household()?.id ? 'two' : 'three'"
-      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
-      [showDelete]="!isNewMode()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete household"
-      (save)="save($event)"
-      (delete)="deleteHousehold()"
-    ></pc-detail-header>
-
-    <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <div class="lg:col-span-2">
-        <form (submit)="$event.preventDefault()">
-          <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
-            <div class="flex flex-col gap-6">
-              <!-- Current Address Display -->
-              @if (!household()?.is_placeholder && addressString()) {
-              <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
-                <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
-                <div class="flex flex-col">
-                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50"
-                    >Current Address</span
-                  >
-                  <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
-                </div>
-              </div>
-              }
-
-              <!-- Autocomplete Address Search (§6 — Google Places) -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Search address</label>
-                <pc-address-autocomplete
-                  (addressSelected)="handleAddressChange($event)"
-                  [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
-                ></pc-address-autocomplete>
-                <p class="text-xs text-base-content/55 leading-snug">
-                  Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
-                  update automatically.
-                </p>
-                <span class="text-[10px] text-base-content/35 tracking-wide">powered by Google</span>
-              </div>
-
-              <!-- Collapsible manual entry -->
-              <details class="group">
-                <summary
-                  class="cursor-pointer list-none flex items-center gap-2 text-sm font-medium text-base-content/60 hover:text-base-content select-none py-1"
-                >
-                  <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                  Enter address manually
-                </summary>
-                <div class="mt-4 pl-3 border-l-2 border-base-300 flex flex-col gap-3">
-                  <p class="text-xs text-base-content/55 leading-snug">
-                    Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
-                    address verifies.
-                  </p>
-                  <pc-address-form-group [form]="form"></pc-address-form-group>
-                </div>
-              </details>
-
-              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
-                Segmentation
-              </div>
-
-              <!-- Tags -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Tags</label>
-                <pc-tags
-                  [tags]="tags"
-                  type="tag"
-                  [enableAutoComplete]="true"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="tagAdded($event)"
-                  (tagRemoved)="tagRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <!-- Issues -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Issues of Interest</label>
-                <pc-tags
-                  [tags]="issues"
-                  type="issue"
-                  [enableAutoComplete]="true"
-                  placeholder="Enter issues, separated by comma"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="issueAdded($event)"
-                  (tagRemoved)="issueRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
-                Door notes
-              </div>
-
-              <!-- Door notes -->
-              <pc-textarea
-                label="Door notes"
-                placeholder="What a canvasser should know at this door…"
-                [formField]="form.notes"
-                [rows]="3"
-              ></pc-textarea>
-
-              <div class="h-2"></div>
-            </div>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar (§6 rail: first seen · members · geocode status · ward/district/precinct) -->
-      <div class="flex flex-col gap-4">
-        @if (!isNewMode() && household(); as h) {
-        <div class="card bg-base-100 border border-base-300 rounded-xl p-4 flex flex-col gap-3">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</span>
-
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-base-content/60">Geocoding status</span>
-            <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
-          </div>
-
-          <dl class="flex flex-col gap-2 text-sm border-t border-base-200 pt-3">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Ward</dt>
-              <dd class="font-medium tabular-nums">{{ h.ward || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">District</dt>
-              <dd class="font-medium tabular-nums">{{ h.district || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Precinct</dt>
-              <dd class="font-medium tabular-nums">{{ h.precinct || '—' }}</dd>
-            </div>
-          </dl>
-
-          <p class="text-xs text-base-content/45 leading-snug border-t border-base-200 pt-3">
-            Electoral boundaries come from the geocoder — they refresh in the background after save.
-          </p>
-        </div>
-
-        <pc-entity-overview [createdAt]="h.created_at" [updatedAt]="h.updated_at"></pc-entity-overview>
-        }
-      </div>
-    </div>
-    }
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
-
-```typescript
-import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
-import { Tags } from '@experiences/tags/ui/tags';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
-
-import type { Selectable } from 'kysely';
-import { HouseholdsService } from '../services/households-service';
-import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-household-form',
-  imports: [
-    PcTextarea,
-    AddressAutocomplete,
-    Tags,
-    Icon,
-    RouterModule,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcAddressFormGroup,
-    GeocodeChip,
-  ],
-  templateUrl: './household-form.html',
-})
-export class HouseholdForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly personsSvc = inject(PersonsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly household = signal<Selectable<Households> | null>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const households: PcBreadcrumb = { label: 'Households', route: '/households' };
-    const id = this.household()?.id;
-    if (id) {
-      return [households, { label: 'Household', route: ['/households', String(id)] }, { label: 'Edit' }];
-    }
-    return [households, { label: 'New household' }];
-  });
-
-  protected addressVerified = false;
-
-  protected tags: string[] = [];
-
-  protected issues: string[] = [];
-
-  protected readonly payload = signal({
-    formatted_address: '',
-    type: '',
-    lat: 0,
-    lng: 0,
-    street_num: '',
-    street1: '',
-    street2: '',
-    apt: '',
-    city: '',
-    state: '',
-    country: '',
-    zip: '',
-    home_phone: '',
-    notes: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, UpdateHouseholdsObj);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected readonly addressString = computed(() => {
-    const raw = this.payload();
-
-    // If formatted_address is present (e.g. populated via Google Places autocomplete)
-    if (raw.formatted_address) {
-      return raw.formatted_address;
-    }
-
-    const parts: string[] = [];
-
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) {
-      parts.push(streetParts.join(' ').trim());
-    }
-    if (locationParts.length) {
-      parts.push(locationParts.join(', ').trim());
-    }
-
-    return parts.join(', ').trim();
-  });
-
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  public handleAddressChange(address: AddressType) {
-    const end = this._loading.begin();
-    try {
-      if (!address || !address.street1) {
-        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
-        return;
-      }
-      this.payload.update((prev) => ({
-        ...prev,
-        formatted_address: address.formatted_address ?? '',
-        type: address.type ?? '',
-        lat: address.lat ?? 0,
-        lng: address.lng ?? 0,
-        street_num: address.street_num ?? '',
-        street1: address.street1 ?? '',
-        street2: address.street2 ?? '',
-        apt: address.apt ?? '',
-        city: address.city ?? '',
-        state: address.state ?? '',
-        country: address.country ?? '',
-        zip: address.zip ?? '',
-      }));
-      this.form.street1().markAsDirty();
-      this.addressVerified = true;
-    } finally {
-      end();
-    }
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadHousehold();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          formatted_address: data.formatted_address ?? '',
-          type: data.type ?? '',
-          lat: data.lat ?? 0,
-          lng: data.lng ?? 0,
-          street_num: data.street_num ?? '',
-          street1: data.street1 ?? '',
-          street2: data.street2 ?? '',
-          apt: data.apt ?? '',
-          city: data.city ?? '',
-          state: data.state ?? '',
-          country: data.country ?? '',
-          zip: data.zip ?? '',
-          home_phone: data.home_phone ?? '',
-          notes: data.notes ?? '',
-        });
-      }
-    }
-  }
-
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
-    }
-  }
-
-  protected async deleteHousehold() {
-    const id = this.id();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(id, { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
-        }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
-
-      await this.householdsSvc.delete(id);
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete household';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.addressString() || 'this household');
-  }
-
-  protected save(done?: () => void) {
-    const raw = this.payload();
-    const data: UpdateHouseholdsType = {
-      home_phone: raw.home_phone,
-      street_num: raw.street_num,
-      street1: raw.street1,
-      street2: raw.street2,
-      apt: raw.apt,
-      city: raw.city,
-      state: raw.state,
-      zip: raw.zip,
-      country: raw.country,
-      notes: raw.notes,
-      formatted_address: raw.formatted_address || null,
-      type: raw.type || null,
-      lat: raw.lat || null,
-      lng: raw.lng || null,
-    };
-    if (!this.id()) {
-      return this.householdsSvc.add(data).then(async (result: any) => {
-        this.alertSvc.showSuccess('Household added successfully.');
-        this.householdsSvc.triggerRefresh();
-        done?.();
-        await this.router.navigate(['/households', result.id]);
-      });
-    }
-    return this.update(data, done);
-  }
-
-  protected async tagAdded(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.attachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to attach tag:', err);
-    }
-  }
-
-  protected async tagRemoved(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.detachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to detach tag:', err);
-    }
-  }
-
-  protected async issueAdded(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.attachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to attach issue:', err);
-    }
-  }
-
-  protected async issueRemoved(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.detachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to detach issue:', err);
-    }
-  }
-
-  private async getTags() {
-    const id = this.id();
-    if (!this.household() || !id) {
-      return;
-    }
-    this.tags = await this.householdsSvc.getTags(id, 'tag');
-    this.issues = await this.householdsSvc.getTags(id, 'issue');
-  }
-
-  private async loadHousehold() {
-    const id = this.id();
-    if (!id) return;
-
-    const end = this._loading.begin();
-
-    try {
-      this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
-      await this.getTags();
-      this.refreshForm();
-    } finally {
-      end();
-    }
-  }
-
-  private refreshForm() {
-    const household = this.household();
-    if (!household) return;
-
-    this.payload.set({
-      formatted_address: household.formatted_address ?? '',
-      type: household.type ?? '',
-      lat: household.lat ?? 0,
-      lng: household.lng ?? 0,
-      street_num: household.street_num ?? '',
-      street1: household.street1 ?? '',
-      street2: household.street2 ?? '',
-      apt: household.apt ?? '',
-      city: household.city ?? '',
-      state: household.state ?? '',
-      country: household.country ?? '',
-      zip: household.zip ?? '',
-      home_phone: household.home_phone ?? '',
-      notes: household.notes ?? '',
-    });
-    this.form().reset();
-  }
-
-  private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
-    const id = this.id();
-    if (!id) {
-      return;
-    }
-
-    const end = this._loading.begin();
-    void this.householdsSvc
-      .update(id, data)
-      .then(() => {
-        this.alertSvc.showSuccess('Household updated successfully.');
-        this.form().reset();
-        this.householdsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .finally(() => end());
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-view.html
-
-```html
-<pc-detail-layout
-  [title]="addressString()"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Household'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!household()"
-  [showActions]="!!(household() && !household()?.is_placeholder)"
-  [showDelete]="true"
-  [deleteText]="'Delete household'"
-  [btn1Text]="'Edit household'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editHousehold()"
-  (delete)="deleteHousehold()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (household() && !household()?.is_placeholder) {
-  <pc-log-interaction
-    pc-actions-prefix
-    [entity]="'households'"
-    [entityId]="id()"
-    (logged)="onInteractionLogged()"
-  ></pc-log-interaction>
-  } @if (household(); as h) { @if (h.is_placeholder) {
-  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-    <div class="avatar placeholder mb-4">
-      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
-      </div>
-    </div>
-    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-    <p class="text-sm text-base-content/60 mb-6">
-      This is a system placeholder representing individuals who do not currently have a household or address assigned.
-      It is not a real household record and cannot be edited.
-    </p>
-    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Return to People
-    </a>
-  </div>
-  } @else {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Left Column: Map, Details, Door notes -->
-    <div class="flex flex-col gap-6 lg:col-span-1">
-      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
-      <pc-card>
-        <div class="relative h-56 w-full overflow-hidden rounded-lg">
-          @if (hasMap()) {
-          <pc-map
-            class="block h-full w-full"
-            [markers]="mapMarkers()"
-            [interactive]="false"
-            [deepLink]="true"
-            ariaLabel="Household location"
-          ></pc-map>
-          <!-- Ward chip -->
-          @if (h.ward) {
-          <span class="absolute left-2 top-2 badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
-          }
-          <!-- Address + Maps affordance -->
-          <div class="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
-            <span class="badge badge-sm max-w-[70%] truncate bg-base-100/90 font-medium text-base-content shadow">
-              {{ addressString() }}
-            </span>
-            <span class="badge badge-sm gap-1 bg-base-100/90 font-medium text-base-content shadow">
-              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon> Maps
-            </span>
-          </div>
-          } @else {
-          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
-          <div
-            class="flex h-full flex-col items-center justify-center gap-2 bg-base-200 p-6 text-center text-base-content/40 select-none"
-          >
-            <pc-icon name="map-pin" [size]="8" class="mb-1 text-base-content/20"></pc-icon>
-            <h4 class="text-sm font-semibold text-base-content/60">No pin yet</h4>
-            <p class="max-w-[220px] text-xs font-light leading-snug">
-              The map pin appears once the address verifies — it geocodes in the background.
-            </p>
-          </div>
-          }
-        </div>
-        <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
-        <div class="mt-3 flex items-center justify-between text-xs">
-          <span class="text-base-content/60">Geocoding status</span>
-          <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
-        </div>
-      </pc-card>
-
-      <!-- Details card -->
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Details</h3>
-        <dl class="flex flex-col divide-y divide-base-200 text-sm">
-          <div class="flex items-start justify-between gap-4 py-2 first:pt-0">
-            <dt class="text-base-content/50">City</dt>
-            <dd class="text-right font-medium text-base-content">{{ cityLine() || '—' }}</dd>
-          </div>
-          <div class="flex items-start justify-between gap-4 py-2">
-            <dt class="text-base-content/50">First seen</dt>
-            <dd class="text-right font-medium text-base-content">
-              {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
-            </dd>
-          </div>
-          <div class="flex flex-col gap-1 py-2 last:pb-0">
-            <dt class="text-base-content/50">Grouping</dt>
-            <dd class="text-sm font-light leading-relaxed text-base-content/70">
-              By address — edit a member’s address and the household follows.
-            </dd>
-          </div>
-        </dl>
-      </pc-card>
-
-      <!-- Door notes card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
-        @if (h.notes) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ h.notes }}</p>
-        } @else {
-        <p class="text-sm italic text-base-content/40">No door notes recorded for this household.</p>
-        }
-      </pc-card>
-    </div>
-
-    <!-- Right Column: Members & Activity at this door -->
-    <div class="flex flex-col gap-6 lg:col-span-2">
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Members</h3>
-        <pc-people-in-household [householdId]="id()"></pc-people-in-household>
-      </pc-card>
-
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Activity at this door
-        </h3>
-        <div class="flex max-h-[450px] flex-col gap-4 overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'households'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
-    </div>
-  </div>
-  } }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
-
-```typescript
-import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import type { IAuthUser } from '@common';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker } from '@uxcommon/components/map/map-types';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
-import { UserService } from '../../../services/user.service';
-import type { Selectable } from 'kysely';
-import { HouseholdsService } from '../services/households-service';
-import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
-
-@Component({
-  selector: 'pc-household-view',
-  imports: [
-    RouterModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    LogInteraction,
-    DetailLayout,
-    PcCard,
-    PcMap,
-    GeocodeChip,
-    DatePipe,
-  ],
-  templateUrl: './household-view.html',
-})
-export class HouseholdView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('household', this.id);
-  protected readonly activityFeed = viewChild(RecordActivities);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly household = signal<Selectable<Households> | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
-
-  protected readonly peopleCount = signal(0);
-  protected readonly lastCanvass = signal<LastCanvass>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Households', route: '/households' },
-    { label: this.addressString() },
-  ]);
-
-  // Address
-  protected readonly addressString = computed(() => {
-    const raw = this.household();
-    if (!raw) return 'No Address Assigned';
-    if (raw.is_placeholder) return 'People with no addresses';
-    if (raw.formatted_address) return raw.formatted_address;
-
-    const parts: string[] = [];
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    return parts.join(', ').trim() || 'No Address Assigned';
-  });
-
-  /** Short "City, State" for the map address chip. */
-  protected readonly cityLine = computed(() => {
-    const h = this.household();
-    if (!h) return '';
-    return [h.city, h.state].filter(Boolean).join(', ');
-  });
-
-  protected readonly hasMap = computed(() => {
-    const h = this.household();
-    return !!(h && h.lat && h.lng && !h.is_placeholder);
-  });
-
-  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
-    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
-  });
-
-  /** Header subtitle — "Ward 4 · 3 people · Canvassed May 2" (§6). Parts drop out honestly when absent. */
-  protected readonly subtitle = computed(() => {
-    const h = this.household();
-    if (!h || h.is_placeholder) return null;
-    const parts: string[] = [];
-    if (h.ward) parts.push(`Ward ${h.ward}`);
-    const n = this.peopleCount();
-    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    const canvass = this.lastCanvass();
-    if (canvass) {
-      parts.push(`Canvassed ${this.formatCanvassDate(canvass.knocked_at)}`);
-    }
-    return parts.join(' · ');
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users for addedby/updatedby display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
-      this.household.set(householdData);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
-        this.location.replaceState(`/households/${householdData.slug}`);
-      }
-
-      // 2. Load people count and last-canvass in parallel (both feed the header subtitle).
-      const [count, canvass] = await Promise.all([
-        this.householdsSvc.getPeopleCount(id),
-        this.householdsSvc.getLastCanvass(id).catch(() => null),
-      ]);
-      this.peopleCount.set(count);
-      this.lastCanvass.set((canvass as LastCanvass) ?? null);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  /** Refresh the "Activity at this door" feed after a logged interaction. */
-  protected onInteractionLogged(): void {
-    this.activityFeed()?.loadActivities();
-  }
-
-  protected editHousehold() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteHousehold() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
-        }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
-
-      await this.householdsSvc.delete(this.id());
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete household';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  /** Compact "Canvassed May 2" style date for the header subtitle. */
-  private formatCanvassDate(value: Date | string): string {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/imports/services/imports-service.ts
 
 ```typescript
@@ -16560,6 +15118,867 @@ export class ImportsService extends TRPCService<unknown> {
     },
   ) {
     return this.api.imports.delete.mutate({ id, ...options });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
+
+```html
+<div class="p-6 max-w-4xl mx-auto">
+  <!-- Where am I? / Where was I? -->
+  <div class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
+    <p class="text-sm text-base-content/60 mt-1">
+      Headers in the first row · duplicates are matched by email · nothing is written until the last step
+    </p>
+  </div>
+
+  <!-- Step indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    @for (s of stepOrder; track s; let idx = $index) {
+    <li
+      class="step"
+      [class.step-primary]="idx <= currentStepIndex()"
+      [class.cursor-pointer]="canReachStep(s)"
+      (click)="canReachStep(s) && goToStep(s)"
+    >
+      {{ stepLabels[s] }}
+    </li>
+    }
+  </ul>
+
+  <!-- ============ UPLOAD ============ -->
+  @if (step() === 'upload') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @if (!fileName()) {
+      <div
+        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
+        [class.border-primary]="dragOver()"
+        [class.bg-primary/5]="dragOver()"
+        [class.border-base-300]="!dragOver()"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave()"
+        (drop)="onDrop($event)"
+      >
+        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
+        <label class="btn btn-primary gap-2 cursor-pointer">
+          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+          Drop a CSV here, or click to browse
+          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
+        </label>
+        @if (parsing()) {
+        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
+          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
+          Reading and parsing the file…
+        </p>
+        }
+      </div>
+      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
+        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
+        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
+        <li>UTF-8 and Excel both work.</li>
+      </ul>
+      } @else {
+      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
+          <span class="font-mono text-sm text-base-content truncate">
+            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
+          </span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
+      </div>
+      <div class="flex justify-end">
+        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
+          Continue to column mapping
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- ============ MAP COLUMNS ============ -->
+  @if (step() === 'map') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      <p class="text-sm text-base-content/70">
+        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
+        matching by the header row
+      </p>
+
+      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
+        @for (header of headers(); track header; let idx = $index) {
+        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
+          <div class="flex-1 min-w-0">
+            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
+            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <select
+              class="select select-bordered select-sm w-56"
+              [value]="mapping()[idx] || ''"
+              (change)="setMapping(idx, $any($event.target).value)"
+            >
+              <option value="">— Skip this column —</option>
+              @for (field of mappableFields; track field) {
+              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
+              }
+            </select>
+            @if (!mapping()[idx]) {
+            <span class="badge badge-ghost text-xs">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+      </div>
+
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary gap-2"
+          [disabled]="mappedColumnCount() === 0"
+          (click)="goToReview()"
+        >
+          Continue to review
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ============ REVIEW ============ -->
+  @if (step() === 'review') {
+  <div class="flex flex-col gap-4">
+    @if (checkingDuplicates()) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body items-center py-10">
+        <progress class="progress progress-primary w-64"></progress>
+        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
+      </div>
+    </div>
+    } @else { @if (reviewIsClean()) {
+    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
+      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
+      <span>No duplicate emails and no email problems found in this file.</span>
+    </div>
+    } @if (duplicateMatches().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ duplicateRowCount() }} rows match people you already have
+        </p>
+        <ul class="space-y-1">
+          @for (match of duplicateMatches(); track match.person_id) {
+          <li class="text-sm flex items-center gap-2">
+            <span class="font-mono text-base-content/70">{{ match.email }}</span>
+            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
+            @if (match.slug) {
+            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
+              >{{ match.name }}</a
+            >
+            } @else {
+            <span class="text-base-content">{{ match.name }}</span>
+            }
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'merge'"
+              (change)="duplicateDecision.set('merge')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Merge into existing</span>
+              <span class="block text-xs text-base-content/60">
+                Recommended — fills blank fields, never overwrites
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'skip'"
+              (change)="duplicateDecision.set('skip')"
+            />
+            <span class="text-sm font-medium text-base-content">
+              Skip the {{ duplicateRowCount() }} duplicate rows
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'import_new'"
+              (change)="duplicateDecision.set('import_new')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import as new anyway</span>
+              <span class="block text-xs text-base-content/60">
+                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    } @if (badEmailRows().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ badEmailRows().length }} rows have email problems
+        </p>
+        <ul class="space-y-1">
+          @for (row of badEmailRows(); track row.idx) {
+          <li class="text-sm">
+            <span class="text-base-content/60">Row {{ row.idx }}:</span>
+            <span class="font-mono text-base-content">{{ row.email }}</span>
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'skip'"
+              (change)="badEmailDecision.set('skip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
+              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'strip'"
+              (change)="badEmailDecision.set('strip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import without an email</span>
+              <span class="block text-xs text-base-content/60">
+                They can't receive newsletters until an email is added
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    }
+
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            placeholder="Comma separated e.g. donor, canvass-2026"
+            [value]="tagsText()"
+            (input)="tagsText.set($any($event.target).value)"
+          />
+        </label>
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            list="existing-static-lists"
+            placeholder="New or existing list name"
+            [value]="listName()"
+            (input)="listName.set($any($event.target).value)"
+          />
+          <datalist id="existing-static-lists">
+            @for (name of existingListNames(); track name) {
+            <option [value]="name"></option>
+            }
+          </datalist>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex justify-between">
+      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
+        Continue to import
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+    }
+  </div>
+  }
+
+  <!-- ============ CONFIRM & RUN ============ -->
+  @if (step() === 'confirm') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @let r = run(); @switch (r.status) { @case ('idle') {
+      <div class="space-y-2 text-sm text-base-content">
+        <p class="font-mono text-base-content/70">
+          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
+        </p>
+        <ul class="list-disc list-inside text-base-content/70 space-y-1">
+          <li>
+            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
+            'skip duplicate rows' : 'import as new anyway' }}
+          </li>
+          @if (badEmailRows().length > 0) {
+          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
+          } @if (parsedTags().length > 0) {
+          <li>Tags: {{ parsedTags().join(', ') }}</li>
+          } @if (listName().trim()) {
+          <li>Added to list: {{ listName().trim() }}</li>
+          }
+        </ul>
+        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
+      </div>
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          Import {{ finalRowCount() }} people
+        </button>
+      </div>
+      } @case ('running') {
+      <div class="flex flex-col items-center gap-3 py-10">
+        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
+        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
+        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
+      </div>
+      } @case ('done') {
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
+          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
+        </div>
+        <ul class="text-sm text-base-content/70 space-y-1">
+          <li>{{ r.inserted }} imported</li>
+          @if (r.merged > 0) {
+          <li>{{ r.merged }} merged into existing people</li>
+          } @if (r.skipped > 0) {
+          <li>{{ r.skipped }} skipped</li>
+          } @if (r.errors > 0) {
+          <li class="text-error">{{ r.errors }} errors</li>
+          } @if (r.tag) {
+          <li>Tagged {{ r.tag }}</li>
+          }
+        </ul>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
+            <pc-icon name="user-group" [size]="4"></pc-icon>
+            View imported people
+          </button>
+          <button type="button" class="btn btn-outline gap-2" (click)="startOver()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import another file
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
+            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+            Back to import history
+          </button>
+        </div>
+      </div>
+      } @case ('error') {
+      <div class="flex flex-col gap-4">
+        <div class="alert alert-error gap-2">
+          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+          <span>{{ r.message }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            Try again
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
+        </div>
+      </div>
+      } }
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
+
+```typescript
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+
+import { emailSchema } from '@common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { PERSONS_MAPPABLE_FIELDS, autoMapPersonsHeader } from '@uxcommon/components/csv-import/persons-field-mapping';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ImportsService } from '../services/imports-service';
+
+/** The four steps of the CSV import wizard (spec §17), in order. */
+type WizardStep = 'upload' | 'map' | 'review' | 'confirm';
+
+type DuplicateDecision = 'merge' | 'skip' | 'import_new';
+type BadEmailDecision = 'skip' | 'strip';
+
+interface DuplicateMatch {
+  email: string;
+  person_id: string;
+  name: string;
+  slug: string | null;
+}
+
+/** Confirm & run step state, modeled as a discriminated union (never a bag of optionals). */
+type RunState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | {
+      status: 'done';
+      inserted: number;
+      merged: number;
+      skipped: number;
+      errors: number;
+      tag: string | null;
+      importId: string | null;
+    }
+  | { status: 'error'; message: string };
+
+const FIELD_LABELS: Record<string, string> = {
+  first_name: 'First name',
+  last_name: 'Last name',
+  middle_names: 'Middle name(s)',
+  email: 'Email',
+  email2: 'Secondary email',
+  mobile: 'Mobile phone',
+  home_phone: 'Home phone',
+  street_num: 'Street number',
+  street1: 'Street line 1',
+  street2: 'Street line 2',
+  apt: 'Apt/Unit',
+  city: 'City',
+  state: 'State/Province',
+  zip: 'Zip/Postal code',
+  country: 'Country',
+  notes: 'Notes',
+};
+
+/** How long to wait between status polls once an import has been queued. */
+const POLL_INTERVAL_MS = 1500;
+/** Give up narrating progress (the import itself keeps running server-side) after this long. */
+const POLL_TIMEOUT_MS = 120_000;
+
+@Component({
+  selector: 'pc-import-wizard',
+  imports: [Icon, RouterLink],
+  templateUrl: './import-wizard.html',
+})
+export class ImportWizard {
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly personsService = inject(PersonsService);
+  private readonly importsService = inject(ImportsService);
+  private readonly listsService = inject(ListsService);
+
+  private readonly _duplicateCheck = createLoadingGate();
+  protected readonly checkingDuplicates = this._duplicateCheck.visible;
+
+  protected readonly step = signal<WizardStep>('upload');
+  protected readonly stepOrder: WizardStep[] = ['upload', 'map', 'review', 'confirm'];
+  protected readonly stepLabels: Record<WizardStep, string> = {
+    upload: 'Upload',
+    map: 'Map columns',
+    review: 'Review',
+    confirm: 'Import',
+  };
+  protected readonly currentStepIndex = computed(() => this.stepOrder.indexOf(this.step()));
+
+  /** A step is reachable once its prerequisite data exists — never skip ahead of validation. */
+  protected canReachStep(target: WizardStep): boolean {
+    const targetIdx = this.stepOrder.indexOf(target);
+    if (targetIdx <= this.currentStepIndex()) return true;
+    if (target === 'map') return this.rowCount() > 0;
+    if (target === 'review') return this.mappedColumnCount() > 0;
+    return false;
+  }
+
+  // --- Upload ---
+  protected readonly parsing = signal(false);
+  protected readonly dragOver = signal(false);
+  protected readonly fileName = signal<string | null>(null);
+  private fileText = '';
+  protected readonly headers = signal<string[]>([]);
+  protected readonly rawRows = signal<Array<Record<string, string>>>([]);
+
+  protected readonly rowCount = computed(() => this.rawRows().length);
+  protected readonly columnCount = computed(() => this.headers().length);
+
+  // --- Map columns ---
+  protected readonly mapping = signal<string[]>([]); // index-aligned with headers()
+  protected readonly mappableFields = PERSONS_MAPPABLE_FIELDS;
+  protected readonly fieldLabels = FIELD_LABELS;
+
+  protected readonly mappedColumnCount = computed(() => this.mapping().filter((m) => !!m).length);
+  protected readonly skippedColumnCount = computed(() => this.columnCount() - this.mappedColumnCount());
+
+  /** Every row, with only its mapped, non-blank fields — the shape the backend import mutation expects. */
+  protected readonly mappedRows = computed(() => {
+    const headers = this.headers();
+    const mapping = this.mapping();
+    return this.rawRows().map((row) => {
+      const out: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        const field = mapping[idx];
+        if (!field) return;
+        const value = (row[header] ?? '').toString().trim();
+        if (value && !(field in out)) out[field] = value;
+      });
+      return out;
+    });
+  });
+
+  protected readonly importableRowCount = computed(
+    () => this.mappedRows().filter((row) => Object.keys(row).length > 0).length,
+  );
+
+  // --- Review ---
+  protected readonly duplicateDecision = signal<DuplicateDecision>('merge');
+  protected readonly badEmailDecision = signal<BadEmailDecision>('skip');
+  protected readonly tagsText = signal('');
+  protected readonly listName = signal('');
+  protected readonly existingListNames = signal<string[]>([]);
+  protected readonly duplicateMatches = signal<DuplicateMatch[]>([]);
+
+  protected readonly emailRows = computed(() =>
+    this.mappedRows()
+      .map((row, idx) => ({ idx: idx + 1, email: row['email'] ?? '' }))
+      .filter((r) => !!r.email),
+  );
+  protected readonly validEmailRows = computed(() =>
+    this.emailRows().filter((r) => emailSchema.safeParse(r.email).success),
+  );
+  protected readonly badEmailRows = computed(() =>
+    this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success),
+  );
+  protected readonly duplicateRowCount = computed(() => {
+    const matched = new Set(this.duplicateMatches().map((m) => m.email.toLowerCase()));
+    return this.validEmailRows().filter((r) => matched.has(r.email.toLowerCase())).length;
+  });
+  protected readonly reviewIsClean = computed(
+    () => this.duplicateMatches().length === 0 && this.badEmailRows().length === 0,
+  );
+
+  protected readonly parsedTags = computed(() =>
+    this.tagsText()
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
+  );
+
+  // --- Confirm & run ---
+  protected readonly run = signal<RunState>({ status: 'idle' });
+  private pollHandle: ReturnType<typeof setTimeout> | undefined;
+
+  /** The exact row count the Confirm button and working-state sentence quote (spec §17). */
+  protected readonly finalRowCount = computed(() => {
+    if (this.badEmailDecision() === 'skip') {
+      return this.importableRowCount() - this.badEmailRows().length;
+    }
+    return this.importableRowCount();
+  });
+
+  constructor() {
+    this.destroyRef.onDestroy(() => this.clearPoll());
+    void this.loadExistingListNames();
+  }
+
+  private async loadExistingListNames(): Promise<void> {
+    try {
+      const result = await this.listsService.getAll({ startRow: 0, endRow: 200 });
+      const rows = (result?.rows ?? []) as Array<{ name?: string; is_dynamic?: boolean; object?: string }>;
+      this.existingListNames.set(
+        rows
+          .filter((r) => !r.is_dynamic && r.object === 'people' && typeof r.name === 'string')
+          .map((r) => r.name as string),
+      );
+    } catch {
+      // Non-blocking — the list-name field still works as free text without suggestions.
+    }
+  }
+
+  // --- Upload step ---
+
+  protected onDragOver(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  protected onDragLeave(): void {
+    this.dragOver.set(false);
+  }
+
+  protected onDrop(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragOver.set(false);
+    const file = ev.dataTransfer?.files?.[0];
+    if (file) void this.readFile(file);
+  }
+
+  protected onFileSelected(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) void this.readFile(file);
+    input.value = '';
+  }
+
+  private async readFile(file: File): Promise<void> {
+    this.parsing.set(true);
+    this.fileName.set(file.name);
+    try {
+      // UTF-8 and Excel-exported CSVs both decode correctly as text — Excel's
+      // CSV export is UTF-8 (sometimes BOM-prefixed), which readAsText handles.
+      // FileReader (not the newer File.text()) matches the shared csv-import
+      // component's own reading approach.
+      const text = await this.readFileAsText(file);
+      this.fileText = text;
+      const { headers, rows } = await this.parseCsv(text);
+      this.headers.set(headers);
+      this.rawRows.set(rows);
+      this.mapping.set(headers.map((h) => autoMapPersonsHeader(h)));
+    } catch {
+      this.alerts.showError('Failed to read that file. Make sure it is a CSV export.');
+      this.fileName.set(null);
+    } finally {
+      this.parsing.set(false);
+    }
+  }
+
+  private readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string) || '');
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  }
+
+  /** Reuses the shared CSV/TSV parsing worker (libs/uxcommon/components/csv-import) — no second parser. */
+  private parseCsv(text: string): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(
+        new URL('../../../../../../../libs/uxcommon/src/components/csv-import/csv.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+      worker.onmessage = (e: MessageEvent) => {
+        const data = e.data as {
+          type: string;
+          headers?: string[];
+          rows?: Array<Record<string, string>>;
+          message?: string;
+        };
+        worker.terminate();
+        if (data.type === 'result') {
+          resolve({ headers: data.headers ?? [], rows: data.rows ?? [] });
+        } else {
+          reject(new Error(data.message || 'Failed to parse CSV'));
+        }
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        reject(new Error('Failed to parse CSV'));
+      };
+      worker.postMessage({ type: 'parse', text });
+    });
+  }
+
+  protected chooseAnotherFile(): void {
+    this.fileName.set(null);
+    this.fileText = '';
+    this.headers.set([]);
+    this.rawRows.set([]);
+    this.mapping.set([]);
+  }
+
+  protected sampleValues(headerIdx: number): string {
+    const header = this.headers()[headerIdx];
+    if (!header) return '';
+    return this.rawRows()
+      .slice(0, 2)
+      .map((row) => row[header])
+      .filter((v) => !!v)
+      .join(', ');
+  }
+
+  // --- Step navigation ---
+
+  protected goToStep(target: WizardStep): void {
+    this.step.set(target);
+  }
+
+  protected async goToReview(): Promise<void> {
+    this.step.set('review');
+    const end = this._duplicateCheck.begin();
+    try {
+      const emails = [...new Set(this.validEmailRows().map((r) => r.email.toLowerCase()))];
+      const matches = emails.length ? await this.personsService.checkDuplicateEmails(emails) : [];
+      this.duplicateMatches.set(matches);
+    } catch {
+      // Review still works without the duplicate preview — the backend re-checks authoritatively at import time.
+      this.duplicateMatches.set([]);
+    } finally {
+      end();
+    }
+  }
+
+  protected setMapping(headerIdx: number, field: string): void {
+    const next = [...this.mapping()];
+    next[headerIdx] = field;
+    this.mapping.set(next);
+  }
+
+  // --- Confirm & run ---
+
+  protected async runImport(): Promise<void> {
+    if (this.run().status === 'running') return;
+    this.run.set({ status: 'running' });
+
+    const badEmailRows = this.badEmailRows();
+    const badEmailIdx = new Set(badEmailRows.map((r) => r.idx - 1));
+    const skipBadEmail = this.badEmailDecision() === 'skip';
+    const rowsToSend = this.mappedRows()
+      .map((row, idx) => {
+        if (!badEmailIdx.has(idx)) return row;
+        if (skipBadEmail) return null; // dropped below
+        const { email: _unused, ...rest } = row; // "Import without an email"
+        return rest;
+      })
+      .filter((row): row is Record<string, string> => row !== null && Object.keys(row).length > 0);
+    const skippedCount = this.rawRows().length - rowsToSend.length;
+    const clientSkipReasons = skipBadEmail
+      ? badEmailRows.map((r) => ({ row: r.idx, email: r.email, reason: 'Email address is not valid' }))
+      : [];
+
+    try {
+      const result = await this.personsService.import({
+        rows: rowsToSend,
+        tags: this.parsedTags(),
+        skipped: skippedCount,
+        file_name: this.fileName() ?? undefined,
+        duplicate_decision: this.duplicateDecision(),
+        list_name: this.listName().trim() || undefined,
+        source_csv: this.fileText || undefined,
+        client_skip_reasons: clientSkipReasons,
+      });
+
+      if (result?.import_id) {
+        await this.pollUntilDone(result.import_id, Date.now());
+      } else {
+        // Nothing importable — the backend already reported the terminal state synchronously.
+        this.run.set({
+          status: 'done',
+          inserted: result?.inserted ?? 0,
+          merged: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: result?.errors ?? 0,
+          tag: result?.tag ?? null,
+          importId: null,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'The import could not be started.';
+      this.run.set({ status: 'error', message });
+    }
+  }
+
+  private async pollUntilDone(importId: string, startedAt: number): Promise<void> {
+    this.clearPoll();
+    try {
+      const list = await this.importsService.list();
+      const record = (list ?? []).find((item) => String(item.id) === String(importId));
+
+      if (record?.status === 'completed') {
+        this.run.set({
+          status: 'done',
+          inserted: record.insertedCount,
+          merged: record.mergedCount,
+          skipped: record.skippedCount,
+          errors: record.errorCount,
+          tag: record.tagName,
+          importId,
+        });
+        return;
+      }
+      if (record?.status === 'failed') {
+        this.run.set({ status: 'error', message: record.errorMessage || 'The import failed.' });
+        return;
+      }
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        this.run.set({
+          status: 'error',
+          message: 'This is taking longer than expected. Check the import history page for its final status.',
+        });
+        return;
+      }
+    } catch {
+      // Transient — keep polling until the timeout above gives up.
+    }
+    this.pollHandle = setTimeout(() => void this.pollUntilDone(importId, startedAt), POLL_INTERVAL_MS);
+  }
+
+  private clearPoll(): void {
+    if (this.pollHandle) {
+      clearTimeout(this.pollHandle);
+      this.pollHandle = undefined;
+    }
+  }
+
+  protected startOver(): void {
+    this.clearPoll();
+    this.chooseAnotherFile();
+    this.mapping.set([]);
+    this.duplicateDecision.set('merge');
+    this.badEmailDecision.set('skip');
+    this.tagsText.set('');
+    this.listName.set('');
+    this.duplicateMatches.set([]);
+    this.run.set({ status: 'idle' });
+    this.step.set('upload');
+  }
+
+  protected viewImportedPeople(): void {
+    void this.router.navigate(['/people']);
+  }
+
+  protected backToHistory(): void {
+    void this.router.navigate(['/imports']);
   }
 }
 ```
@@ -16736,7 +16155,7 @@ export class ListsRefreshService {
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddListType,
   ExportCsvInputType,
@@ -16746,13 +16165,23 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   protected override readonly endpointName = 'lists';
 
+  private readonly campaignContext = inject(CampaignContextService);
+  /** Campaigns §15 — scope reads and stamp writes with the user's active context. */
+  private withContext<T extends object | undefined>(options: T): T {
+    const campaignId = this.campaignContext.activeCampaignId();
+    return (campaignId ? { ...(options ?? {}), campaignId } : options) as T;
+  }
+
   public add(row: AddListType) {
-    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
+    const campaignId = this.campaignContext.activeCampaignId();
+    const stamped = campaignId ? { ...row, campaign_id: campaignId } : row;
+    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(stamped, {
       context: { skipErrorHandler: true },
     });
   }
@@ -16783,7 +16212,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   }
 
   public getAllWithCounts(options?: getAllOptionsType) {
-    return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
+    return this.api.lists.getAllWithCounts.query(this.withContext(options), { signal: this.ac.signal });
   }
 
   public getById(id: string) {
@@ -18478,7 +17907,7 @@ export class ListsGridComponent implements OnInit, OnDestroy {
 ## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddMarketingEmailType,
   ExportCsvInputType,
@@ -18489,13 +17918,19 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
   protected override readonly endpointName = 'newsletters';
 
+  private readonly campaignContext = inject(CampaignContextService);
+
   public add(row: AddMarketingEmailType) {
-    return this.api.newsletters.create.mutate(row);
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
   }
 
   public addMany(_rows: AddMarketingEmailType[]) {
@@ -18515,7 +17950,10 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   }
 
   public async getAll(options?: getAllOptionsType) {
-    const result = await this.api.newsletters.getAllWithCounts.query(options, { signal: this.ac.signal });
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
     const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
     const count = result?.count != null ? Number(result.count) : rows.length;
     return { rows, count };
@@ -22830,1233 +22268,379 @@ export class ConnectionCard {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
-
-```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
-
-import { PersonsService } from '../services/persons-service';
-
-type HouseholdMember = PERSONINHOUSEHOLDTYPE & { email?: string | null };
-
-@Component({
-  selector: 'pc-people-in-household',
-  imports: [RouterModule],
-  template: `<div class="flex flex-col">
-    @if (!peopleInHousehold().length && !isLoading()) {
-      <p i18n class="py-2 text-sm italic text-base-content/40">No one else at this address yet.</p>
-    }
-    @for (person of peopleInHousehold(); track person.id) {
-      <a
-        routerLink="/people/{{ person.id }}"
-        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
-      >
-        <span
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
-          aria-hidden="true"
-          >{{ initials(person) }}</span
-        >
-        <span class="flex min-w-0 flex-col">
-          <span class="truncate text-sm font-semibold text-base-content">{{ person.full_name }}</span>
-          @if (person.email) {
-            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
-          }
-        </span>
-      </a>
-    }
-    @if (hasMore()) {
-      <button
-        i18n
-        type="button"
-        class="mt-1 self-start text-xs text-primary hover:underline"
-        (click)="loadMore()"
-        [disabled]="isLoading()"
-      >
-        Show more
-      </button>
-    }
-  </div>`,
-})
-export class PeopleInHousehold {
-  private personsSvc = inject(PersonsService);
-
-  protected peopleInHousehold = signal<HouseholdMember[]>([]);
-  protected isLoading = signal(false);
-  protected hasMore = signal(false);
-
-  private readonly pageSize = 25;
-  private currentOffset = signal(0);
-  private requestSequence = 0;
-  private lastParams: { id: string; excludeId: string | null } | null = null;
-
-  public excludePersonId = input<string | null>(null);
-
-  public householdId = input.required<string>();
-
-  constructor() {
-    // React to input changes
-    effect(() => {
-      const id = this.householdId();
-      const excludeId = this.excludePersonId();
-
-      if (!id) {
-        this.resetState();
-        this.lastParams = null;
-        return;
-      }
-
-      if (this.lastParams && this.lastParams.id === id && this.lastParams.excludeId === excludeId) {
-        return;
-      }
-
-      this.lastParams = { id, excludeId };
-      this.resetState();
-      void this.fetchPage({ id, excludeId, offset: 0, replace: true });
-    });
-  }
-
-  protected initials(person: HouseholdMember): string {
-    const first = person.first_name?.trim()?.[0] ?? '';
-    const last = person.last_name?.trim()?.[0] ?? '';
-    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
-  }
-
-  protected async loadMore() {
-    if (this.isLoading() || !this.hasMore()) {
-      return;
-    }
-
-    const id = this.householdId();
-    if (!id) {
-      return;
-    }
-
-    const excludeId = this.excludePersonId();
-    const offset = this.currentOffset();
-    await this.fetchPage({ id, excludeId, offset, replace: false });
-  }
-
-  private resetState() {
-    this.peopleInHousehold.set([]);
-    this.currentOffset.set(0);
-    this.hasMore.set(false);
-    this.isLoading.set(false);
-    this.requestSequence++;
-  }
-
-  private async fetchPage(params: { id: string; excludeId: string | null; offset: number; replace: boolean }) {
-    const { id, excludeId, offset, replace } = params;
-    const requestId = ++this.requestSequence;
-    this.isLoading.set(true);
-
-    try {
-      const people = (await this.personsSvc.getPeopleInHousehold(id, {
-        limit: this.pageSize,
-        offset,
-        columns: ['email'],
-      })) as HouseholdMember[];
-
-      if (requestId !== this.requestSequence) {
-        return;
-      }
-
-      const filtered = excludeId ? people.filter((p) => p.id !== excludeId) : people;
-
-      if (replace) {
-        this.peopleInHousehold.set(filtered);
-      } else {
-        this.peopleInHousehold.update((current) => [...current, ...filtered]);
-      }
-
-      this.currentOffset.set(offset + people.length);
-      this.hasMore.set(people.length === this.pageSize);
-    } finally {
-      if (requestId === this.requestSequence) {
-        this.isLoading.set(false);
-      }
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.html
 
 ```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+<pc-card>
+  <h3 class="mb-1 block text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>Campaign standing</h3>
 
-  <div class="w-full max-w-4xl">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
+  @if (activeCampaign(); as campaign) {
+  <p class="mb-3 text-[11px] text-base-content/50">
+    <ng-container i18n>In</ng-container>
+    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+    @if (readonlyContext()) {
+    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+    }
+  </p>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-      <div class="lg:col-span-2">
-        <form (submit)="save()" novalidate class="flex flex-col gap-5">
-          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-            @if (!person()?.id) {
-            <label class="label text-xs text-base-content/50 -mb-2"
-              >All fields are optional, but try to add as much as possible</label
-            >
-            }
-
-            <!-- Name Inputs -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="First name"
-                aria-label="First name"
-                [formField]="form.first_name"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Last name"
-                aria-label="Last name"
-                [formField]="form.last_name"
-              ></pc-input>
-            </div>
-            <pc-input
-              placeholder="Middle name(s)"
-              aria-label="Middle name(s)"
-              [formField]="form.middle_names"
-            ></pc-input>
-
-            <!-- Emails -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email"
-                aria-label="Email Address"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email 2"
-                aria-label="Secondary Email Address"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Mobile Phone"
-                aria-label="Mobile Phone"
-                [formField]="form.mobile"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Home Phone"
-                aria-label="Home Phone"
-                [formField]="form.home_phone"
-              ></pc-input>
-            </div>
-
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <pc-select placeholder="-- Select company --" aria-label="Company" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-
-              <pc-select
-                placeholder="No preference"
-                aria-label="Preferred contact"
-                [formField]="form.preferred_contact"
-              >
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select contact owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-              @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-              }
-            </pc-select>
-
-            <!-- Address & Household Assignment -->
-            @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="flex items-center gap-3 text-sm bg-base-200 p-3 rounded-lg border border-base-300">
-              <pc-icon name="map-pin" [size]="4" class="text-base-content/40 shrink-0"></pc-icon>
-              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
-              <button type="button" class="link link-primary text-xs shrink-0" (click)="navigateToHousehold()">
-                Edit on household
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip shrink-0"
-                data-tip="Change household"
-                (click)="openAssignDrawer()"
-              >
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip shrink-0"
-                data-tip="Remove address"
-                (click)="removeAddress()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
-            </div>
-            } @else {
-            <div
-              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
-            >
-              <div class="flex items-center gap-2">
-                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="text-base-content/50 italic">No address assigned</span>
-              </div>
-              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign Household
-              </button>
-            </div>
-            }
-            <p
-              class="pl-1 text-xs text-base-content/50"
-              i18n="PersonForm|Explains why address is edited via the household@@person.address.reason"
-            >
-              Addresses belong to households, so everyone at the same address stays in sync.
-            </p>
-
-            <!-- Social Media Profile Links -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Social Media Profiles
-            </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="LinkedIn URL"
-                aria-label="LinkedIn URL"
-                [formField]="form.linkedin"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Twitter/X URL"
-                aria-label="Twitter/X URL"
-                [formField]="form.twitter"
-              ></pc-input>
-            </div>
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="Facebook URL"
-                aria-label="Facebook URL"
-                [formField]="form.facebook"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Instagram URL"
-                aria-label="Instagram URL"
-                [formField]="form.instagram"
-              ></pc-input>
-            </div>
-
-            <!-- Tags & Segmentation -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Tags & Issues
-            </div>
-
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Internal Notes -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
-
-            <pc-textarea
-              placeholder="Internal Notes..."
-              aria-label="Notes"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
+  <div class="grid gap-3 sm:grid-cols-2">
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="activeFact()?.support_level ?? ''"
+        [disabled]="saving() || readonlyContext()"
+        (change)="onSupportChange($event)"
+      >
+        <option value="" i18n>Unknown — never asked</option>
+        @for (level of supportLevels; track level) {
+        <option [value]="level">{{ supportLabels[level] }}</option>
         }
-      </div>
-    </div>
+      </select>
+    </label>
 
-    <!-- Back to the person record -->
-    @if (person()?.id) {
-    <a
-      [routerLink]="['/people', person()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ formName() || 'person' }}
-    </a>
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="activeFact()?.voting_status ?? ''"
+        [disabled]="saving() || readonlyContext()"
+        (change)="onVotingChange($event)"
+      >
+        <option value="" i18n>Unknown</option>
+        @for (status of votingStatuses; track status) {
+        <option [value]="status">{{ votingLabels[status] }}</option>
+        }
+      </select>
+    </label>
+  </div>
+  }
+
+  <!-- History across other campaigns -->
+  @if (otherFacts().length) {
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-base-content/45" i18n>
+      Other campaigns
+    </span>
+    <ul class="flex flex-col gap-1.5">
+      @for (fact of otherFacts(); track fact.campaign_id) {
+      <li class="flex items-center justify-between gap-2 text-xs">
+        <span class="min-w-0 truncate text-base-content/70">
+          {{ fact.campaign_name }} @if (fact.campaign_status === 'archived') {
+          <span class="text-base-content/40" i18n>(archived)</span>
+          }
+        </span>
+        <span class="flex shrink-0 items-center gap-1">
+          <span class="badge badge-xs" [class]="supportBadgeClass(fact.support_level)">
+            {{ supportLabel(fact.support_level) }}
+          </span>
+          @if (fact.voting_status) {
+          <span class="badge badge-ghost badge-xs">{{ votingLabel(fact.voting_status) }}</span>
+          }
+        </span>
+      </li>
+      }
+    </ul>
+  </div>
+  }
+
+  <!-- Email consent for the active context (§15): one derived, honest state -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-base-content/45" i18n>
+      Email consent
+    </span>
+    <div class="flex items-center justify-between gap-2">
+      <span
+        class="badge badge-sm"
+        [class.badge-success]="sendState().tone === 'ok'"
+        [class.badge-warning]="sendState().tone === 'warn'"
+        [class.badge-ghost]="sendState().tone === 'muted'"
+      >
+        {{ sendState().label }}
+      </span>
+      @if (hasEmail() && !readonlyContext()) { @if (activeSubscription()?.status === 'subscribed') {
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        [disabled]="saving()"
+        (click)="setSubscription('unsubscribed')"
+        i18n
+      >
+        Unsubscribe
+      </button>
+      } @else if (activeSubscription()?.status !== 'pending') {
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        [disabled]="saving()"
+        (click)="setSubscription('subscribed')"
+        i18n
+      >
+        Subscribe
+      </button>
+      } }
+    </div>
+    @if (activeSubscription(); as sub) {
+    <p class="mt-1 text-[10px] text-base-content/40">
+      <ng-container i18n>Consent via</ng-container> {{ sub.consent_source }}@if (sub.consent_at) {<ng-container i18n>
+        · </ng-container
+      >{{ sub.consent_at | date: 'MMM d, y' }}}
+    </p>
     }
   </div>
 
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
-        }
+  <!-- Global do-not-contact override -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    @if (doNotContact()) {
+    <div class="flex items-start gap-2 rounded-lg border border-error/30 bg-error/10 px-3 py-2">
+      <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-error"></pc-icon>
+      <div class="min-w-0 flex-1 space-y-0.5">
+        <p class="text-xs font-semibold text-error" i18n>Do not contact</p>
+        <p class="text-[11px] leading-snug text-base-content/70" i18n>
+          All outreach is suppressed — every channel, every campaign.
+        </p>
       </div>
+      <button type="button" class="btn btn-ghost btn-xs shrink-0" [disabled]="saving()" (click)="toggleDnc()" i18n>
+        Undo
+      </button>
     </div>
-  </pc-side-drawer>
-</div>
+    } @else {
+    <button
+      type="button"
+      class="text-left text-[11px] text-base-content/45 hover:text-error hover:underline"
+      [disabled]="saving()"
+      (click)="toggleDnc()"
+      i18n
+    >
+      Asked us to stop contacting them? Mark as do-not-contact
+    </button>
+    }
+  </div>
+</pc-card>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
 
 ```typescript
-import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Tags } from '@experiences/tags/ui/tags';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import {
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus } from '../../../../../../../libs/common/src';
 
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import {
+  CampaignsService,
+  PersonCampaignFact,
+  PersonSubscriptionsPayload,
+} from '../../campaigns/services/campaigns-service';
 import { PersonsService } from '../services/persons-service';
-import { TeamsService } from '../../teams/services/teams-service';
-import { CompaniesService } from '../../companies/services/companies-service';
-import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
+/**
+ * Campaign standing card (Campaigns §15): this person's support level and voting
+ * status in the ACTIVE context, their history across every campaign, and the
+ * global do-not-contact override. Unknown = no stored value, on purpose.
+ */
 @Component({
-  selector: 'pc-person-form',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
-  templateUrl: './person-form.html',
+  selector: 'pc-person-campaign-facts',
+  imports: [DatePipe, Icon, PcCard],
+  templateUrl: './person-campaign-facts.html',
 })
-export class PersonForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly householdsSvc = inject(HouseholdsService);
+export class PersonCampaignFacts {
+  readonly personId = input.required<string>();
+  readonly dncFlag = input<boolean>(false);
+
+  protected readonly context = inject(CampaignContextService);
+  private readonly campaignsSvc = inject(CampaignsService);
   private readonly personsSvc = inject(PersonsService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  private _loading = createLoadingGate();
-  private usersById = new Map<string, IAuthUser>();
+  protected readonly supportLevels = SUPPORT_LEVELS;
+  protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
+  protected readonly votingStatuses = VOTING_STATUSES;
+  protected readonly votingLabels = VOTING_STATUS_LABELS;
 
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly facts = signal<PersonCampaignFact[]>([]);
+  protected readonly doNotContact = signal(false);
+  protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
+
+  protected readonly activeCampaign = this.context.activeCampaign;
+  protected readonly readonlyContext = this.context.isArchivedContext;
+
+  /** The fact row for the active context (undefined = everything Unknown). */
+  protected readonly activeFact = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.facts().find((f) => String(f.campaign_id) === id) : undefined;
   });
 
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return null;
-    return this.getFormattedAddress(hh);
+  /** History rows for campaigns other than the active one. */
+  protected readonly otherFacts = computed(() => {
+    const id = this.context.activeCampaignId();
+    return this.facts().filter((f) => String(f.campaign_id) !== id);
   });
 
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  /** Subscription row for the active context (undefined = never asked). */
+  protected readonly activeSubscription = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.consent()?.subscriptions.find((s) => String(s.campaign_id) === id) : undefined;
   });
 
-  // Drawer state for assigning household
-  protected readonly assignDrawerOpen = signal(false);
-  protected readonly householdResults = signal<any[]>([]);
-  protected readonly householdSearch = signal('');
-  protected readonly householdsLoading = signal(false);
+  protected readonly hasEmail = computed(() => !!this.consent()?.email);
+  protected readonly suppressed = computed(() => (this.consent()?.suppressions.length ?? 0) > 0);
 
-  protected readonly pendingHouseholdId = signal<string | null>(null);
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly emailError = linkedSignal({
-    source: () => this.form.email().value(),
-    computation: () => null as string | null,
+  /**
+   * One honest, derived sendability state for the active context (§15):
+   * subscribed in this campaign ∧ address healthy ∧ not DNC(email).
+   */
+  protected readonly sendState = computed<{ label: string; tone: 'ok' | 'warn' | 'muted' }>(() => {
+    if (!this.hasEmail()) return { label: 'No email address', tone: 'muted' };
+    if (this.doNotContact()) return { label: 'Do not contact', tone: 'warn' };
+    const sub = this.activeSubscription();
+    if (!sub) return { label: 'Never asked', tone: 'muted' };
+    if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
+    if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
+    if (this.suppressed()) return { label: 'Subscribed — address bouncing', tone: 'warn' };
+    return { label: 'Subscribed', tone: 'ok' };
   });
-  protected readonly person = signal<Persons | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly companies = signal<any[]>([]);
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-
-  protected readonly payload = signal({
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    email: '',
-    email2: '',
-    home_phone: '',
-    mobile: '',
-    notes: '',
-    company_id: '',
-    preferred_contact: '',
-    linkedin: '',
-    twitter: '',
-    facebook: '',
-    instagram: '',
-    assigned_to: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, UpdatePersonsObj);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected id = input<string>();
-  protected tags = signal<string[]>([]);
-  protected issues = signal<string[]>([]);
-
-  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
-  protected readonly allTagNames = signal<string[]>([]);
-  protected readonly allIssueNames = signal<string[]>([]);
-  private readonly SUGGESTION_LIMIT = 6;
-  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
-  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
-
-  private suggestFrom(all: string[], applied: string[]): string[] {
-    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
-    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
-  }
-
-  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
-  protected addTagSuggestion(name: string): void {
-    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.tags.update((list) => [...list, name]);
-    void this.tagAdded(name);
-  }
-
-  protected addIssueSuggestion(name: string): void {
-    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.issues.update((list) => [...list, name]);
-    void this.issueAdded(name);
-  }
-
-  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  protected readonly formName = computed(() => {
-    const v = this.payload();
-    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const people: PcBreadcrumb = { label: 'People', route: '/people' };
-    const id = this.person()?.id;
-    if (id) {
-      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
-    }
-    return [people, { label: 'New person' }];
-  });
-
-  protected readonly formInitials = computed(() => {
-    const name = this.formName() || '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
 
   constructor() {
-    // Load users once for display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadPerson();
-    await this.loadCompanies();
-    void this.loadSuggestionNames();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          first_name: data.first_name ?? '',
-          middle_names: data.middle_names ?? '',
-          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
-          email: data.email ?? '',
-          email2: data.email2 ?? '',
-          home_phone: data.home_phone ?? '',
-          mobile: data.mobile ?? '',
-          notes: data.notes ?? '',
-          company_id: data.company_id ?? '',
-          preferred_contact: data.preferred_contact ?? '',
-          linkedin: data.linkedin ?? '',
-          twitter: data.twitter ?? '',
-          facebook: data.facebook ?? '',
-          instagram: data.instagram ?? '',
-          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
-        });
-        if (data.household_id) {
-          this.pendingHouseholdId.set(data.household_id);
-        }
-      }
-    }
-  }
-
-  private async loadSuggestionNames() {
-    try {
-      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
-      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
-    } catch (err) {
-      console.error('Failed to load tag/issue suggestions', err);
-    }
-  }
-
-  private async loadCompanies() {
-    try {
-      const res = await this.companiesSvc.getAll();
-      this.companies.set(res.rows || []);
-    } catch {
-      this.companies.set([]);
-    }
-  }
-
-  protected async deletePerson() {
-    const id = this.id();
-    if (!id) return;
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
+    effect(() => {
+      const personId = this.personId();
+      void untracked(() => this.load(personId));
     });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(id);
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
+    effect(() => {
+      this.doNotContact.set(this.dncFlag());
+    });
+  }
+
+  protected supportBadgeClass(level: string | null): string {
+    switch (level) {
+      case 'strong':
+        return 'badge-success';
+      case 'leaning':
+        return 'badge-info';
+      case 'leaning_against':
+        return 'badge-warning';
+      case 'against':
+        return 'badge-error';
+      case 'neutral':
+      case 'undecided':
+        return 'badge-neutral';
+      default:
+        return 'badge-ghost';
     }
   }
 
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
+  protected supportLabel(level: string | null): string {
+    return level ? (this.supportLabels[level as SupportLevel] ?? level) : 'Unknown';
   }
 
-  public save(done?: () => void) {
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      // §4: Save never disables — instead of blocking, surface the errors and
-      // move focus to the first invalid field so the user knows what to fix.
-      queueMicrotask(() => {
-        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
-        el?.focus();
+  protected votingLabel(status: string | null): string {
+    return status ? (this.votingLabels[status as VotingStatus] ?? status) : 'Unknown';
+  }
+
+  protected async onSupportChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ support_level: value === '' ? null : (value as SupportLevel) });
+  }
+
+  protected async onVotingChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ voting_status: value === '' ? null : (value as VotingStatus) });
+  }
+
+  protected async setSubscription(status: 'subscribed' | 'unsubscribed'): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.setSubscription({ campaign_id: campaignId, person_id: this.personId(), status });
+      await this.load(this.personId());
+      this.alerts.showSuccess(status === 'subscribed' ? 'Subscribed' : 'Unsubscribed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the subscription'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async toggleDnc(): Promise<void> {
+    const next = !this.doNotContact();
+    if (next) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Mark as do-not-contact',
+        message:
+          'This stops all outreach to this person — email, calls, and door knocks — in the office and every campaign. It is a global override, not a per-campaign preference.',
+        variant: 'danger',
+        confirmText: 'Stop all contact',
       });
-      return;
+      if (!confirmed) return;
     }
-    const raw = this.payload();
-    const data = {
-      ...raw,
-      company_id: raw.company_id || null,
-      assigned_to: raw.assigned_to || null,
-      preferred_contact: raw.preferred_contact || null,
-    } as UpdatePersonsType;
-    return this.id() ? this.update(data, done) : this.add(data, done);
-  }
-
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), { do_not_contact: next });
+      this.doNotContact.set(next);
+      this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
+    } finally {
+      this.saving.set(false);
     }
   }
 
-  protected async assignToHousehold(household_id: string) {
-    const id = this.id();
-    // NEW PERSON: just store the pending selection; it will be sent on save
-    if (!id) {
-      this.pendingHouseholdId.set(household_id);
-      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
-      this.closeAssignDrawer();
-      return;
+  private async saveFact(change: {
+    support_level?: SupportLevel | null;
+    voting_status?: VotingStatus | null;
+  }): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.upsertPersonFact({
+        campaign_id: campaignId,
+        person_id: this.personId(),
+        ...change,
+      });
+      await this.load(this.personId());
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not save. Please try again.'));
+      await this.load(this.personId());
+    } finally {
+      this.saving.set(false);
     }
+  }
 
-    // Ask scope: just this person vs everyone in current household
-    const applyToAll = await this.confirmDlg.confirm({
-      title: 'Change household',
-      message: 'Apply to everyone in the current household, or just this person?',
-      variant: 'info',
-      confirmText: 'Everyone',
-      cancelText: 'Just this person',
-    });
-
-    const currentHousehold = this.householdId();
-
+  private async load(personId: string): Promise<void> {
     const end = this._loading.begin();
     try {
-      if (applyToAll && currentHousehold) {
-        // Single atomic tRPC call to the backend
-        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
-      } else {
-        // Only move this person
-        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
-      }
-
-      // update local state for current person and UI
-      this.person.update((p) => (p ? { ...p, household_id } : p));
-
-      this.alertSvc.showSuccess('Assigned to selected household');
-      this.closeAssignDrawer();
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
+      const [facts, consent] = await Promise.all([
+        this.campaignsSvc.getPersonFacts(personId),
+        this.campaignsSvc.getPersonSubscriptions(personId),
+        this.context.ensureLoaded(),
+      ]);
+      this.facts.set(facts);
+      this.consent.set(consent);
+      this.doNotContact.set(!!consent.do_not_contact);
+    } catch {
+      // The card degrades to "Unknown" rather than blocking the person page.
     } finally {
       end();
     }
   }
-
-  protected closeAssignDrawer() {
-    this.assignDrawerOpen.set(false);
-  }
-
-  protected formatHouseholdRow(row: any) {
-    const address = {
-      apt: row.apt ?? null,
-      street_num: row.street_num ?? '',
-      street1: row.street1 ?? '',
-      street2: row.street2 ?? '',
-      city: row.city ?? '',
-      state: row.state ?? '',
-      zip: row.zip ?? '',
-      country: row.country ?? '',
-    } as AddressType;
-    return this.getFormattedAddress(address);
-  }
-
-  protected getId() {
-    const id = this.person()?.id;
-    if (!id) return null;
-
-    return id as unknown as string;
-  }
-
-  protected getUserName(id: string | null | undefined = null): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  protected onHouseholdSearch(ev: Event) {
-    const target = ev.target as HTMLInputElement | null;
-    const val = target?.value ?? '';
-    this.householdSearch.set(val);
-    void this.fetchHouseholds();
-  }
-
-  protected openAssignDrawer() {
-    this.assignDrawerOpen.set(true);
-    // Initial fetch
-    void this.fetchHouseholds();
-  }
-
-  protected async removeAddress() {
-    const id = this.id();
-    // New person: just clear the pending household — no API call needed yet
-    if (!id) {
-      this.pendingHouseholdId.set(null);
-      return;
-    }
-
-    if (!this.person()) return;
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Remove Address',
-      message: 'This will move the person to a new blank household (clearing address). Continue?',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.removeHousehold(id);
-      this.person.update((p) => (p ? { ...p, household_id: null } : p));
-      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
-    } catch (err) {
-      this.alertSvc.showError(
-        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
-      );
-    } finally {
-      end();
-    }
-  }
-
-  protected async tagAdded(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to attach tag:', err);
-    }
-  }
-
-  protected async tagRemoved(tag: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const normalized = tag.trim().toLowerCase();
-    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
-
-    try {
-      if (normalized === 'volunteer') {
-        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
-        try {
-          teams = await this.teamsSvc.getTeamsForVolunteer(id);
-        } catch (err) {
-          console.error('Failed to load teams for volunteer tag removal', err);
-        }
-
-        if (teams.length) {
-          const details = teams
-            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
-            .join('\n');
-          const confirmed = await this.confirmDlg.confirm({
-            title: 'Remove volunteer tag?',
-            message:
-              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
-              details +
-              '\n\nDo you want to continue?',
-            confirmText: 'Remove tag',
-            cancelText: 'Keep tag',
-            variant: 'warning',
-          });
-          if (!confirmed) {
-            restoreTag();
-            return;
-          }
-        }
-
-        const result = await this.personsSvc.detachTag(id, tag, 'tag');
-        await this.updateTags();
-        await this.tagOptionsSvc.invalidate('tag');
-        if (result?.removed_teams && result.removed_teams.length > 0) {
-          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
-          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
-        }
-        return;
-      }
-
-      await this.personsSvc.detachTag(id, tag, 'tag');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to detach tag:', err);
-      restoreTag();
-    }
-  }
-
-  protected async issueAdded(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to attach issue:', err);
-    }
-  }
-
-  protected async issueRemoved(issue: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
-
-    try {
-      await this.personsSvc.detachTag(id, issue, 'issue');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to detach issue:', err);
-      restoreIssue();
-    }
-  }
-
-  private add(data: UpdatePersonsType, done?: () => void) {
-    // Include any household selected via the drawer before saving
-    const pendingHousehold = this.pendingHouseholdId();
-    if (pendingHousehold) {
-      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
-    }
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .add(data, { context: { skipErrorHandler: true } })
-      .then(() => {
-        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
-        this.personsSvc.triggerRefresh();
-        if (done) {
-          done();
-          this.pendingHouseholdId.set(null);
-          this.tags.set([]);
-          this.issues.set([]);
-          this.form().reset();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  private isDuplicateEmailError(err: unknown): boolean {
-    if (!err || typeof err !== 'object') return false;
-    const e = err as Record<string, any>;
-    // tRPC wraps backend errors; check both data.httpStatus and message
-    return (
-      e['data']?.['httpStatus'] === 409 ||
-      String(e['message'] ?? '')
-        .toLowerCase()
-        .includes('already exists')
-    );
-  }
-
-  private async fetchHouseholds() {
-    try {
-      this.householdsLoading.set(true);
-      const opts = {
-        searchStr: this.householdSearch(),
-        limit: 25,
-        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
-      };
-      const res = await this.householdsSvc.getAll(opts);
-      this.householdResults.set(res.rows || []);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
-      this.householdResults.set([]);
-    } finally {
-      this.householdsLoading.set(false);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-
-  private async loadPerson() {
-    const id = this.id();
-    if (!id) return;
-
-    const end = this._loading.begin();
-    try {
-      this.person.set((await this.personsSvc.getById(id)) as Persons);
-
-      await this.updateTags();
-      await this.loadVolunteerInfo();
-
-      this.refreshForm();
-    } finally {
-      end();
-    }
-  }
-
-  private refreshForm() {
-    const person = this.person();
-    if (!person) return;
-
-    this.payload.set({
-      first_name: person.first_name ?? '',
-      middle_names: person.middle_names ?? '',
-      last_name: person.last_name ?? '',
-      email: person.email ?? '',
-      email2: person.email2 ?? '',
-      home_phone: person.home_phone ?? '',
-      mobile: person.mobile ?? '',
-      notes: person.notes ?? '',
-      company_id: person.company_id ?? '',
-      preferred_contact: person.preferred_contact ?? '',
-      linkedin: person.linkedin ?? '',
-      twitter: person.twitter ?? '',
-      facebook: person.facebook ?? '',
-      instagram: person.instagram ?? '',
-      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
-    });
-  }
-
-  // Friendly labels for the field-naming save toast (§4).
-  private readonly fieldLabels: Record<string, string> = {
-    first_name: 'first name',
-    middle_names: 'middle name',
-    last_name: 'last name',
-    email: 'email',
-    email2: 'secondary email',
-    mobile: 'mobile phone',
-    home_phone: 'home phone',
-    company_id: 'company',
-    preferred_contact: 'preferred contact',
-    assigned_to: 'owner',
-    notes: 'notes',
-    linkedin: 'LinkedIn',
-    twitter: 'X',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-  };
-
-  private changedFieldLabels(): string[] {
-    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
-    return Object.keys(this.fieldLabels)
-      .filter((k) => {
-        try {
-          return !!f[k]?.().dirty?.();
-        } catch {
-          return false;
-        }
-      })
-      .map((k) => this.fieldLabels[k]!);
-  }
-
-  private joinWithAnd(items: string[]): string {
-    if (items.length <= 1) return items[0] ?? '';
-    if (items.length === 2) return `${items[0]} and ${items[1]}`;
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-  }
-
-  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
-    const id = this.id();
-    if (!id) return;
-
-    const changed = this.changedFieldLabels();
-    const savedName = this.formName() || 'person';
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .update(id, data, { context: { skipErrorHandler: true } })
-      .then(() => {
-        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
-        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
-        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
-        this.form().reset();
-        this.personsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  private async updateTags() {
-    if (!this.person()) return;
-
-    const id = this.id();
-    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
-    this.tags.set(tags);
-
-    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
-    this.issues.set(issues);
-  }
-
-  private async loadVolunteerInfo() {
-    const id = this.id();
-    if (!id) return;
-    try {
-      const stats = await this.volunteerSvc.getVolunteerStats(id);
-      this.volunteerStats.set(stats);
-      const history = await this.volunteerSvc.getHistoryForPerson(id);
-      this.volunteerHistory.set(history || []);
-    } catch (err) {
-      console.error('Failed to load volunteer info', err);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -29836,169 +28420,6 @@ export class TagPaletteService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/tags.ts
-
-```typescript
-import { Component, OnInit, inject, input, output, signal } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { TagPaletteService } from './tag-palette.service';
-
-interface TagView {
-  name: string;
-  color: string | null;
-}
-
-@Component({
-  selector: 'pc-tags',
-  imports: [TagItem, AutoComplete],
-  template: `@if (!readonly()) {
-      <pc-autocomplete
-        (valueChange)="add($event)"
-        [placeholder]="placeholder()"
-        [filterSvc]="enableAutoComplete() ? this : null"
-      ></pc-autocomplete>
-    }
-    @let tagViews = displayTags();
-    @if (tagViews.length) {
-      <div class="my-1"></div>
-      <div class="contents" [class.mt-2]="!readonly()">
-        @if (!readonly()) {
-          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues:' : 'Tags:' }}</span>
-        }
-        @for (tag of tagViews; track tag.name) {
-          <pc-tagitem
-            class="mr-1 mb-1"
-            [name]="tag.name"
-            [color]="tag.color"
-            [canDelete]="canDelete()"
-            [compact]="compact()"
-            (click)="clicked(tag.name)"
-            (close)="closed(tag.name)"
-          ></pc-tagitem>
-        }
-        @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
-          @let remainingCount = tags().length - limit()!;
-          <span
-            class="badge badge-neutral badge-sm cursor-pointer mb-1 align-middle hover:bg-neutral-focus"
-            (click)="expanded.set(true); $event.stopPropagation()"
-          >
-            +{{ remainingCount }}
-          </span>
-        }
-      </div>
-    } `,
-})
-export class Tags implements OnInit {
-  protected displayedTags: string[] = [];
-  protected expanded = signal(false);
-  private readonly paletteSvc = inject(TagPaletteService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  public readonly tagAdded = output<string>();
-
-  public readonly tagClicked = output<string>();
-
-  public readonly tagRemoved = output<string>();
-
-  public readonly tagsChange = output<string[]>();
-
-  public animateRemoval = input<boolean>(true);
-
-  public canDelete = input<boolean>(true);
-
-  public enableAutoComplete = input<boolean>(true);
-
-  public placeholder = input<string>('Enter tags, separated by comma');
-
-  public readonly = input<boolean>(false);
-  public readonly type = input<'tag' | 'issue'>('tag');
-  public compact = input<boolean>(false);
-  public tagSvc = inject(TagsService);
-  public tags = input<string[]>([]);
-  public limit = input<number | undefined>(undefined);
-
-  protected displayTags(): TagView[] {
-    const raw = this.tags() ?? [];
-    const limitVal = this.limit();
-    const isExpanded = this.expanded();
-    const palette = this.paletteSvc.palette();
-    const seen = new Set<string>();
-    const out: TagView[] = [];
-    for (const entry of raw) {
-      if (typeof entry !== 'string') continue;
-      const name = entry.trim();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      const lower = name.toLowerCase();
-      const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
-      out.push({ name, color: color ?? null });
-    }
-    return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
-  }
-
-  public async filter(key: string) {
-    if (!key || key.length === 0) {
-      return [];
-    }
-    const names = (await this.tagSvc.findByName(key, this.type())) as { name: string }[];
-    return names.map((m) => m.name);
-  }
-
-  public ngOnInit() {
-    for (const name of this.tags()) {
-      this.add(name);
-    }
-  }
-
-  protected add(tagName: string) {
-    if (!tagName || typeof tagName !== 'string') return;
-
-    if (tagName.indexOf(',') >= 0) {
-      tagName = tagName.replace(',', '').trim();
-    }
-
-    tagName = tagName.toLowerCase().trim();
-
-    if (tagName.length === 0) return;
-
-    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === tagName);
-    if (index === -1) {
-      this.tags().unshift(tagName);
-      this.tagAdded.emit(tagName);
-      // Invalidate the options cache so the grid's inline dropdown reflects this new value
-      void this.tagOptionsSvc.invalidate(this.type());
-    } else {
-      // Bring tag that maches to the front.
-      const [tag] = this.tags().splice(index, 1) as [string]; // remove it
-      this.tags().unshift(tag); // move to front
-    }
-    this.tagsChange.emit(this.tags());
-  }
-
-  protected clicked(tag: string) {
-    this.tagClicked.emit(tag);
-  }
-
-  protected closed(tag: string) {
-    this.remove(tag);
-  }
-
-  protected remove(tagName: string) {
-    const target = (tagName || '').toLowerCase().trim();
-    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
-    if (index > -1) {
-      const removed = this.tags().splice(index, 1)[0]!;
-      this.tagsChange.emit(this.tags());
-      this.tagRemoved.emit(removed);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/services/task-sla.ts
 
 ```typescript
@@ -32653,223 +31074,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import type { IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamsService } from '../services/teams-service';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-team-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './team-view.html',
-})
-export class TeamViewComponent {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('team', this.id);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly team = signal<any>(null);
-  protected readonly teamTasks = signal<any[]>([]);
-  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Teams', route: '/teams' },
-    { label: this.team()?.name || 'Team' },
-  ]);
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
-    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
-    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
-  ]);
-
-  protected readonly captainName = computed(() => {
-    const captainId = this.team()?.team_captain_id;
-    if (!captainId) return '—';
-    const match = this.volunteers().find((v: any) => v.id === captainId);
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly leadName = computed(() => {
-    const leadId = this.team()?.team_lead_user_id;
-    if (!leadId) return '—';
-    const match = this.users().find((u) => String(u.id) === String(leadId));
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'archived').length;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load team detail
-      const data = await this.teamsSvc.getById(id);
-      this.team.set(data);
-
-      // 2. Load associated tasks
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: id } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the team. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editTeam() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.teamsSvc.delete(this.id());
-      this.teamsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.team()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.team()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected getPriorityType(priority: string | null | undefined): any {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'error';
-      case 'high':
-        return 'warning';
-      case 'medium':
-        return 'info';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'success';
-      case 'in_progress':
-        return 'info';
-      case 'waiting':
-        return 'error';
-      case 'archived':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
 
 ```typescript
@@ -33747,6 +31951,136 @@ export class UserViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/layout/campaign-switcher/campaign-switcher.html
+
+```html
+<!-- Context switcher (Campaigns §15) — always answers "where am I working?" -->
+@if (context.loaded() && active(); as current) {
+<div class="dropdown w-full">
+  <div
+    tabindex="0"
+    role="button"
+    class="border-line hover:border-primary/40 flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors"
+    aria-label="Switch campaign context"
+    i18n-aria-label="@@campaignSwitcher.triggerAriaLabel"
+  >
+    <pc-icon name="square-3-stack-3d" [size]="4" class="text-primary flex-none"></pc-icon>
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-[12px] font-semibold leading-tight">{{ current.name }}</span>
+      <span class="text-base-content/50 block text-[10px] uppercase tracking-[0.08em] leading-tight">
+        {{ kindLabel(current.kind) }}@if (current.status === 'archived') {<ng-container
+          i18n="@@campaignSwitcher.archivedSuffix"
+        >
+          · Archived</ng-container
+        >}
+      </span>
+    </span>
+    <pc-icon name="chevron-down" [size]="3" class="text-base-content/40 flex-none"></pc-icon>
+  </div>
+
+  <ul
+    tabindex="0"
+    class="dropdown-content menu bg-base-100 border-base-200/50 rounded-box z-[60] mt-1 w-56 border p-1.5 shadow-xl"
+  >
+    @for (campaign of activeCampaigns(); track campaign.id) {
+    <li>
+      <button type="button" class="flex items-center gap-2" (click)="select(campaign.id)">
+        <span class="min-w-0 flex-1 truncate text-[13px]" [class.font-semibold]="campaign.id === current.id">
+          {{ campaign.name }}
+        </span>
+        <span class="badge badge-ghost badge-xs uppercase tracking-wide">{{ kindLabel(campaign.kind) }}</span>
+        @if (campaign.id === current.id) {
+        <pc-icon name="check-circle" [size]="4" class="text-primary flex-none"></pc-icon>
+        }
+      </button>
+    </li>
+    } @if (archivedCampaigns().length) {
+    <li class="menu-title px-2 pt-2 text-[10px] uppercase tracking-[0.08em]">
+      <span i18n="@@campaignSwitcher.archivedHeading">Archived</span>
+    </li>
+    @for (campaign of archivedCampaigns(); track campaign.id) {
+    <li>
+      <button type="button" class="flex items-center gap-2 opacity-70" (click)="select(campaign.id)">
+        <pc-icon name="archive-box" [size]="3" class="flex-none opacity-60"></pc-icon>
+        <span class="min-w-0 flex-1 truncate text-[13px]" [class.font-semibold]="campaign.id === current.id">
+          {{ campaign.name }}
+        </span>
+        @if (campaign.id === current.id) {
+        <pc-icon name="check-circle" [size]="4" class="text-primary flex-none"></pc-icon>
+        }
+      </button>
+    </li>
+    } }
+    <li class="border-base-200/60 mt-1 border-t pt-1">
+      <a routerLink="/campaigns" class="text-[13px]">
+        <pc-icon name="cog-6-tooth" [size]="4"></pc-icon>
+        <ng-container i18n="@@campaignSwitcher.manageLink">Manage campaigns…</ng-container>
+      </a>
+    </li>
+  </ul>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/layout/campaign-switcher/campaign-switcher.ts
+
+```typescript
+import { Component, OnInit, computed, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { CampaignContextService } from '../../services/campaign-context.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/**
+ * Campaigns §15 — the context switcher. Answers "where am I working?" at all times:
+ * shows the active context (office or an election campaign) and lets the user jump
+ * between them. Archived campaigns stay listed under a divider — selectable for
+ * read-only history, marked as such.
+ */
+@Component({
+  selector: 'pc-campaign-switcher',
+  imports: [Icon, RouterLink],
+  templateUrl: './campaign-switcher.html',
+})
+export class CampaignSwitcher implements OnInit {
+  protected readonly context = inject(CampaignContextService);
+  private readonly alerts = inject(AlertService);
+
+  protected readonly active = this.context.activeCampaign;
+  protected readonly activeCampaigns = computed(() => this.context.campaigns().filter((c) => c.status === 'active'));
+  protected readonly archivedCampaigns = computed(() =>
+    this.context.campaigns().filter((c) => c.status === 'archived'),
+  );
+
+  public ngOnInit(): void {
+    this.context.ensureLoaded().catch(() => {
+      // Sidebar must never block on this; pages fall back to the office context server-side.
+    });
+  }
+
+  protected kindLabel(kind: string): string {
+    return kind === 'office' ? 'Office' : 'Election';
+  }
+
+  protected async select(id: string): Promise<void> {
+    this.closeDropdown();
+    try {
+      await this.context.setActive(id);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not switch campaign. Please try again.'));
+    }
+  }
+
+  private closeDropdown(): void {
+    // DaisyUI focus-based dropdowns close when the focused element blurs.
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  }
 }
 ```
 
@@ -35891,6 +34225,67 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 
   public getVolunteerStats(personId: string) {
     return this.api.volunteer.getVolunteerStats.query(personId);
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/campaign-context.service.ts
+
+```typescript
+import { computed, Service, signal } from '@angular/core';
+
+import { TRPCService } from './api/trpc-service';
+import type { RouterOutputs } from './api/trpc-types';
+
+export type CampaignContextItem = RouterOutputs['campaigns']['getContext']['campaigns'][number];
+
+/**
+ * Campaigns §15 — which context (office or election campaign) the user is working in.
+ * The active id is persisted per-user on the backend (profiles.preferences), so it
+ * follows the user across devices. Loaded once by the switcher; every campaign-scoped
+ * page reads `activeCampaignId()` and passes it to its API calls.
+ */
+@Service()
+export class CampaignContextService extends TRPCService<unknown> {
+  private readonly _campaigns = signal<CampaignContextItem[]>([]);
+  private readonly _activeId = signal<string | null>(null);
+  private readonly _loaded = signal(false);
+
+  public readonly campaigns = computed(() => this._campaigns());
+  public readonly loaded = computed(() => this._loaded());
+  public readonly activeCampaignId = computed(() => this._activeId());
+  public readonly activeCampaign = computed(() => {
+    const id = this._activeId();
+    return id ? (this._campaigns().find((c) => c.id === id) ?? null) : null;
+  });
+  /** Archived contexts are viewable but read-only — pages use this to gate mutations. */
+  public readonly isArchivedContext = computed(() => this.activeCampaign()?.status === 'archived');
+
+  /** Idempotent initial load; safe to call from any component that needs context. */
+  public async ensureLoaded(): Promise<void> {
+    if (this._loaded()) return;
+    await this.refresh();
+  }
+
+  /** Re-fetch after campaigns are created/edited/archived. */
+  public async refresh(): Promise<void> {
+    const ctx = await this.api.campaigns.getContext.query();
+    this._campaigns.set(ctx.campaigns);
+    this._activeId.set(ctx.active_campaign_id);
+    this._loaded.set(true);
+  }
+
+  /** Optimistically switch context, then persist the preference server-side. */
+  public async setActive(id: string): Promise<void> {
+    const previous = this._activeId();
+    if (previous === id) return;
+    this._activeId.set(id);
+    try {
+      await this.api.campaigns.setActiveCampaign.mutate(id);
+    } catch (err) {
+      this._activeId.set(previous);
+      throw err;
+    }
   }
 }
 ```
@@ -40967,6 +39362,464 @@ export default defineConfig({
 }
 ```
 
+## File: apps/frontend/src/app/experiences/activity/services/activity.service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import type { InteractionType } from '@common';
+import { TRPCService } from '../../../services/api/trpc-service';
+
+@Service()
+export class ActivityService extends TRPCService<any> {
+  public getFeed(options?: any) {
+    return this.api.activity.getFeed.query(options);
+  }
+
+  public getActivities(entity: string, entityId: string, options?: { startRow?: number; endRow?: number }) {
+    return this.api.activity.getActivities.query({ entity, entityId, ...options });
+  }
+
+  public exportCsv(input: any) {
+    return this.api.activity.exportCsv.mutate(input);
+  }
+
+  /** Record a human-authored interaction against a record (Log an interaction). */
+  public logInteraction(input: {
+    entity: string;
+    entityId: string;
+    type: InteractionType;
+    note?: string;
+    occurredAt?: Date;
+  }) {
+    return this.api.activity.logInteraction.mutate(input);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.ts
+
+```typescript
+import { Component, inject, input, output, signal } from '@angular/core';
+import { INTERACTION_TYPE_LABELS, INTERACTION_TYPES } from '@common';
+import type { InteractionType } from '@common';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { ActivityService } from '@experiences/activity/services/activity.service';
+
+interface InteractionOption {
+  value: InteractionType;
+  label: string;
+  icon: PcIconNameType;
+}
+
+/**
+ * Shared "Log an interaction" control: a split-button whose menu offers the
+ * four interaction types (call / door knock / note / meeting). Picking one
+ * opens a small modal to capture an optional note, then writes a
+ * `user_activity` row via `activity.logInteraction` and emits `logged` so the
+ * host page can refresh its activity feed. Reused on person, household and
+ * company views (households phrase the feed as "Activity at this door").
+ */
+@Component({
+  selector: 'pc-log-interaction',
+  imports: [Icon],
+  templateUrl: './log-interaction.html',
+})
+export class LogInteraction {
+  /** DB table the record lives in: 'persons' | 'households' | 'companies'. */
+  public readonly entity = input.required<string>();
+  public readonly entityId = input.required<string>();
+  public readonly label = input<string>('Log an interaction');
+
+  /** Emitted after a successful log so the host can reload its feed. */
+  public readonly logged = output<void>();
+
+  private readonly activitySvc = inject(ActivityService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly saving = this._loading.visible;
+
+  protected readonly options: InteractionOption[] = INTERACTION_TYPES.map((value) => ({
+    value,
+    label: INTERACTION_TYPE_LABELS[value],
+    icon: this.iconFor(value),
+  }));
+
+  protected readonly open = signal(false);
+  protected readonly selected = signal<InteractionOption | null>(null);
+  protected readonly note = signal('');
+
+  protected choose(option: InteractionOption): void {
+    this.selected.set(option);
+    this.note.set('');
+    this.open.set(true);
+    // Close the DaisyUI dropdown (it stays open until the trigger loses focus).
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
+  protected close(): void {
+    if (this.saving()) return;
+    this.open.set(false);
+    this.selected.set(null);
+  }
+
+  protected async save(): Promise<void> {
+    const option = this.selected();
+    if (!option) return;
+    const end = this._loading.begin();
+    try {
+      await this.activitySvc.logInteraction({
+        entity: this.entity(),
+        entityId: this.entityId(),
+        type: option.value,
+        note: this.note().trim() || undefined,
+      });
+      this.alertSvc.showSuccess(`${option.label} logged`);
+      this.open.set(false);
+      this.selected.set(null);
+      this.logged.emit();
+    } catch {
+      this.alertSvc.showError('Could not log the interaction. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private iconFor(type: InteractionType): PcIconNameType {
+    switch (type) {
+      case 'call':
+        return 'phone';
+      case 'door_knock':
+        return 'map-pin';
+      case 'note':
+        return 'envelope';
+      case 'meeting':
+        return 'user-group';
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, inject, input, signal, effect, linkedSignal, resource, untracked } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { ActivityService } from '@experiences/activity/services/activity.service';
+
+@Component({
+  selector: 'pc-record-activities',
+  imports: [DatePipe, Icon],
+  templateUrl: './record-activities.html',
+  host: {
+    // Make the host a flex column that takes up 100% of its parent's height
+    class: 'flex flex-col h-full w-full',
+  },
+})
+export class RecordActivities {
+  private readonly activitySvc = inject(ActivityService);
+
+  public entity = input.required<string>();
+  public entityId = input.required<string>();
+
+  protected readonly activities = signal<any[]>([]);
+  protected readonly hasMore = signal(false);
+  protected readonly pageSize = 10;
+
+  protected readonly offset = linkedSignal({
+    source: () => ({ entity: this.entity(), entityId: this.entityId() }),
+    computation: () => 0,
+  });
+
+  protected readonly activitiesResource = resource({
+    params: () => ({
+      entity: this.entity(),
+      entityId: this.entityId(),
+      offset: this.offset(),
+    }),
+    loader: async ({ params }) => {
+      if (!params.entity || !params.entityId) {
+        return { rows: [] } as any;
+      }
+      return (await this.activitySvc.getActivities(params.entity, params.entityId, {
+        startRow: params.offset,
+        endRow: params.offset + this.pageSize,
+      })) as any;
+    },
+  });
+
+  protected readonly isLoading = computed(() => this.activitiesResource.isLoading() && this.offset() === 0);
+  protected readonly isLoadingMore = computed(() => this.activitiesResource.isLoading() && this.offset() > 0);
+  protected readonly activityCount = computed(() => this.activities().length);
+
+  constructor() {
+    effect(() => {
+      // Clear activities and hasMore immediately when entity or entityId changes
+      this.entity();
+      this.entityId();
+      untracked(() => {
+        this.activities.set([]);
+        this.hasMore.set(false);
+      });
+    });
+
+    effect(() => {
+      const res = this.activitiesResource.value() as any;
+      if (res) {
+        const newRows = res.rows || [];
+        if (this.offset() === 0) {
+          this.activities.set(newRows);
+        } else {
+          this.activities.update((curr) => {
+            const existingIds = new Set(curr.map((r: any) => r.id));
+            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
+            return [...curr, ...filteredNew];
+          });
+        }
+        this.hasMore.set(newRows.length === this.pageSize);
+      }
+    });
+  }
+
+  public loadActivities(replace = true): void {
+    if (replace) {
+      this.offset.set(0);
+    }
+    this.activitiesResource.reload();
+  }
+
+  protected loadMore(): void {
+    this.offset.update((c) => c + this.pageSize);
+  }
+
+  protected getActivityIcon(activity: string): PcIconNameType {
+    switch (activity) {
+      case 'create':
+        return 'plus';
+      case 'update':
+        return 'pencil-square';
+      case 'delete':
+        return 'trash';
+      case 'merge':
+        return 'merge';
+      case 'import':
+        return 'arrow-up-tray';
+      case 'export':
+        return 'arrow-down-tray';
+      case 'assign':
+        return 'user-plus';
+      case 'unassign':
+        return 'user-circle';
+      case 'close':
+        return 'check-circle';
+      case 'reopen':
+        return 'arrow-path';
+      // Human-authored interactions (Log an interaction)
+      case 'call':
+        return 'phone';
+      case 'door_knock':
+        return 'map-pin';
+      case 'note':
+        return 'envelope';
+      case 'meeting':
+        return 'user-group';
+      default:
+        return 'information-circle';
+    }
+  }
+
+  /** True for human-authored interaction types (call/door knock/note/meeting). */
+  protected isInteraction(activity: string): boolean {
+    return activity === 'call' || activity === 'door_knock' || activity === 'note' || activity === 'meeting';
+  }
+
+  protected getActivityDotClass(activity: string): string {
+    switch (activity) {
+      case 'create':
+        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
+      case 'update':
+        return 'bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400';
+      case 'delete':
+        return 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400';
+      case 'merge':
+        return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400';
+      case 'import':
+        return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400';
+      case 'export':
+        return 'bg-purple-100 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400';
+      case 'assign':
+        return 'bg-teal-100 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400';
+      case 'unassign':
+        return 'bg-gray-100 text-gray-500 dark:bg-neutral/50 dark:text-neutral-content/70';
+      case 'close':
+        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
+      case 'reopen':
+        return 'bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400';
+      // Logged interactions share one soft-primary treatment (semantic, theme-safe).
+      case 'call':
+      case 'door_knock':
+      case 'note':
+      case 'meeting':
+        return 'bg-primary/10 text-primary';
+      default:
+        return 'bg-gray-100 text-gray-400 dark:bg-neutral/30 dark:text-neutral-content/50';
+    }
+  }
+
+  private formatValue(val: any): string {
+    if (val === null || val === undefined || val === '') return 'none';
+    if (typeof val === 'boolean') return val ? 'yes' : 'no';
+    if (typeof val === 'object') return JSON.stringify(val);
+    const str = String(val);
+    if (str.length > 40) {
+      return `"${str.substring(0, 40)}..."`;
+    }
+    return `"${str}"`;
+  }
+
+  /** Append the free-text note of a logged interaction, if any. */
+  private getNoteSuffix(meta: any): string {
+    const note = typeof meta?.['note'] === 'string' ? meta['note'].trim() : '';
+    return note ? ` — “${note}”` : '';
+  }
+
+  private getChangesSuffix(changes: any): string {
+    if (!changes) return '';
+    const parts: string[] = [];
+    const keys = Object.keys(changes);
+    if (keys.length > 0) {
+      for (const key of keys) {
+        const change = changes[key];
+        const fieldName = key.replace(/_/g, ' ');
+        const fromVal = this.formatValue(change.from);
+        const toVal = this.formatValue(change.to);
+        parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
+      }
+      return ` (changed ${parts.join(', ')})`;
+    }
+    return '';
+  }
+
+  protected getActivityLabel(act: any): string {
+    const meta = act.metadata ?? {};
+    const qty = act.quantity > 1 ? ` (${act.quantity} records)` : '';
+    let ent = act.entity ?? 'record';
+    const entLower = ent.toLowerCase();
+    if (entLower === 'persons' || entLower === 'people') ent = 'person';
+    else if (entLower === 'households') ent = 'household';
+    else if (entLower === 'companies') ent = 'company';
+    else if (entLower === 'tasks') ent = 'task';
+    else if (entLower === 'teams') ent = 'team';
+    else if (entLower === 'workflows') ent = 'workflow';
+    else if (entLower === 'lists') ent = 'list';
+    else if (entLower === 'web_forms') ent = 'web form';
+    else if (entLower === 'volunteer_events') ent = 'volunteer event';
+
+    switch (act.activity) {
+      case 'create':
+        return `created this ${ent} record`;
+      case 'update': {
+        if (meta['action'] === 'add_comment') {
+          return `added a comment to this ${ent}`;
+        }
+        if (meta['action'] === 'add_subtask') {
+          return `added subtask "${meta['subtask_name']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'toggle_subtask') {
+          return `${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on this ${ent}`;
+        }
+        if (meta['action'] === 'add_attachment') {
+          return `attached file "${meta['filename']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'change_due_date') {
+          if (meta['due_at']) {
+            const parts = String(meta['due_at']).split('-');
+            let formattedDate = String(meta['due_at']);
+            if (parts.length === 3) {
+              const year = parseInt(parts[0]!, 10);
+              const month = parseInt(parts[1]!, 10) - 1;
+              const day = parseInt(parts[2]!, 10);
+              const dateVal = new Date(year, month, day);
+              formattedDate = dateVal.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
+            }
+            return `changed the due date to ${formattedDate} on this ${ent}`;
+          }
+          return `removed the due date on this ${ent}`;
+        }
+        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
+          return `attached tag "${meta['name']}" to this ${ent}`;
+        }
+        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
+          return `detached tag "${meta['name']}" from this ${ent}`;
+        }
+        if (meta['action'] === 'status_update') {
+          return `updated the status of this ${ent}`;
+        }
+
+        // Household address check
+        if (entLower === 'households' || entLower === 'household') {
+          const addressFields = [
+            'apt',
+            'street_num',
+            'street1',
+            'street2',
+            'city',
+            'state',
+            'zip',
+            'country',
+            'formatted_address',
+          ];
+          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
+            return `updated the address of this household` + this.getChangesSuffix(meta.changes);
+          }
+        }
+        return `updated this ${ent} record` + this.getChangesSuffix(meta.changes);
+      }
+      case 'delete':
+        return `deleted ${ent} record${qty}`;
+      case 'merge':
+        return `merged duplicate ${ent} records`;
+      case 'import':
+        return `imported this ${ent}${qty}`;
+      case 'export':
+        return `exported ${ent} data${qty}`;
+      case 'assign': {
+        const assignee = meta['assigned_to_name'] ?? 'someone';
+        return `assigned this ${ent} to ${assignee}`;
+      }
+      case 'unassign':
+        return `unassigned this ${ent}`;
+      case 'close':
+        return `closed this ${ent}`;
+      case 'reopen':
+        return `reopened this ${ent}`;
+      // Human-authored interactions. On households the framing is "at this door".
+      case 'call':
+        return `logged a call${this.getNoteSuffix(meta)}`;
+      case 'door_knock':
+        return `logged a door knock${this.getNoteSuffix(meta)}`;
+      case 'note':
+        return `logged a note${this.getNoteSuffix(meta)}`;
+      case 'meeting':
+        return `logged a meeting${this.getNoteSuffix(meta)}`;
+      default:
+        return `performed ${act.activity} on this ${ent}`;
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
 
 ```html
@@ -42514,415 +41367,151 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
-
-```html
-<div class="p-6 max-w-4xl">
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading company details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
-      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      [form]="form"
-      [isLoading]="isLoading()"
-      buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
-      [showDelete]="!isNewMode()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete company"
-      (save)="save($event)"
-      (delete)="deleteCompany()"
-    ></pc-detail-header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <pc-card class="lg:col-span-2">
-        <!-- Name -->
-        <pc-input
-          label="Company Name"
-          placeholder="e.g. Acme Corp"
-          [formField]="form.name"
-          (blurred)="onNameBlur()"
-        ></pc-input>
-        @if (lookingUp()) {
-        <p class="text-xs text-base-content/60 mt-1 pl-1 flex items-center gap-1">
-          <span class="loading loading-spinner loading-xs"></span>
-          Looking up details on Google…
-        </p>
-        } @else if (duplicateName()) {
-        <p class="text-xs text-warning mt-1 pl-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          A company with this name already exists — you can still save if this is a separate record.
-        </p>
-        }
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Website -->
-          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
-
-          <!-- Industry -->
-          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Email -->
-          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
-
-          <!-- Phone -->
-          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-        </div>
-
-        <!-- Description -->
-        <pc-textarea
-          label="Description"
-          placeholder="Company description..."
-          [formField]="form.description"
-          [rows]="3"
-        ></pc-textarea>
-
-        <!-- Notes -->
-        <pc-textarea
-          label="Internal Notes"
-          placeholder="Any additional notes..."
-          [formField]="form.notes"
-          [rows]="4"
-        ></pc-textarea>
-      </pc-card>
-
-      <!-- Members & Info Panel -->
-      <div class="space-y-6">
-        <!-- Employee List (Only when edit mode) -->
-        @if (!isNewMode() && id()) {
-        <pc-card title="Associated Employees" icon="user-group">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton w-full h-32"></div>
-          }
-        </pc-card>
-        }
-
-        <!-- Metadata Card -->
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="company()?.created_at"
-          [updatedAt]="company()?.updated_at"
-        ></pc-entity-overview>
-        }
-      </div>
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
+## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
 
 ```typescript
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { Icon as PcIcon } from '@icons/icon';
-import { CompanyInputObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { CompaniesService } from '../services/companies-service';
-import { PeopleInCompany } from './people-in-company';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { PersonsService } from '../../persons/services/persons-service';
+import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 @Component({
-  selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PcIcon, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
-  templateUrl: './company-form.html',
+  selector: 'pc-people-in-company',
+  imports: [RouterModule],
+  template: `<div class="flex flex-col">
+    @if (!peopleInCompany().length && !isLoading()) {
+      <p i18n class="py-2 text-sm italic text-base-content/40">No people linked to this company yet.</p>
+    }
+    @for (person of peopleInCompany(); track person.id) {
+      <a
+        routerLink="/people/{{ person.id }}"
+        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
+      >
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+          aria-hidden="true"
+          >{{ initials(person) }}</span
+        >
+        <span class="flex min-w-0 flex-col">
+          <span class="truncate text-sm font-semibold text-base-content">{{
+            person.full_name || 'Unnamed person'
+          }}</span>
+          @if (person.email) {
+            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
+          }
+        </span>
+      </a>
+    }
+    @if (hasMore()) {
+      <button
+        i18n
+        type="button"
+        class="mt-1 self-start text-xs text-primary hover:underline"
+        (click)="loadMore()"
+        [disabled]="isLoading()"
+      >
+        Show more
+      </button>
+    }
+  </div>`,
 })
-export class CompanyForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
+export class PeopleInCompany {
+  private personsSvc = inject(PersonsService);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly company = signal<any | null>(null);
+  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
+  protected isLoading = signal(false);
+  protected hasMore = signal(false);
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
-    const id = this.company()?.id;
-    if (id) {
-      return [
-        companies,
-        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
-        { label: 'Edit' },
-      ];
-    }
-    return [companies, { label: 'New company' }];
-  });
+  private readonly pageSize = 25;
+  private currentOffset = signal(0);
+  private requestSequence = 0;
+  private lastParams: { id: string } | null = null;
 
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    website: '',
-    industry: '',
-    email: '',
-    phone: '',
-    notes: '',
-  });
+  public companyId = input.required<string>();
 
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, CompanyInputObj);
-  });
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
+  constructor() {
+    effect(() => {
+      const id = this.companyId();
 
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  /** True while an add-time Google lookup is in flight (shows an inline hint). */
-  protected readonly lookingUp = signal(false);
-  /** True when another company already uses this name (advisory hint, not a block). */
-  protected readonly duplicateName = signal(false);
-  /** Last name we looked up, so repeated blurs on the same name don't re-hit Google. */
-  private lastLookedUpName = '';
-
-  private static readonly MIN_LOOKUP_NAME_LENGTH = 2;
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadCompany();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          name: data.name ? `${data.name} (Copy)` : '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
+      if (!id) {
+        this.resetState();
+        this.lastParams = null;
+        return;
       }
-    }
-  }
 
-  private async loadCompany() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      const data = await this.companiesSvc.getById(this.id()!);
-      this.company.set(data);
-      if (data) {
-        this.payload.set({
-          name: data.name ?? '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-        this.form().reset();
+      if (this.lastParams && this.lastParams.id === id) {
+        return;
       }
-    } catch (err) {
-      console.error('Failed to load company details:', err);
-    } finally {
-      end();
-    }
+
+      this.lastParams = { id };
+      this.resetState();
+      void this.fetchPage({ id, offset: 0, replace: true });
+    });
   }
 
-  /**
-   * On name blur in the New Company form, ask Google Places for this company and
-   * pre-fill only the fields the user left blank. Non-blocking and best-effort:
-   * enrichment is a convenience, so a failed lookup never interrupts adding a
-   * company. Auto-filled values are shown for the user to review and edit before
-   * saving — nothing is persisted until they hit Create.
-   */
-  protected onNameBlur(): void {
-    const name = this.payload().name.trim();
-    if (name.length < CompanyForm.MIN_LOOKUP_NAME_LENGTH) {
-      this.duplicateName.set(false);
+  protected initials(person: Persons & { full_name: string }): string {
+    const first = person.first_name?.trim()?.[0] ?? '';
+    const last = person.last_name?.trim()?.[0] ?? '';
+    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
+  }
+
+  protected async loadMore() {
+    if (this.isLoading() || !this.hasMore()) {
       return;
     }
-    // Duplicate check runs in both new and edit modes; Google auto-fill is new-only.
-    void this.checkDuplicateName(name);
-    if (this.isNewMode()) {
-      void this.runNameLookup(name);
+
+    const id = this.companyId();
+    if (!id) {
+      return;
     }
+
+    const offset = this.currentOffset();
+    await this.fetchPage({ id, offset, replace: false });
   }
 
-  /** Advisory duplicate-name check — updates the hint, never blocks saving. */
-  private async checkDuplicateName(name: string): Promise<void> {
-    try {
-      const exists = await this.companiesSvc.checkNameExists(name, this.id());
-      this.duplicateName.set(exists);
-    } catch (err) {
-      // Best-effort: a failed check just hides the hint, never blocks the form.
-      console.error('Duplicate company-name check failed:', err);
-      this.duplicateName.set(false);
-    }
+  private resetState() {
+    this.peopleInCompany.set([]);
+    this.currentOffset.set(0);
+    this.hasMore.set(false);
+    this.isLoading.set(false);
+    this.requestSequence++;
   }
 
-  private async runNameLookup(name: string): Promise<void> {
-    if (name === this.lastLookedUpName) return;
-    this.lastLookedUpName = name;
+  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
+    const { id, offset, replace } = params;
+    const requestId = ++this.requestSequence;
+    this.isLoading.set(true);
 
-    this.lookingUp.set(true);
     try {
-      const result = await this.companiesSvc.lookupEnrichment(name);
-      const current = this.payload();
-      const next = { ...current };
-      const filled: string[] = [];
-      if (!current.website.trim() && result.website) {
-        next.website = result.website;
-        filled.push('website');
+      const people = (await this.personsSvc.getByCompanyId(id, {
+        limit: this.pageSize,
+        offset,
+        columns: ['first_name', 'last_name', 'email'],
+      })) as Persons[];
+
+      if (requestId !== this.requestSequence) {
+        return;
       }
-      if (!current.phone.trim() && result.phone) {
-        next.phone = result.phone;
-        filled.push('phone');
+
+      const mapped = people.map((person) => ({
+        ...person,
+        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+      }));
+
+      if (replace) {
+        this.peopleInCompany.set(mapped);
+      } else {
+        this.peopleInCompany.update((current) => [...current, ...mapped]);
       }
-      if (!current.industry.trim() && result.industry) {
-        next.industry = result.industry;
-        filled.push('industry');
-      }
-      if (!current.description.trim() && result.description) {
-        next.description = result.description;
-        filled.push('description');
-      }
-      if (filled.length > 0) {
-        this.payload.set(next);
-        this.alertSvc.showSuccess(`Filled in ${filled.join(', ')} from Google — review before saving`);
-      }
-    } catch (err) {
-      // Best-effort only: never block adding a company on a Google lookup.
-      console.error('Google company lookup failed:', err);
+
+      this.currentOffset.set(offset + people.length);
+      this.hasMore.set(people.length === this.pageSize);
     } finally {
-      this.lookingUp.set(false);
+      if (requestId === this.requestSequence) {
+        this.isLoading.set(false);
+      }
     }
   }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id()!);
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
-  }
-
-  protected save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    const raw = this.payload();
-    if (this.id()) {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .update(this.id()!, raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company updated successfully');
-          // Mark the form pristine so the deactivate guard doesn't prompt
-          // "Leave without saving?" on the post-save navigation.
-          this.form().reset();
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies', this.id()]);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    } else {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .add(raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company added successfully');
-          // Mark the form pristine so the deactivate guard doesn't prompt
-          // "Leave without saving?" on the post-save navigation.
-          this.form().reset();
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies']);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -46156,25 +44745,809 @@ export class EmailCreateTaskDialog {
 </aside>
 ```
 
-## File: apps/frontend/src/app/experiences/exports/services/exports-service.ts
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { UserService } from '../../../services/user.service';
+import type { IAuthUser } from '@common';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-import type { DataExportRecordType } from '../../../../../../../libs/common/src';
-import { TRPCService } from '../../../services/api/trpc-service';
+@Component({
+  selector: 'pc-form-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './form-view.html',
+})
+export class FormViewComponent {
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-/** Thin service wrapper over the exports tRPC router — used by the merged Import/export History page (spec §17). */
-@Service()
-export class ExportsService extends TRPCService<unknown> {
-  public list(): Promise<DataExportRecordType[]> {
-    return this.api.exports.list.query();
+  readonly id = input.required<string>();
+  protected readonly recordNav = injectRecordNavigation('form', this.id);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Active tab state
+  protected activeTab = signal<string>('targetActions');
+
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const record = this.formRecord();
+    if (!record?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
+    // /f/:slug SPA page on the tenant subdomain.
+    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
+      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+    }
+    return publicPageUrl(tenantSlug, `f/${record.slug}`);
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
   }
 
-  public delete(id: string): Promise<unknown> {
-    return this.api.exports.delete.mutate({ id });
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
+
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editForm() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteForm() {
+    if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
   }
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const DATA_ARTICLES: HelpArticle[] = [
+  {
+    id: 'import',
+    category: 'data',
+    title: 'Import people from CSV',
+    summary:
+      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
+    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+    blocks: [
+      {
+        kind: 'p',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
+      },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'list',
+        items: [
+          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
+          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
+        ],
+      },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
+          },
+          {
+            title: 'Map columns',
+            detail:
+              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
+          },
+          {
+            title: 'Review',
+            detail:
+              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
+          },
+          {
+            title: 'Merge into one — or Not duplicates',
+            detail:
+              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to PeopleCRM',
+    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
+          '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
+          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
+          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
+          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track** — no open items have exceeded their target.',
+          '**Warning** — the number of breached items has reached the warning threshold.',
+          '**Critical** — breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
+          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
+          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+          { keys: ['g', 'm'], action: '[Files](/files)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
@@ -46491,60 +45864,1193 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/households/services/households-service.ts
+## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
+
+import type { Selectable } from 'kysely';
+import { HouseholdsService } from '../services/households-service';
+import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-household-form',
+  imports: [
+    PcTextarea,
+    AddressAutocomplete,
+    Tags,
+    Icon,
+    RouterModule,
+    PcDetailHeader,
+    PcCard,
+    PcAddressFormGroup,
+    GeocodeChip,
+    DatePipe,
+  ],
+  templateUrl: './household-form.html',
+})
+export class HouseholdForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly household = signal<Selectable<Households> | null>(null);
+
+  /** Member count for the Overview rail — loaded alongside the household (§6). */
+  protected readonly peopleCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const households: PcBreadcrumb = { label: 'Households', route: '/households' };
+    const id = this.household()?.id;
+    if (id) {
+      return [households, { label: 'Household', route: ['/households', String(id)] }, { label: 'Edit' }];
+    }
+    return [households, { label: 'New household' }];
+  });
+
+  protected addressVerified = false;
+
+  protected tags: string[] = [];
+
+  protected issues: string[] = [];
+
+  protected readonly payload = signal({
+    formatted_address: '',
+    type: '',
+    lat: 0,
+    lng: 0,
+    street_num: '',
+    street1: '',
+    street2: '',
+    apt: '',
+    city: '',
+    state: '',
+    country: '',
+    zip: '',
+    home_phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdateHouseholdsObj);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly addressString = computed(() => {
+    const raw = this.payload();
+
+    // If formatted_address is present (e.g. populated via Google Places autocomplete)
+    if (raw.formatted_address) {
+      return raw.formatted_address;
+    }
+
+    const parts: string[] = [];
+
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) {
+      parts.push(streetParts.join(' ').trim());
+    }
+    if (locationParts.length) {
+      parts.push(locationParts.join(', ').trim());
+    }
+
+    return parts.join(', ').trim();
+  });
+
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  public handleAddressChange(address: AddressType) {
+    const end = this._loading.begin();
+    try {
+      if (!address || !address.street1) {
+        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+        return;
+      }
+      this.payload.update((prev) => ({
+        ...prev,
+        formatted_address: address.formatted_address ?? '',
+        type: address.type ?? '',
+        lat: address.lat ?? 0,
+        lng: address.lng ?? 0,
+        street_num: address.street_num ?? '',
+        street1: address.street1 ?? '',
+        street2: address.street2 ?? '',
+        apt: address.apt ?? '',
+        city: address.city ?? '',
+        state: address.state ?? '',
+        country: address.country ?? '',
+        zip: address.zip ?? '',
+      }));
+      this.form.street1().markAsDirty();
+      this.addressVerified = true;
+    } finally {
+      end();
+    }
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadHousehold();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          formatted_address: data.formatted_address ?? '',
+          type: data.type ?? '',
+          lat: data.lat ?? 0,
+          lng: data.lng ?? 0,
+          street_num: data.street_num ?? '',
+          street1: data.street1 ?? '',
+          street2: data.street2 ?? '',
+          apt: data.apt ?? '',
+          city: data.city ?? '',
+          state: data.state ?? '',
+          country: data.country ?? '',
+          zip: data.zip ?? '',
+          home_phone: data.home_phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
+  }
+
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected async deleteHousehold() {
+    const id = this.id();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(id, { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(id);
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.addressString() || 'this household');
+  }
+
+  protected save(done?: () => void) {
+    const raw = this.payload();
+    const data: UpdateHouseholdsType = {
+      home_phone: raw.home_phone,
+      street_num: raw.street_num,
+      street1: raw.street1,
+      street2: raw.street2,
+      apt: raw.apt,
+      city: raw.city,
+      state: raw.state,
+      zip: raw.zip,
+      country: raw.country,
+      notes: raw.notes,
+      formatted_address: raw.formatted_address || null,
+      type: raw.type || null,
+      lat: raw.lat || null,
+      lng: raw.lng || null,
+    };
+    if (!this.id()) {
+      return this.householdsSvc.add(data).then(async (result: any) => {
+        this.alertSvc.showSuccess('Household added successfully.');
+        this.householdsSvc.triggerRefresh();
+        done?.();
+        await this.router.navigate(['/households', result.id]);
+      });
+    }
+    return this.update(data, done);
+  }
+
+  protected async tagAdded(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.attachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to attach tag:', err);
+    }
+  }
+
+  protected async tagRemoved(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.detachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to detach tag:', err);
+    }
+  }
+
+  protected async issueAdded(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.attachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to attach issue:', err);
+    }
+  }
+
+  protected async issueRemoved(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.detachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to detach issue:', err);
+    }
+  }
+
+  private async getTags() {
+    const id = this.id();
+    if (!this.household() || !id) {
+      return;
+    }
+    this.tags = await this.householdsSvc.getTags(id, 'tag');
+    this.issues = await this.householdsSvc.getTags(id, 'issue');
+  }
+
+  private async loadHousehold() {
+    const id = this.id();
+    if (!id) return;
+
+    const end = this._loading.begin();
+
+    try {
+      this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
+      await this.getTags();
+      this.refreshForm();
+      try {
+        this.peopleCount.set(await this.householdsSvc.getPeopleCount(id));
+      } catch {
+        this.peopleCount.set(0);
+      }
+    } finally {
+      end();
+    }
+  }
+
+  private refreshForm() {
+    const household = this.household();
+    if (!household) return;
+
+    this.payload.set({
+      formatted_address: household.formatted_address ?? '',
+      type: household.type ?? '',
+      lat: household.lat ?? 0,
+      lng: household.lng ?? 0,
+      street_num: household.street_num ?? '',
+      street1: household.street1 ?? '',
+      street2: household.street2 ?? '',
+      apt: household.apt ?? '',
+      city: household.city ?? '',
+      state: household.state ?? '',
+      country: household.country ?? '',
+      zip: household.zip ?? '',
+      home_phone: household.home_phone ?? '',
+      notes: household.notes ?? '',
+    });
+    this.form().reset();
+  }
+
+  private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
+    const id = this.id();
+    if (!id) {
+      return;
+    }
+
+    const end = this._loading.begin();
+    void this.householdsSvc
+      .update(id, data)
+      .then(() => {
+        this.alertSvc.showSuccess('Household updated successfully.');
+        this.form().reset();
+        this.householdsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
+      .finally(() => end());
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
+        Import / export
+      </h1>
+      @if (tab() === 'imports') {
+      <p class="text-sm text-base-content/60 mt-1">
+        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
+        duplicatesMergedThisYear() }} duplicates merged
+      </p>
+      }
+    </div>
+    <div class="flex gap-2 items-center">
+      @if (tab() === 'imports') {
+      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import CSV
+      </button>
+      }
+      <button
+        type="button"
+        class="btn btn-outline btn-sm gap-2"
+        pcSpinOnClick
+        (click)="tab() === 'imports' ? refresh() : refreshExports()"
+        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs: Imports N / Exports N -->
+  <div role="tablist" class="tabs tabs-border mb-4">
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'imports'"
+      (click)="switchTab('imports')"
+    >
+      Imports {{ itemCount() }}
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'exports'"
+      (click)="switchTab('exports')"
+    >
+      Exports {{ exportCount() }}
+    </button>
+  </div>
+
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+      <table class="table w-full">
+        <thead>
+          <tr class="bg-base-200/50">
+            <th>File</th>
+            <th>When</th>
+            <th>By</th>
+            <th>Outcome</th>
+            <th>Tags applied</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of items(); track item.id) {
+          <tr class="hover:bg-base-200/30 transition-all duration-200">
+            <td>
+              <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
+              <div class="text-xs text-base-content/60">
+                {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+              </div>
+            </td>
+            <td>
+              <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+            </td>
+            <td>
+              @if (item.createdBy) {
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
+                <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td>
+              @switch (item.status) { @case ('pending') {
+              <span class="badge badge-ghost text-xs">Pending</span>
+              } @case ('processing') {
+              <span class="badge badge-info text-xs gap-1">
+                <span class="loading loading-spinner loading-xs"></span>
+                Processing
+              </span>
+              } @case ('completed') {
+              <div class="text-sm text-base-content">
+                <div>{{ item.insertedCount }} imported</div>
+                @if (item.mergedCount > 0) {
+                <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+                } @if (item.skippedCount > 0) {
+                <div class="text-xs text-base-content/60 flex items-center gap-1">
+                  {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+                  <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                    download reasons
+                  </button>
+                  }
+                </div>
+                } @if (item.errorCount > 0) {
+                <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+                }
+              </div>
+              } @case ('failed') {
+              <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+                Failed
+              </span>
+              } }
+            </td>
+            <td>
+              @if (item.tagsApplied.length > 0) {
+              <div class="flex flex-wrap gap-1">
+                @for (tag of item.tagsApplied; track tag) {
+                <span class="badge badge-outline text-xs">{{ tag }}</span>
+                }
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td class="text-right">
+              <div class="flex justify-end gap-1">
+                @if (item.canDownloadSource) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-primary"
+                  title="Download original file"
+                  (click)="downloadSource(item)"
+                >
+                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                </button>
+                }
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-error"
+                  (click)="openDeleteDialog(item, deleteDialog)"
+                  [disabled]="deleting()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="text-center py-12 text-base-content/50">
+              <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+              <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+              <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
+              <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+                <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+                Import CSV
+              </button>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
+  </div>
+  }
+
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    <div class="flex justify-end mb-3">
+      <button type="button" class="btn btn-outline btn-sm" (click)="toggleNewExportInfo()">New export</button>
+    </div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
+
+    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+      <table class="table w-full">
+        <thead>
+          <tr class="bg-base-200/50">
+            <th>File</th>
+            <th>When</th>
+            <th>By</th>
+            <th>Contents</th>
+            <th class="text-right">Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (job of exportJobs(); track job.id) {
+          <tr class="hover:bg-base-200/30 transition-all duration-200">
+            <td>
+              <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
+            </td>
+            <td>
+              <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+            </td>
+            <td>
+              @if (job.createdBy) {
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
+                <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td>
+              @switch (job.status) { @case ('pending') {
+              <span class="badge badge-ghost text-xs">Queued</span>
+              } @case ('processing') {
+              <span class="badge badge-info text-xs gap-1">
+                <span class="loading loading-spinner loading-xs"></span>
+                Processing
+              </span>
+              } @case ('completed') {
+              <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+              } @default {
+              <span class="badge badge-error text-xs">Failed</span>
+              } }
+            </td>
+            <td class="text-right">
+              <div class="flex justify-end gap-1">
+                @if (job.status === 'completed') { @if (isExpired(job)) {
+                <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
+                } @else if (job.downloadable) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-primary"
+                  title="Download CSV"
+                  (click)="downloadExportJob(job)"
+                >
+                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                </button>
+                } @else {
+                <span
+                  class="text-xs text-base-content/40 italic mr-2"
+                  title="Downloaded directly to your device — not stored on the server"
+                >
+                  Downloaded
+                </span>
+                } }
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-error"
+                  title="Delete export"
+                  (click)="deleteExportJob(job)"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="5" class="text-center py-12 text-base-content/50">
+              <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+              <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+              <p class="text-xs text-base-content/50 mt-1">
+                Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
+              </p>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+  }
+</div>
+
+<dialog #deleteDialog class="modal">
+  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
+    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
+    @if (pendingDelete(); as item) {
+    <p class="text-sm text-base-content/70 mt-2">
+      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+      records created by this import:
+    </p>
+
+    <div class="space-y-3 mt-4">
+      @if (item.contactCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deletePeople()"
+          (change)="deletePeople.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+      </label>
+      } @if (item.householdCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteHouseholds()"
+          (change)="deleteHouseholds.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+      </label>
+      } @if (item.companyCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteCompanies()"
+          (change)="deleteCompanies.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+      </label>
+      } @if (item.taskCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteTasks()"
+          (change)="deleteTasks.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+      </label>
+      }
+    </div>
+    }
+
+    <div class="modal-action flex gap-2">
+      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+        Cancel
+      </button>
+      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
+    <button type="submit">close</button>
+  </form>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
+
+```typescript
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { environment } from '../../../../environments/environment';
+import { ExportsService } from '../../exports/services/exports-service';
+import { ImportsService } from '../services/imports-service';
+
+/**
+ * Import/export History page (spec §17). Folds the old standalone Exports
+ * Manager page into an "Imports N / Exports N" tabbed view — one history
+ * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
+ */
+type HistoryTab = 'imports' | 'exports';
+
+@Component({
+  selector: 'pc-imports-page',
+  imports: [FormsModule, Icon, SpinOnClickDirective],
+  templateUrl: './imports-page.html',
+})
+export class ImportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly imports = inject(ImportsService);
+  private readonly exports = inject(ExportsService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly tab = signal<HistoryTab>('imports');
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  private isLoadActive = false;
+  protected readonly deleting = signal(false);
+  protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
+  protected readonly pendingDelete = signal<ImportListItem | null>(null);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
+  protected readonly importsThisYear = computed(
+    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly peopleCreatedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.insertedCount, 0),
+  );
+  protected readonly duplicatesMergedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+
+  private pollInterval: ReturnType<typeof setInterval> | undefined;
+
+  // --- Exports tab ---
+  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
+  protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsLoading = createLoadingGate();
+  protected readonly showNewExportInfo = signal(false);
+
+  constructor() {
+    void this.load();
+
+    // Reset checkbox when dialog closes
+    effect(() => {
+      const item = this.pendingDelete();
+      if (!item) {
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
+      }
+    });
+
+    this.startPolling();
+
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
+  }
+
+  protected switchTab(tab: HistoryTab): void {
+    this.tab.set(tab);
+    if (tab === 'exports') {
+      void this.loadExports();
+    }
+  }
+
+  private startPolling() {
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
+
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
+      }
+    }
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = undefined;
+    }
+  }
+
+  protected formatDate(value: Date | string) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value instanceof Date ? value : new Date(value));
+    } catch {
+      return value ? String(value) : '—';
+    }
+  }
+
+  protected formatFileSize(bytes: number | null): string | null {
+    if (bytes == null) return null;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  protected startNewImport(): void {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
+    if (this.deleting()) return;
+    this.pendingDelete.set(item);
+    dialog.showModal();
+  }
+
+  protected closeDeleteDialog(dialog: HTMLDialogElement) {
+    if (!dialog.open) return;
+    dialog.close();
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(dialog: HTMLDialogElement) {
+    const item = this.pendingDelete();
+    if (!item || this.deleting()) return;
+
+    this.deleting.set(true);
+    try {
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
+      this.alerts.showSuccess('Import deleted');
+      await this.load();
+      this.closeDeleteDialog(dialog);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
+      this.alerts.showError(message);
+    } finally {
+      this.deleting.set(false);
+    }
+  }
+
+  protected downloadSource(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
+  }
+
+  protected downloadSkipped(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(
+      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
+      token,
+      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
+    );
+  }
+
+  protected async refresh() {
+    await this.load();
+  }
+
+  private async load() {
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const list = await this.imports.list();
+      this.items.set(list ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.isLoadActive = false;
+      end();
+    }
+  }
+
+  // --- Exports tab ---
+
+  protected refreshExports(): void {
+    void this.loadExports();
+  }
+
+  protected toggleNewExportInfo(): void {
+    this.showNewExportInfo.update((v) => !v);
+  }
+
+  protected goToPeopleGrid(): void {
+    void this.router.navigate(['/people']);
+  }
+
+  protected formatExportDate(dateStr: string) {
+    return this.formatDate(dateStr);
+  }
+
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
+  }
+
+  protected async downloadExportJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alerts.showError('This export has expired (30+ days old).');
+      return;
+    }
+    if (job.status !== 'completed') {
+      this.alerts.showError('Export is not ready yet.');
+      return;
+    }
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alerts.showError('Failed to download export');
+    }
+  }
+
+  protected async deleteExportJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete export',
+      message: `Delete "${job.file_name}"? This removes the file from the server — it cannot be undone.`,
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.exports.delete(job.id);
+      this.alerts.showSuccess('Export deleted successfully.');
+      await this.loadExports();
+    } catch {
+      this.alerts.showError('Failed to delete export. Please try again.');
+    }
+  }
+
+  private async loadExports() {
+    const end = this.exportsLoading.begin();
+    try {
+      const list = await this.exports.list();
+      this.exportJobs.set(list ?? []);
+    } catch {
+      this.alerts.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+
+```typescript
+import { Service, inject } from '@angular/core';
 import {
   ExportCsvInputType,
   ExportCsvResponseType,
-  UpdateHouseholdsType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
-export class HouseholdsService extends AbstractAPIService<'households', never> {
-  protected override readonly endpointName = 'households';
+export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
 
-  public add(household: UpdateHouseholdsType) {
-    return this.api.households.add.mutate(household);
+  private readonly campaignContext = inject(CampaignContextService);
+
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
   }
 
-  public override addMany(rows: never[]): Promise<unknown> {
+  public addMany(rows: UpdatePersonsType[]) {
     return Promise.resolve(rows);
   }
 
   public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
   }
 
   public count(): Promise<number> {
-    return this.api.households.count.query();
+    return this.api.persons.count.query();
   }
 
-  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
-  public countDistinctWards(): Promise<number> {
-    return this.api.households.countDistinctWards.query();
+  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
+  public countWithCompany(): Promise<number> {
+    return this.api.persons.countWithCompany.query();
   }
 
-  /** People in the placeholder household (no matchable address) — powers the grid footer note. */
-  public getUnhoused(): Promise<{ count: number; household_id: string | null }> {
-    return this.api.households.getUnhoused.query();
+  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
+  public getByPublicId(publicId: string) {
+    return this.api.persons.getByPublicId.query(publicId);
+  }
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+    }
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
   }
 
-  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
-  public getBySlug(slug: string) {
-    return this.api.households.getBySlug.query(slug);
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
+    }
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
+  }
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
   }
 
-  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
   }
 
   public getAll(options?: getAllOptionsType) {
-    return this.getAllWithPeopleCount(options);
+    return this.getAllWithAddress(options);
   }
 
   // We don't support archives
@@ -46552,1738 +47058,330 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return Promise.resolve({ rows: [], count: 0 });
   }
 
-  public getById(id: string) {
-    return this.api.households.getById.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.households.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public getPeopleCount(id: string) {
-    return this.api.households.getPeopleCount.query(id);
-  }
-
-  /** Most recent canvass at this household's door, or null if never canvassed. */
-  public getLastCanvass(id: string) {
-    return this.api.households.getLastCanvass.query(id);
-  }
-
-  public update(id: string, data: UpdateHouseholdsType) {
-    return this.api.households.update.mutate({ id: id, data });
-  }
-
-  private async getAllWithPeopleCount(options?: getAllOptionsType) {
-    return this.api.households.getAllWithPeopleCount.query(options, {
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    // Stamp the active context so campaign-scoped columns (support level,
+    // voting status — §15) resolve against the campaign the user is working in.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    return this.api.persons.getAllWithAddress.query(scoped, {
       signal: this.ac.signal,
     });
   }
 
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
+    if (!id) {
+      return [];
+    }
+
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
+      };
+    });
+  }
+
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public import(
+    input: {
+      rows: RouterInputs['persons']['import']['rows'];
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      source_csv?: string;
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    options?: { skipErrorHandler?: boolean },
+  ): Promise<RouterOutputs['persons']['import']> {
+    // Wizard shows its own error state — opt out of the global error toast when asked.
+    return this.api.persons.import.mutate(
+      {
+        rows: input.rows,
+        tags: input.tags ?? [],
+        skipped: input.skipped ?? 0,
+        file_name: input.file_name ?? undefined,
+        duplicate_decision: input.duplicate_decision ?? 'skip',
+        list_name: input.list_name,
+        source_csv: input.source_csv,
+        client_skip_reasons: input.client_skip_reasons,
+      },
+      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
+    );
+  }
+
+  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
+  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
+    return this.api.persons.checkDuplicateEmails.query({ emails });
+  }
+
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
+
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
+    return this.api.persons.update.mutate({ id: id, data }, options);
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.households.exportCsv.mutate(input);
+    return this.api.persons.exportCsv.mutate(input);
   }
 
-  public getPotentialDuplicates(options?: {
-    page?: number;
-    pageSize?: number;
-  }): Promise<{ groups: any[]; total: number }> {
-    return this.api.households.getPotentialDuplicates.query(options);
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
+    return this.api.persons.getPotentialDuplicates.query(options);
   }
 
-  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
-    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
+    return this.api.persons.getDuplicateCounts.query();
   }
 
-  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
-    return this.api.households.getLastFingerprintRecomputation.query();
-  }
-
-  public recomputeAddressFingerprints(): Promise<void> {
-    return this.api.households.recomputeAddressFingerprints.mutate();
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
   }
 }
+
+export type DATA_TYPE = 'persons' | 'households';
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
-
-```html
-<div class="p-6 max-w-4xl mx-auto">
-  <!-- Where am I? / Where was I? -->
-  <div class="mb-6">
-    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
-    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
-    <p class="text-sm text-base-content/60 mt-1">
-      Headers in the first row · duplicates are matched by email · nothing is written until the last step
-    </p>
-  </div>
-
-  <!-- Step indicator -->
-  <ul class="steps steps-horizontal w-full mb-8">
-    @for (s of stepOrder; track s; let idx = $index) {
-    <li
-      class="step"
-      [class.step-primary]="idx <= currentStepIndex()"
-      [class.cursor-pointer]="canReachStep(s)"
-      (click)="canReachStep(s) && goToStep(s)"
-    >
-      {{ stepLabels[s] }}
-    </li>
-    }
-  </ul>
-
-  <!-- ============ UPLOAD ============ -->
-  @if (step() === 'upload') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @if (!fileName()) {
-      <div
-        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
-        [class.border-primary]="dragOver()"
-        [class.bg-primary/5]="dragOver()"
-        [class.border-base-300]="!dragOver()"
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave()"
-        (drop)="onDrop($event)"
-      >
-        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
-        <label class="btn btn-primary gap-2 cursor-pointer">
-          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-          Drop a CSV here, or click to browse
-          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
-        </label>
-        @if (parsing()) {
-        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
-          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
-          Reading and parsing the file…
-        </p>
-        }
-      </div>
-      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
-        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
-        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
-        <li>UTF-8 and Excel both work.</li>
-      </ul>
-      } @else {
-      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
-        <div class="flex items-center gap-3 min-w-0">
-          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
-          <span class="font-mono text-sm text-base-content truncate">
-            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
-          </span>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
-      </div>
-      <div class="flex justify-end">
-        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
-          Continue to column mapping
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-      }
-    </div>
-  </div>
-  }
-
-  <!-- ============ MAP COLUMNS ============ -->
-  @if (step() === 'map') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      <p class="text-sm text-base-content/70">
-        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
-        matching by the header row
-      </p>
-
-      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
-        @for (header of headers(); track header; let idx = $index) {
-        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
-          <div class="flex-1 min-w-0">
-            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
-            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <select
-              class="select select-bordered select-sm w-56"
-              [value]="mapping()[idx] || ''"
-              (change)="setMapping(idx, $any($event.target).value)"
-            >
-              <option value="">— Skip this column —</option>
-              @for (field of mappableFields; track field) {
-              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
-              }
-            </select>
-            @if (!mapping()[idx]) {
-            <span class="badge badge-ghost text-xs">Skipped</span>
-            }
-          </div>
-        </div>
-        }
-      </div>
-
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary gap-2"
-          [disabled]="mappedColumnCount() === 0"
-          (click)="goToReview()"
-        >
-          Continue to review
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- ============ REVIEW ============ -->
-  @if (step() === 'review') {
-  <div class="flex flex-col gap-4">
-    @if (checkingDuplicates()) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body items-center py-10">
-        <progress class="progress progress-primary w-64"></progress>
-        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
-      </div>
-    </div>
-    } @else { @if (reviewIsClean()) {
-    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
-      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
-      <span>No duplicate emails and no email problems found in this file.</span>
-    </div>
-    } @if (duplicateMatches().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ duplicateRowCount() }} rows match people you already have
-        </p>
-        <ul class="space-y-1">
-          @for (match of duplicateMatches(); track match.person_id) {
-          <li class="text-sm flex items-center gap-2">
-            <span class="font-mono text-base-content/70">{{ match.email }}</span>
-            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
-            @if (match.slug) {
-            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
-              >{{ match.name }}</a
-            >
-            } @else {
-            <span class="text-base-content">{{ match.name }}</span>
-            }
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'merge'"
-              (change)="duplicateDecision.set('merge')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Merge into existing</span>
-              <span class="block text-xs text-base-content/60">
-                Recommended — fills blank fields, never overwrites
-              </span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'skip'"
-              (change)="duplicateDecision.set('skip')"
-            />
-            <span class="text-sm font-medium text-base-content">
-              Skip the {{ duplicateRowCount() }} duplicate rows
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'import_new'"
-              (change)="duplicateDecision.set('import_new')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import as new anyway</span>
-              <span class="block text-xs text-base-content/60">
-                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    } @if (badEmailRows().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ badEmailRows().length }} rows have email problems
-        </p>
-        <ul class="space-y-1">
-          @for (row of badEmailRows(); track row.idx) {
-          <li class="text-sm">
-            <span class="text-base-content/60">Row {{ row.idx }}:</span>
-            <span class="font-mono text-base-content">{{ row.email }}</span>
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'skip'"
-              (change)="badEmailDecision.set('skip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
-              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'strip'"
-              (change)="badEmailDecision.set('strip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import without an email</span>
-              <span class="block text-xs text-base-content/60">
-                They can't receive newsletters until an email is added
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    }
-
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-4">
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            placeholder="Comma separated e.g. donor, canvass-2026"
-            [value]="tagsText()"
-            (input)="tagsText.set($any($event.target).value)"
-          />
-        </label>
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            list="existing-static-lists"
-            placeholder="New or existing list name"
-            [value]="listName()"
-            (input)="listName.set($any($event.target).value)"
-          />
-          <datalist id="existing-static-lists">
-            @for (name of existingListNames(); track name) {
-            <option [value]="name"></option>
-            }
-          </datalist>
-        </label>
-      </div>
-    </div>
-
-    <div class="flex justify-between">
-      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
-        Continue to import
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-    }
-  </div>
-  }
-
-  <!-- ============ CONFIRM & RUN ============ -->
-  @if (step() === 'confirm') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @let r = run(); @switch (r.status) { @case ('idle') {
-      <div class="space-y-2 text-sm text-base-content">
-        <p class="font-mono text-base-content/70">
-          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
-        </p>
-        <ul class="list-disc list-inside text-base-content/70 space-y-1">
-          <li>
-            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
-            'skip duplicate rows' : 'import as new anyway' }}
-          </li>
-          @if (badEmailRows().length > 0) {
-          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
-          } @if (parsedTags().length > 0) {
-          <li>Tags: {{ parsedTags().join(', ') }}</li>
-          } @if (listName().trim()) {
-          <li>Added to list: {{ listName().trim() }}</li>
-          }
-        </ul>
-        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
-      </div>
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-          Import {{ finalRowCount() }} people
-        </button>
-      </div>
-      } @case ('running') {
-      <div class="flex flex-col items-center gap-3 py-10">
-        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
-        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
-        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
-      </div>
-      } @case ('done') {
-      <div class="flex flex-col gap-4">
-        <div class="flex items-center gap-3">
-          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
-          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
-        </div>
-        <ul class="text-sm text-base-content/70 space-y-1">
-          <li>{{ r.inserted }} imported</li>
-          @if (r.merged > 0) {
-          <li>{{ r.merged }} merged into existing people</li>
-          } @if (r.skipped > 0) {
-          <li>{{ r.skipped }} skipped</li>
-          } @if (r.errors > 0) {
-          <li class="text-error">{{ r.errors }} errors</li>
-          } @if (r.tag) {
-          <li>Tagged {{ r.tag }}</li>
-          }
-        </ul>
-        <div class="flex flex-wrap gap-2 mt-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
-            <pc-icon name="user-group" [size]="4"></pc-icon>
-            View imported people
-          </button>
-          <button type="button" class="btn btn-outline gap-2" (click)="startOver()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import another file
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
-            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
-            Back to import history
-          </button>
-        </div>
-      </div>
-      } @case ('error') {
-      <div class="flex flex-col gap-4">
-        <div class="alert alert-error gap-2">
-          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-          <span>{{ r.message }}</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            Try again
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
-        </div>
-      </div>
-      } }
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
+## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
 
 ```typescript
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
 
-import { emailSchema } from '@common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { PERSONS_MAPPABLE_FIELDS, autoMapPersonsHeader } from '@uxcommon/components/csv-import/persons-field-mapping';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { PersonsService } from '../services/persons-service';
 
-import { ListsService } from '../../lists/services/lists-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ImportsService } from '../services/imports-service';
-
-/** The four steps of the CSV import wizard (spec §17), in order. */
-type WizardStep = 'upload' | 'map' | 'review' | 'confirm';
-
-type DuplicateDecision = 'merge' | 'skip' | 'import_new';
-type BadEmailDecision = 'skip' | 'strip';
-
-interface DuplicateMatch {
-  email: string;
-  person_id: string;
-  name: string;
-  slug: string | null;
-}
-
-/** Confirm & run step state, modeled as a discriminated union (never a bag of optionals). */
-type RunState =
-  | { status: 'idle' }
-  | { status: 'running' }
-  | {
-      status: 'done';
-      inserted: number;
-      merged: number;
-      skipped: number;
-      errors: number;
-      tag: string | null;
-      importId: string | null;
-    }
-  | { status: 'error'; message: string };
-
-const FIELD_LABELS: Record<string, string> = {
-  first_name: 'First name',
-  last_name: 'Last name',
-  middle_names: 'Middle name(s)',
-  email: 'Email',
-  email2: 'Secondary email',
-  mobile: 'Mobile phone',
-  home_phone: 'Home phone',
-  street_num: 'Street number',
-  street1: 'Street line 1',
-  street2: 'Street line 2',
-  apt: 'Apt/Unit',
-  city: 'City',
-  state: 'State/Province',
-  zip: 'Zip/Postal code',
-  country: 'Country',
-  notes: 'Notes',
-};
-
-/** How long to wait between status polls once an import has been queued. */
-const POLL_INTERVAL_MS = 1500;
-/** Give up narrating progress (the import itself keeps running server-side) after this long. */
-const POLL_TIMEOUT_MS = 120_000;
+type HouseholdMember = PERSONINHOUSEHOLDTYPE & { email?: string | null };
 
 @Component({
-  selector: 'pc-import-wizard',
-  imports: [Icon, RouterLink],
-  templateUrl: './import-wizard.html',
-})
-export class ImportWizard {
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly personsService = inject(PersonsService);
-  private readonly importsService = inject(ImportsService);
-  private readonly listsService = inject(ListsService);
-
-  private readonly _duplicateCheck = createLoadingGate();
-  protected readonly checkingDuplicates = this._duplicateCheck.visible;
-
-  protected readonly step = signal<WizardStep>('upload');
-  protected readonly stepOrder: WizardStep[] = ['upload', 'map', 'review', 'confirm'];
-  protected readonly stepLabels: Record<WizardStep, string> = {
-    upload: 'Upload',
-    map: 'Map columns',
-    review: 'Review',
-    confirm: 'Import',
-  };
-  protected readonly currentStepIndex = computed(() => this.stepOrder.indexOf(this.step()));
-
-  /** A step is reachable once its prerequisite data exists — never skip ahead of validation. */
-  protected canReachStep(target: WizardStep): boolean {
-    const targetIdx = this.stepOrder.indexOf(target);
-    if (targetIdx <= this.currentStepIndex()) return true;
-    if (target === 'map') return this.rowCount() > 0;
-    if (target === 'review') return this.mappedColumnCount() > 0;
-    return false;
-  }
-
-  // --- Upload ---
-  protected readonly parsing = signal(false);
-  protected readonly dragOver = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-  private fileText = '';
-  protected readonly headers = signal<string[]>([]);
-  protected readonly rawRows = signal<Array<Record<string, string>>>([]);
-
-  protected readonly rowCount = computed(() => this.rawRows().length);
-  protected readonly columnCount = computed(() => this.headers().length);
-
-  // --- Map columns ---
-  protected readonly mapping = signal<string[]>([]); // index-aligned with headers()
-  protected readonly mappableFields = PERSONS_MAPPABLE_FIELDS;
-  protected readonly fieldLabels = FIELD_LABELS;
-
-  protected readonly mappedColumnCount = computed(() => this.mapping().filter((m) => !!m).length);
-  protected readonly skippedColumnCount = computed(() => this.columnCount() - this.mappedColumnCount());
-
-  /** Every row, with only its mapped, non-blank fields — the shape the backend import mutation expects. */
-  protected readonly mappedRows = computed(() => {
-    const headers = this.headers();
-    const mapping = this.mapping();
-    return this.rawRows().map((row) => {
-      const out: Record<string, string> = {};
-      headers.forEach((header, idx) => {
-        const field = mapping[idx];
-        if (!field) return;
-        const value = (row[header] ?? '').toString().trim();
-        if (value && !(field in out)) out[field] = value;
-      });
-      return out;
-    });
-  });
-
-  protected readonly importableRowCount = computed(
-    () => this.mappedRows().filter((row) => Object.keys(row).length > 0).length,
-  );
-
-  // --- Review ---
-  protected readonly duplicateDecision = signal<DuplicateDecision>('merge');
-  protected readonly badEmailDecision = signal<BadEmailDecision>('skip');
-  protected readonly tagsText = signal('');
-  protected readonly listName = signal('');
-  protected readonly existingListNames = signal<string[]>([]);
-  protected readonly duplicateMatches = signal<DuplicateMatch[]>([]);
-
-  protected readonly emailRows = computed(() =>
-    this.mappedRows()
-      .map((row, idx) => ({ idx: idx + 1, email: row['email'] ?? '' }))
-      .filter((r) => !!r.email),
-  );
-  protected readonly validEmailRows = computed(() =>
-    this.emailRows().filter((r) => emailSchema.safeParse(r.email).success),
-  );
-  protected readonly badEmailRows = computed(() =>
-    this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success),
-  );
-  protected readonly duplicateRowCount = computed(() => {
-    const matched = new Set(this.duplicateMatches().map((m) => m.email.toLowerCase()));
-    return this.validEmailRows().filter((r) => matched.has(r.email.toLowerCase())).length;
-  });
-  protected readonly reviewIsClean = computed(
-    () => this.duplicateMatches().length === 0 && this.badEmailRows().length === 0,
-  );
-
-  protected readonly parsedTags = computed(() =>
-    this.tagsText()
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0),
-  );
-
-  // --- Confirm & run ---
-  protected readonly run = signal<RunState>({ status: 'idle' });
-  private pollHandle: ReturnType<typeof setTimeout> | undefined;
-
-  /** The exact row count the Confirm button and working-state sentence quote (spec §17). */
-  protected readonly finalRowCount = computed(() => {
-    if (this.badEmailDecision() === 'skip') {
-      return this.importableRowCount() - this.badEmailRows().length;
+  selector: 'pc-people-in-household',
+  imports: [RouterModule],
+  template: `<div class="flex flex-col">
+    @if (!peopleInHousehold().length && !isLoading()) {
+      <p i18n class="py-2 text-sm italic text-base-content/40">No one else at this address yet.</p>
     }
-    return this.importableRowCount();
-  });
+    @for (person of peopleInHousehold(); track person.id) {
+      <a
+        routerLink="/people/{{ person.id }}"
+        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
+      >
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+          aria-hidden="true"
+          >{{ initials(person) }}</span
+        >
+        <span class="flex min-w-0 flex-col">
+          <span class="truncate text-sm font-semibold text-base-content">{{ person.full_name }}</span>
+          @if (person.email) {
+            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
+          }
+        </span>
+      </a>
+    }
+    @if (hasMore()) {
+      <button
+        i18n
+        type="button"
+        class="mt-1 self-start text-xs text-primary hover:underline"
+        (click)="loadMore()"
+        [disabled]="isLoading()"
+      >
+        Show more
+      </button>
+    }
+  </div>`,
+})
+export class PeopleInHousehold {
+  private personsSvc = inject(PersonsService);
+
+  protected peopleInHousehold = signal<HouseholdMember[]>([]);
+  protected isLoading = signal(false);
+  protected hasMore = signal(false);
+
+  private readonly pageSize = 25;
+  private currentOffset = signal(0);
+  private requestSequence = 0;
+  private lastParams: { id: string; excludeId: string | null } | null = null;
+
+  public excludePersonId = input<string | null>(null);
+
+  public householdId = input.required<string>();
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.clearPoll());
-    void this.loadExistingListNames();
-  }
+    // React to input changes
+    effect(() => {
+      const id = this.householdId();
+      const excludeId = this.excludePersonId();
 
-  private async loadExistingListNames(): Promise<void> {
-    try {
-      const result = await this.listsService.getAll({ startRow: 0, endRow: 200 });
-      const rows = (result?.rows ?? []) as Array<{ name?: string; is_dynamic?: boolean; object?: string }>;
-      this.existingListNames.set(
-        rows
-          .filter((r) => !r.is_dynamic && r.object === 'people' && typeof r.name === 'string')
-          .map((r) => r.name as string),
-      );
-    } catch {
-      // Non-blocking — the list-name field still works as free text without suggestions.
-    }
-  }
+      if (!id) {
+        this.resetState();
+        this.lastParams = null;
+        return;
+      }
 
-  // --- Upload step ---
+      if (this.lastParams && this.lastParams.id === id && this.lastParams.excludeId === excludeId) {
+        return;
+      }
 
-  protected onDragOver(ev: DragEvent): void {
-    ev.preventDefault();
-    this.dragOver.set(true);
-  }
-
-  protected onDragLeave(): void {
-    this.dragOver.set(false);
-  }
-
-  protected onDrop(ev: DragEvent): void {
-    ev.preventDefault();
-    this.dragOver.set(false);
-    const file = ev.dataTransfer?.files?.[0];
-    if (file) void this.readFile(file);
-  }
-
-  protected onFileSelected(ev: Event): void {
-    const input = ev.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (file) void this.readFile(file);
-    input.value = '';
-  }
-
-  private async readFile(file: File): Promise<void> {
-    this.parsing.set(true);
-    this.fileName.set(file.name);
-    try {
-      // UTF-8 and Excel-exported CSVs both decode correctly as text — Excel's
-      // CSV export is UTF-8 (sometimes BOM-prefixed), which readAsText handles.
-      // FileReader (not the newer File.text()) matches the shared csv-import
-      // component's own reading approach.
-      const text = await this.readFileAsText(file);
-      this.fileText = text;
-      const { headers, rows } = await this.parseCsv(text);
-      this.headers.set(headers);
-      this.rawRows.set(rows);
-      this.mapping.set(headers.map((h) => autoMapPersonsHeader(h)));
-    } catch {
-      this.alerts.showError('Failed to read that file. Make sure it is a CSV export.');
-      this.fileName.set(null);
-    } finally {
-      this.parsing.set(false);
-    }
-  }
-
-  private readFileAsText(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string) || '');
-      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
-      reader.readAsText(file);
+      this.lastParams = { id, excludeId };
+      this.resetState();
+      void this.fetchPage({ id, excludeId, offset: 0, replace: true });
     });
   }
 
-  /** Reuses the shared CSV/TSV parsing worker (libs/uxcommon/components/csv-import) — no second parser. */
-  private parseCsv(text: string): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(
-        new URL('../../../../../../../libs/uxcommon/src/components/csv-import/csv.worker.ts', import.meta.url),
-        { type: 'module' },
-      );
-      worker.onmessage = (e: MessageEvent) => {
-        const data = e.data as {
-          type: string;
-          headers?: string[];
-          rows?: Array<Record<string, string>>;
-          message?: string;
-        };
-        worker.terminate();
-        if (data.type === 'result') {
-          resolve({ headers: data.headers ?? [], rows: data.rows ?? [] });
-        } else {
-          reject(new Error(data.message || 'Failed to parse CSV'));
-        }
-      };
-      worker.onerror = () => {
-        worker.terminate();
-        reject(new Error('Failed to parse CSV'));
-      };
-      worker.postMessage({ type: 'parse', text });
-    });
+  protected initials(person: HouseholdMember): string {
+    const first = person.first_name?.trim()?.[0] ?? '';
+    const last = person.last_name?.trim()?.[0] ?? '';
+    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
   }
 
-  protected chooseAnotherFile(): void {
-    this.fileName.set(null);
-    this.fileText = '';
-    this.headers.set([]);
-    this.rawRows.set([]);
-    this.mapping.set([]);
-  }
-
-  protected sampleValues(headerIdx: number): string {
-    const header = this.headers()[headerIdx];
-    if (!header) return '';
-    return this.rawRows()
-      .slice(0, 2)
-      .map((row) => row[header])
-      .filter((v) => !!v)
-      .join(', ');
-  }
-
-  // --- Step navigation ---
-
-  protected goToStep(target: WizardStep): void {
-    this.step.set(target);
-  }
-
-  protected async goToReview(): Promise<void> {
-    this.step.set('review');
-    const end = this._duplicateCheck.begin();
-    try {
-      const emails = [...new Set(this.validEmailRows().map((r) => r.email.toLowerCase()))];
-      const matches = emails.length ? await this.personsService.checkDuplicateEmails(emails) : [];
-      this.duplicateMatches.set(matches);
-    } catch {
-      // Review still works without the duplicate preview — the backend re-checks authoritatively at import time.
-      this.duplicateMatches.set([]);
-    } finally {
-      end();
+  protected async loadMore() {
+    if (this.isLoading() || !this.hasMore()) {
+      return;
     }
+
+    const id = this.householdId();
+    if (!id) {
+      return;
+    }
+
+    const excludeId = this.excludePersonId();
+    const offset = this.currentOffset();
+    await this.fetchPage({ id, excludeId, offset, replace: false });
   }
 
-  protected setMapping(headerIdx: number, field: string): void {
-    const next = [...this.mapping()];
-    next[headerIdx] = field;
-    this.mapping.set(next);
+  private resetState() {
+    this.peopleInHousehold.set([]);
+    this.currentOffset.set(0);
+    this.hasMore.set(false);
+    this.isLoading.set(false);
+    this.requestSequence++;
   }
 
-  // --- Confirm & run ---
-
-  protected async runImport(): Promise<void> {
-    if (this.run().status === 'running') return;
-    this.run.set({ status: 'running' });
-
-    const badEmailRows = this.badEmailRows();
-    const badEmailIdx = new Set(badEmailRows.map((r) => r.idx - 1));
-    const skipBadEmail = this.badEmailDecision() === 'skip';
-    const rowsToSend = this.mappedRows()
-      .map((row, idx) => {
-        if (!badEmailIdx.has(idx)) return row;
-        if (skipBadEmail) return null; // dropped below
-        const { email: _unused, ...rest } = row; // "Import without an email"
-        return rest;
-      })
-      .filter((row): row is Record<string, string> => row !== null && Object.keys(row).length > 0);
-    const skippedCount = this.rawRows().length - rowsToSend.length;
-    const clientSkipReasons = skipBadEmail
-      ? badEmailRows.map((r) => ({ row: r.idx, email: r.email, reason: 'Email address is not valid' }))
-      : [];
+  private async fetchPage(params: { id: string; excludeId: string | null; offset: number; replace: boolean }) {
+    const { id, excludeId, offset, replace } = params;
+    const requestId = ++this.requestSequence;
+    this.isLoading.set(true);
 
     try {
-      const result = await this.personsService.import({
-        rows: rowsToSend,
-        tags: this.parsedTags(),
-        skipped: skippedCount,
-        file_name: this.fileName() ?? undefined,
-        duplicate_decision: this.duplicateDecision(),
-        list_name: this.listName().trim() || undefined,
-        source_csv: this.fileText || undefined,
-        client_skip_reasons: clientSkipReasons,
-      });
+      const people = (await this.personsSvc.getPeopleInHousehold(id, {
+        limit: this.pageSize,
+        offset,
+        columns: ['email'],
+      })) as HouseholdMember[];
 
-      if (result?.import_id) {
-        await this.pollUntilDone(result.import_id, Date.now());
+      if (requestId !== this.requestSequence) {
+        return;
+      }
+
+      const filtered = excludeId ? people.filter((p) => p.id !== excludeId) : people;
+
+      if (replace) {
+        this.peopleInHousehold.set(filtered);
       } else {
-        // Nothing importable — the backend already reported the terminal state synchronously.
-        this.run.set({
-          status: 'done',
-          inserted: result?.inserted ?? 0,
-          merged: 0,
-          skipped: result?.skipped ?? skippedCount,
-          errors: result?.errors ?? 0,
-          tag: result?.tag ?? null,
-          importId: null,
-        });
+        this.peopleInHousehold.update((current) => [...current, ...filtered]);
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'The import could not be started.';
-      this.run.set({ status: 'error', message });
-    }
-  }
 
-  private async pollUntilDone(importId: string, startedAt: number): Promise<void> {
-    this.clearPoll();
-    try {
-      const list = await this.importsService.list();
-      const record = (list ?? []).find((item) => String(item.id) === String(importId));
-
-      if (record?.status === 'completed') {
-        this.run.set({
-          status: 'done',
-          inserted: record.insertedCount,
-          merged: record.mergedCount,
-          skipped: record.skippedCount,
-          errors: record.errorCount,
-          tag: record.tagName,
-          importId,
-        });
-        return;
-      }
-      if (record?.status === 'failed') {
-        this.run.set({ status: 'error', message: record.errorMessage || 'The import failed.' });
-        return;
-      }
-      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        this.run.set({
-          status: 'error',
-          message: 'This is taking longer than expected. Check the import history page for its final status.',
-        });
-        return;
-      }
-    } catch {
-      // Transient — keep polling until the timeout above gives up.
-    }
-    this.pollHandle = setTimeout(() => void this.pollUntilDone(importId, startedAt), POLL_INTERVAL_MS);
-  }
-
-  private clearPoll(): void {
-    if (this.pollHandle) {
-      clearTimeout(this.pollHandle);
-      this.pollHandle = undefined;
-    }
-  }
-
-  protected startOver(): void {
-    this.clearPoll();
-    this.chooseAnotherFile();
-    this.mapping.set([]);
-    this.duplicateDecision.set('merge');
-    this.badEmailDecision.set('skip');
-    this.tagsText.set('');
-    this.listName.set('');
-    this.duplicateMatches.set([]);
-    this.run.set({ status: 'idle' });
-    this.step.set('upload');
-  }
-
-  protected viewImportedPeople(): void {
-    void this.router.navigate(['/people']);
-  }
-
-  protected backToHistory(): void {
-    void this.router.navigate(['/imports']);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
-
-```typescript
-import { Component, inject, input, output, signal, OnInit } from '@angular/core';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { ConnectionCard } from './connection-card';
-import { AddConnectionDrawer } from './add-connection-drawer';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-@Component({
-  selector: 'pc-person-connections',
-  imports: [ConnectionCard, AddConnectionDrawer, Icon],
-  template: `
-    <div class="flex flex-col gap-4">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h4 i18n class="font-semibold text-base-content/80">
-          Connections
-          @if (connections().length > 0) {
-            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
-          }
-        </h4>
-        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Add Connection
-        </button>
-      </div>
-
-      <!-- Loading skeleton -->
-      @if (isLoading()) {
-        <div class="flex flex-col gap-2">
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-        </div>
-      } @else if (loaded()) {
-        <!-- Only decide empty-vs-list once a fetch has finished, so a sub-300ms
-             load (which never trips the skeleton) can't flash the empty state. -->
-        @if (connections().length === 0) {
-          <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
-            No connections recorded. Add one to start mapping this contact's network.
-          </div>
-        } @else {
-          <div class="flex flex-col gap-2">
-            @for (conn of connections(); track conn.id) {
-              <pc-connection-card
-                [connection]="conn"
-                [currentPersonId]="personId()"
-                (remove)="onRemove($event)"
-              ></pc-connection-card>
-            }
-          </div>
-        }
-      }
-    </div>
-
-    <pc-add-connection-drawer
-      [personId]="personId()"
-      [isOpen]="showAddDrawer()"
-      (closeDrawer)="showAddDrawer.set(false)"
-      (saved)="onConnectionAdded()"
-    ></pc-add-connection-drawer>
-  `,
-})
-export class PersonConnections implements OnInit {
-  readonly personId = input.required<string>();
-  readonly countChange = output<number>();
-
-  private readonly connectionsSvc = inject(ConnectionsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly loaded = this._loading.loaded;
-  protected readonly connections = signal<any[]>([]);
-  protected readonly showAddDrawer = signal(false);
-
-  public ngOnInit() {
-    void this.load();
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.connectionsSvc.getForPerson(this.personId());
-      this.connections.set(result as any[]);
-      this.countChange.emit(result.length);
-    } catch {
-      // silently fail — tab stays empty
+      this.currentOffset.set(offset + people.length);
+      this.hasMore.set(people.length === this.pageSize);
     } finally {
-      end();
-    }
-  }
-
-  protected onConnectionAdded() {
-    void this.load();
-  }
-
-  protected async onRemove(id: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Connection',
-      message: 'Are you sure you want to remove this connection?',
-      confirmText: 'Remove',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.connectionsSvc.remove(id);
-      this.connections.update((list) => list.filter((c) => c.id !== id));
-      this.countChange.emit(this.connections().length);
-      this.alertSvc.showSuccess('Connection removed');
-    } catch {
-      this.alertSvc.showError('Failed to remove connection');
+      if (requestId === this.requestSequence) {
+        this.isLoading.set(false);
+      }
     }
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-
-```html
-<pc-detail-layout
-  [title]="fullName() || 'Person'"
-  [eyebrow]="'Person'"
-  [avatarText]="initials()"
-  [statusChip]="statusChip()"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete person'"
-  [btn1Text]="'Edit person'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  <li pc-overflow-extra>
-    <button type="button" (click)="mergeIntoAnother()">
-      <pc-icon name="merge" [size]="4"></pc-icon>
-      <ng-container i18n="PersonView|Merge this person into another@@person.overflow.merge"
-        >Merge into another person…</ng-container
-      >
-    </button>
-  </li>
-
-  <li pc-overflow-extra>
-    <button type="button" (click)="exportVCard()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
-    </button>
-  </li>
-
-  @if (person()) {
-  <pc-log-interaction
-    pc-actions-prefix
-    [entity]="'persons'"
-    [entityId]="id()"
-    (logged)="onInteractionLogged()"
-  ></pc-log-interaction>
-  } @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact rail -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Contact card -->
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
-
-        <div class="flex w-full flex-col text-xs">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          @if (person().email2) {
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          }
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          @if (person().home_phone) {
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          }
-          <pc-detail-item
-            label="Address"
-            [value]="addressDisplay()"
-            icon="map-pin"
-            [link]="!!householdId() && !isPlaceholderHousehold()"
-            (linkClicked)="navigateToHousehold()"
-          ></pc-detail-item>
-          @if (preferredContactLabel()) {
-          <pc-detail-item
-            label="Preferred Contact"
-            [value]="preferredContactLabel()"
-            icon="chat-bubble-bottom-center-text"
-          ></pc-detail-item>
-          }
-        </div>
-
-        <!-- Tags & Issues of Interest -->
-        <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
-          <div>
-            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs italic text-base-content/40">No tags assigned</span>
-            }
-          </div>
-          <div>
-            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50"
-              >Issues of Interest</span
-            >
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <button
-              type="button"
-              class="text-left text-xs text-primary hover:underline"
-              (click)="editPerson()"
-              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
-            >
-              No issues yet — add what they care about
-            </button>
-            }
-          </div>
-        </div>
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-card>
-
-      <!-- Internal Notes (own card) -->
-      @if (person().notes) {
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
-        <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right Column: pill tab bar + content card -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
-      <div role="tablist" class="flex flex-wrap gap-2">
-        @for (tab of personTabs(); track tab.id) {
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="activeTab() === tab.id"
-          class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors focus:outline-none"
-          [class]="
-            activeTab() === tab.id
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
-          "
-          (click)="activeTab.set(tab.id)"
-        >
-          <span>{{ tab.label }}</span>
-          @if (tab.badge !== undefined && tab.badge !== null) {
-          <span
-            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
-            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
-            >{{ tab.badge }}</span
-          >
-          }
-        </button>
-        }
-      </div>
-
-      <!-- Content card -->
-      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-
-            <!-- Newsletter engagement (folded into Emails) -->
-            @if (activityData().newsletters.length > 0) {
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
-                >Newsletter activity</span
-              >
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Method</th>
-                    <th class="font-bold text-base-content/70">Receipt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of visibleDonations(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75 tabular-nums">
-                      {{ donation.created_at | date:'mediumDate' }}
-                    </td>
-                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
-                    <td>
-                      <pc-status-badge [type]="donationReceipt(donation).type">
-                        {{ donationReceipt(donation).label }}
-                      </pc-status-badge>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
-            <div class="text-xs text-base-content/60 px-1">
-              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
-                Show all {{ donationHistory().length }}
-              </button>
-              } @else { Showing all {{ donationHistory().length }} —
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
-                Show fewer
-              </button>
-              }
-            </div>
-            } }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-6">
-            <!-- Household members -->
-            <div class="flex flex-col gap-4">
-              @if (householdId() && !isPlaceholderHousehold()) { @defer {
-              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-              } @placeholder {
-              <div class="skeleton w-full h-32"></div>
-              } } @else {
-              <div class="flex flex-col items-center gap-3 py-10 text-center">
-                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-                <div class="flex flex-col gap-1">
-                  <span
-                    class="font-medium text-base-content"
-                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                    >Not part of a household yet</span
-                  >
-                  <span
-                    class="max-w-sm text-sm text-base-content/50"
-                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                    >Households group people who share an address, so everyone at the same address stays in sync.</span
-                  >
-                </div>
-                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                  <pc-icon name="home" [size]="4"></pc-icon>
-                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                    >Assign household</ng-container
-                  >
-                </button>
-              </div>
-              }
-            </div>
-
-            <!-- Connections (folded into Household) -->
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
-              <pc-person-connections
-                [personId]="id()"
-                (countChange)="connectionCount.set($event)"
-              ></pc-person-connections>
-            </div>
-          </div>
-        </pc-tab-panel>
-      </div>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
-
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-ghost text-sm font-semibold"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
-      </div>
-    </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
 
 ```typescript
-import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
-import { PeopleInHousehold } from './people-in-household';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
+import { TeamsService } from '../../teams/services/teams-service';
+import { CompaniesService } from '../../companies/services/companies-service';
+import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { EventsService } from '../../../services/api/events-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonConnections } from './person-connections';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
-  selector: 'pc-person-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    LogInteraction,
-    DetailLayout,
-    PcCard,
-    TabPanel,
-    StatusBadge,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PersonConnections,
-  ],
-  templateUrl: './person-view.html',
+  selector: 'pc-person-form',
+  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcCard],
+  templateUrl: './person-form.html',
 })
-export class PersonView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('person', this.id);
-  protected readonly activityFeed = viewChild(RecordActivities);
-
+export class PersonForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
-  protected readonly donationsSvc = inject(DonationsService);
-  private readonly route = inject(ActivatedRoute);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly companiesSvc = inject(CompaniesService);
   private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
+  private _loading = createLoadingGate();
+  private usersById = new Map<string, IAuthUser>();
 
-  protected readonly person = signal<any | null>(null);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Analytics & Lists
-  protected readonly volunteerHistory = signal<any[]>([]);
-  protected readonly donationStats = signal<{
-    cumulativeAmount: number;
-    limitAmount: number;
-    remainingAmount: number;
-  } | null>(null);
-  protected readonly donationHistory = signal<any[]>([]);
-  protected readonly eventHistory = signal<any[]>([]);
-  protected readonly connectionCount = signal(0);
-  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-
-  // True when the person has at least one active monthly pledge — powers the "Monthly donor" status chip.
-  protected readonly hasActivePledge = signal(false);
-
-  // Donations are truncated to the first 6 rows until the user expands (§3 "Show all N").
-  protected readonly DONATION_PREVIEW_COUNT = 6;
-  protected readonly showAllDonations = signal(false);
-  protected readonly visibleDonations = computed(() =>
-    this.showAllDonations() ? this.donationHistory() : this.donationHistory().slice(0, this.DONATION_PREVIEW_COUNT),
-  );
-
-  // Donation Dialog State
-  protected readonly isCheckingEligibility = signal(false);
-  protected readonly donationAmount = signal<number | null>(null);
-  protected readonly showDonationModal = signal(false);
-  protected readonly eligibilityError = signal<string | null>(null);
-
-  // Address
-  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
   protected readonly householdResource = resource({
     params: () => this.householdId(),
     loader: async ({ params: householdId }) => {
@@ -48298,327 +47396,194 @@ export class PersonView {
 
   protected readonly addressString = computed(() => {
     const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    if (!hh || hh.is_placeholder) return null;
     return this.getFormattedAddress(hh);
   });
+
   protected readonly isPlaceholderHousehold = computed(() => {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
 
-  /** Address plus ward for the contact row (e.g. "312 Alder Street … · Ward 3"). */
-  protected readonly addressDisplay = computed(() => {
+  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
+  protected readonly addressWithWard = computed(() => {
     const base = this.addressString();
-    if (base === 'No Address Assigned') return base;
+    if (!base) return null;
     const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
     return ward ? `${base} · Ward ${ward}` : base;
   });
 
-  // Contact initials and full name computation
-  protected readonly initials = computed(() => {
-    const first = this.person()?.first_name || '';
-    const last = this.person()?.last_name || '';
-    if (!first && !last) return '?';
-    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  // Drawer state for assigning household
+  protected readonly assignDrawerOpen = signal(false);
+  protected readonly householdResults = signal<any[]>([]);
+  protected readonly householdSearch = signal('');
+  protected readonly householdsLoading = signal(false);
+
+  protected readonly pendingHouseholdId = signal<string | null>(null);
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly emailError = linkedSignal({
+    source: () => this.form.email().value(),
+    computation: () => null as string | null,
+  });
+  protected readonly person = signal<Persons | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly companies = signal<any[]>([]);
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+
+  protected readonly payload = signal({
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    email: '',
+    email2: '',
+    home_phone: '',
+    mobile: '',
+    notes: '',
+    company_id: '',
+    preferred_contact: '',
+    linkedin: '',
+    twitter: '',
+    facebook: '',
+    instagram: '',
+    assigned_to: '',
   });
 
-  protected readonly fullName = computed(() => {
-    const p = this.person();
-    if (!p) return '';
-    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdatePersonsObj);
   });
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'People', route: '/people' },
-    { label: this.fullName() || 'Person' },
-  ]);
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
-  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
-  protected readonly statusChip = computed<string | null>(() => {
-    if (this.hasActivePledge()) return 'Monthly donor';
-    const tags = this.tags().map((t) => t.toLowerCase());
-    if (tags.includes('donor')) return 'Donor';
-    if (tags.includes('volunteer')) return 'Volunteer';
-    if (tags.includes('host')) return 'Host';
-    return null;
+  protected id = input<string>();
+  protected tags = signal<string[]>([]);
+  protected issues = signal<string[]>([]);
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
+
+  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  protected readonly formName = computed(() => {
+    const v = this.payload();
+    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
   });
 
-  // Human label for the person's preferred contact channel (§3 contact card row).
-  protected readonly preferredContactLabel = computed<string | null>(() => {
-    switch (this.person()?.preferred_contact) {
-      case 'email':
-        return 'Email';
-      case 'mobile':
-        return 'Mobile phone';
-      case 'home_phone':
-        return 'Home phone';
-      default:
-        return null;
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
     }
+    return [people, { label: 'New person' }];
   });
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
+  protected readonly formInitials = computed(() => {
+    const name = this.formName() || '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
 
-  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
-  protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
-    {
-      id: 'donations',
-      label: 'Donations',
-      icon: 'currency-dollar',
-      badge: this.donationHistory()?.length || undefined,
-    },
-    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
-  ]);
-
-  /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
-  protected donationMethod(donation: any): string {
-    const base = donation?.stripe_session_id ? 'Card' : 'Manual';
-    return donation?.pledge_id ? `${base} · monthly` : base;
-  }
-
-  /** Receipt status for a donation row (§3), derived from the donation status. */
-  protected donationReceipt(donation: any): { label: string; type: 'success' | 'warning' | 'error' | 'neutral' } {
-    const s = String(donation?.status || '').toLowerCase();
-    if (s === 'succeeded') return { label: 'Receipted', type: 'success' };
-    if (s === 'pending') return { label: 'Pending', type: 'warning' };
-    if (s === 'failed') return { label: 'Failed', type: 'error' };
-    return { label: donation?.status || '—', type: 'neutral' };
-  }
-
-  protected getMailStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'sent' || s === 'delivered') return 'success';
-    if (s === 'opened') return 'info';
-    if (s === 'read') return 'neutral';
-    return 'ghost';
-  }
-
-  protected getEmailEventType(eventType: string | null | undefined): any {
-    const et = String(eventType || '').toLowerCase();
-    if (et === 'open') return 'success';
-    if (et === 'click') return 'warning';
-    if (et === 'delivered' || et === 'processed') return 'info';
-    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
-    return 'ghost';
-  }
-
-  protected getShiftStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'signed_up') return 'warning';
-    if (s === 'no_show') return 'error';
-    return 'ghost';
-  }
-
-  protected getEventStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'registered') return 'warning';
-    if (s === 'no_show') return 'error';
-    if (s === 'cancelled') return 'neutral';
-    return 'ghost';
-  }
+  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
 
   constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
+    // Load users once for display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
   }
 
-  /**
-   * Spec §1: the address bar shows the record slug, never the internal id.
-   * Cosmetic swap only (Location.replaceState) — the route param, record-nav
-   * pager and breadcrumbs keep working on the numeric id.
-   */
-  private showSlugUrl(record: unknown): void {
-    const slug =
-      record != null && typeof record === 'object' && 'slug' in record ? (record as { slug: unknown }).slug : null;
-    if (typeof slug === 'string' && slug.length > 0) {
-      this.location.replaceState(`/people/${slug}`);
-    }
+  public ngOnInit(): void {
+    void this.loadOnInit();
   }
 
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load person details
-      const personData = await this.personsSvc.getById(id);
-      this.person.set(personData);
-      this.showSlugUrl(personData);
-
-      // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load volunteer history
-      try {
-        const history = await this.volunteerSvc.getHistoryForPerson(id);
-        this.volunteerHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load volunteer details', err);
-      }
-
-      // 4. Load donations stats, history and active-pledge status (for the "Monthly donor" chip)
-      try {
-        this.showAllDonations.set(false);
-        const stats = await this.donationsSvc.getStats(id);
-        this.donationStats.set(stats);
-        const history = await this.donationsSvc.getHistory(id);
-        this.donationHistory.set(history || []);
-        const pledges = await this.donationsSvc.getPersonPledges(id);
-        this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
-      } catch (err) {
-        console.error('Failed to load donations history', err);
-      }
-
-      // 5. Load event history
-      try {
-        const history = await this.eventsSvc.getHistoryForPerson(id);
-        this.eventHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load event history', err);
-      }
-
-      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
-      try {
-        const count = await this.connectionsSvc.countForPerson(id);
-        this.connectionCount.set(count);
-      } catch (err) {
-        console.error('Failed to load connection count', err);
-      }
-
-      // Check query params for Stripe Checkout success redirects
-      const params = this.route.snapshot.queryParams;
-      if (params['checkout_success'] === 'true' && params['session_id']) {
-        try {
-          await this.donationsSvc.confirmDonation(params['session_id']);
-          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
-          // Reload donation stats/history after confirmation
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to confirm stripe checkout session:', err);
-          this.alertSvc.showError('Finalizing payment verification...');
-        }
-      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
-        try {
-          const amt = Number(params['amount'] || 0);
-          await this.donationsSvc.confirmMockDonation({
-            personId: id,
-            amountCents: amt * 100,
-            sessionId: params['session_id'],
-            province: params['province'] || '',
-            country: params['country'] || '',
-          });
-          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to record mock donation:', err);
+  private async loadOnInit(): Promise<void> {
+    await this.loadPerson();
+    await this.loadCompanies();
+    void this.loadSuggestionNames();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          first_name: data.first_name ?? '',
+          middle_names: data.middle_names ?? '',
+          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
+          email: data.email ?? '',
+          email2: data.email2 ?? '',
+          home_phone: data.home_phone ?? '',
+          mobile: data.mobile ?? '',
+          notes: data.notes ?? '',
+          company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
+          linkedin: data.linkedin ?? '',
+          twitter: data.twitter ?? '',
+          facebook: data.facebook ?? '',
+          instagram: data.instagram ?? '',
+          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
+        });
+        if (data.household_id) {
+          this.pendingHouseholdId.set(data.household_id);
         }
       }
-
-      // 5. Load interactions (emails + newsletters)
-      try {
-        const activity = await this.personsSvc.getActivity(id);
-        this.activityData.set(activity || { emails: [], newsletters: [] });
-      } catch (err) {
-        console.error('Failed to load activity log', err);
-      }
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the person. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
     }
   }
 
-  /** Refresh the activity feed after a logged interaction. */
-  protected onInteractionLogged(): void {
-    this.activityFeed()?.loadActivities();
-  }
-
-  protected openCollectDonation() {
-    this.donationAmount.set(null);
-    this.eligibilityError.set(null);
-    this.showDonationModal.set(true);
-  }
-
-  protected closeDonationModal() {
-    this.showDonationModal.set(false);
-  }
-
-  protected async submitDonation() {
-    const amt = this.donationAmount();
-    if (amt === null || amt <= 0) {
-      this.alertSvc.showError('Please specify a valid donation amount.');
-      return;
-    }
-
-    this.isCheckingEligibility.set(true);
-    this.eligibilityError.set(null);
-
-    const hh = this.householdResource.value() as Households | null | undefined;
-    const address = {
-      country: hh?.country || 'CA',
-      state: hh?.state || 'ON',
-    };
-
+  private async loadSuggestionNames() {
     try {
-      const eligibility = await this.donationsSvc.checkEligibility({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (!eligibility.eligible) {
-        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
-        this.isCheckingEligibility.set(false);
-        return;
-      }
-
-      this.closeDonationModal();
-      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
-
-      // Redirect
-      const session = await this.donationsSvc.createCheckout({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (session && session.url) {
-        window.location.href = session.url;
-      } else {
-        this.alertSvc.showError('Failed to initialize payment gateway.');
-      }
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
     } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
-    } finally {
-      this.isCheckingEligibility.set(false);
+      console.error('Failed to load tag/issue suggestions', err);
     }
   }
 
-  protected editPerson() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
+  private async loadCompanies() {
+    try {
+      const res = await this.companiesSvc.getAll();
+      this.companies.set(res.rows || []);
+    } catch {
+      this.companies.set([]);
+    }
   }
 
   protected async deletePerson() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
+    const id = this.id();
+    if (!id) return;
+    const confirmed = await this.confirmDlg.confirm({
       title: 'Delete Person',
       message: 'Are you sure you want to delete this person? This action cannot be undone.',
       variant: 'danger',
@@ -48627,7 +47592,7 @@ export class PersonView {
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      await this.personsSvc.delete(this.id());
+      await this.personsSvc.delete(id);
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
@@ -48647,21 +47612,109 @@ export class PersonView {
     }
   }
 
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
   }
 
-  protected getUserName(id: string | null | undefined): string {
+  public save(done?: () => void) {
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      // §4: Save never disables — instead of blocking, surface the errors and
+      // move focus to the first invalid field so the user knows what to fix.
+      queueMicrotask(() => {
+        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
+        el?.focus();
+      });
+      return;
+    }
+    const raw = this.payload();
+    const data = {
+      ...raw,
+      company_id: raw.company_id || null,
+      assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
+    } as UpdatePersonsType;
+    return this.id() ? this.update(data, done) : this.add(data, done);
+  }
+
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected async assignToHousehold(household_id: string) {
+    const id = this.id();
+    // NEW PERSON: just store the pending selection; it will be sent on save
+    if (!id) {
+      this.pendingHouseholdId.set(household_id);
+      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
+      this.closeAssignDrawer();
+      return;
+    }
+
+    // Ask scope: just this person vs everyone in current household
+    const applyToAll = await this.confirmDlg.confirm({
+      title: 'Change household',
+      message: 'Apply to everyone in the current household, or just this person?',
+      variant: 'info',
+      confirmText: 'Everyone',
+      cancelText: 'Just this person',
+    });
+
+    const currentHousehold = this.householdId();
+
+    const end = this._loading.begin();
+    try {
+      if (applyToAll && currentHousehold) {
+        // Single atomic tRPC call to the backend
+        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
+      } else {
+        // Only move this person
+        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
+      }
+
+      // update local state for current person and UI
+      this.person.update((p) => (p ? { ...p, household_id } : p));
+
+      this.alertSvc.showSuccess('Assigned to selected household');
+      this.closeAssignDrawer();
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  protected closeAssignDrawer() {
+    this.assignDrawerOpen.set(false);
+  }
+
+  protected formatHouseholdRow(row: any) {
+    const address = {
+      apt: row.apt ?? null,
+      street_num: row.street_num ?? '',
+      street1: row.street1 ?? '',
+      street2: row.street2 ?? '',
+      city: row.city ?? '',
+      state: row.state ?? '',
+      zip: row.zip ?? '',
+      country: row.country ?? '',
+    } as AddressType;
+    return this.getFormattedAddress(address);
+  }
+
+  protected getId() {
+    const id = this.person()?.id;
+    if (!id) return null;
+
+    return id as unknown as string;
+  }
+
+  protected getUserName(id: string | null | undefined = null): string {
     if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
   }
 
   protected navigateToHousehold() {
@@ -48671,45 +47724,210 @@ export class PersonView {
     }
   }
 
-  /** Take the user to the People duplicates review UI (spec §5 / §9.3, Track D) to merge this
-   * person into another. The pair-card comparison there is the one place merges are resolved,
-   * so the safe "keep" choice always lives with the operator on that screen. */
-  protected mergeIntoAnother(): void {
-    void this.router.navigate(['/duplicates/people']);
+  protected onHouseholdSearch(ev: Event) {
+    const target = ev.target as HTMLInputElement | null;
+    const val = target?.value ?? '';
+    this.householdSearch.set(val);
+    void this.fetchHouseholds();
   }
 
-  /** Export the contact as a downloadable vCard (§3 overflow) — fully client-side. */
-  protected exportVCard(): void {
-    const p = this.person();
-    if (!p) return;
-    const esc = (v: unknown) => String(v ?? '').replace(/([,;\\])/g, '\\$1');
-    const lines = [
-      'BEGIN:VCARD',
-      'VERSION:3.0',
-      `N:${esc(p.last_name)};${esc(p.first_name)};${esc(p.middle_names)};;`,
-      `FN:${esc(this.fullName())}`,
-    ];
-    if (p.company_name) lines.push(`ORG:${esc(p.company_name)}`);
-    if (p.email) lines.push(`EMAIL;TYPE=INTERNET,PREF:${esc(p.email)}`);
-    if (p.email2) lines.push(`EMAIL;TYPE=INTERNET:${esc(p.email2)}`);
-    if (p.mobile) lines.push(`TEL;TYPE=CELL:${esc(p.mobile)}`);
-    if (p.home_phone) lines.push(`TEL;TYPE=HOME:${esc(p.home_phone)}`);
-    const addr = this.addressString();
-    if (addr && addr !== 'No Address Assigned') lines.push(`ADR;TYPE=HOME:;;${esc(addr)};;;;`);
-    lines.push('END:VCARD');
+  protected openAssignDrawer() {
+    this.assignDrawerOpen.set(true);
+    // Initial fetch
+    void this.fetchHouseholds();
+  }
 
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${this.fullName() || 'contact'}.vcf`;
-    a.click();
-    URL.revokeObjectURL(url);
-    this.alertSvc.showSuccess(`Exported ${this.fullName()} as a vCard.`);
+  protected async removeAddress() {
+    const id = this.id();
+    // New person: just clear the pending household — no API call needed yet
+    if (!id) {
+      this.pendingHouseholdId.set(null);
+      return;
+    }
+
+    if (!this.person()) return;
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Remove Address',
+      message: 'This will move the person to a new blank household (clearing address). Continue?',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.removeHousehold(id);
+      this.person.update((p) => (p ? { ...p, household_id: null } : p));
+      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
+    } catch (err) {
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
+    } finally {
+      end();
+    }
+  }
+
+  protected async tagAdded(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to attach tag:', err);
+    }
+  }
+
+  protected async tagRemoved(tag: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const normalized = tag.trim().toLowerCase();
+    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
+
+    try {
+      if (normalized === 'volunteer') {
+        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
+        try {
+          teams = await this.teamsSvc.getTeamsForVolunteer(id);
+        } catch (err) {
+          console.error('Failed to load teams for volunteer tag removal', err);
+        }
+
+        if (teams.length) {
+          const details = teams
+            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
+            .join('\n');
+          const confirmed = await this.confirmDlg.confirm({
+            title: 'Remove volunteer tag?',
+            message:
+              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
+              details +
+              '\n\nDo you want to continue?',
+            confirmText: 'Remove tag',
+            cancelText: 'Keep tag',
+            variant: 'warning',
+          });
+          if (!confirmed) {
+            restoreTag();
+            return;
+          }
+        }
+
+        const result = await this.personsSvc.detachTag(id, tag, 'tag');
+        await this.updateTags();
+        await this.tagOptionsSvc.invalidate('tag');
+        if (result?.removed_teams && result.removed_teams.length > 0) {
+          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
+          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
+        }
+        return;
+      }
+
+      await this.personsSvc.detachTag(id, tag, 'tag');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to detach tag:', err);
+      restoreTag();
+    }
+  }
+
+  protected async issueAdded(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to attach issue:', err);
+    }
+  }
+
+  protected async issueRemoved(issue: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
+
+    try {
+      await this.personsSvc.detachTag(id, issue, 'issue');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to detach issue:', err);
+      restoreIssue();
+    }
+  }
+
+  private add(data: UpdatePersonsType, done?: () => void) {
+    // Include any household selected via the drawer before saving
+    const pendingHousehold = this.pendingHouseholdId();
+    if (pendingHousehold) {
+      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
+    }
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .add(data, { context: { skipErrorHandler: true } })
+      .then(() => {
+        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+          this.pendingHouseholdId.set(null);
+          this.tags.set([]);
+          this.issues.set([]);
+          this.form().reset();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  private isDuplicateEmailError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as Record<string, any>;
+    // tRPC wraps backend errors; check both data.httpStatus and message
+    return (
+      e['data']?.['httpStatus'] === 409 ||
+      String(e['message'] ?? '')
+        .toLowerCase()
+        .includes('already exists')
+    );
+  }
+
+  private async fetchHouseholds() {
+    try {
+      this.householdsLoading.set(true);
+      const opts = {
+        searchStr: this.householdSearch(),
+        limit: 25,
+        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
+      };
+      const res = await this.householdsSvc.getAll(opts);
+      this.householdResults.set(res.rows || []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
+      this.householdResults.set([]);
+    } finally {
+      this.householdsLoading.set(false);
+    }
   }
 
   private getFormattedAddress(address: AddressType): string {
     const parts: string[] = [];
+
     const streetParts = [
       address.apt ? `Apt ${address.apt}` : null,
       address.street_num,
@@ -48724,6 +47942,139 @@ export class PersonView {
 
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
+  }
+
+  private async loadPerson() {
+    const id = this.id();
+    if (!id) return;
+
+    const end = this._loading.begin();
+    try {
+      this.person.set((await this.personsSvc.getById(id)) as Persons);
+
+      await this.updateTags();
+      await this.loadVolunteerInfo();
+
+      this.refreshForm();
+    } finally {
+      end();
+    }
+  }
+
+  private refreshForm() {
+    const person = this.person();
+    if (!person) return;
+
+    this.payload.set({
+      first_name: person.first_name ?? '',
+      middle_names: person.middle_names ?? '',
+      last_name: person.last_name ?? '',
+      email: person.email ?? '',
+      email2: person.email2 ?? '',
+      home_phone: person.home_phone ?? '',
+      mobile: person.mobile ?? '',
+      notes: person.notes ?? '',
+      company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
+      linkedin: person.linkedin ?? '',
+      twitter: person.twitter ?? '',
+      facebook: person.facebook ?? '',
+      instagram: person.instagram ?? '',
+      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
+    });
+  }
+
+  // Friendly labels for the field-naming save toast (§4).
+  private readonly fieldLabels: Record<string, string> = {
+    first_name: 'first name',
+    middle_names: 'middle name',
+    last_name: 'last name',
+    email: 'email',
+    email2: 'secondary email',
+    mobile: 'mobile phone',
+    home_phone: 'home phone',
+    company_id: 'company',
+    preferred_contact: 'preferred contact',
+    assigned_to: 'owner',
+    notes: 'notes',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  };
+
+  private changedFieldLabels(): string[] {
+    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
+    return Object.keys(this.fieldLabels)
+      .filter((k) => {
+        try {
+          return !!f[k]?.().dirty?.();
+        } catch {
+          return false;
+        }
+      })
+      .map((k) => this.fieldLabels[k]!);
+  }
+
+  private joinWithAnd(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
+  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
+    const id = this.id();
+    if (!id) return;
+
+    const changed = this.changedFieldLabels();
+    const savedName = this.formName() || 'person';
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .update(id, data, { context: { skipErrorHandler: true } })
+      .then(() => {
+        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
+        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
+        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
+        this.form().reset();
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  private async updateTags() {
+    if (!this.person()) return;
+
+    const id = this.id();
+    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
+    this.tags.set(tags);
+
+    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
+    this.issues.set(issues);
+  }
+
+  private async loadVolunteerInfo() {
+    const id = this.id();
+    if (!id) return;
+    try {
+      const stats = await this.volunteerSvc.getVolunteerStats(id);
+      this.volunteerStats.set(stats);
+      const history = await this.volunteerSvc.getHistoryForPerson(id);
+      this.volunteerHistory.set(history || []);
+    } catch (err) {
+      console.error('Failed to load volunteer info', err);
+    }
   }
 }
 
@@ -51684,6 +51035,186 @@ export class TagAdminActions {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tags/ui/tags.ts
+
+```typescript
+import { Component, OnInit, inject, input, output, signal } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { TagPaletteService } from './tag-palette.service';
+
+interface TagView {
+  name: string;
+  color: string | null;
+}
+
+@Component({
+  selector: 'pc-tags',
+  imports: [TagItem, AutoComplete],
+  template: `@let tagViews = displayTags();
+    @if (!readonly()) {
+      <!-- Editable: chips live inside the input box, before the text field (combobox / token input) -->
+      <pc-autocomplete
+        (valueChange)="add($event)"
+        (backspaceEmpty)="removeLast()"
+        [placeholder]="placeholder()"
+        [filterSvc]="enableAutoComplete() ? this : null"
+      >
+        @for (tag of tagViews; track tag.name) {
+          <pc-tagitem
+            [name]="tag.name"
+            [color]="tag.color"
+            [canDelete]="canDelete()"
+            [compact]="true"
+            (click)="clicked(tag.name)"
+            (close)="closed(tag.name)"
+          ></pc-tagitem>
+        }
+      </pc-autocomplete>
+    } @else if (tagViews.length) {
+      <!-- Readonly: chips only, in their own row -->
+      <div class="flex flex-wrap items-center gap-1">
+        @for (tag of tagViews; track tag.name) {
+          <pc-tagitem
+            [name]="tag.name"
+            [color]="tag.color"
+            [canDelete]="canDelete()"
+            [compact]="compact()"
+            (click)="clicked(tag.name)"
+            (close)="closed(tag.name)"
+          ></pc-tagitem>
+        }
+        @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
+          @let remainingCount = tags().length - limit()!;
+          <span
+            class="badge badge-neutral badge-sm cursor-pointer align-middle hover:bg-neutral-focus"
+            (click)="expanded.set(true); $event.stopPropagation()"
+          >
+            +{{ remainingCount }}
+          </span>
+        }
+      </div>
+    } `,
+})
+export class Tags implements OnInit {
+  protected displayedTags: string[] = [];
+  protected expanded = signal(false);
+  private readonly paletteSvc = inject(TagPaletteService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  public readonly tagAdded = output<string>();
+
+  public readonly tagClicked = output<string>();
+
+  public readonly tagRemoved = output<string>();
+
+  public readonly tagsChange = output<string[]>();
+
+  public animateRemoval = input<boolean>(true);
+
+  public canDelete = input<boolean>(true);
+
+  public enableAutoComplete = input<boolean>(true);
+
+  public placeholder = input<string>('Enter tags, separated by comma');
+
+  public readonly = input<boolean>(false);
+  public readonly type = input<'tag' | 'issue'>('tag');
+  public compact = input<boolean>(false);
+  public tagSvc = inject(TagsService);
+  public tags = input<string[]>([]);
+  public limit = input<number | undefined>(undefined);
+
+  protected displayTags(): TagView[] {
+    const raw = this.tags() ?? [];
+    const limitVal = this.limit();
+    const isExpanded = this.expanded();
+    const palette = this.paletteSvc.palette();
+    const seen = new Set<string>();
+    const out: TagView[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const name = entry.trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const lower = name.toLowerCase();
+      const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
+      out.push({ name, color: color ?? null });
+    }
+    return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
+  }
+
+  public async filter(key: string) {
+    if (!key || key.length === 0) {
+      return [];
+    }
+    const names = (await this.tagSvc.findByName(key, this.type())) as { name: string }[];
+    return names.map((m) => m.name);
+  }
+
+  public ngOnInit() {
+    for (const name of this.tags()) {
+      this.add(name);
+    }
+  }
+
+  protected add(tagName: string) {
+    if (!tagName || typeof tagName !== 'string') return;
+
+    if (tagName.indexOf(',') >= 0) {
+      tagName = tagName.replace(',', '').trim();
+    }
+
+    tagName = tagName.toLowerCase().trim();
+
+    if (tagName.length === 0) return;
+
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === tagName);
+    if (index === -1) {
+      this.tags().unshift(tagName);
+      this.tagAdded.emit(tagName);
+      // Invalidate the options cache so the grid's inline dropdown reflects this new value
+      void this.tagOptionsSvc.invalidate(this.type());
+    } else {
+      // Bring tag that maches to the front.
+      const [tag] = this.tags().splice(index, 1) as [string]; // remove it
+      this.tags().unshift(tag); // move to front
+    }
+    this.tagsChange.emit(this.tags());
+  }
+
+  protected clicked(tag: string) {
+    this.tagClicked.emit(tag);
+  }
+
+  /** Remove the chip nearest the cursor (the last/rightmost one) — Backspace on an empty field. */
+  protected removeLast() {
+    const tags = this.tags();
+    if (tags.length) {
+      const last = tags[tags.length - 1];
+      if (last) this.remove(last);
+    }
+  }
+
+  protected closed(tag: string) {
+    this.remove(tag);
+  }
+
+  protected remove(tagName: string) {
+    const target = (tagName || '').toLowerCase().trim();
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
+    if (index > -1) {
+      const removed = this.tags().splice(index, 1)[0]!;
+      this.tagsChange.emit(this.tags());
+      this.tagRemoved.emit(removed);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
 
 ```html
@@ -52386,6 +51917,224 @@ export class TasksList implements OnInit {
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { IAuthUser } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamsService } from '../services/teams-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-team-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './team-view.html',
+})
+export class TeamViewComponent {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('team', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly team = signal<any>(null);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Teams', route: '/teams' },
+    { label: this.team()?.name || 'Team' },
+  ]);
+
+  // Active tab state
+  protected activeTab = signal<string>('volunteers');
+
+  protected readonly teamTabs = computed<PcTabOption[]>(() => [
+    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
+    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
+    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly captainName = computed(() => {
+    const captainId = this.team()?.team_captain_id;
+    if (!captainId) return '—';
+    const match = this.volunteers().find((v: any) => v.id === captainId);
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly leadName = computed(() => {
+    const leadId = this.team()?.team_lead_user_id;
+    if (!leadId) return '—';
+    const match = this.users().find((u) => String(u.id) === String(leadId));
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly activeTasksCount = computed(() => {
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'archived').length;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load team detail
+      const data = await this.teamsSvc.getById(id);
+      this.team.set(data);
+
+      // 2. Load associated tasks
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: id } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the team. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editTeam() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.teamsSvc.delete(this.id());
+      this.teamsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.team()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.team()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected getPriorityType(priority: string | null | undefined): any {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      default:
+        return 'ghost';
+    }
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'success';
+      case 'in_progress':
+        return 'info';
+      case 'waiting':
+        return 'error';
+      case 'archived':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.html
@@ -55383,446 +55132,6 @@ type DeleteCtx = {
 };
 ```
 
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e5c963;
-  --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
-   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
-   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
-   just apply on the touch surface). Keep the control's own flex centering. */
-@utility touch-target {
-  min-height: 2.75rem;
-  min-width: 2.75rem;
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
 
 ```typescript
@@ -56681,6 +55990,456 @@ export class CanvassingPage implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <pc-detail-header
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Edit company'"
+      [eyebrow]="isNewMode() ? 'New company' : 'Edit company'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <!-- Form Section -->
+      <form (submit)="save($event)" novalidate class="lg:col-span-2">
+        <fieldset [disabled]="isLoading()">
+          <pc-card>
+            <!-- Name -->
+            <div class="flex flex-col gap-1.5">
+              <pc-input
+                label="Company name"
+                placeholder="e.g. Acme Corp"
+                [formField]="form.name"
+                (blurred)="onNameBlur()"
+              ></pc-input>
+              @if (lookingUp()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-base-content/60">
+                <span class="loading loading-spinner loading-xs"></span>
+                Looking up details on Google…
+              </p>
+              } @else if (duplicateName()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-warning">
+                <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+                A company with this name already exists — you can still save if this is a separate record.
+              </p>
+              }
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Website"
+                type="url"
+                placeholder="https://example.com"
+                [formField]="form.website"
+              ></pc-input>
+              <pc-input label="Industry" placeholder="e.g. Healthcare" [formField]="form.industry"></pc-input>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+              <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+            </div>
+
+            <!-- Description -->
+            <div class="flex flex-col gap-1.5">
+              <pc-textarea
+                label="Description"
+                placeholder="Company description…"
+                [formField]="form.description"
+                [rows]="3"
+              ></pc-textarea>
+              <p class="pl-1 text-xs text-base-content/55">
+                Shown on the company page. Google enrichment fills this if left blank.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Any additional notes…"
+              [formField]="form.notes"
+              [rows]="4"
+            ></pc-textarea>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail -->
+      <div class="flex flex-col gap-6">
+        @if (!isNewMode()) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">{{ employeeCount() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Enrichment</dt>
+              <dd>
+                @if (isEnriched()) {
+                <pc-status-badge type="success">Enriched</pc-status-badge>
+                } @else {
+                <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+                }
+              </dd>
+            </div>
+          </dl>
+        </pc-card>
+        }
+      </div>
+    </div>
+
+    <!-- Back to the company record -->
+    @if (!isNewMode() && id()) {
+    <a
+      [routerLink]="['/companies', id()]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ company()?.name || 'company' }}
+    </a>
+    }
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
+
+```typescript
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { Icon as PcIcon } from '@icons/icon';
+import { CompanyInputObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { CompaniesService } from '../services/companies-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { StatusBadge as PcStatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-company-form',
+  imports: [PcInput, PcTextarea, PcIcon, RouterModule, PcDetailHeader, PcStatusBadge, PcCard],
+  templateUrl: './company-form.html',
+})
+export class CompanyForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly company = signal<any | null>(null);
+
+  /** People employed here — feeds the Overview rail (§7). */
+  protected readonly employeeCount = signal(0);
+
+  /** Whether Google enrichment has run, for the Overview status badge. */
+  protected readonly isEnriched = computed(() => {
+    const raw = this.company()?.enrichment;
+    if (!raw) return false;
+    try {
+      const enrichment = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return !!enrichment.google_enriched;
+    } catch {
+      return false;
+    }
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
+    const id = this.company()?.id;
+    if (id) {
+      return [
+        companies,
+        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
+        { label: 'Edit' },
+      ];
+    }
+    return [companies, { label: 'New company' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    website: '',
+    industry: '',
+    email: '',
+    phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, CompanyInputObj);
+  });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  /** True while an add-time Google lookup is in flight (shows an inline hint). */
+  protected readonly lookingUp = signal(false);
+  /** True when another company already uses this name (advisory hint, not a block). */
+  protected readonly duplicateName = signal(false);
+  /** Last name we looked up, so repeated blurs on the same name don't re-hit Google. */
+  private lastLookedUpName = '';
+
+  private static readonly MIN_LOOKUP_NAME_LENGTH = 2;
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadCompany();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
+  }
+
+  private async loadCompany() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      const data = await this.companiesSvc.getById(this.id()!);
+      this.company.set(data);
+      if (data) {
+        this.payload.set({
+          name: data.name ?? '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+        this.form().reset();
+      }
+      try {
+        this.employeeCount.set(await this.personsSvc.countByCompanyId(this.id()!));
+      } catch {
+        this.employeeCount.set(0);
+      }
+    } catch (err) {
+      console.error('Failed to load company details:', err);
+    } finally {
+      end();
+    }
+  }
+
+  /**
+   * On name blur in the New Company form, ask Google Places for this company and
+   * pre-fill only the fields the user left blank. Non-blocking and best-effort:
+   * enrichment is a convenience, so a failed lookup never interrupts adding a
+   * company. Auto-filled values are shown for the user to review and edit before
+   * saving — nothing is persisted until they hit Create.
+   */
+  protected onNameBlur(): void {
+    const name = this.payload().name.trim();
+    if (name.length < CompanyForm.MIN_LOOKUP_NAME_LENGTH) {
+      this.duplicateName.set(false);
+      return;
+    }
+    // Duplicate check runs in both new and edit modes; Google auto-fill is new-only.
+    void this.checkDuplicateName(name);
+    if (this.isNewMode()) {
+      void this.runNameLookup(name);
+    }
+  }
+
+  /** Advisory duplicate-name check — updates the hint, never blocks saving. */
+  private async checkDuplicateName(name: string): Promise<void> {
+    try {
+      const exists = await this.companiesSvc.checkNameExists(name, this.id());
+      this.duplicateName.set(exists);
+    } catch (err) {
+      // Best-effort: a failed check just hides the hint, never blocks the form.
+      console.error('Duplicate company-name check failed:', err);
+      this.duplicateName.set(false);
+    }
+  }
+
+  private async runNameLookup(name: string): Promise<void> {
+    if (name === this.lastLookedUpName) return;
+    this.lastLookedUpName = name;
+
+    this.lookingUp.set(true);
+    try {
+      const result = await this.companiesSvc.lookupEnrichment(name);
+      const current = this.payload();
+      const next = { ...current };
+      const filled: string[] = [];
+      if (!current.website.trim() && result.website) {
+        next.website = result.website;
+        filled.push('website');
+      }
+      if (!current.phone.trim() && result.phone) {
+        next.phone = result.phone;
+        filled.push('phone');
+      }
+      if (!current.industry.trim() && result.industry) {
+        next.industry = result.industry;
+        filled.push('industry');
+      }
+      if (!current.description.trim() && result.description) {
+        next.description = result.description;
+        filled.push('description');
+      }
+      if (filled.length > 0) {
+        this.payload.set(next);
+        this.alertSvc.showSuccess(`Filled in ${filled.join(', ')} from Google — review before saving`);
+      }
+    } catch (err) {
+      // Best-effort only: never block adding a company on a Google lookup.
+      console.error('Google company lookup failed:', err);
+    } finally {
+      this.lookingUp.set(false);
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id()!);
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
+  }
+
+  protected save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    const raw = this.payload();
+    if (this.id()) {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .update(this.id()!, raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company updated successfully');
+          // Mark the form pristine so the deactivate guard doesn't prompt
+          // "Leave without saving?" on the post-save navigation.
+          this.form().reset();
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies', this.id()]);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    } else {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .add(raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company added successfully');
+          // Mark the form pristine so the deactivate guard doesn't prompt
+          // "Leave without saving?" on the post-save navigation.
+          this.form().reset();
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies']);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-plan.html
 
 ```html
@@ -57488,744 +57247,6 @@ export class PublicRoute implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use — click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      {
-        kind: 'p',
-        text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
-      },
-      {
-        kind: 'p',
-        text: 'Use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives on household and company pages (a household frames its feed as “Activity at this door”).',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Activity** — the running history of this record: interactions you log (calls, door knocks, notes, meetings) alongside the audit trail of edits, newest first.',
-          '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
-          '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
-          '**Volunteer** — their shift history and hours.',
-          '**Events** — event registrations and attendance.',
-          '**Household** — everyone at the same address, plus this person’s connections.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: [
-      'household',
-      'family',
-      'address',
-      'members',
-      'assign household',
-      'home',
-      'map',
-      'ward',
-      'district',
-      'precinct',
-      'geocode',
-      'door notes',
-    ],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Households](/households)',
-            detail:
-              'From [People](/people), click the **Households** tab under the header — People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
-          },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
-      },
-      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
-      {
-        kind: 'p',
-        text: 'Editing a household, search for an address and pick a suggestion — it fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
-      },
-      {
-        kind: 'p',
-        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream.',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: [
-      'company',
-      'organization',
-      'employer',
-      'business',
-      'sponsor',
-      'corporate',
-      'enrich',
-      'google',
-      'google places',
-    ],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail:
-              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
-      {
-        kind: 'p',
-        text: 'While adding a company, tab out of the **Company Name** field and PeopleCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create** — nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
-      },
-      {
-        kind: 'p',
-        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Deleting a company keeps the people',
-        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping — everyone keeps their person record, they just lose the employer link.',
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      {
-        kind: 'p',
-        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead** — the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go — pick a lead”); open the team and set a lead to clear it.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const DATA_ARTICLES: HelpArticle[] = [
-  {
-    id: 'import',
-    category: 'data',
-    title: 'Import people from CSV',
-    summary:
-      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
-    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
-    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
-    blocks: [
-      {
-        kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
-      },
-      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
-      {
-        kind: 'list',
-        items: [
-          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
-          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
-          'Both UTF-8 and Excel-exported CSVs work as-is.',
-        ],
-      },
-      { kind: 'h2', id: 'steps', text: 'The four steps' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Upload',
-            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
-          },
-          {
-            title: 'Map columns',
-            detail:
-              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
-          },
-          {
-            title: 'Review',
-            detail:
-              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
-          },
-          {
-            title: 'Import',
-            detail:
-              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'after', text: 'After the import' },
-      {
-        kind: 'list',
-        items: [
-          'Spot-check a few records against the source file.',
-          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
-          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test with a small file first',
-        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
-      },
-    ],
-  },
-  {
-    id: 'export',
-    category: 'data',
-    title: 'Export your data',
-    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
-    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
-    related: ['import', 'bulk-actions', 'filters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
-      },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
-      {
-        kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Exports leave the safety of the app',
-        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
-      },
-    ],
-  },
-  {
-    id: 'duplicates',
-    category: 'data',
-    title: 'Find and merge duplicates',
-    summary:
-      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
-    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
-    related: ['import', 'bulk-actions', 'households', 'companies'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
-      },
-      { kind: 'h2', id: 'review', text: 'Review and merge' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
-          {
-            title: 'Read the confidence and the why-flagged reason',
-            detail:
-              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
-          },
-          {
-            title: 'Merge into one — or Not duplicates',
-            detail:
-              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
-      },
-      {
-        kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
-          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
-          '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
-          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
-          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
-          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
-          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
-          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-          { keys: ['g', 'm'], action: '[Files](/files)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
 
 ```typescript
@@ -58395,614 +57416,724 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
-      }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs: Imports N / Exports N -->
-  <div role="tablist" class="tabs tabs-border mb-4">
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'imports'"
-      (click)="switchTab('imports')"
-    >
-      Imports {{ itemCount() }}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'exports'"
-      (click)="switchTab('exports')"
-    >
-      Exports {{ exportCount() }}
-    </button>
-  </div>
-
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Outcome</th>
-            <th>Tags applied</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (item of items(); track item.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
-              <div class="text-xs text-base-content/60">
-                {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-              </div>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-            </td>
-            <td>
-              @if (item.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (item.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Pending</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <div class="text-sm text-base-content">
-                <div>{{ item.insertedCount }} imported</div>
-                @if (item.mergedCount > 0) {
-                <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-                } @if (item.skippedCount > 0) {
-                <div class="text-xs text-base-content/60 flex items-center gap-1">
-                  {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-                  <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                    download reasons
-                  </button>
-                  }
-                </div>
-                } @if (item.errorCount > 0) {
-                <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-                }
-              </div>
-              } @case ('failed') {
-              <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
-                Failed
-              </span>
-              } }
-            </td>
-            <td>
-              @if (item.tagsApplied.length > 0) {
-              <div class="flex flex-wrap gap-1">
-                @for (tag of item.tagsApplied; track tag) {
-                <span class="badge badge-outline text-xs">{{ tag }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (item.canDownloadSource) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download original file"
-                  (click)="downloadSource(item)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  (click)="openDeleteDialog(item, deleteDialog)"
-                  [disabled]="deleting()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="text-center py-12 text-base-content/50">
-              <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
-              <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-                <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-                Import CSV
-              </button>
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
-    </p>
-  </div>
-  }
-
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-sm" (click)="toggleNewExportInfo()">New export</button>
-    </div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
-    </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    }
-
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Contents</th>
-            <th class="text-right">Download</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (job of exportJobs(); track job.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-            </td>
-            <td>
-              @if (job.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (job.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Queued</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-              } @default {
-              <span class="badge badge-error text-xs">Failed</span>
-              } }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (job.status === 'completed') { @if (isExpired(job)) {
-                <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-                } @else if (job.downloadable) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download CSV"
-                  (click)="downloadExportJob(job)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                } @else {
-                <span
-                  class="text-xs text-base-content/40 italic mr-2"
-                  title="Downloaded directly to your device — not stored on the server"
-                >
-                  Downloaded
-                </span>
-                } }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  title="Delete export"
-                  (click)="deleteExportJob(job)"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="5" class="text-center py-12 text-base-content/50">
-              <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1">
-                Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
-              </p>
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-  }
-</div>
-
-<dialog #deleteDialog class="modal">
-  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
-    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
-    @if (pendingDelete(); as item) {
-    <p class="text-sm text-base-content/70 mt-2">
-      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-      records created by this import:
-    </p>
-
-    <div class="space-y-3 mt-4">
-      @if (item.contactCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deletePeople()"
-          (change)="deletePeople.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-      </label>
-      } @if (item.householdCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteHouseholds()"
-          (change)="deleteHouseholds.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-      </label>
-      } @if (item.companyCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteCompanies()"
-          (change)="deleteCompanies.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-      </label>
-      } @if (item.taskCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteTasks()"
-          (change)="deleteTasks.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-      </label>
-      }
-    </div>
-    }
-
-    <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
-        Cancel
-      </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
-        <pc-icon name="trash" [size]="4"></pc-icon>
-        Delete
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
-    <button type="submit">close</button>
-  </form>
-</dialog>
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
+## File: apps/frontend/src/app/experiences/households/services/households-service.ts
 
 ```typescript
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { Icon } from '@icons/icon';
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
-import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
+@Service()
+export class HouseholdsService extends AbstractAPIService<'households', never> {
+  protected override readonly endpointName = 'households';
+
+  public add(household: UpdateHouseholdsType) {
+    return this.api.households.add.mutate(household);
+  }
+
+  public override addMany(rows: never[]): Promise<unknown> {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.households.count.query();
+  }
+
+  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
+  public countDistinctWards(): Promise<number> {
+    return this.api.households.countDistinctWards.query();
+  }
+
+  /** People in the placeholder household (no matchable address) — powers the grid footer note. */
+  public getUnhoused(): Promise<{ count: number; household_id: string | null }> {
+    return this.api.households.getUnhoused.query();
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.households.getBySlug.query(slug);
+  }
+
+  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithPeopleCount(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.households.getById.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.households.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public getPeopleCount(id: string) {
+    return this.api.households.getPeopleCount.query(id);
+  }
+
+  /** Most recent canvass at this household's door, or null if never canvassed. */
+  public getLastCanvass(id: string) {
+    return this.api.households.getLastCanvass.query(id);
+  }
+
+  public update(id: string, data: UpdateHouseholdsType) {
+    return this.api.households.update.mutate({ id: id, data });
+  }
+
+  private async getAllWithPeopleCount(options?: getAllOptionsType) {
+    return this.api.households.getAllWithPeopleCount.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.households.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(options?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ groups: any[]; total: number }> {
+    return this.api.households.getPotentialDuplicates.query(options);
+  }
+
+  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
+    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
+  }
+
+  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
+    return this.api.households.getLastFingerprintRecomputation.query();
+  }
+
+  public recomputeAddressFingerprints(): Promise<void> {
+    return this.api.households.recomputeAddressFingerprints.mutate();
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+
+```html
+<!-- Template for household edit form -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    @if (household()?.is_placeholder) {
+    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
+      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
+      <div class="flex flex-col">
+        <span class="font-bold">System Placeholder Household</span>
+        <span class="text-xs font-light"
+          >This household is a permanent placeholder for people with no address and cannot be edited.</span
+        >
+      </div>
+    </div>
+    } @else {
+    <pc-detail-header
+      [title]="id() ? addressString() || 'Edit household' : 'New household'"
+      [eyebrow]="id() ? 'Edit household' : 'New household'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="household()?.id ? 'two' : 'three'"
+      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete household"
+      (save)="save($event)"
+      (delete)="deleteHousehold()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <!-- Form Section -->
+      <form (submit)="$event.preventDefault()" class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)" class="flex flex-col gap-6">
+          <!-- Segmentation (tags & issues) — first section, standalone card -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
+              <pc-tags
+                [tags]="tags"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Add a tag — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="Add an issue — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+            </div>
+          </pc-card>
+
+          <!-- Address -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Address</h3>
+
+            <!-- Current Address Display -->
+            @if (!household()?.is_placeholder && addressString()) {
+            <div class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-200 p-3">
+              <pc-icon name="map-pin" class="mt-0.5 shrink-0 text-primary" [size]="5"></pc-icon>
+              <div class="flex flex-col">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+                  Current address
+                </span>
+                <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
+              </div>
+            </div>
+            }
+
+            <!-- Autocomplete Address Search (§6 — Google Places) -->
+            <div class="flex flex-col gap-2">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Search address</label>
+              <pc-address-autocomplete
+                (addressSelected)="handleAddressChange($event)"
+                [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
+              ></pc-address-autocomplete>
+              <p class="pl-1 text-xs leading-snug text-base-content/55">
+                Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
+                update automatically.
+                <span class="text-base-content/35">Powered by Google.</span>
+              </p>
+            </div>
+
+            <!-- Collapsible manual entry -->
+            <details class="group">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                Enter address manually
+              </summary>
+              <div class="mt-4 flex flex-col gap-3 border-l-2 border-base-300 pl-3">
+                <p class="text-xs leading-snug text-base-content/55">
+                  Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
+                  address verifies.
+                </p>
+                <pc-address-form-group [form]="form"></pc-address-form-group>
+              </div>
+            </details>
+          </pc-card>
+
+          <!-- Door notes -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
+            <pc-textarea
+              placeholder="What a canvasser should know at this door…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · members · geocode status · ward/district/precinct (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (!isNewMode() && household(); as h) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Members</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">{{ peopleCount() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Geocoding</dt>
+              <dd><pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip></dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Ward</dt>
+              <dd class="font-medium tabular-nums">{{ h.ward || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">District</dt>
+              <dd class="font-medium tabular-nums">{{ h.district || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Precinct</dt>
+              <dd class="font-medium tabular-nums">{{ h.precinct || '—' }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            Electoral boundaries come from the geocoder — they refresh in the background after save.
+          </p>
+        </pc-card>
+        }
+      </div>
+    </div>
+
+    <!-- Back to the household record -->
+    @if (household()?.id) {
+    <a
+      [routerLink]="['/households', household()!.id]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ addressString() || 'household' }}
+    </a>
+    } }
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-view.html
+
+```html
+<pc-detail-layout
+  [title]="addressString()"
+  [subtitle]="subtitle()"
+  [eyebrow]="'Household'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete household'"
+  [btn1Text]="'Edit household'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (household() && !household()?.is_placeholder) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'households'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (household(); as h) { @if (h.is_placeholder) {
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
+      </div>
+    </div>
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
+  </div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Left Column: Map, Details, Door notes -->
+    <div class="flex flex-col gap-6 lg:col-span-1">
+      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
+      <pc-card>
+        <div class="relative h-56 w-full overflow-hidden rounded-lg">
+          @if (hasMap()) {
+          <pc-map
+            class="block h-full w-full"
+            [markers]="mapMarkers()"
+            [interactive]="false"
+            [deepLink]="true"
+            ariaLabel="Household location"
+          ></pc-map>
+          <!-- Ward chip -->
+          @if (h.ward) {
+          <span class="absolute left-2 top-2 badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
+          }
+          <!-- Address + Maps affordance -->
+          <div class="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
+            <span class="badge badge-sm max-w-[70%] truncate bg-base-100/90 font-medium text-base-content shadow">
+              {{ addressString() }}
+            </span>
+            <span class="badge badge-sm gap-1 bg-base-100/90 font-medium text-base-content shadow">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon> Maps
+            </span>
+          </div>
+          } @else {
+          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
+          <div
+            class="flex h-full flex-col items-center justify-center gap-2 bg-base-200 p-6 text-center text-base-content/40 select-none"
+          >
+            <pc-icon name="map-pin" [size]="8" class="mb-1 text-base-content/20"></pc-icon>
+            <h4 class="text-sm font-semibold text-base-content/60">No pin yet</h4>
+            <p class="max-w-[220px] text-xs font-light leading-snug">
+              The map pin appears once the address verifies — it geocodes in the background.
+            </p>
+          </div>
+          }
+        </div>
+        <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
+        <div class="mt-3 flex items-center justify-between text-xs">
+          <span class="text-base-content/60">Geocoding status</span>
+          <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
+        </div>
+      </pc-card>
+
+      <!-- Details card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Details</h3>
+        <dl class="flex flex-col divide-y divide-base-200 text-sm">
+          <div class="flex items-start justify-between gap-4 py-2 first:pt-0">
+            <dt class="text-base-content/50">City</dt>
+            <dd class="text-right font-medium text-base-content">{{ cityLine() || '—' }}</dd>
+          </div>
+          <div class="flex items-start justify-between gap-4 py-2">
+            <dt class="text-base-content/50">First seen</dt>
+            <dd class="text-right font-medium text-base-content">
+              {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
+            </dd>
+          </div>
+          <div class="flex flex-col gap-1 py-2 last:pb-0">
+            <dt class="text-base-content/50">Grouping</dt>
+            <dd class="text-sm font-light leading-relaxed text-base-content/70">
+              By address — edit a member’s address and the household follows.
+            </dd>
+          </div>
+        </dl>
+      </pc-card>
+
+      <!-- Door notes card -->
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
+        @if (h.notes) {
+        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ h.notes }}</p>
+        } @else {
+        <p class="text-sm italic text-base-content/40">No door notes recorded for this household.</p>
+        }
+      </pc-card>
+    </div>
+
+    <!-- Right Column: pill tab bar + content card (matches person view) -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of householdTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
+
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'households'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <pc-people-in-household [householdId]="id()"></pc-people-in-household>
+        </pc-tab-panel>
+      </div>
+    </div>
+  </div>
+  } }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+
+```typescript
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker } from '@uxcommon/components/map/map-types';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { UserService } from '../../../services/user.service';
+import type { Selectable } from 'kysely';
+import { HouseholdsService } from '../services/households-service';
+import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
-import { ExportsService } from '../../exports/services/exports-service';
-import { ImportsService } from '../services/imports-service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-/**
- * Import/export History page (spec §17). Folds the old standalone Exports
- * Manager page into an "Imports N / Exports N" tabbed view — one history
- * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
- */
-type HistoryTab = 'imports' | 'exports';
+type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
 
 @Component({
-  selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective],
-  templateUrl: './imports-page.html',
+  selector: 'pc-household-view',
+  imports: [
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    LogInteraction,
+    DetailLayout,
+    PcCard,
+    TabPanel,
+    PcMap,
+    GeocodeChip,
+    DatePipe,
+  ],
+  templateUrl: './household-view.html',
 })
-export class ImportsPage {
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly imports = inject(ImportsService);
-  private readonly exports = inject(ExportsService);
-  private readonly tokenSvc = inject(TokenService);
+export class HouseholdView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly tab = signal<HistoryTab>('imports');
-
+  private readonly location = inject(Location);
+  private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  private isLoadActive = false;
-  protected readonly deleting = signal(false);
-  protected readonly items = signal<ImportListItem[]>([]);
-  protected readonly itemCount = computed(() => this.items().length);
-  protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deletePeople = signal(false);
-  protected readonly deleteHouseholds = signal(false);
-  protected readonly deleteCompanies = signal(false);
-  protected readonly deleteTasks = signal(false);
-  protected readonly error = signal<string | null>(null);
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly household = signal<Selectable<Households> | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
 
-  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
-  protected readonly importsThisYear = computed(
-    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly peopleCreatedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.insertedCount, 0),
-  );
-  protected readonly duplicatesMergedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.mergedCount, 0),
-  );
+  protected readonly peopleCount = signal(0);
+  protected readonly lastCanvass = signal<LastCanvass>(null);
 
-  private pollInterval: ReturnType<typeof setInterval> | undefined;
+  // Tabbed right column (matches person view): Members is the default tab.
+  protected readonly activeTab = signal<string>('members');
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: 'Members', badge: this.peopleCount() || undefined },
+    { id: 'activity', label: 'Activity' },
+  ]);
 
-  // --- Exports tab ---
-  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
-  protected readonly exportCount = computed(() => this.exportJobs().length);
-  protected readonly exportsLoading = createLoadingGate();
-  protected readonly showNewExportInfo = signal(false);
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Households', route: '/households' },
+    { label: this.addressString() },
+  ]);
+
+  // Address
+  protected readonly addressString = computed(() => {
+    const raw = this.household();
+    if (!raw) return 'No Address Assigned';
+    if (raw.is_placeholder) return 'People with no addresses';
+    if (raw.formatted_address) return raw.formatted_address;
+
+    const parts: string[] = [];
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ').trim() || 'No Address Assigned';
+  });
+
+  /** Short "City, State" for the map address chip. */
+  protected readonly cityLine = computed(() => {
+    const h = this.household();
+    if (!h) return '';
+    return [h.city, h.state].filter(Boolean).join(', ');
+  });
+
+  protected readonly hasMap = computed(() => {
+    const h = this.household();
+    return !!(h && h.lat && h.lng && !h.is_placeholder);
+  });
+
+  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
+    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
+  });
+
+  /** Header subtitle — "Ward 4 · 3 people · Canvassed May 2" (§6). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const h = this.household();
+    if (!h || h.is_placeholder) return null;
+    const parts: string[] = [];
+    if (h.ward) parts.push(`Ward ${h.ward}`);
+    const n = this.peopleCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    const canvass = this.lastCanvass();
+    if (canvass) {
+      parts.push(`Canvassed ${this.formatCanvassDate(canvass.knocked_at)}`);
+    }
+    return parts.join(' · ');
+  });
 
   constructor() {
-    void this.load();
-
-    // Reset checkbox when dialog closes
     effect(() => {
-      const item = this.pendingDelete();
-      if (!item) {
-        this.deletePeople.set(false);
-        this.deleteHouseholds.set(false);
-        this.deleteCompanies.set(false);
-        this.deleteTasks.set(false);
-      }
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
     });
 
-    this.startPolling();
-
-    this.destroyRef.onDestroy(() => {
-      this.imports.abort();
-      this.stopPolling();
-    });
+    // Load users for addedby/updatedby display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
   }
 
-  protected switchTab(tab: HistoryTab): void {
-    this.tab.set(tab);
-    if (tab === 'exports') {
-      void this.loadExports();
-    }
-  }
-
-  private startPolling() {
-    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
-  }
-
-  private async pollStep(): Promise<void> {
-    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-    if (hasActiveJobs) {
-      try {
-        const list = await this.imports.list();
-        this.items.set(list ?? []);
-      } catch (err) {
-        console.error('Failed to poll imports status:', err);
-      }
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = undefined;
-    }
-  }
-
-  protected formatDate(value: Date | string) {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(value instanceof Date ? value : new Date(value));
-    } catch {
-      return value ? String(value) : '—';
-    }
-  }
-
-  protected formatFileSize(bytes: number | null): string | null {
-    if (bytes == null) return null;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  protected startNewImport(): void {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
-    if (this.deleting()) return;
-    this.pendingDelete.set(item);
-    dialog.showModal();
-  }
-
-  protected closeDeleteDialog(dialog: HTMLDialogElement) {
-    if (!dialog.open) return;
-    dialog.close();
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmDelete(dialog: HTMLDialogElement) {
-    const item = this.pendingDelete();
-    if (!item || this.deleting()) return;
-
-    this.deleting.set(true);
-    try {
-      await this.imports.delete(item.id, {
-        deletePeople: this.deletePeople(),
-        deleteHouseholds: this.deleteHouseholds(),
-        deleteCompanies: this.deleteCompanies(),
-        deleteTasks: this.deleteTasks(),
-      });
-      this.alerts.showSuccess('Import deleted');
-      await this.load();
-      this.closeDeleteDialog(dialog);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to delete import';
-      this.alerts.showError(message);
-    } finally {
-      this.deleting.set(false);
-    }
-  }
-
-  protected downloadSource(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
-  }
-
-  protected downloadSkipped(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(
-      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
-      token,
-      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
-    );
-  }
-
-  protected async refresh() {
-    await this.load();
-  }
-
-  private async load() {
-    if (this.isLoadActive) return;
-    this.isLoadActive = true;
+  protected async loadAllData(id: string) {
     const end = this._loading.begin();
-    this.error.set(null);
     try {
-      const list = await this.imports.list();
-      this.items.set(list ?? []);
+      // 1. Load household details
+      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
+      this.household.set(householdData);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
+        this.location.replaceState(`/households/${householdData.slug}`);
+      }
+
+      // 2. Load people count and last-canvass in parallel (both feed the header subtitle).
+      const [count, canvass] = await Promise.all([
+        this.householdsSvc.getPeopleCount(id),
+        this.householdsSvc.getLastCanvass(id).catch(() => null),
+      ]);
+      this.peopleCount.set(count);
+      this.lastCanvass.set((canvass as LastCanvass) ?? null);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  /** Refresh the "Activity at this door" feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
+  }
+
+  protected editHousehold() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id());
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -59012,82 +58143,23 @@ export class ImportsPage {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Failed to load imports';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.isLoadActive = false;
-      end();
-    }
-  }
-
-  // --- Exports tab ---
-
-  protected refreshExports(): void {
-    void this.loadExports();
-  }
-
-  protected toggleNewExportInfo(): void {
-    this.showNewExportInfo.update((v) => !v);
-  }
-
-  protected goToPeopleGrid(): void {
-    void this.router.navigate(['/people']);
-  }
-
-  protected formatExportDate(dateStr: string) {
-    return this.formatDate(dateStr);
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadExportJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alerts.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alerts.showError('Export is not ready yet.');
-      return;
-    }
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alerts.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteExportJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete export',
-      message: `Delete "${job.file_name}"? This removes the file from the server — it cannot be undone.`,
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.exports.delete(job.id);
-      this.alerts.showSuccess('Export deleted successfully.');
-      await this.loadExports();
-    } catch {
-      this.alerts.showError('Failed to delete export. Please try again.');
-    }
-  }
-
-  private async loadExports() {
-    const end = this.exportsLoading.begin();
-    try {
-      const list = await this.exports.list();
-      this.exportJobs.set(list ?? []);
-    } catch {
-      this.alerts.showError('Failed to load exports. Please try again.');
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
     } finally {
       end();
     }
+  }
+
+  /** Compact "Canvassed May 2" style date for the header subtitle. */
+  private formatCanvassDate(value: Date | string): string {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
   }
 }
 
@@ -59332,201 +58404,386 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
 
 ```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PERSONINHOUSEHOLDTYPE,
-  UpdatePersonsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
+import { Component, inject, input, OnInit, output, signal } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AddConnectionDrawer } from './add-connection-drawer';
+import { ConnectionCard } from './connection-card';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+@Component({
+  selector: 'pc-person-connections',
+  imports: [ConnectionCard, AddConnectionDrawer, Icon],
+  template: `
+    <div class="flex flex-col gap-4">
+      <!-- Header — the section title lives on the host page; this row only offers the add action -->
+      <div class="flex items-center justify-end">
+        <button type="button" class="btn btn-xs btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Add Connection
+        </button>
+      </div>
 
-@Service()
-export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
-  protected override readonly endpointName = 'persons';
+      <!-- Loading skeleton -->
+      @if (isLoading()) {
+        <div class="flex flex-col gap-2">
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+        </div>
+      } @else if (loaded()) {
+        <!-- Only decide empty-vs-list once a fetch has finished, so a sub-300ms
+             load (which never trips the skeleton) can't flash the empty state. -->
+        @if (connections().length === 0) {
+          <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
+            No connections recorded. Add one to start mapping this contact's network.
+          </div>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (conn of connections(); track conn.id) {
+              <pc-connection-card
+                [connection]="conn"
+                [currentPersonId]="personId()"
+                (remove)="onRemove($event)"
+              ></pc-connection-card>
+            }
+          </div>
+        }
+      }
+    </div>
 
-  public add(row: UpdatePersonsType, options?: any) {
-    return this.api.persons.add.mutate(row, options);
+    <pc-add-connection-drawer
+      [personId]="personId()"
+      [isOpen]="showAddDrawer()"
+      (closeDrawer)="showAddDrawer.set(false)"
+      (saved)="onConnectionAdded()"
+    ></pc-add-connection-drawer>
+  `,
+})
+export class PersonConnections implements OnInit {
+  readonly personId = input.required<string>();
+  readonly countChange = output<number>();
+
+  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
+  protected readonly connections = signal<any[]>([]);
+  protected readonly showAddDrawer = signal(false);
+
+  public ngOnInit() {
+    void this.load();
   }
 
-  public addMany(rows: UpdatePersonsType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.persons.count.query();
-  }
-
-  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
-  public countWithCompany(): Promise<number> {
-    return this.api.persons.countWithCompany.query();
-  }
-
-  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
-  public getByPublicId(publicId: string) {
-    return this.api.persons.getByPublicId.query(publicId);
-  }
-  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.connectionsSvc.getForPerson(this.personId());
+      this.connections.set(result as any[]);
+      this.countChange.emit(result.length);
+    } catch {
+      // silently fail — tab stays empty
+    } finally {
+      end();
     }
-    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
   }
 
-  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
-    }
-    return await this.api.persons.deleteMany.mutate(ids, opts as any);
-  }
-  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
-    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  protected onConnectionAdded() {
+    void this.load();
   }
 
-  public detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<RouterOutputs['persons']['detachTag']> {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getAllWithAddress(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithAddress.query(options, {
-      signal: this.ac.signal,
+  protected async onRemove(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Connection',
+      message: 'Are you sure you want to remove this connection?',
+      confirmText: 'Remove',
+      variant: 'danger',
     });
-  }
-
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  public getByCompanyId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByCompanyId.query({ id: id, options });
-  }
-
-  public countByCompanyId(id: string): Promise<number> {
-    return this.api.persons.countByCompanyId.query({ id });
-  }
-
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
-    if (!id) {
-      return [];
+    if (!confirmed) return;
+    try {
+      await this.connectionsSvc.remove(id);
+      this.connections.update((list) => list.filter((c) => c.id !== id));
+      this.countChange.emit(this.connections().length);
+      this.alertSvc.showSuccess('Connection removed');
+    } catch {
+      this.alertSvc.showError('Failed to remove connection');
     }
-
-    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
-    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
-    const requestOptions = {
-      ...options,
-      columns: mergedColumns,
-    };
-
-    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
-
-    return peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
-      };
-    });
-  }
-
-  public getActivity(id: string) {
-    return this.api.persons.getActivity.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.persons.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public import(
-    input: {
-      rows: RouterInputs['persons']['import']['rows'];
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-      duplicate_decision?: 'merge' | 'skip' | 'import_new';
-      list_name?: string;
-      source_csv?: string;
-      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
-    },
-    options?: { skipErrorHandler?: boolean },
-  ): Promise<RouterOutputs['persons']['import']> {
-    // Wizard shows its own error state — opt out of the global error toast when asked.
-    return this.api.persons.import.mutate(
-      {
-        rows: input.rows,
-        tags: input.tags ?? [],
-        skipped: input.skipped ?? 0,
-        file_name: input.file_name ?? undefined,
-        duplicate_decision: input.duplicate_decision ?? 'skip',
-        list_name: input.list_name,
-        source_csv: input.source_csv,
-        client_skip_reasons: input.client_skip_reasons,
-      },
-      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
-    );
-  }
-
-  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
-  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
-    return this.api.persons.checkDuplicateEmails.query({ emails });
-  }
-
-  public async removeHousehold(id: string) {
-    return this.api.persons.removeHousehold.mutate(id);
-  }
-
-  public async update(id: string, data: UpdatePersonsType, options?: any) {
-    return this.api.persons.update.mutate({ id: id, data }, options);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.persons.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['persons']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
-    return this.api.persons.getPotentialDuplicates.query(options);
-  }
-
-  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
-    return this.api.persons.getDuplicateCounts.query();
-  }
-
-  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
-    return this.api.persons.mergePersons.mutate({ target_id, source_id });
   }
 }
+```
 
-export type DATA_TYPE = 'persons' | 'households';
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-3xl">
+    <!-- Back to profile or list -->
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <form (submit)="save()" novalidate class="mt-6">
+      <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+        <!-- Tags & issues — standalone card, first section -->
+        <pc-card>
+          <!-- Tags -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              placeholder="Type and press Enter to add"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+            @if (tagSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of tagSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addTagSuggestion(s)"
+              >
+                {{ s }}
+              </button>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Issues of interest -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="What does this person care about? Enter to add"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+            @if (issueSuggestions().length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="text-base-content/50">Suggestions:</span>
+              @for (s of issueSuggestions(); track s) {
+              <button
+                type="button"
+                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                (click)="addIssueSuggestion(s)"
+              >
+                {{ s }}
+              </button>
+              }
+            </div>
+            }
+          </div>
+        </pc-card>
+
+        <pc-card>
+          @if (!person()?.id) {
+          <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+          }
+
+          <!-- Name -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+            <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+          </div>
+
+          <!-- Emails -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-input
+              label="Primary email"
+              type="email"
+              placeholder="name@example.com"
+              [formField]="form.email"
+              [hasError]="!!emailError()"
+            ></pc-input>
+            <pc-input label="Secondary email" type="email" placeholder="Optional" [formField]="form.email2"></pc-input>
+          </div>
+          @if (emailError()) {
+          <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+            <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+            {{ emailError() }}
+          </div>
+          }
+
+          <!-- Phones -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+            <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+          </div>
+
+          <!-- Company & Preferred contact -->
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+              @for (c of companies(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+              }
+            </pc-select>
+            <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+              <option value="email">Email</option>
+              <option value="mobile">Mobile phone</option>
+              <option value="home_phone">Home phone</option>
+            </pc-select>
+          </div>
+
+          <!-- Address & Household Assignment -->
+          <div class="flex flex-col gap-1.5">
+            <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+            @if (householdId() && !isPlaceholderHousehold()) {
+            <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+              <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+              <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+              <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                Edit on household
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                data-tip="Change household"
+                (click)="openAssignDrawer()"
+              >
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                data-tip="Remove address"
+                (click)="removeAddress()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
+            } @else {
+            <div
+              class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                <span class="italic text-base-content/50">No address assigned</span>
+              </div>
+              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                Assign household
+              </button>
+            </div>
+            }
+            <p class="pl-1 text-xs text-base-content/50">
+              Addresses belong to households, so everyone at the same address stays in sync.
+            </p>
+          </div>
+
+          <!-- Internal notes -->
+          <pc-textarea
+            label="Internal notes"
+            placeholder="Anything the team should know about this person…"
+            [formField]="form.notes"
+            [rows]="3"
+          ></pc-textarea>
+
+          <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+          <details class="group border-t border-base-200 pt-3">
+            <summary
+              class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+            >
+              <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+              More details
+            </summary>
+            <div class="mt-4 flex flex-col gap-4">
+              <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+              <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                @for (u of users(); track u.id) {
+                <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                }
+              </pc-select>
+
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+              </div>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+              </div>
+            </div>
+          </details>
+        </pc-card>
+      </fieldset>
+    </form>
+
+    <!-- Back to the person record -->
+    @if (person()?.id) {
+    <a
+      [routerLink]="['/people', person()!.id]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ formName() || 'person' }}
+    </a>
+    }
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
@@ -60418,6 +59675,7 @@ import { filter, map } from 'rxjs';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 
+import { CampaignSwitcher } from '../campaign-switcher/campaign-switcher';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
@@ -60428,7 +59686,7 @@ import { DeliveriesRequestsService } from '@experiences/deliveries/services/deli
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective, CampaignSwitcher],
   templateUrl: './sidebar.html',
   styles: [
     `
@@ -60828,191 +60086,838 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
+## File: apps/frontend/src/styles.css
+
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
+  --color-error: #f37373;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
+
+/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
+   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
+   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
+   just apply on the touch surface). Keep the control's own flex centering. */
+@utility touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+
+```html
+<pc-detail-layout
+  [title]="company()?.name || 'Company'"
+  [subtitle]="subtitle()"
+  [eyebrow]="'Company'"
+  [avatarText]="initials()"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete company'"
+  [btn1Text]="'Edit company'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (company()) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'companies'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (company(); as c) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Left Column: Contact, Google enrichment, Internal notes -->
+    <div class="flex flex-col gap-6 lg:col-span-1">
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+        <div class="flex w-full flex-col text-sm">
+          <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Phone" [value]="c.phone" icon="phone" [copyable]="true"></pc-detail-item>
+        </div>
+        <pc-system-metadata
+          [createdAt]="c.created_at"
+          [createdBy]="getUserName(c.createdby_id)"
+          [updatedAt]="c.updated_at"
+          [updatedBy]="getUserName(c.updatedby_id)"
+        ></pc-system-metadata>
+      </pc-card>
+
+      <!-- Google enrichment card (§7) -->
+      <pc-card>
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
+          @if (isEnriched()) {
+          <pc-status-badge type="success">Enriched</pc-status-badge>
+          } @else {
+          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+          }
+        </div>
+        <p class="text-sm font-light leading-relaxed text-base-content/65">
+          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
+          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
+        </p>
+        <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline mt-1 w-fit gap-2"
+          [disabled]="enriching()"
+          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+          (click)="enrichCompany()"
+        >
+          <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
+          {{ enrichLabel() }}
+        </button>
+      </pc-card>
+
+      <!-- Internal notes card -->
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        @if (c.notes) {
+        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
+        } @else {
+        <p class="text-sm italic text-base-content/40">No internal notes recorded.</p>
+        }
+      </pc-card>
+    </div>
+
+    <!-- Right Column: pill tab bar + content card (matches person view) -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of companyTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
+
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="people" [activeTab]="activeTab()">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton h-32 w-full"></div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
+            Grouped from the employer field — edit a person’s employer and they move companies.
+          </p>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="about" [activeTab]="activeTab()">
+          @if (c.description) {
+          <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
+          } @else {
+          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+          }
+        </pc-tab-panel>
+      </div>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
 
 ```typescript
-import type { HelpArticle } from '../help-types';
+import { Location } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization** — your name, contact details, and mailing address.',
-          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access** — default role for invitations and the MFA requirement.',
-          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance** — default theme and date format for the workspace.',
-          '**Integrations & API** — webhook keys and connected services.',
-          '**Billing** — your plan and payment details.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
-      },
-    ],
-  },
-];
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    LogInteraction,
+    DetailLayout,
+    PcCard,
+    TabPanel,
+    DetailItem,
+    SystemMetadata,
+    Icon,
+    StatusBadge,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  // Tabbed right column (matches person view): People is the default tab.
+  protected readonly activeTab = signal<string>('people');
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'people', label: 'People', badge: this.employeeCount() || undefined },
+    { id: 'about', label: 'About' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity' },
+  ]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  /** Up-to-two-letter initials for the header avatar (e.g. "HC" for Harborview Clinic). */
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly enriching = signal(false);
+
+  protected readonly isEnriched = computed(() => {
+    const rawEnrichment = this.company()?.enrichment;
+    if (!rawEnrichment) return false;
+
+    let enrichment = null;
+
+    try {
+      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
+    } catch {
+      return false;
+    }
+    return !!enrichment.google_enriched;
+  });
+
+  /** Header subtitle — industry · people count (§7). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const parts: string[] = [];
+    const industry = this.company()?.industry;
+    if (industry) parts.push(industry);
+    const n = this.employeeCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    return parts.join(' · ');
+  });
+
+  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
+  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof data?.slug === 'string' && data.slug.length > 0) {
+        this.location.replaceState(`/companies/${data.slug}`);
+      }
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
+  }
+
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
+  protected async enrichCompany() {
+    const id = this.id();
+    if (!id || this.enriching()) return;
+    this.enriching.set(true);
+    try {
+      await this.companiesSvc.enrich(id, this.isEnriched());
+      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
+    } finally {
+      this.enriching.set(false);
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete company',
+      message: 'Employees keep their person records — only the employer grouping clears.',
+      variant: 'danger',
+      confirmText: 'Delete company',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
@@ -62061,6 +61966,12 @@ export class TagsAdmin implements OnInit {
     <span aria-hidden="true">pC</span>
   </a>
 
+  <!-- Context switcher (Campaigns §15) — which office/election context you're working in -->
+  <pc-campaign-switcher
+    class="mx-2 mb-4 block flex-none"
+    [class.hidden]="isEffectivelyNarrow() && !this.isMobileOpen()"
+  ></pc-campaign-switcher>
+
   @for (item of items(); track item.name) {
   <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
@@ -62271,6 +62182,628 @@ export const SELECTION_COLUMN: ColumnDef = {};
 export const SECONDARY_CELL_CLASS = 'text-base-content/70';
 ```
 
+## File: apps/frontend/src/app/dashboard.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+        data: { shouldReuse: true, key: 'tagsadminroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
+
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+        data: { shouldReuse: true, key: 'issuesadminroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'automations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: '',
+        redirectTo: 'pages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
+        data: { shouldReuse: true, key: 'taskslistroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      // Must precede ':id' — otherwise the wildcard param route would swallow it.
+      {
+        path: 'board',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+        data: { shouldReuse: true, key: 'tasksboardroot' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
+  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+
+  {
+    path: 'canvassing',
+    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+  },
+
+  {
+    path: 'campaigns',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'deliveries',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
+        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
+      },
+      {
+        path: 'plan',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
+      },
+      {
+        path: 'routes',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
+      },
+      {
+        path: 'routes/:id',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot' },
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'workspace',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'workspace' },
+      },
+    ],
+  },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
+  {
+    path: 'billing',
+    redirectTo: '/workspace/billing',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports/new',
+    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    // Wave 1E (spec §17): Exports folded into the Import/export History page's
+    // Exports tab — redirect the old standalone route rather than 404 stale links.
+    path: 'exports',
+    redirectTo: '/imports',
+    pathMatch: 'full',
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
+  {
+    path: 'help',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
+
+```html
+<!-- Split-button: primary action opens the menu of interaction types -->
+<div class="dropdown dropdown-end">
+  <div tabindex="0" role="button" class="btn btn-outline btn-primary btn-xs flex-nowrap gap-1.5 whitespace-nowrap">
+    <pc-icon name="plus" [size]="4"></pc-icon>
+    <span>{{ label() }}</span>
+    <pc-icon name="chevron-down" [size]="4"></pc-icon>
+  </div>
+  <ul
+    tabindex="0"
+    class="dropdown-content menu z-10 mt-1 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+  >
+    @for (option of options; track option.value) {
+    <li>
+      <button type="button" class="gap-2 btn-xs text-xs" (click)="choose(option)">
+        <pc-icon [name]="option.icon" [size]="4" class="text-primary"></pc-icon>
+        {{ option.label }}
+      </button>
+    </li>
+    }
+  </ul>
+</div>
+
+<!-- Note-capture modal for the chosen interaction type -->
+@if (open() && selected(); as option) {
+<div class="modal modal-open z-50">
+  <div class="modal-box max-w-md rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl">
+    <div class="mb-4 flex items-center justify-between border-b border-base-200 pb-3">
+      <h3 class="flex items-center gap-2 text-lg font-bold text-base-content">
+        <pc-icon [name]="option.icon" [size]="5" class="text-primary"></pc-icon>
+        Log {{ option.label.toLowerCase() }}
+      </h3>
+      <button type="button" class="btn btn-xs btn-circle btn-ghost" [disabled]="saving()" (click)="close()">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="interaction_note" class="text-xs font-semibold text-base-content/90">Note (optional)</label>
+      <textarea
+        #noteInput
+        id="interaction_note"
+        rows="4"
+        class="textarea textarea-bordered w-full text-xs focus:textarea-primary"
+        placeholder="What happened? (e.g. left a voicemail, spoke at the door)"
+        [value]="note()"
+        (input)="note.set(noteInput.value)"
+      ></textarea>
+    </div>
+
+    <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
+      <button
+        type="button"
+        class="btn btn-primary min-w-[110px] text-xs btn-xs font-semibold"
+        [disabled]="saving()"
+        (click)="save()"
+      >
+        @if (saving()) {
+        <span class="loading loading-spinner loading-xs mr-1.5"></span>
+        Saving… } @else { Log {{ option.label.toLowerCase() }} }
+      </button>
+    </div>
+  </div>
+  <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
+</div>
+}
+```
+
 ## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
 
 ```typescript
@@ -62465,6 +62998,249 @@ export class CompaniesGrid {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary:
+      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
+          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization** — your name, contact details, and mailing address.',
+          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access** — default role for invitations and the MFA requirement.',
+          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance** — default theme and date format for the workspace.',
+          '**Integrations & API** — webhook keys and connected services.',
+          '**Billing** — your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces — how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context — the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it — supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in — click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level** — Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation — consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign — data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either — archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
@@ -62969,6 +63745,1081 @@ export class HouseholdsGrid implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
+
+```typescript
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
+import { PeopleInHousehold } from './people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonCampaignFacts } from './person-campaign-facts';
+import { PersonConnections } from './person-connections';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-person-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    FormsModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    LogInteraction,
+    DetailLayout,
+    PcCard,
+    TabPanel,
+    StatusBadge,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+    PersonCampaignFacts,
+    PersonConnections,
+  ],
+  templateUrl: './person-view.html',
+})
+export class PersonView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('person', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly person = signal<any | null>(null);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Analytics & Lists
+  protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly connectionCount = signal(0);
+  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+
+  // True when the person has at least one active monthly pledge — powers the "Monthly donor" status chip.
+  protected readonly hasActivePledge = signal(false);
+
+  // Donations are truncated to the first 6 rows until the user expands (§3 "Show all N").
+  protected readonly DONATION_PREVIEW_COUNT = 6;
+  protected readonly showAllDonations = signal(false);
+  protected readonly visibleDonations = computed(() =>
+    this.showAllDonations() ? this.donationHistory() : this.donationHistory().slice(0, this.DONATION_PREVIEW_COUNT),
+  );
+
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
+
+  // Address
+  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  /** Address plus ward for the contact row (e.g. "312 Alder Street … · Ward 3"). */
+  protected readonly addressDisplay = computed(() => {
+    const base = this.addressString();
+    if (base === 'No Address Assigned') return base;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
+  });
+
+  // Contact initials and full name computation
+  protected readonly initials = computed(() => {
+    const first = this.person()?.first_name || '';
+    const last = this.person()?.last_name || '';
+    if (!first && !last) return '?';
+    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  });
+
+  protected readonly fullName = computed(() => {
+    const p = this.person();
+    if (!p) return '';
+    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
+  ]);
+
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge
+  // outranks one-off gifts; "Donor" is DERIVED from donation history (§15), not a tag.
+  protected readonly statusChip = computed<string | null>(() => {
+    if (this.hasActivePledge()) return 'Monthly donor';
+    if (this.donationHistory().length > 0) return 'Donor';
+    const tags = this.tags().map((t) => t.toLowerCase());
+    if (tags.includes('volunteer')) return 'Volunteer';
+    if (tags.includes('host')) return 'Host';
+    return null;
+  });
+
+  // Human label for the person's preferred contact channel (§3 contact card row).
+  protected readonly preferredContactLabel = computed<string | null>(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return null;
+    }
+  });
+
+  // Active tab state
+  protected activeTab = signal<string>('household');
+
+  // Seven tabs (§3): Newsletters fold into Emails; Household and Connections are distinct concepts, own tabs each.
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'household', label: 'Household', icon: 'home' },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
+    {
+      id: 'donations',
+      label: 'Donations',
+      icon: 'currency-dollar',
+      badge: this.donationHistory()?.length || undefined,
+    },
+    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+  ]);
+
+  /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
+  protected donationMethod(donation: any): string {
+    const base = donation?.stripe_session_id ? 'Card' : 'Manual';
+    return donation?.pledge_id ? `${base} · monthly` : base;
+  }
+
+  /** Receipt status for a donation row (§3), derived from the donation status. */
+  protected donationReceipt(donation: any): { label: string; type: 'success' | 'warning' | 'error' | 'neutral' } {
+    const s = String(donation?.status || '').toLowerCase();
+    if (s === 'succeeded') return { label: 'Receipted', type: 'success' };
+    if (s === 'pending') return { label: 'Pending', type: 'warning' };
+    if (s === 'failed') return { label: 'Failed', type: 'error' };
+    return { label: donation?.status || '—', type: 'neutral' };
+  }
+
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
+  }
+
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
+  }
+
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
+
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
+    return 'ghost';
+  }
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  /**
+   * Spec §1: the address bar shows the record slug, never the internal id.
+   * Cosmetic swap only (Location.replaceState) — the route param, record-nav
+   * pager and breadcrumbs keep working on the numeric id.
+   */
+  private showSlugUrl(record: unknown): void {
+    const slug =
+      record != null && typeof record === 'object' && 'slug' in record ? (record as { slug: unknown }).slug : null;
+    if (typeof slug === 'string' && slug.length > 0) {
+      this.location.replaceState(`/people/${slug}`);
+    }
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load person details
+      const personData = await this.personsSvc.getById(id);
+      this.person.set(personData);
+      this.showSlugUrl(personData);
+
+      // 2. Load tags and issues
+      const tagList = await this.personsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.personsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load volunteer history
+      try {
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
+        this.volunteerHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load volunteer details', err);
+      }
+
+      // 4. Load donations stats, history and active-pledge status (for the "Monthly donor" chip)
+      try {
+        this.showAllDonations.set(false);
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+        const pledges = await this.donationsSvc.getPersonPledges(id);
+        this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
+      try {
+        const activity = await this.personsSvc.getActivity(id);
+        this.activityData.set(activity || { emails: [], newsletters: [] });
+      } catch (err) {
+        console.error('Failed to load activity log', err);
+      }
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the person. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
+  }
+
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
+    }
+  }
+
+  protected editPerson() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deletePerson() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(this.id());
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  /** Take the user to the People duplicates review UI (spec §5 / §9.3, Track D) to merge this
+   * person into another. The pair-card comparison there is the one place merges are resolved,
+   * so the safe "keep" choice always lives with the operator on that screen. */
+  protected mergeIntoAnother(): void {
+    void this.router.navigate(['/duplicates/people']);
+  }
+
+  /** Export the contact as a downloadable vCard (§3 overflow) — fully client-side. */
+  protected exportVCard(): void {
+    const p = this.person();
+    if (!p) return;
+    const esc = (v: unknown) => String(v ?? '').replace(/([,;\\])/g, '\\$1');
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `N:${esc(p.last_name)};${esc(p.first_name)};${esc(p.middle_names)};;`,
+      `FN:${esc(this.fullName())}`,
+    ];
+    if (p.company_name) lines.push(`ORG:${esc(p.company_name)}`);
+    if (p.email) lines.push(`EMAIL;TYPE=INTERNET,PREF:${esc(p.email)}`);
+    if (p.email2) lines.push(`EMAIL;TYPE=INTERNET:${esc(p.email2)}`);
+    if (p.mobile) lines.push(`TEL;TYPE=CELL:${esc(p.mobile)}`);
+    if (p.home_phone) lines.push(`TEL;TYPE=HOME:${esc(p.home_phone)}`);
+    const addr = this.addressString();
+    if (addr && addr !== 'No Address Assigned') lines.push(`ADR;TYPE=HOME:;;${esc(addr)};;;;`);
+    lines.push('END:VCARD');
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.fullName() || 'contact'}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.alertSvc.showSuccess(`Exported ${this.fullName()} as a vCard.`);
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+
+```html
+<!-- Template for persons grid -->
+<div class="flex flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
 
 ```typescript
@@ -63096,526 +64947,261 @@ export class GridActionComponent {
 }
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
+## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
 
 ```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import {
-  companyRecordIdResolver,
-  householdRecordIdResolver,
-  personRecordIdResolver,
-} from './services/record-slug.resolver';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+import type { HelpArticle } from '../help-types';
 
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
+export const CONTACTS_ARTICLES: HelpArticle[] = [
   {
-    path: 'dashboard',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
-  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'people',
-    children: [
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
       {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-        // Slug-aware: the URL may carry /people/amira-hassan; the component's
-        // `id` input always receives the numeric id (route data wins over params).
-        resolve: { id: personRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: personRecordIdResolver },
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-        resolve: { id: householdRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: householdRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-        data: { shouldReuse: true, key: 'tagsadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
-
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-        data: { shouldReuse: true, key: 'issuesadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
-
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'automations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
-  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
-        path: 'shifts',
-        children: [
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
           {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
           },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use — click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
+      },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against — “Unknown” just means never asked), their **voting status** during an election, their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Household** — everyone at the same address.',
+          '**Connections** — the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
+          '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer** — their shift history and hours.',
+          '**Events** — event registrations and attendance.',
+          '**Activity** — the running history of this record: interactions you log (calls, door knocks, notes, meetings) alongside the audit trail of edits, newest first. It sits last, as it does on every record.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: [
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
+    ],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
           {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header — People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
           },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
+      },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion — it fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream.',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
           {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
           },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'While adding a company, tab out of the **Company Name** field and PeopleCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create** — nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping — everyone keeps their person record, they just lose the employer link.',
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead** — the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go — pick a lead”); open the team and set a lead to clear it.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
           {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
           },
         ],
       },
       {
-        path: 'pages',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
-        data: { shouldReuse: true, key: 'taskslistroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      // Must precede ':id' — otherwise the wildcard param route would swallow it.
-      {
-        path: 'board',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-        data: { shouldReuse: true, key: 'tasksboardroot' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
-  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
-
-  {
-    path: 'canvassing',
-    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
-  },
-
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'deliveries',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
-        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
-      },
-      {
-        path: 'plan',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
-      },
-      {
-        path: 'routes',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
-      },
-      {
-        path: 'routes/:id',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot' },
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'workspace',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'workspace' },
-      },
-    ],
-  },
-  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
-  {
-    path: 'configuration',
-    redirectTo: '/workspace',
-    pathMatch: 'prefix',
-  },
-  {
-    path: 'billing',
-    redirectTo: '/workspace/billing',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports/new',
-    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    // Wave 1E (spec §17): Exports folded into the Import/export History page's
-    // Exports tab — redirect the old standalone route rather than 404 stale links.
-    path: 'exports',
-    redirectTo: '/imports',
-    pathMatch: 'full',
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-        resolve: { id: companyRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: companyRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
-    path: 'activity',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-  // Back-compat: old /activities links redirect to /activity.
-  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
-  {
-    path: 'help',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
       },
     ],
   },
@@ -63936,60 +65522,580 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
-<!-- Template for persons grid -->
-<div class="flex flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
+<pc-detail-layout
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [avatarText]="initials()"
+  [statusChip]="statusChip()"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  <li pc-overflow-extra>
+    <button type="button" (click)="mergeIntoAnother()">
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Merge this person into another@@person.overflow.merge"
+        >Merge into another person…</ng-container
+      >
+    </button>
+  </li>
+
+  <li pc-overflow-extra>
+    <button type="button" (click)="exportVCard()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
+    </button>
+  </li>
+
+  @if (person()) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'persons'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact rail -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+
+        <div class="flex w-full flex-col text-xs">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          @if (person().email2) {
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          }
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          @if (person().home_phone) {
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          }
+          <pc-detail-item
+            label="Address"
+            [value]="addressDisplay()"
+            icon="map-pin"
+            [link]="!!householdId() && !isPlaceholderHousehold()"
+            (linkClicked)="navigateToHousehold()"
+          ></pc-detail-item>
+          @if (preferredContactLabel()) {
+          <pc-detail-item
+            label="Preferred Contact"
+            [value]="preferredContactLabel()"
+            icon="chat-bubble-bottom-center-text"
+          ></pc-detail-item>
+          }
+        </div>
+
+        <!-- Tags & Issues of Interest -->
+        <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
+          <div>
+            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs italic text-base-content/40">No tags assigned</span>
+            }
+          </div>
+          <div>
+            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50"
+              >Issues of Interest</span
+            >
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <button
+              type="button"
+              class="text-left text-xs text-primary hover:underline"
+              (click)="editPerson()"
+              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
+            >
+              No issues yet — add what they care about
+            </button>
+            }
+          </div>
+        </div>
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-card>
+
+      <!-- Campaign standing: support level + voting status per context, DNC override (§15) -->
+      <pc-person-campaign-facts [personId]="id()" [dncFlag]="!!person().do_not_contact"></pc-person-campaign-facts>
+
+      <!-- Internal Notes (own card) -->
+      @if (person().notes) {
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
+      </pc-card>
       }
     </div>
-  </pc-datagrid>
-</div>
 
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
+    <!-- Right Column: pill tab bar + content card -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of personTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
 
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+
+            <!-- Newsletter engagement (folded into Emails) -->
+            @if (activityData().newsletters.length > 0) {
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
+                >Newsletter activity</span
+              >
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event Name</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
+            >
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
+              >
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
+              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Method</th>
+                    <th class="font-bold text-base-content/70">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of visibleDonations(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75 tabular-nums">
+                      {{ donation.created_at | date:'mediumDate' }}
+                    </td>
+                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
+                    <td>
+                      <pc-status-badge [type]="donationReceipt(donation).type">
+                        {{ donationReceipt(donation).label }}
+                      </pc-status-badge>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
+            <div class="text-xs text-base-content/60 px-1">
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
+                Show all {{ donationHistory().length }}
+              </button>
+              } @else { Showing all {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
+                Show fewer
+              </button>
+              }
+            </div>
+            } }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No event registrations found for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <!-- Household members -->
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="flex flex-col items-center gap-3 py-10 text-center">
+              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+              <div class="flex flex-col gap-1">
+                <span
+                  class="font-medium text-base-content"
+                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                  >Not part of a household yet</span
+                >
+                <span
+                  class="max-w-sm text-sm text-base-content/50"
+                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                  >Households group people who share an address, so everyone at the same address stays in sync.</span
+                >
+              </div>
+              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                <pc-icon name="home" [size]="4"></pc-icon>
+                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                  >Assign household</ng-container
+                >
+              </button>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
+        </pc-tab-panel>
+      </div>
+    </div>
   </div>
-</dialog>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
+
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
+          </div>
+        </div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
+        }
+      </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
@@ -64305,431 +66411,6 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor/volunteer are just tag filters now — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
 ```typescript
@@ -64966,6 +66647,11 @@ export const SidebarItems: ISidebarItem[] = [
     adminOnly: true,
     collapsed: true,
     children: [
+      {
+        name: 'Campaigns',
+        route: '/campaigns',
+        icon: 'square-3-stack-3d',
+      },
       {
         name: 'Users',
         route: '/users',

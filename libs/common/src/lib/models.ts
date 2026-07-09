@@ -1,6 +1,11 @@
 import type { z } from 'zod';
 
 import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
   AddTagObj,
   AddListObj,
   AddMarketingEmailObj,
@@ -128,6 +133,16 @@ export type UpdateTagType = z.infer<typeof UpdateTagObj>;
 export type getAllOptionsType = z.infer<typeof getAllOptions>;
 
 export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
 
 export type AddTeamType = z.infer<typeof AddTeamObj>;
 

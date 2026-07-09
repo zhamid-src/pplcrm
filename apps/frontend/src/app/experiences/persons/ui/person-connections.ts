@@ -1,11 +1,11 @@
-import { Component, inject, input, output, signal, OnInit } from '@angular/core';
-import { ConnectionsService } from '../../../services/api/connections-service';
+import { Component, inject, input, OnInit, output, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { ConnectionCard } from './connection-card';
-import { AddConnectionDrawer } from './add-connection-drawer';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AddConnectionDrawer } from './add-connection-drawer';
+import { ConnectionCard } from './connection-card';
 
 @Component({
   selector: 'pc-person-connections',
@@ -14,7 +14,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     <div class="flex flex-col gap-4">
       <!-- Header — the section title lives on the host page; this row only offers the add action -->
       <div class="flex items-center justify-end">
-        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
+        <button type="button" class="btn btn-xs btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
           <pc-icon name="plus" [size]="4"></pc-icon>
           Add Connection
         </button>

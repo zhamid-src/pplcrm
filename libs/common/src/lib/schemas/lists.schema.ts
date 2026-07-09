@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
 
 export const AddListObj = z.object({
+  /** Campaigns §15 — the context this segment belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
   name: nameSchema('List name', 100),
   description: descriptionSchema(1000),
   object: z.enum(['people', 'households']),

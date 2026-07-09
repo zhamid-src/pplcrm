@@ -12,6 +12,8 @@ const slugSchema = z
   );
 
 export const AddEventObj = z.object({
+  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
   name: nameSchema('Event name', 200),
   description: descriptionSchema(2000),
   location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),

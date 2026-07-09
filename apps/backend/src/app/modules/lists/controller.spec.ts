@@ -88,9 +88,9 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
@@ -218,6 +218,7 @@ describe('ListsController Background Refresh', () => {
       .values({
         id: listId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Volunteers List',
         object: 'people',
         is_dynamic: true,
@@ -252,6 +253,7 @@ describe('ListsController Background Refresh', () => {
       .values({
         id: listId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Stale List',
         object: 'people',
         is_dynamic: true,
