@@ -230,9 +230,6 @@ apps/
           files/
             services/
               files.service.ts
-            ui/
-              files-grid.html
-              files-grid.ts
           forms/
             services/
               forms-service.ts
@@ -360,6 +357,9 @@ apps/
               passkey-settings.ts
             services/
               settings-service.ts
+            storage/
+              storage-settings.html
+              storage-settings.ts
             settings-page.html
             settings-page.ts
             settings.config.ts
@@ -3484,107 +3484,6 @@ export class DuplicateSelectionComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.html
-
-```html
-<pc-duplicate-page-shell
-  title="Companies"
-  icon="briefcase"
-  description="Review and merge duplicate company records sharing the same name."
-  entityRoute="companies"
-  [isLoading]="isLoading()"
-  [isEmpty]="groups().length === 0"
-  [currentPage]="currentPage()"
-  [totalPages]="totalPages()"
-  [totalGroups]="totalGroups()"
-  [sweepSentence]="sweepSentence()"
-  (next)="nextPage()"
-  (prev)="prevPage()"
->
-  @for (group of groups(); track group; let gIdx = $index) {
-  <div
-    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
-  >
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
-      <div class="flex items-center gap-2">
-        <span class="badge badge-warning badge-sm">Warning</span>
-        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
-        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
-      </div>
-    </div>
-
-    <div class="card-body p-6">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        @for (company of group.items; track company.id) {
-        <div
-          [class]="
-                    'card bg-base-200/40 border transition-all duration-200 ' +
-                    (group.selectedTargetId === company.id
-                      ? 'border-success bg-success/5 shadow'
-                      : group.selectedSourceId === company.id
-                        ? 'border-error bg-error/5 opacity-80'
-                        : 'border-base-300')
-                  "
-        >
-          <div class="card-body p-4 justify-between h-full">
-            <div>
-              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
-                <span>{{ company.name }}</span>
-                <span class="text-xs font-light text-base-content/40">ID: {{ company.id }}</span>
-              </h4>
-              <div class="mt-3 space-y-2 text-sm">
-                @if (company.website) {
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="globe-americas" [size]="4" class="opacity-50"></pc-icon>
-                  <span class="truncate">{{ company.website }}</span>
-                </div>
-                }
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="briefcase" [size]="4" class="opacity-50"></pc-icon>
-                  <span>{{ company.industry || '—' }}</span>
-                </div>
-                <div class="text-[11px] text-base-content/40">Created: {{ company.created_at | date: 'short' }}</div>
-              </div>
-            </div>
-            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
-              <button
-                [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline')
-                        "
-                (click)="selectRole(gIdx, company.id, 'target')"
-              >
-                Keep
-              </button>
-              <button
-                [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline')
-                        "
-                (click)="selectRole(gIdx, company.id, 'source')"
-              >
-                Merge
-              </button>
-            </div>
-          </div>
-        </div>
-        }
-
-        <pc-merge-summary
-          mergeDescription="The duplicate company will be removed, transferring associated contacts and empty fields to the primary company."
-          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
-          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
-          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (merge)="mergeGroup(gIdx)"
-        ></pc-merge-summary>
-      </div>
-    </div>
-  </div>
-  }
-</pc-duplicate-page-shell>
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.ts
 
 ```typescript
@@ -3630,113 +3529,6 @@ export class CompanyDuplicatesComponent extends BaseDuplicateManager<any> implem
     return item ? this.getItemDisplayName(item) : '';
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/duplicates-households.html
-
-```html
-<pc-duplicate-page-shell
-  title="Households"
-  icon="house-modern"
-  description="Review and merge duplicate household records sharing the exact same address fingerprint."
-  entityRoute="households"
-  [isLoading]="isLoading()"
-  [isEmpty]="groups().length === 0"
-  [currentPage]="currentPage()"
-  [totalPages]="totalPages()"
-  [totalGroups]="totalGroups()"
-  [sweepSentence]="sweepSentence()"
-  (next)="nextPage()"
-  (prev)="prevPage()"
->
-  @for (group of groups(); track group; let gIdx = $index) {
-  <div
-    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
-  >
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
-      <div class="flex items-center gap-2">
-        <span class="badge badge-warning badge-sm">Warning</span>
-        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
-        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
-      </div>
-    </div>
-
-    <div class="card-body p-6">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        @for (hh of group.items; track hh.id) {
-        <div
-          [class]="
-                    'card bg-base-200/40 border transition-all duration-200 ' +
-                    (group.selectedTargetId === hh.id
-                      ? 'border-success bg-success/5 shadow'
-                      : group.selectedSourceId === hh.id
-                        ? 'border-error bg-error/5 opacity-80'
-                        : 'border-base-300')
-                  "
-        >
-          <div class="card-body p-4 justify-between h-full">
-            <div>
-              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
-                <span>{{ getFullAddress(hh) }}</span>
-                <span class="text-xs font-light text-base-content/40">ID: {{ hh.id }}</span>
-              </h4>
-              <div class="mt-3 space-y-2 text-sm">
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="home" [size]="4" class="opacity-50"></pc-icon>
-                  <span>{{ hh.home_phone || '—' }}</span>
-                </div>
-                <div class="text-[11px] text-base-content/40">Created: {{ hh.created_at | date: 'short' }}</div>
-                <div class="mt-3 pt-3 border-t border-base-300/50">
-                  <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-1">
-                    Members ({{ hh.persons?.length || 0 }}):
-                  </div>
-                  <ul class="list-disc pl-4 space-y-1">
-                    @for (member of hh.persons; track member.id) {
-                    <li class="text-xs text-base-content/85">
-                      <span class="font-medium">{{ member.first_name }} {{ member.last_name }}</span>
-                    </li>
-                    }
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
-              <button
-                [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline')
-                        "
-                (click)="selectRole(gIdx, hh.id, 'target')"
-              >
-                Keep
-              </button>
-              <button
-                [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline')
-                        "
-                (click)="selectRole(gIdx, hh.id, 'source')"
-              >
-                Merge
-              </button>
-            </div>
-          </div>
-        </div>
-        }
-
-        <pc-merge-summary
-          mergeDescription="The duplicate household will be removed, transferring all members, tags, lists, and empty fields to the primary household."
-          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
-          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
-          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (merge)="mergeGroup(gIdx)"
-        ></pc-merge-summary>
-      </div>
-    </div>
-  </div>
-  }
-</pc-duplicate-page-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-households.ts
@@ -3793,246 +3585,6 @@ export class HouseholdDuplicatesComponent extends BaseDuplicateManager<any> impl
     return item ? this.getItemDisplayName(item) : '';
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.html
-
-```html
-<pc-duplicate-page-shell
-  title="People"
-  icon="identification"
-  description="Review and merge duplicate people records to keep your database clean."
-  entityRoute="people"
-  [isLoading]="isLoading()"
-  [isEmpty]="groups().length === 0"
-  [currentPage]="currentPage()"
-  [totalPages]="totalPages()"
-  [totalGroups]="totalGroups()"
-  [sweepSentence]="sweepSentence()"
-  (next)="nextPage()"
-  (prev)="prevPage()"
->
-  @for (group of groups(); track group; let gIdx = $index) { @if (group.items.length === 2) {
-  <!-- Spec §9.3 Fig. 12 pair card: confidence chip, why-flagged sentence, side-by-side
-           field grid with highlighted match rows, result preview, quiet/primary actions. -->
-  @let left = group.items[0]!; @let right = group.items[1]!;
-  <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <span
-          class="badge badge-sm font-semibold"
-          [class]="confidence(group) === 'high' ? 'badge-warning' : 'badge-ghost'"
-        >
-          {{ confidence(group) === 'high' ? 'High confidence' : 'Possible match' }}
-        </span>
-        <span class="text-sm text-base-content/70">{{ whyFlagged(group) }}</span>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="dismissGroup(gIdx)">Not duplicates</button>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm gap-2"
-          [disabled]="!group.selectedTargetId || !group.selectedSourceId"
-          (click)="mergeGroup(gIdx)"
-        >
-          <pc-icon name="merge" [size]="4"></pc-icon> Merge into one
-        </button>
-      </div>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="table">
-        <thead>
-          <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
-            <th class="w-28"></th>
-            <th>
-              <a
-                [routerLink]="['/people', left.id]"
-                class="link link-hover normal-case text-sm font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-              >
-                {{ getItemDisplayName(left) }}
-              </a>
-              <div class="text-[10px] font-normal normal-case text-base-content/40">
-                Added {{ left.created_at | date: 'short' }}
-              </div>
-            </th>
-            <th class="font-semibold normal-case text-sm text-base-content">
-              {{ getItemDisplayName(right) }}
-              <div class="text-[10px] font-normal normal-case text-base-content/40">
-                Added {{ right.created_at | date: 'short' }}
-              </div>
-            </th>
-            <th class="w-20"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr [class]="rowHighlighted(group, 'name') ? 'bg-warning/10' : ''">
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Name</td>
-            <td>{{ getItemDisplayName(left) }}</td>
-            <td>{{ getItemDisplayName(right) }}</td>
-            <td></td>
-          </tr>
-          <tr [class]="rowHighlighted(group, 'email') ? 'bg-warning/10' : ''">
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Email</td>
-            <td>{{ left.email || '—' }}</td>
-            <td>{{ right.email || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Mobile</td>
-            <td>{{ left.mobile || '—' }}</td>
-            <td>{{ right.mobile || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Ward</td>
-            <td>{{ left.ward || '—' }}</td>
-            <td>{{ right.ward || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Tags</td>
-            <td>{{ left.tags.length ? left.tags.join(', ') : '—' }}</td>
-            <td>{{ right.tags.length ? right.tags.join(', ') : '—' }}</td>
-            <td></td>
-          </tr>
-          <tr class="text-xs">
-            <td class="text-base-content/50 uppercase tracking-wide">Keep as</td>
-            <td>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline'"
-                (click)="selectRole(gIdx, left.id, 'target')"
-              >
-                Keep primary
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline'"
-                (click)="selectRole(gIdx, left.id, 'source')"
-              >
-                Merge away
-              </button>
-            </td>
-            <td>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline'"
-                (click)="selectRole(gIdx, right.id, 'target')"
-              >
-                Keep primary
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline'"
-                (click)="selectRole(gIdx, right.id, 'source')"
-              >
-                Merge away
-              </button>
-            </td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    @if (group.selectedTargetId && group.selectedSourceId) {
-    <div class="px-6 py-3 border-t border-base-300 bg-base-200/30 text-xs text-base-content/60">
-      <pc-icon name="information-circle" [size]="4" class="inline align-text-bottom mr-1"></pc-icon>
-      {{ resultPreview(group) }}
-    </div>
-    }
-  </div>
-  } @else {
-  <!-- Fallback for a cluster of 3+ records sharing the same signal (e.g. 3 people with the
-           same email) — the side-by-side pair card doesn't generalize past two records, so this
-           keeps the prior N-way "keep/merge" card grid. Documented gap: no confidence chip / why
-           -flagged sentence / field grid here yet. -->
-  <div
-    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
-  >
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
-      <div class="flex items-center gap-2">
-        <span class="badge badge-warning badge-sm">Warning</span>
-        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
-        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
-      </div>
-    </div>
-
-    <div class="card-body p-6">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        @for (person of group.items; track person.id) {
-        <div
-          [class]="
-                        'card bg-base-200/40 border transition-all duration-200 ' +
-                        (group.selectedTargetId === person.id
-                          ? 'border-success bg-success/5 shadow'
-                          : group.selectedSourceId === person.id
-                            ? 'border-error bg-error/5 opacity-80'
-                            : 'border-base-300')
-                      "
-        >
-          <div class="card-body p-4 justify-between h-full">
-            <div>
-              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
-                <span>{{ person.first_name }} {{ person.last_name }}</span>
-                <span class="text-xs font-light text-base-content/40">ID: {{ person.id }}</span>
-              </h4>
-              <div class="mt-3 space-y-1.5 text-sm">
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
-                  <span class="truncate">{{ person.email || '—' }}</span>
-                </div>
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
-                  <span>{{ person.mobile || '—' }}</span>
-                </div>
-                <div class="text-[11px] text-base-content/40 mt-2">
-                  Created: {{ person.created_at | date: 'short' }}
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
-              <button
-                [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline')
-                            "
-                (click)="selectRole(gIdx, person.id, 'target')"
-              >
-                Keep (Primary)
-              </button>
-              <button
-                [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline')
-                            "
-                (click)="selectRole(gIdx, person.id, 'source')"
-              >
-                Delete (Merge)
-              </button>
-            </div>
-          </div>
-        </div>
-        }
-
-        <pc-merge-summary
-          mergeDescription="The duplicate record will be removed, transferring tags, lists, and empty fields to the primary record."
-          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
-          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
-          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (merge)="mergeGroup(gIdx)"
-        ></pc-merge-summary>
-      </div>
-    </div>
-  </div>
-  } }
-</pc-duplicate-page-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.ts
@@ -4133,85 +3685,6 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<PersonDuplic
     return parts.join(' · ');
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <div class="mb-4">
-    <a
-      routerLink="/duplicates"
-      class="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content px-0 no-underline"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to Duplicate Types
-    </a>
-  </div>
-
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon [name]="icon()" class="text-primary" [size]="7"></pc-icon>
-        Manage Duplicate {{ title() }}
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">{{ description() }}</p>
-      @if (!isLoading() && !isEmpty() && sweepSentence()) {
-      <p class="text-sm text-base-content/50 mt-1 tabular-nums">{{ sweepSentence() }}</p>
-      }
-    </div>
-  </div>
-
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4 font-light">Scanning database...</p>
-  </div>
-  } @if (!isLoading() && isEmpty()) {
-  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
-    <div class="card-body items-center text-center py-16">
-      <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
-        <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
-      </div>
-      <h2 class="card-title text-xl font-bold text-success">No duplicates waiting</h2>
-      <p class="text-base-content/60 mt-2 max-w-sm">
-        The sweep runs nightly at 3:00 AM. Imports catch most duplicates on the way in — this queue is for what slips
-        through.
-      </p>
-      <div class="card-actions mt-6">
-        <a [routerLink]="['/', entityRoute()]" class="btn btn-primary">Go to {{ title() }}</a>
-      </div>
-    </div>
-  </div>
-  } @if (!isLoading() && !isEmpty()) {
-  <div class="grid gap-6">
-    <ng-content></ng-content>
-  </div>
-
-  @if (totalPages() > 1) {
-  <div
-    class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
-  >
-    <div class="text-sm text-base-content/60 font-light">
-      Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
-      <span class="font-semibold text-base-content">{{ totalPages() }}</span>
-      ({{ totalGroups() }} duplicate groups total)
-    </div>
-    <div class="join">
-      <button class="join-item btn btn-outline btn-sm gap-1" [disabled]="currentPage() === 1" (click)="prev.emit()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
-      </button>
-      <button
-        class="join-item btn btn-outline btn-sm gap-1"
-        [disabled]="currentPage() >= totalPages()"
-        (click)="next.emit()"
-      >
-        Next <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  } }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
@@ -9003,321 +8476,6 @@ export class EmailPersonRail {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.html
-
-```html
-<pc-detail-layout
-  [title]="event()?.name || 'Event'"
-  [eyebrow]="'Event'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!event()"
-  [showDelete]="true"
-  [deleteText]="'Delete event'"
-  [btn1Text]="'Edit event'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editEvent()"
-  (delete)="deleteEvent()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (event()) {
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left: Event Info Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card iconName="calendar">
-        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-        <div class="flex flex-wrap gap-2 mb-4 justify-center">
-          @if (event().is_published) {
-          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
-          } @else {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
-          } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
-          } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-          }
-        </div>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (event().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-          }
-
-          <pc-detail-row icon="map-pin" iconClass="text-error">
-            <span class="text-xs">
-              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-            </span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="calendar" iconClass="text-info">
-            <div class="text-xs flex flex-col">
-              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-            </div>
-          </pc-detail-row>
-
-          @if (event().contact_email || event().contact_phone) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
-          @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-base-content/40">
-            <span class="text-xs">{{ event().contact_email }}</span>
-          </pc-detail-row>
-          } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-base-content/40">
-            <span class="text-xs">{{ event().contact_phone }}</span>
-          </pc-detail-row>
-          } } @if (ticketTypes().length > 0) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
-          @for (ticket of ticketTypes(); track ticket.id) {
-          <div class="flex justify-between text-xs px-1">
-            <span class="font-semibold">{{ ticket.name }}</span>
-            <span class="text-base-content/60">
-              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
-              {{ ticket.capacity }} max }
-            </span>
-          </div>
-          } }
-        </div>
-      </pc-profile-card>
-
-      @if (publicUrl()) {
-      <pc-card title="Public RSVP Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
-        </button>
-        <div class="flex gap-2">
-          <input
-            type="text"
-            [value]="publicUrl()"
-            readonly
-            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-          />
-          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-          </a>
-        </div>
-        @if (!event().is_published) {
-        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
-          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
-        </div>
-        }
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right: Stats + Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <pc-stat-card
-          [title]="'Registered'"
-          [value]="activeCount()"
-          [description]="'Active registrations'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Attended'"
-          [value]="attendedCount()"
-          [description]="'Checked in'"
-          [icon]="'check-circle'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Capacity Left'"
-          [value]="remainingCapacity()"
-          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
-          [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs -->
-      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Add Registration -->
-            <pc-card title="Add Registration" icon="user-plus">
-              <div class="flex flex-col sm:flex-row gap-3 items-end">
-                <div class="relative flex-1 space-y-1">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full pl-9"
-                      placeholder="Search by name or email..."
-                      [ngModel]="personSearch()"
-                      (ngModelChange)="onPersonSearch($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <div
-                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
-                    >
-                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
-                    </div>
-                  </div>
-                  @if (personSearchResults().length > 0) {
-                  <div
-                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-                  >
-                    @for (p of personSearchResults(); track p.id) {
-                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
-                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                    </div>
-                    }
-                  </div>
-                  }
-                </div>
-
-                @if (ticketTypes().length > 0) {
-                <div class="space-y-1 w-40">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
-                  <select
-                    class="select select-bordered select-sm w-full"
-                    [ngModel]="selectedTicketTypeId()"
-                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
-                    [ngModelOptions]="{standalone: true}"
-                  >
-                    <option [value]="null">No ticket</option>
-                    @for (t of ticketTypes(); track t.id) {
-                    <option [value]="t.id">{{ t.name }}</option>
-                    }
-                  </select>
-                </div>
-                }
-
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm shrink-0"
-                  [disabled]="!selectedPersonId() || addingRegistration()"
-                  (click)="addRegistration()"
-                >
-                  @if (addingRegistration()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else {
-                  <pc-icon name="plus" [size]="4"></pc-icon>
-                  } Register
-                </button>
-              </div>
-            </pc-card>
-
-            <!-- Attendees Table -->
-            <div class="flex justify-between items-center">
-              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
-              @if (registrations().length > 0) {
-              <button type="button" class="btn btn-xs btn-outline gap-1" (click)="exportCsv()">
-                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
-              </button>
-              }
-            </div>
-
-            @if (registrations().length === 0) {
-            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Name</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                    <th class="text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of registrations(); track reg.id) {
-                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
-                    <td>
-                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
-                        {{ reg.first_name }} {{ reg.last_name }}
-                      </a>
-                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
-                    </td>
-                    <td>
-                      @if (reg.ticket_type_name) {
-                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
-                      } @else {
-                      <span class="text-base-content/30">—</span>
-                      }
-                    </td>
-                    <td>
-                      <select
-                        class="select select-bordered select-xs font-medium"
-                        [ngModel]="reg.status"
-                        (ngModelChange)="updateStatus(reg, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                        [class.select-success]="reg.status === 'attended'"
-                        [class.select-warning]="reg.status === 'registered'"
-                        [class.select-error]="reg.status === 'no_show'"
-                      >
-                        <option value="registered">Registered</option>
-                        <option value="attended">Attended</option>
-                        <option value="no_show">No Show</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <td class="font-mono text-[10px]">
-                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
-                    </td>
-                    <td>
-                      <div class="flex items-center justify-center gap-1">
-                        @if (reg.status === 'registered') {
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-success"
-                          title="Check in"
-                          (click)="checkIn(reg)"
-                        >
-                          <pc-icon name="check-circle" [size]="4"></pc-icon>
-                        </button>
-                        }
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove"
-                          (click)="deleteRegistration(reg)"
-                        >
-                          <pc-icon name="trash" [size]="4"></pc-icon>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/events/ui/public-event.ts
 
 ```typescript
@@ -9794,7 +8952,7 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return Promise.resolve(true);
   }
 
-  public async getAll(options?: getAllOptionsType) {
+  public async getAll(options?: getAllOptionsType & { entityType?: string; entityId?: string }) {
     return this.api.files.getAll.query(options, {
       signal: this.ac.signal,
     });
@@ -9832,8 +8990,26 @@ export class FilesService extends AbstractAPIService<'files', any> {
     sizeBytes?: number | null;
     storageKey: string;
     sha256Hex?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
   }): Promise<any> {
     return await this.api.files.registerFile.mutate(data);
+  }
+
+  public async getUsageSummary(): Promise<{
+    usedBytes: number;
+    quotaBytes: number;
+    planLabel: string;
+    largestFiles: {
+      id: string;
+      filename: string;
+      size_bytes: number | null;
+      entity_type: string | null;
+      entity_id: string | null;
+      attachedToLabel: string | null;
+    }[];
+  }> {
+    return (await this.api.files.getUsageSummary.query()) as any;
   }
 
   private async computeSha256(file: File): Promise<string> {
@@ -9843,7 +9019,7 @@ export class FilesService extends AbstractAPIService<'files', any> {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  public async uploadFileDirectly(file: File): Promise<any> {
+  public async uploadFileDirectly(file: File, entity?: { entityType: string; entityId: string }): Promise<any> {
     const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
 
     const sha256Hex = await this.computeSha256(file);
@@ -9867,280 +9043,13 @@ export class FilesService extends AbstractAPIService<'files', any> {
       sizeBytes: file.size,
       storageKey,
       sha256Hex,
+      entityType: entity?.entityType || null,
+      entityId: entity?.entityId || null,
     });
   }
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.resolve({ csv: '', columns: [], fileName: '', rowCount: 0 });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/files/ui/files-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document" class="text-primary" [size]="7"></pc-icon>
-        Uploaded Files Manager
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Browse, download, and delete files uploaded across the CRM system.
-      </p>
-    </div>
-    <div class="flex gap-2 items-center">
-      <input #fileInput type="file" class="hidden" (change)="onFileSelectedForUpload($event)" />
-      <button class="btn btn-primary btn-sm gap-2" [disabled]="isUploading()" (click)="fileInput.click()">
-        @if (isUploading()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        Uploading... } @else {
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Upload File }
-      </button>
-      <input
-        type="text"
-        class="input input-bordered input-sm max-w-xs"
-        placeholder="Search files..."
-        (input)="onSearch($event)"
-      />
-      <button class="btn btn-outline btn-sm gap-2" (click)="loadFiles()">
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Reload
-      </button>
-    </div>
-  </div>
-
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading files...</p>
-  </div>
-  }
-
-  <!-- Empty State -->
-  @if (!isLoading() && filteredFiles().length === 0) {
-  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
-    <div class="card-body items-center text-center py-12">
-      <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <h2 class="card-title text-base-content/70">No files found</h2>
-      <p class="text-sm text-base-content/50 mt-1">There are no files uploaded or matching your search criteria.</p>
-    </div>
-  </div>
-  }
-
-  <!-- Grid / Table View -->
-  @if (!isLoading() && filteredFiles().length > 0) {
-  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-    <table class="table w-full">
-      <thead>
-        <tr class="bg-base-200/50">
-          <th>Filename</th>
-          <th>MIME Type</th>
-          <th>Size</th>
-          <th>Uploaded By</th>
-          <th>Uploaded Date</th>
-          <th class="text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (file of filteredFiles(); track file.id) {
-        <tr class="hover:bg-base-200/30 transition-all duration-200">
-          <td>
-            <div class="flex items-center gap-3">
-              <pc-icon [name]="getFileIcon(file.mime_type)" class="text-primary/70" [size]="6"></pc-icon>
-              <span class="font-semibold text-base-content">{{ file.filename }}</span>
-            </div>
-          </td>
-          <td>
-            <span class="badge badge-neutral text-xs font-mono">{{ file.mime_type || 'unknown' }}</span>
-          </td>
-          <td>
-            <span class="text-sm text-base-content/70">{{ formatBytes(file.size_bytes) }}</span>
-          </td>
-          <td>
-            @if (file.createdBy) {
-            <div class="flex flex-col">
-              <span class="font-medium text-base-content text-sm">{{ file.createdBy.name || 'Unknown' }}</span>
-              <span class="text-xs text-base-content/60">{{ file.createdBy.email }}</span>
-            </div>
-            } @else {
-            <span class="text-sm text-base-content/40">—</span>
-            }
-          </td>
-          <td>
-            <span class="text-sm text-base-content/70">{{ file.created_at | date: 'medium' }}</span>
-          </td>
-          <td class="text-right">
-            <div class="flex justify-end gap-2">
-              <button
-                class="btn btn-sm btn-circle btn-ghost text-primary"
-                title="Download file"
-                (click)="downloadFile(file)"
-              >
-                <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-              </button>
-              <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
-            </div>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { environment } from '../../../../environments/environment';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FilesService } from '../services/files.service';
-
-@Component({
-  selector: 'pc-files-grid',
-  imports: [DatePipe, Icon],
-  templateUrl: './files-grid.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
-  ],
-})
-export class FilesGrid implements OnInit {
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly files = signal<any[]>([]);
-  protected readonly filteredFiles = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
-  protected readonly isUploading = signal(false);
-  protected readonly searchQuery = signal('');
-
-  public ngOnInit() {
-    void this.loadFiles();
-  }
-
-  protected async onFileSelectedForUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.isUploading.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file);
-      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
-      await this.loadFiles();
-    } catch (err) {
-      console.error(err);
-      this.alertSvc.showError('Failed to upload file');
-    } finally {
-      this.isUploading.set(false);
-      input.value = '';
-    }
-  }
-
-  protected async loadFiles() {
-    this.isLoading.set(true);
-    try {
-      const res = await this.filesSvc.getAll();
-      this.files.set(res.rows || []);
-      this.applyFilter();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load files');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  protected onSearch(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.searchQuery.set(val);
-    this.applyFilter();
-  }
-
-  private applyFilter() {
-    const q = this.searchQuery().toLowerCase().trim();
-    if (!q) {
-      this.filteredFiles.set(this.files());
-      return;
-    }
-
-    const filtered = this.files().filter(
-      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
-    );
-    this.filteredFiles.set(filtered);
-  }
-
-  protected formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
-    if (!mime) return 'document';
-    if (mime.includes('image')) return 'file-image';
-    if (mime.includes('pdf')) return 'file-pdf';
-    if (mime.includes('audio')) return 'file-audio';
-    if (mime.includes('video')) return 'file-video';
-    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
-    return 'document';
-  }
-
-  protected async downloadFile(file: any) {
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(
-        `${environment.apiUrl}/api/files/download/${file.id}`,
-        token,
-        file.filename || 'download',
-      );
-    } catch {
-      this.alertSvc.showError('Failed to download file');
-    }
-  }
-
-  protected async deleteFile(file: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Delete',
-      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(file.id);
-      this.alertSvc.showSuccess('File deleted successfully');
-      await this.loadFiles();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to delete file');
-    }
   }
 }
 ```
@@ -11124,32 +10033,40 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
   {
     id: 'files',
     category: 'productivity',
-    title: 'Files',
-    summary: 'One shared library for the documents your team actually reuses — uploaded once, findable by everyone.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'library'],
-    related: ['grid-basics', 'export'],
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
     blocks: [
       {
         kind: 'p',
-        text: 'The [Files](/files) area is your workspace’s shared drive inside the CRM: flyers, scripts, permits, photos — uploaded once, visible to the team, and searchable like any grid.',
+        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
       },
-      { kind: 'h2', id: 'upload', text: 'Add and find files' },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Files](/files)', detail: 'The grid lists every uploaded file with its details.' },
-          { title: 'Upload', detail: 'Pick the file and it lands in the library, ready to open or download.' },
           {
-            title: 'Find it later',
-            detail: 'Search with `⌘K` or the grid filters — naming files descriptively pays off here.',
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
           },
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Name for your future self',
-        text: '“2026-06 canvassing script v2.pdf” beats “final_FINAL.pdf” every time someone searches.',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
       },
     ],
   },
@@ -12239,411 +11156,6 @@ export class ImportsService extends TRPCService<unknown> {
     return this.api.imports.delete.mutate({ id, ...options });
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
-
-```html
-<div class="p-6 max-w-4xl mx-auto">
-  <!-- Where am I? / Where was I? -->
-  <div class="mb-6">
-    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
-    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
-    <p class="text-sm text-base-content/60 mt-1">
-      Headers in the first row · duplicates are matched by email · nothing is written until the last step
-    </p>
-  </div>
-
-  <!-- Step indicator -->
-  <ul class="steps steps-horizontal w-full mb-8">
-    @for (s of stepOrder; track s; let idx = $index) {
-    <li
-      class="step"
-      [class.step-primary]="idx <= currentStepIndex()"
-      [class.cursor-pointer]="canReachStep(s)"
-      (click)="canReachStep(s) && goToStep(s)"
-    >
-      {{ stepLabels[s] }}
-    </li>
-    }
-  </ul>
-
-  <!-- ============ UPLOAD ============ -->
-  @if (step() === 'upload') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @if (!fileName()) {
-      <div
-        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
-        [class.border-primary]="dragOver()"
-        [class.bg-primary/5]="dragOver()"
-        [class.border-base-300]="!dragOver()"
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave()"
-        (drop)="onDrop($event)"
-      >
-        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
-        <label class="btn btn-primary gap-2 cursor-pointer">
-          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-          Drop a CSV here, or click to browse
-          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
-        </label>
-        @if (parsing()) {
-        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
-          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
-          Reading and parsing the file…
-        </p>
-        }
-      </div>
-      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
-        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
-        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
-        <li>UTF-8 and Excel both work.</li>
-      </ul>
-      } @else {
-      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
-        <div class="flex items-center gap-3 min-w-0">
-          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
-          <span class="font-mono text-sm text-base-content truncate">
-            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
-          </span>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
-      </div>
-      <div class="flex justify-end">
-        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
-          Continue to column mapping
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-      }
-    </div>
-  </div>
-  }
-
-  <!-- ============ MAP COLUMNS ============ -->
-  @if (step() === 'map') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      <p class="text-sm text-base-content/70">
-        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
-        matching by the header row
-      </p>
-
-      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
-        @for (header of headers(); track header; let idx = $index) {
-        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
-          <div class="flex-1 min-w-0">
-            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
-            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <select
-              class="select select-bordered select-sm w-56"
-              [value]="mapping()[idx] || ''"
-              (change)="setMapping(idx, $any($event.target).value)"
-            >
-              <option value="">— Skip this column —</option>
-              @for (field of mappableFields; track field) {
-              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
-              }
-            </select>
-            @if (!mapping()[idx]) {
-            <span class="badge badge-ghost text-xs">Skipped</span>
-            }
-          </div>
-        </div>
-        }
-      </div>
-
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary gap-2"
-          [disabled]="mappedColumnCount() === 0"
-          (click)="goToReview()"
-        >
-          Continue to review
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- ============ REVIEW ============ -->
-  @if (step() === 'review') {
-  <div class="flex flex-col gap-4">
-    @if (checkingDuplicates()) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body items-center py-10">
-        <progress class="progress progress-primary w-64"></progress>
-        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
-      </div>
-    </div>
-    } @else { @if (reviewIsClean()) {
-    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
-      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
-      <span>No duplicate emails and no email problems found in this file.</span>
-    </div>
-    } @if (duplicateMatches().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ duplicateRowCount() }} rows match people you already have
-        </p>
-        <ul class="space-y-1">
-          @for (match of duplicateMatches(); track match.person_id) {
-          <li class="text-sm flex items-center gap-2">
-            <span class="font-mono text-base-content/70">{{ match.email }}</span>
-            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
-            @if (match.slug) {
-            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
-              >{{ match.name }}</a
-            >
-            } @else {
-            <span class="text-base-content">{{ match.name }}</span>
-            }
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'merge'"
-              (change)="duplicateDecision.set('merge')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Merge into existing</span>
-              <span class="block text-xs text-base-content/60">
-                Recommended — fills blank fields, never overwrites
-              </span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'skip'"
-              (change)="duplicateDecision.set('skip')"
-            />
-            <span class="text-sm font-medium text-base-content">
-              Skip the {{ duplicateRowCount() }} duplicate rows
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'import_new'"
-              (change)="duplicateDecision.set('import_new')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import as new anyway</span>
-              <span class="block text-xs text-base-content/60">
-                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    } @if (badEmailRows().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ badEmailRows().length }} rows have email problems
-        </p>
-        <ul class="space-y-1">
-          @for (row of badEmailRows(); track row.idx) {
-          <li class="text-sm">
-            <span class="text-base-content/60">Row {{ row.idx }}:</span>
-            <span class="font-mono text-base-content">{{ row.email }}</span>
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'skip'"
-              (change)="badEmailDecision.set('skip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
-              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'strip'"
-              (change)="badEmailDecision.set('strip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import without an email</span>
-              <span class="block text-xs text-base-content/60">
-                They can't receive newsletters until an email is added
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    }
-
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-4">
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            placeholder="Comma separated e.g. donor, canvass-2026"
-            [value]="tagsText()"
-            (input)="tagsText.set($any($event.target).value)"
-          />
-        </label>
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            list="existing-static-lists"
-            placeholder="New or existing list name"
-            [value]="listName()"
-            (input)="listName.set($any($event.target).value)"
-          />
-          <datalist id="existing-static-lists">
-            @for (name of existingListNames(); track name) {
-            <option [value]="name"></option>
-            }
-          </datalist>
-        </label>
-      </div>
-    </div>
-
-    <div class="flex justify-between">
-      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
-        Continue to import
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-    }
-  </div>
-  }
-
-  <!-- ============ CONFIRM & RUN ============ -->
-  @if (step() === 'confirm') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @let r = run(); @switch (r.status) { @case ('idle') {
-      <div class="space-y-2 text-sm text-base-content">
-        <p class="font-mono text-base-content/70">
-          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
-        </p>
-        <ul class="list-disc list-inside text-base-content/70 space-y-1">
-          <li>
-            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
-            'skip duplicate rows' : 'import as new anyway' }}
-          </li>
-          @if (badEmailRows().length > 0) {
-          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
-          } @if (parsedTags().length > 0) {
-          <li>Tags: {{ parsedTags().join(', ') }}</li>
-          } @if (listName().trim()) {
-          <li>Added to list: {{ listName().trim() }}</li>
-          }
-        </ul>
-        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
-      </div>
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-          Import {{ finalRowCount() }} people
-        </button>
-      </div>
-      } @case ('running') {
-      <div class="flex flex-col items-center gap-3 py-10">
-        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
-        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
-        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
-      </div>
-      } @case ('done') {
-      <div class="flex flex-col gap-4">
-        <div class="flex items-center gap-3">
-          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
-          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
-        </div>
-        <ul class="text-sm text-base-content/70 space-y-1">
-          <li>{{ r.inserted }} imported</li>
-          @if (r.merged > 0) {
-          <li>{{ r.merged }} merged into existing people</li>
-          } @if (r.skipped > 0) {
-          <li>{{ r.skipped }} skipped</li>
-          } @if (r.errors > 0) {
-          <li class="text-error">{{ r.errors }} errors</li>
-          } @if (r.tag) {
-          <li>Tagged {{ r.tag }}</li>
-          }
-        </ul>
-        <div class="flex flex-wrap gap-2 mt-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
-            <pc-icon name="user-group" [size]="4"></pc-icon>
-            View imported people
-          </button>
-          <button type="button" class="btn btn-outline gap-2" (click)="startOver()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import another file
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
-            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
-            Back to import history
-          </button>
-        </div>
-      </div>
-      } @case ('error') {
-      <div class="flex flex-col gap-4">
-        <div class="alert alert-error gap-2">
-          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-          <span>{{ r.message }}</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            Try again
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
-        </div>
-      </div>
-      } }
-    </div>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
@@ -14227,196 +12739,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
-  <!-- Top Navigation & Title -->
-  <!-- Top Navigation & Title -->
-  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
-    <div class="flex items-center gap-3">
-      <div>
-        <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
-            {{ listData()?.name }}
-          </h1>
-          @if (listData()?.is_dynamic) {
-          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
-          } @else {
-          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
-          }
-        </div>
-        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
-      </div>
-    </div>
-
-    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
-    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
-      @if (listData()?.is_dynamic) {
-      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
-        <div>Last Refreshed</div>
-        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
-      </div>
-      <button
-        class="btn btn-outline btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
-        [disabled]="refreshing() || loading()"
-        (click)="refreshList()"
-      >
-        @if (refreshing()) {
-        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
-        Refreshing... } @else {
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh Now }
-      </button>
-      }
-      <pc-form-actions
-        [isLoading]="loading()"
-        [btn1Text]="'Edit List'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete List'"
-        (deleteClicked)="deleteList()"
-        (btn1Clicked)="editList()"
-      ></pc-form-actions>
-    </div>
-  </div>
-
-  <!-- Loading State -->
-  @if (loading()) {
-  <div class="flex flex-1 flex-col items-center justify-center py-20">
-    <progress class="progress progress-primary w-56"></progress>
-    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
-  </div>
-  } @else {
-  <!-- KPI Stats Cards -->
-  <!-- KPI Stats Cards -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-    <pc-stat-card
-      [title]="'List Size'"
-      [value]="memberCount()"
-      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
-      [icon]="'users'"
-      [iconBgClass]="'bg-primary/10'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Newsletters Sent'"
-      [value]="stats()?.totalNewsletters || 0"
-      [description]="'Campaign dispatches'"
-      [icon]="'megaphone'"
-      [iconBgClass]="'bg-secondary/10'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Open Rate'"
-      [value]="formatPercent(stats()?.openRate)"
-      [icon]="'envelope'"
-      [iconBgClass]="'bg-accent/10'"
-      [iconColorClass]="'text-accent'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Click Rate'"
-      [value]="formatPercent(stats()?.clickRate)"
-      [icon]="'chart-pie'"
-      [iconBgClass]="'bg-info/10'"
-      [iconColorClass]="'text-info'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-  </div>
-
-  <!-- Tabs Panel -->
-  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
-    <pc-tab-panel id="members" [activeTab]="activeTab()">
-      @if (isPeople()) {
-      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
-      } @else {
-      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
-      }
-    </pc-tab-panel>
-
-    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
-          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
-          <div class="p-12 text-center text-base-content/50">
-            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-            <p class="font-medium text-base">No campaign emails sent to this list</p>
-            <p class="text-xs mt-1">
-              Sent newsletters targeting this list will appear here with engagement statistics.
-            </p>
-          </div>
-          } @else {
-          <table class="table table-zebra table-md w-full">
-            <thead>
-              <tr class="bg-base-200/50 text-base-content/70">
-                <th class="font-bold">Newsletter Name</th>
-                <th class="font-bold">Subject</th>
-                <th class="font-bold">Send Date</th>
-                <th class="font-bold text-right">Recipients</th>
-                <th class="font-bold text-right">Open Rate</th>
-                <th class="font-bold text-right">Click Rate</th>
-                <th class="font-bold text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (n of stats().newsletters; track n.id) {
-              <tr class="hover:bg-base-200/40 transition-colors">
-                <td class="font-bold text-base-content">{{ n.name }}</td>
-                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
-                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
-                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-center">
-                  <a
-                    [routerLink]="['/newsletters', n.id]"
-                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
-                  >
-                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
-                    View Report
-                  </a>
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-          }
-        </div>
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-  } @if (listData() && listData()?.id) {
-  <div class="mt-8 border-t border-base-250 pt-6">
-    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/lists/ui/list-view.ts
 
 ```typescript
@@ -14909,625 +13231,6 @@ export class ListsGridComponent implements OnInit, OnDestroy {
       clearInterval(interval);
     }
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
-
-```html
-@if (mode() === 'options') {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="close()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletters
-    </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
-      <div>
-        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
-        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
-      </div>
-
-      <button
-        type="button"
-        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
-        (click)="selectRegular()"
-      >
-        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
-        <div class="flex-1">
-          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
-          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
-        </div>
-        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
-      </button>
-
-      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
-        <div class="flex items-center gap-4">
-          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
-            <pc-icon name="arrow-path" [size]="6"></pc-icon>
-          </div>
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
-              <span
-                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
-                >Coming soon</span
-              >
-            </div>
-            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
-          </div>
-        </div>
-        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
-          Create a regular newsletter instead
-        </button>
-      </div>
-    </div>
-  </main>
-</div>
-} @else if (mode() === 'regular') {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="close()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletters
-    </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
-
-    <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
-    <ol class="mt-4 flex flex-wrap gap-2">
-      @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
-      stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
-      <li>
-        <button
-          type="button"
-          class="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
-          [class.bg-primary]="isCurrent"
-          [class.text-primary-content]="isCurrent"
-          [class.bg-primary/10]="isDone"
-          [class.text-primary]="isDone"
-          [class.cursor-pointer]="isDone"
-          [class.hover:bg-primary/20]="isDone"
-          [class.bg-base-200]="isLocked"
-          [class.text-base-content/50]="isLocked"
-          [class.cursor-not-allowed]="isLocked"
-          [class.tooltip]="isLocked"
-          [class.tooltip-bottom]="isLocked"
-          [attr.data-tip]="isLocked ? lockedStepTooltip : null"
-          [attr.aria-disabled]="isLocked"
-          (click)="goToStep(stepNo)"
-        >
-          <span
-            class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
-            [class.bg-primary-content/25]="isCurrent"
-            [class.bg-primary/15]="isDone"
-            [class.bg-base-300]="isLocked"
-          >
-            @if (isDone) { <pc-icon name="check-circle" [size]="3"></pc-icon> } @else { {{ stepNo }} }
-          </span>
-          <span>{{ label }}</span>
-        </button>
-      </li>
-      }
-    </ol>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 py-6">
-    <form
-      [formGroup]="regularForm"
-      class="mx-auto flex w-full flex-col gap-6"
-      [class.max-w-3xl]="currentStep() !== 2"
-      [class.max-w-none]="currentStep() === 2"
-    >
-      @switch (currentStep()) {
-
-      <!-- ============ STEP 1 · TEMPLATE ============ -->
-      @case (1) {
-      <div class="grid gap-5 sm:grid-cols-2">
-        @for (t of templateOptions; track t.id) {
-        <button
-          type="button"
-          class="overflow-hidden rounded-xl border text-left transition-colors"
-          [class.border-primary]="selectedTemplate() === t.id"
-          [class.bg-primary/5]="selectedTemplate() === t.id"
-          [class.border-base-300]="selectedTemplate() !== t.id"
-          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
-          (click)="selectTemplate(t.id)"
-        >
-          <div
-            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
-          >
-            template preview
-          </div>
-          <div class="flex items-start gap-3 p-4">
-            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
-            <div>
-              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
-              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
-            </div>
-          </div>
-        </button>
-        }
-      </div>
-      }
-
-      <!-- ============ STEP 2 · CONTENT ============ -->
-      @case (2) {
-      <div class="space-y-4">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
-        >
-          <p class="max-w-xl text-xs text-base-content/60">
-            Personalize with merge fields like
-            <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[11px] text-base-content/80"
-              >{{ mergeFieldExample }}</code
-            >. The footer disclaimer and unsubscribe link are appended automatically from
-            <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
-          </p>
-          <button type="button" class="btn btn-sm btn-outline" (click)="sendTestEmail()">
-            <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-            Send test email
-          </button>
-        </div>
-        <pc-visual-newsletter-editor
-          [htmlContent]="regularForm.get('htmlContent')?.value || ''"
-          [plainTextContent]="regularForm.get('plainTextContent')?.value || ''"
-          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event); onFieldInput()"
-          (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
-        ></pc-visual-newsletter-editor>
-      </div>
-      }
-
-      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
-      @case (3) {
-      <div class="grid gap-6 md:grid-cols-2">
-        <!-- Email details -->
-        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
-          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
-            <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Email details</h3>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">Subject</label>
-            <input
-              #subjectInput
-              class="input input-bordered input-sm w-full"
-              formControlName="subject"
-              placeholder="What recipients see first"
-              (input)="onFieldInput()"
-            />
-            <p
-              class="mt-1 text-xs"
-              [class.text-error]="isInvalid('subject')"
-              [class.text-base-content/55]="!isInvalid('subject')"
-            >
-              {{ subjectCoach }}
-            </p>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">Preview text</label>
-            <input
-              class="input input-bordered input-sm w-full"
-              formControlName="previewText"
-              placeholder="Optional — shows after the subject in most inboxes"
-              (input)="onFieldInput()"
-            />
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">From name</label>
-            <input
-              #fromNameInput
-              class="input input-bordered input-sm w-full"
-              formControlName="fromName"
-              placeholder="Who is sending"
-              (input)="onFieldInput()"
-            />
-            @if (isInvalid('fromName')) {
-            <p class="mt-1 text-xs text-error">{{ fromNameCoach }}</p>
-            }
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">From address</label>
-            @if (verifiedSenders().length) {
-            <select
-              #fromAddressInput
-              class="select select-bordered select-sm w-full"
-              formControlName="fromAddress"
-              (change)="onFieldInput()"
-            >
-              <option value="" disabled>Choose a verified sender</option>
-              @for (sender of verifiedSenders(); track sender) {
-              <option [value]="sender">{{ sender }}</option>
-              }
-            </select>
-            <button type="button" class="link link-primary mt-1 text-xs" (click)="goToVerifySender()">
-              Verify a new sender…
-            </button>
-            } @else {
-            <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
-              <p class="text-xs text-base-content/60">
-                No verified senders yet — a verified address stops your sends from bouncing or spoofing.
-              </p>
-              <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
-                Verify a sender
-              </button>
-            </div>
-            } @if (isInvalid('fromAddress')) {
-            <p class="mt-1 text-xs text-error">{{ fromAddressCoach }}</p>
-            } @if (verifiedSenders().length) {
-            <p class="mt-1 text-xs text-base-content/50">Prefilled from Workspace settings → Communications.</p>
-            }
-          </div>
-        </div>
-
-        <!-- Audience -->
-        <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
-          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
-            <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Audience</h3>
-          </div>
-
-          <!-- Include lists -->
-          <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include lists</h4>
-            @if (loadingLists()) {
-            <div class="skeleton h-5 w-2/3"></div>
-            } @else {
-            <div class="flex flex-wrap gap-1.5">
-              @for (id of includeListIds(); track id) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-              >
-                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
-                <button type="button" (click)="removeIncludeList(id)" aria-label="Remove list">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (l of includeListSuggestions(); track l.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary"
-                (click)="addIncludeList(l.id)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
-              </button>
-              } @if (!includeListIds().length && !includeListSuggestions().length) {
-              <span class="text-xs text-base-content/50">No lists yet — create one to target contacts.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Include tags -->
-          <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include tags</h4>
-            @if (loadingTags()) {
-            <div class="skeleton h-5 w-2/3"></div>
-            } @else {
-            <div class="flex flex-wrap gap-1.5">
-              @for (name of includeTagsList(); track name) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-medium text-secondary"
-              >
-                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
-                <button type="button" (click)="removeIncludeTag(name)" aria-label="Remove tag">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (t of includeTagSuggestions(); track t.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-secondary hover:text-secondary"
-                (click)="addIncludeTag(t.name)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
-              </button>
-              } @if (!includeTagsList().length && !includeTagSuggestions().length) {
-              <span class="text-xs text-base-content/50">No tags yet.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Exclude lists -->
-          <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude lists</h4>
-            @if (!loadingLists()) {
-            <div class="flex flex-wrap gap-1.5">
-              @for (id of excludeListIds(); track id) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
-              >
-                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
-                <button type="button" (click)="removeExcludeList(id)" aria-label="Remove exclusion">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (l of excludeListSuggestions(); track l.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
-                (click)="addExcludeList(l.id)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
-              </button>
-              } @if (!excludeListIds().length && !excludeListSuggestions().length) {
-              <span class="text-xs text-base-content/50">No lists to exclude.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Exclude tags -->
-          <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude tags</h4>
-            @if (!loadingTags()) {
-            <div class="flex flex-wrap gap-1.5">
-              @for (name of excludeTagsList(); track name) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
-              >
-                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
-                <button type="button" (click)="removeExcludeTag(name)" aria-label="Remove exclusion">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (t of excludeTagSuggestions(); track t.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
-                (click)="addExcludeTag(t.name)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
-              </button>
-              } @if (!excludeTagsList().length && !excludeTagSuggestions().length) {
-              <span class="text-xs text-base-content/50">No tags to exclude.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Estimated audience — the math, in public -->
-          <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
-            <div class="mb-3 flex items-center gap-2">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-              <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/60"
-                >Estimated audience</span
-              >
-            </div>
-            @if (hasAudienceSelection()) {
-            <dl class="space-y-1.5 text-sm">
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">In included lists</dt>
-                <dd class="tabular-nums">+{{ formatCount(includedListsTotal()) }}</dd>
-              </div>
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Matching included tags</dt>
-                <dd class="tabular-nums">+{{ formatCount(includedTagsTotal()) }}</dd>
-              </div>
-              @if (excludedListsTotal()) {
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Excluded by lists</dt>
-                <dd class="tabular-nums">−{{ formatCount(excludedListsTotal()) }}</dd>
-              </div>
-              } @if (excludedTagsTotal()) {
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Excluded by tags</dt>
-                <dd class="tabular-nums">−{{ formatCount(excludedTagsTotal()) }}</dd>
-              </div>
-              }
-              <div class="flex items-center justify-between border-t border-base-300 pt-2 font-semibold">
-                <dt>Total</dt>
-                <dd class="tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
-              </div>
-            </dl>
-            <p class="mt-2 text-[11px] text-base-content/55">
-              @if (skipBounced()) { Overlap between lists and tags is removed, and previously bounced addresses are
-              skipped, when you send. } @else { Overlap is removed when you send. Bounced addresses are
-              <strong>not</strong> being skipped (Workspace setting). }
-            </p>
-            } @else {
-            <p class="text-sm text-base-content/60">Add a list or tag above to see who this newsletter reaches.</p>
-            }
-          </div>
-        </div>
-      </div>
-      }
-
-      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
-      @case (4) {
-      <div class="grid gap-6 md:grid-cols-2">
-        <!-- Review -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3
-            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
-          >
-            Review
-          </h3>
-          <dl class="divide-y divide-base-200 text-sm">
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Template</dt>
-              <dd class="font-medium">{{ selectedTemplateName() }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Subject</dt>
-              <dd class="truncate text-right font-medium">{{ regularForm.get('subject')?.value || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">From</dt>
-              <dd class="truncate text-right font-medium">
-                {{ regularForm.get('fromName')?.value }} &lt;{{ regularForm.get('fromAddress')?.value || '—' }}&gt;
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Audience</dt>
-              <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Timing</dt>
-              <dd class="text-right font-medium">
-                @if (regularForm.get('timingMode')?.value === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send
-                now }
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <!-- Send timing -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3
-            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
-          >
-            Send timing
-          </h3>
-          <div class="space-y-3">
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-            >
-              <input
-                type="radio"
-                class="radio radio-sm radio-primary mt-0.5"
-                value="now"
-                formControlName="timingMode"
-                (change)="onTimingChange()"
-              />
-              <span>
-                <span class="block text-sm font-medium">Send now</span>
-                <span class="block text-xs text-base-content/60">Queued the moment you confirm.</span>
-              </span>
-            </label>
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-            >
-              <input
-                type="radio"
-                class="radio radio-sm radio-primary mt-0.5"
-                value="schedule"
-                formControlName="timingMode"
-                (change)="onTimingChange()"
-              />
-              <span>
-                <span class="block text-sm font-medium">Schedule for later</span>
-                <span class="block text-xs text-base-content/60">Delivered automatically at the time you pick.</span>
-              </span>
-            </label>
-          </div>
-
-          @if (regularForm.get('timingMode')?.value === 'schedule') {
-          <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <div class="relative flex flex-col gap-1">
-              <label class="text-xs font-medium">Send date</label>
-              <button type="button" class="btn btn-sm btn-outline justify-between" (click)="toggleDatePicker()">
-                <span>{{ scheduledDateDisplay() }}</span>
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
-              </button>
-              @if (showDatePicker()) {
-              <div class="absolute left-0 top-full z-20 mt-2">
-                <calendar-date
-                  class="cally rounded-box border border-base-300 bg-base-100 shadow-lg"
-                  [value]="scheduledDateValue()"
-                  (change)="onScheduledDateChange($event)"
-                >
-                  <calendar-month></calendar-month>
-                </calendar-date>
-              </div>
-              }
-              <input type="hidden" formControlName="scheduledDate" />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium">Send time</label>
-              <input
-                type="time"
-                class="input input-bordered input-sm w-full"
-                formControlName="scheduledTime"
-                (input)="onTimingChange()"
-              />
-            </div>
-            @if (timingNeedsDate() && showFieldErrors()) {
-            <p class="text-xs text-error sm:col-span-2">{{ scheduleCoach }}</p>
-            }
-          </div>
-          }
-        </div>
-      </div>
-      } }
-    </form>
-  </main>
-
-  <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
-  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
-    <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
-      <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      @if (currentStep() === 1) { Back } @else { Back }
-    </button>
-    <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
-      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
-    </button>
-    <div class="flex-1"></div>
-    @if (currentStep() < 4) {
-    <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
-      Next
-      <pc-icon name="chevron-right" [size]="4"></pc-icon>
-    </button>
-    } @else {
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="sendRegular()">
-      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
-      <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule') {
-      Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
-      peopleLabel(estimatedAudienceCount()) }} }
-    </button>
-    }
-  </footer>
-</div>
-} @else {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="switchToOptions()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletter types
-    </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
-      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
-      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
-      <p class="mt-2 text-sm text-base-content/60">
-        Until then, create a regular newsletter and send it now or on a schedule.
-      </p>
-      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
-        Create a regular newsletter
-      </button>
-    </div>
-  </main>
-</div>
 }
 ```
 
@@ -16317,8 +14020,17 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 
 import { MarketingEmailTopLinkType, MarketingEmailType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { NewslettersService } from '../services/newsletters-service';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+interface NewsletterAttachment {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+}
 
 interface DetailMetric {
   help?: string;
@@ -16335,8 +14047,18 @@ export class NewsletterDetailComponent {
   readonly id = input.required<string>();
 
   private readonly service = inject(NewslettersService);
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly attachments = signal<NewsletterAttachment[]>([]);
+  protected readonly isUploadingAttachment = signal(false);
+  /** Attachments can only be managed before a newsletter has gone out. */
+  protected readonly canManageAttachments = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
   protected readonly stats = signal<{
     activities: Array<{
       email: string;
@@ -16560,9 +14282,65 @@ export class NewsletterDetailComponent {
 
       const statsData = await this.service.getEngagementStats(id);
       this.stats.set(statsData);
+
+      await this.loadAttachments(id);
     } catch (err: unknown) {
       console.error(err);
       this.error.set('Unable to load newsletter.');
+    }
+  }
+
+  private async loadAttachments(id: string): Promise<void> {
+    try {
+      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
+      this.attachments.set(
+        (rows as Record<string, unknown>[]).map((r) => ({
+          id: String(r['id']),
+          filename: String(r['filename']),
+          size_bytes: r['size_bytes'] as number | null,
+        })),
+      );
+    } catch {
+      // Non-fatal — attachments are supplementary to the newsletter report.
+    }
+  }
+
+  protected async onAttachmentSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    const newsletterId = this.id();
+    if (!file || !newsletterId) return;
+
+    this.isUploadingAttachment.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
+      this.alertSvc.showSuccess(`"${file.name}" attached`);
+      await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to attach file');
+    } finally {
+      this.isUploadingAttachment.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Remove "${attachment.filename}"?`,
+      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(attachment.id);
+      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
+      const newsletterId = this.id();
+      if (newsletterId) await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to remove attachment');
     }
   }
 
@@ -17401,1026 +15179,6 @@ export class NewslettersGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
-
-```html
-<div
-  class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
->
-  <!-- LEFT: VISUAL CANVAS PREVIEW -->
-  <div class="flex-1 flex flex-col bg-base-200 h-full overflow-hidden">
-    <!-- CANVAS HEADER / TOOLBAR -->
-    <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-b border-base-300">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Preview Mode:</span>
-        <div class="join">
-          <button
-            type="button"
-            class="btn btn-xs join-item"
-            [class.btn-primary]="previewMode() === 'desktop'"
-            [class.btn-ghost]="previewMode() !== 'desktop'"
-            (click)="previewMode.set('desktop')"
-            title="Desktop View"
-          >
-            <pc-icon name="view-column" [size]="4"></pc-icon>
-            Desktop
-          </button>
-          <button
-            type="button"
-            class="btn btn-xs join-item"
-            [class.btn-primary]="previewMode() === 'mobile'"
-            [class.btn-ghost]="previewMode() !== 'mobile'"
-            (click)="previewMode.set('mobile')"
-            title="Mobile View"
-          >
-            <pc-icon name="collapse-content" [size]="4"></pc-icon>
-            Mobile
-          </button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Editor:</span>
-        <button
-          type="button"
-          class="btn btn-xs btn-outline"
-          [class.btn-active]="editorMode() === 'code'"
-          (click)="toggleEditorMode()"
-        >
-          @if (editorMode() === 'visual') {
-          <pc-icon name="file-code" [size]="4" class="mr-1"></pc-icon>
-          View HTML } @else {
-          <pc-icon name="eye" [size]="4" class="mr-1"></pc-icon>
-          Visual Editor }
-        </button>
-      </div>
-    </div>
-
-    <!-- CANVAS CONTENT AREA -->
-    <div class="flex-1 overflow-y-auto p-6 flex justify-center items-start">
-      @if (editorMode() === 'visual') {
-      <!-- EMAIL CANVAS WRAPPER -->
-      <div
-        class="bg-white text-black shadow-md rounded-lg overflow-hidden transition-all duration-300 relative border border-slate-200"
-        [style.width]="previewMode() === 'mobile' ? '375px' : '100%'"
-        [style.max-width]="previewMode() === 'mobile' ? '375px' : '600px'"
-        style="min-height: 500px"
-      >
-        <!-- CANVAS CONTAINER -->
-        <div class="w-full bg-slate-100 py-6 px-4" style="min-height: 500px">
-          <table border="0" cellpadding="0" cellspacing="0" width="100%">
-            <tr>
-              <td align="center">
-                <!-- Inner Email Content -->
-                <table
-                  border="0"
-                  cellpadding="0"
-                  cellspacing="0"
-                  width="100%"
-                  class="bg-white rounded-lg overflow-hidden border border-slate-200 shadow-sm"
-                >
-                  <tr>
-                    <td style="padding: 0">
-                      @if (blocks().length === 0) {
-                      <div class="p-8 text-center text-slate-400">
-                        <pc-icon name="document-text" [size]="8" class="mx-auto text-slate-300 mb-2"></pc-icon>
-                        <p class="text-sm font-medium">Your canvas is empty.</p>
-                        <p class="text-xs text-slate-400 mt-1">Add blocks from the sidebar to begin designing.</p>
-                      </div>
-                      } @else { @for (block of blocks(); track block.id; let idx = $index) {
-                      <div
-                        class="group relative border-2 transition-all duration-150 cursor-pointer"
-                        [class.border-primary]="selectedBlockId() === block.id"
-                        [class.border-transparent]="selectedBlockId() !== block.id"
-                        [class.hover:border-primary/50]="selectedBlockId() !== block.id"
-                        (click)="selectBlock(block.id, $event)"
-                      >
-                        <!-- Hover controls -->
-                        <div
-                          class="absolute -top-3 right-2 z-10 hidden group-hover:flex items-center gap-1 bg-primary text-primary-content text-[10px] rounded px-1 shadow-md"
-                        >
-                          <button
-                            type="button"
-                            class="p-1 hover:bg-primary-focus rounded"
-                            (click)="moveBlockUp(idx, $event)"
-                            [disabled]="idx === 0"
-                            title="Move Up"
-                          >
-                            ▲
-                          </button>
-                          <button
-                            type="button"
-                            class="p-1 hover:bg-primary-focus rounded"
-                            (click)="moveBlockDown(idx, $event)"
-                            [disabled]="idx === blocks().length - 1"
-                            title="Move Down"
-                          >
-                            ▼
-                          </button>
-                          <button
-                            type="button"
-                            class="p-1 hover:bg-primary-focus rounded"
-                            (click)="duplicateBlock(block, $event)"
-                            title="Duplicate"
-                          >
-                            ❐
-                          </button>
-                          <button
-                            type="button"
-                            class="p-1 hover:bg-error rounded text-red-100 hover:text-white"
-                            (click)="deleteBlock(block.id, $event)"
-                            title="Delete"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <!-- Block Renderers inside standard tables to mimic layout -->
-                        <!-- HEADING BLOCK -->
-                        @if (block.type === 'heading') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [style.padding-top.px]="block.styles?.paddingTop || 16"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                              [style.color]="block.styles?.color || '#1f2937'"
-                              [style.font-size]="block.styles?.fontSize || '24px'"
-                              [style.text-align]="block.styles?.textAlign || 'center'"
-                              class="font-sans font-bold px-6 leading-tight select-none"
-                              [innerHTML]="
-                                            resolveVariablesForPreview(block.content || 'Heading Block', false)
-                                          "
-                            ></td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- TEXT BLOCK -->
-                        @if (block.type === 'text') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [style.padding-top.px]="block.styles?.paddingTop || 12"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                              [style.color]="block.styles?.color || '#4b5563'"
-                              [style.font-size]="block.styles?.fontSize || '16px'"
-                              [style.text-align]="block.styles?.textAlign || 'left'"
-                              class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
-                              [innerHTML]="
-                                            resolveVariablesForPreview(
-                                              block.content || 'Click here to write some text...',
-                                              false
-                                            )
-                                          "
-                            ></td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- IMAGE BLOCK -->
-                        @if (block.type === 'image') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [align]="block.styles?.textAlign || 'center'"
-                              [style.padding-top.px]="block.styles?.paddingTop || 12"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                              class="px-6"
-                            >
-                              <img
-                                [src]="
-                                              block.imageUrl ||
-                                              'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'
-                                            "
-                                [alt]="block.imageAlt || 'Newsletter Image'"
-                                [style.max-width]="block.imageWidth || '100%'"
-                                class="w-full height-auto border-0 block rounded"
-                              />
-                            </td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- BUTTON BLOCK -->
-                        @if (block.type === 'button') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [align]="block.styles?.textAlign || 'center'"
-                              [style.padding-top.px]="block.styles?.paddingTop || 16"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                              class="px-6"
-                            >
-                              <table border="0" cellpadding="0" cellspacing="0" class="border-separate">
-                                <tr>
-                                  <td
-                                    align="center"
-                                    valign="middle"
-                                    [style.background-color]="block.styles?.backgroundColor || '#2563eb'"
-                                    [style.border-radius.px]="block.styles?.borderRadius || 6"
-                                  >
-                                    <span
-                                      class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
-                                      [style.color]="block.styles?.color || '#ffffff'"
-                                      [style.font-size]="block.styles?.fontSize || '16px'"
-                                      [innerHTML]="
-                                                    resolveVariablesForPreview(block.content || 'Click Me', true)
-                                                  "
-                                    >
-                                    </span>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- DIVIDER BLOCK -->
-                        @if (block.type === 'divider') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [style.padding-top.px]="block.styles?.paddingTop || 12"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
-                              class="px-6"
-                            >
-                              <div
-                                [style.border-top-width.px]="block.styles?.borderWidth || 1"
-                                [style.border-top-color]="block.styles?.borderColor || '#e5e7eb'"
-                                class="border-t"
-                              ></div>
-                            </td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- SPACER BLOCK -->
-                        @if (block.type === 'spacer') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td [style.height.px]="block.styles?.height || 20" style="font-size: 0; line-height: 0">
-                              &nbsp;
-                            </td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- SOCIAL LINKS BLOCK -->
-                        @if (block.type === 'social') {
-                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                          <tr>
-                            <td
-                              [align]="block.styles?.textAlign || 'center'"
-                              [style.padding-top.px]="block.styles?.paddingTop || 16"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
-                              class="px-6"
-                            >
-                              <table border="0" cellpadding="0" cellspacing="0">
-                                <tr>
-                                  @for (social of block.socials || []; track social.platform) {
-                                  <td class="px-2">
-                                    <span
-                                      class="inline-flex items-center justify-center w-8 h-8 select-none"
-                                      [style.background-color]="
-                                                      getSocialBgColor(
-                                                        social.platform,
-                                                        block.socialIconStyle || 'circular-solid'
-                                                      )
-                                                    "
-                                      [style.color]="
-                                                      getSocialIconColor(
-                                                        social.platform,
-                                                        block.socialIconStyle || 'circular-solid'
-                                                      )
-                                                    "
-                                      [style.border-radius]="
-                                                      (block.socialIconStyle || 'circular-solid').startsWith('circular')
-                                                        ? '50%'
-                                                        : '0%'
-                                                    "
-                                    >
-                                      <svg
-                                        viewBox="0 0 24 24"
-                                        class="w-4 h-4 fill-current"
-                                        style="display: block; width: 16px; height: 16px"
-                                      >
-                                        <path [attr.d]="socialSvgPaths[social.platform]"></path>
-                                      </svg>
-                                    </span>
-                                  </td>
-                                  }
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </table>
-                        }
-
-                        <!-- FOOTER BLOCK -->
-                        @if (block.type === 'footer') {
-                        <table
-                          border="0"
-                          cellpadding="0"
-                          cellspacing="0"
-                          width="100%"
-                          [style.background-color]="block.styles?.backgroundColor || '#f9fafb'"
-                        >
-                          <tr>
-                            <td
-                              [style.color]="block.styles?.color || '#9ca3af'"
-                              [style.padding-top.px]="block.styles?.paddingTop || 24"
-                              [style.padding-bottom.px]="block.styles?.paddingBottom || 24"
-                              class="font-sans px-6 text-xs text-center leading-normal"
-                            >
-                              <p
-                                class="font-bold mb-1"
-                                [innerHTML]="
-                                              resolveVariablesForPreview(
-                                                block.footerCompany || 'Company Name Inc.',
-                                                false
-                                              )
-                                            "
-                              ></p>
-                              <p
-                                class="mb-3 whitespace-pre-wrap"
-                                [innerHTML]="
-                                              resolveVariablesForPreview(
-                                                block.footerAddress || '123 Address Rd, City, State',
-                                                false
-                                              )
-                                            "
-                              ></p>
-                              <p>
-                                You are receiving this email because you opted in on our website.
-                                <br />
-                                <span class="underline text-primary">Unsubscribe</span>
-                              </p>
-                            </td>
-                          </tr>
-                        </table>
-                        }
-                      </div>
-                      } }
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </div>
-      </div>
-      } @else {
-      <!-- RAW CODE VIEW -->
-      <div class="w-full h-full flex flex-col gap-2">
-        <div class="alert alert-warning text-xs py-2">
-          <pc-icon name="exclamation-triangle" [size]="4" class="mr-1"></pc-icon>
-          <span>
-            <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be
-            converted back into visual blocks.
-          </span>
-        </div>
-        <textarea
-          class="textarea textarea-bordered font-mono text-xs w-full flex-1"
-          [ngModel]="compiledHtml()"
-          (ngModelChange)="handleRawHtmlEdit($event)"
-          placeholder="Paste or edit HTML here..."
-        ></textarea>
-      </div>
-      }
-    </div>
-  </div>
-
-  <!-- RIGHT: CONTROL PANEL -->
-  <aside
-    class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
-  >
-    <!-- TABS -->
-    <div role="tablist" class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
-      <a
-        role="tab"
-        class="tab focus:outline-none cursor-pointer"
-        [class.tab-active]="activeTab() === 'blocks'"
-        (click)="activeTab.set('blocks')"
-      >
-        Blocks
-      </a>
-      <a
-        role="tab"
-        class="tab focus:outline-none cursor-pointer"
-        [class.tab-active]="activeTab() === 'edit'"
-        (click)="activeTab.set('edit')"
-      >
-        Customize
-      </a>
-    </div>
-
-    <!-- TAB CONTENT -->
-    <div class="flex-1 overflow-y-auto p-4">
-      <!-- BLOCKS TAB -->
-      @if (activeTab() === 'blocks') {
-      <div class="space-y-4">
-        <div>
-          <h3 class="text-sm font-bold text-base-content/75 mb-1">Add Elements</h3>
-          <p class="text-xs text-base-content/60">Click any block to insert it at the end of your newsletter.</p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('heading')"
-          >
-            <pc-icon name="document-text" [size]="5" class="text-primary"></pc-icon>
-            Heading
-          </button>
-          <button type="button" class="btn btn-outline btn-sm flex justify-start gap-2 h-12" (click)="addBlock('text')">
-            <pc-icon name="document-text" [size]="5" class="text-success"></pc-icon>
-            Paragraph
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('image')"
-          >
-            <pc-icon name="file-image" [size]="5" class="text-warning"></pc-icon>
-            Image
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('button')"
-          >
-            <pc-icon name="star-filled" [size]="5" class="text-info"></pc-icon>
-            CTA Button
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('divider')"
-          >
-            <pc-icon name="bars-3" [size]="5" class="text-neutral-content"></pc-icon>
-            Divider
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('spacer')"
-          >
-            <pc-icon name="arrows-pointing-out" [size]="5"></pc-icon>
-            Spacer
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('social')"
-          >
-            <pc-icon name="user-group" [size]="5" class="text-primary"></pc-icon>
-            Social Links
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm flex justify-start gap-2 h-12"
-            (click)="addBlock('footer')"
-          >
-            <pc-icon name="home" [size]="5" class="text-secondary"></pc-icon>
-            Email Footer
-          </button>
-        </div>
-
-        <!-- Quick action tip -->
-        <div class="mt-4 rounded bg-info/10 border border-info/20 p-3 text-xs text-info-content">
-          <p><strong>Tip:</strong> Hover over blocks on the canvas to move them up/down, duplicate, or delete them.</p>
-        </div>
-      </div>
-      }
-
-      <!-- EDIT TAB -->
-      @if (activeTab() === 'edit') { @if (selectedBlock(); as block) {
-      <div class="space-y-4">
-        <div class="flex items-center justify-between border-b border-base-200 pb-2">
-          <span class="text-xs uppercase font-bold text-base-content/60">Selected: {{ block.type }}</span>
-          <button type="button" class="btn btn-xs btn-error text-white" (click)="deleteBlock(block.id)">
-            Delete Block
-          </button>
-        </div>
-
-        <!-- HEADING AND TEXT EDIT FIELDS -->
-        @if (block.type === 'heading' || block.type === 'text') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Text Content</label>
-          @if (block.type === 'heading') {
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
-          />
-          } @else {
-          <textarea
-            class="textarea textarea-bordered w-full textarea-sm min-h-24"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
-          ></textarea>
-          }
-
-          <!-- Quick-Insert Variables -->
-          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
-              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName', 'content')"
-                title="Click to insert First Name placeholder"
-              >
-                + First Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName', 'content')"
-                title="Click to insert Last Name placeholder"
-              >
-                + Last Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email', 'content')"
-                title="Click to insert Email placeholder"
-              >
-                + Email
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Company', 'content')"
-                title="Click to insert Company placeholder"
-              >
-                + Company
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'JobTitle', 'content')"
-                title="Click to insert Job Title placeholder"
-              >
-                + Job Title
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Phone', 'content')"
-                title="Click to insert Phone placeholder"
-              >
-                + Phone
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Text Styles -->
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Font Size</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.fontSize"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="12px">12px (Small)</option>
-              <option value="14px">14px</option>
-              <option value="16px">16px (Normal)</option>
-              <option value="18px">18px</option>
-              <option value="20px">20px (H3)</option>
-              <option value="24px">24px (H2)</option>
-              <option value="28px">28px (H1)</option>
-              <option value="32px">32px</option>
-              <option value="36px">36px (Large)</option>
-            </select>
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Align</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Color Hex</label>
-            <input
-              type="text"
-              class="input input-bordered input-sm w-full font-mono text-xs"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-        </div>
-        }
-
-        <!-- IMAGE EDIT FIELDS -->
-        @if (block.type === 'image') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Image URL</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.imageUrl"
-            (ngModelChange)="updateBlocks()"
-            placeholder="https://..."
-          />
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Alt Text</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.imageAlt"
-            (ngModelChange)="updateBlocks()"
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Max Width (e.g. 100%, 300px)</label>
-            <input
-              type="text"
-              class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.imageWidth"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Link URL (Optional)</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.linkUrl"
-            (ngModelChange)="updateBlocks()"
-            placeholder="https://..."
-          />
-        </div>
-        }
-
-        <!-- BUTTON EDIT FIELDS -->
-        @if (block.type === 'button') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Button Text</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
-          />
-
-          <!-- Quick-Insert Variables -->
-          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
-              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'FirstName', 'content')"
-                title="Click to insert First Name placeholder"
-              >
-                + First Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'LastName', 'content')"
-                title="Click to insert Last Name placeholder"
-              >
-                + Last Name
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
-                (click)="insertVariable(block, 'Email', 'content')"
-                title="Click to insert Email placeholder"
-              >
-                + Email
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Link URL</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.linkUrl"
-            (ngModelChange)="updateBlocks()"
-            placeholder="https://..."
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Bg Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.backgroundColor"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Border Radius (px)</label>
-            <input
-              type="number"
-              class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.styles!.borderRadius"
-              (ngModelChange)="updateBlocks()"
-              min="0"
-              max="30"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-        }
-
-        <!-- DIVIDER EDIT FIELDS -->
-        @if (block.type === 'divider') {
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Divider Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.borderColor"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Line Thickness (px)</label>
-            <input
-              type="number"
-              class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.styles!.borderWidth"
-              (ngModelChange)="updateBlocks()"
-              min="1"
-              max="10"
-            />
-          </div>
-        </div>
-        }
-
-        <!-- SPACER EDIT FIELDS -->
-        @if (block.type === 'spacer') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Spacer Height (px)</label>
-          <input
-            type="number"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.styles!.height"
-            (ngModelChange)="updateBlocks()"
-            min="5"
-            max="150"
-            step="5"
-          />
-        </div>
-        }
-
-        <!-- SOCIAL LINKS EDIT FIELDS -->
-        @if (block.type === 'social') {
-        <div class="space-y-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.socialIconStyle"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="circular-solid">Circular Brand Color</option>
-              <option value="circular-gray">Circular Grayscale</option>
-              <option value="simple-color">Flat Brand Color</option>
-              <option value="simple-gray">Flat Grayscale</option>
-            </select>
-          </div>
-
-          <label class="label text-xs font-semibold py-1">Social Networks</label>
-          @for (social of block.socials; track social.platform) {
-          <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
-            <span class="text-[10px] font-bold uppercase text-base-content/60">{{ social.platform }} URL</span>
-            <input
-              type="text"
-              class="input input-bordered input-xs w-full font-mono"
-              [(ngModel)]="social.url"
-              (ngModelChange)="updateBlocks()"
-              placeholder="https://..."
-            />
-          </div>
-          }
-
-          <div class="form-control mt-2">
-            <label class="label text-xs font-semibold py-1">Alignment</label>
-            <select
-              class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-        </div>
-        }
-
-        <!-- FOOTER EDIT FIELDS -->
-        @if (block.type === 'footer') {
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Company Name</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.footerCompany"
-            (ngModelChange)="updateBlocks()"
-          />
-          <div class="mt-1 flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Company', 'footerCompany')"
-            >
-              + Company
-            </button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Address Info</label>
-          <textarea
-            class="textarea textarea-bordered w-full textarea-sm min-h-16"
-            [(ngModel)]="block.footerAddress"
-            (ngModelChange)="updateBlocks()"
-          ></textarea>
-          <div class="mt-1 flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Company', 'footerAddress')"
-            >
-              + Company
-            </button>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Phone', 'footerAddress')"
-            >
-              + Phone
-            </button>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
-              (click)="insertVariable(block, 'Email', 'footerAddress')"
-            >
-              + Email
-            </button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label class="label text-xs font-semibold py-1">Unsubscribe Link</label>
-          <input
-            type="text"
-            class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.footerUnsubscribeUrl"
-            (ngModelChange)="updateBlocks()"
-          />
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Bg Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.backgroundColor"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-          <div class="form-control">
-            <label class="label text-xs font-semibold py-1">Text Color</label>
-            <input
-              type="color"
-              class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
-            />
-          </div>
-        </div>
-        }
-
-        <!-- COMMON BLOCK PADDING SETTINGS -->
-        <div class="border-t border-base-200 pt-3 mt-3">
-          <h4 class="text-xs font-bold text-base-content/60 mb-2">Block Margins</h4>
-          <div class="grid grid-cols-2 gap-2">
-            <div class="form-control">
-              <label class="label text-[10px] uppercase font-bold py-0">Padding Top (px)</label>
-              <input
-                type="number"
-                class="input input-bordered w-full input-sm"
-                [(ngModel)]="block.styles!.paddingTop"
-                (ngModelChange)="updateBlocks()"
-                min="0"
-                max="80"
-              />
-            </div>
-
-            <div class="form-control">
-              <label class="label text-[10px] uppercase font-bold py-0">Padding Bottom (px)</label>
-              <input
-                type="number"
-                class="input input-bordered w-full input-sm"
-                [(ngModel)]="block.styles!.paddingBottom"
-                (ngModelChange)="updateBlocks()"
-                min="0"
-                max="80"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-      } @else {
-      <div class="h-48 flex flex-col justify-center items-center text-center text-base-content/40 p-4">
-        <pc-icon name="pencil-square" [size]="8" class="text-base-content/30 mb-2"></pc-icon>
-        <p class="text-sm font-semibold">No Block Selected</p>
-        <p class="text-xs mt-1">Click on any block inside the preview area to edit its content and styling.</p>
-      </div>
-      } }
-    </div>
-  </aside>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.ts
 
 ```typescript
@@ -19125,131 +15883,6 @@ export class ConnectionCard {
     if (c.relation_type === 'custom' && c.custom_label) return c.custom_label;
     return RELATION_TYPE_LABELS[c.relation_type as keyof typeof RELATION_TYPE_LABELS] ?? c.relation_type;
   });
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/account/account-settings.html
-
-```html
-@if (loading()) {
-<div class="flex items-center gap-3 py-8 text-base-content/50">
-  <span class="loading loading-spinner loading-md"></span>
-  <span class="text-sm font-medium">Loading account status…</span>
-</div>
-} @else if (status()) {
-
-<!-- Account Status Banner -->
-@if (status()!.deletion_scheduled_at) {
-<div class="alert alert-error mb-6">
-  <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-  <div>
-    <h4 class="font-bold">Account Deletion In Progress</h4>
-    <p class="text-sm">
-      Your account is being permanently deleted. All data will be removed. You will receive a confirmation email when
-      the process is complete.
-    </p>
-  </div>
-</div>
-} @else if (status()!.suspended_at) {
-<div class="alert alert-error mb-6">
-  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-  <div>
-    <h4 class="font-bold">Account Suspended</h4>
-    <p class="text-sm">
-      Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Please contact support
-      to reactivate your account.
-    </p>
-  </div>
-</div>
-} @else if (status()!.paused_at) {
-<div class="alert alert-warning mb-6">
-  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-  <div>
-    <h4 class="font-bold">Account Paused</h4>
-    <p class="text-sm">
-      Your account has been paused since {{ status()!.paused_at | date : 'mediumDate' }}. Your data is preserved and
-      billing is paused. Reactivate below to restore full access.
-    </p>
-  </div>
-</div>
-} @else {
-<div class="alert alert-success mb-6">
-  <pc-icon name="check-circle" [size]="5"></pc-icon>
-  <div>
-    <h4 class="font-bold">Account Active</h4>
-    <p class="text-sm">Your account is active and in good standing.</p>
-  </div>
-</div>
-}
-
-<!-- Pause / Reactivate Section -->
-<div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
-  <div class="space-y-1">
-    <h3 class="text-base font-bold text-base-content/90">Pause Account</h3>
-    <p class="text-sm text-base-content/60">
-      Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
-      logging back in.
-    </p>
-  </div>
-  <div class="flex items-center gap-3">
-    @if (status()!.paused_at) {
-    <button
-      type="button"
-      class="btn btn-success btn-sm"
-      (click)="resumeAccount()"
-      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
-    >
-      @if (actionPending()) {
-      <span class="loading loading-spinner loading-xs"></span>
-      } Reactivate Account
-    </button>
-    } @else if (!status()!.suspended_at) {
-    <button
-      type="button"
-      class="btn btn-warning btn-sm btn-outline"
-      (click)="pauseAccount()"
-      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
-    >
-      @if (actionPending()) {
-      <span class="loading loading-spinner loading-xs"></span>
-      } Pause Account
-    </button>
-    }
-  </div>
-</div>
-
-<!-- Danger Zone -->
-<div class="card border border-error/30 bg-error/5 rounded-xl p-6 space-y-4">
-  <div class="space-y-1">
-    <h3 class="text-base font-bold text-error">Danger Zone</h3>
-    <p class="text-sm text-base-content/60">
-      Permanently delete this organization and all its data. This includes all contacts, emails, campaigns, imports,
-      exports, and settings. This action cannot be undone.
-    </p>
-  </div>
-
-  @if (status()!.deletion_scheduled_at) {
-  <div class="space-y-3">
-    <p class="text-sm text-error font-medium">
-      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
-      removed.
-    </p>
-    <button type="button" class="btn btn-outline btn-sm" (click)="cancelDeletion()" [disabled]="actionPending()">
-      @if (actionPending()) {
-      <span class="loading loading-spinner loading-xs"></span>
-      } Cancel Deletion
-    </button>
-  </div>
-  } @else {
-  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
-    @if (actionPending()) {
-    <span class="loading loading-spinner loading-xs"></span>
-    }
-    <pc-icon name="trash-forever" [size]="4"></pc-icon>
-    Delete Account Permanently
-  </button>
-  }
-</div>
 }
 ```
 
@@ -22365,6 +18998,177 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.html
+
+```html
+<div class="space-y-8">
+  @if (!loaded()) {
+  <div class="flex items-center justify-center py-16">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+  } @else {
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
+    </div>
+
+    <div class="pt-2">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <span class="font-semibold text-base-content">
+          {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
+        </span>
+        @if (usedPct() >= 100) {
+        <span class="text-sm text-error font-medium">Newsletters pause sending attachments at 100%</span>
+        } @else if (usedPct() >= 90) {
+        <span class="text-sm text-warning font-medium">Approaching your storage limit</span>
+        }
+      </div>
+      <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
+        <div class="h-full rounded-full transition-all" [class]="barColorClass()" [style.width.%]="usedPct()"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
+    </div>
+
+    @if (largestFiles().length === 0) {
+    <div class="flex flex-col items-center text-center py-10">
+      <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+      <p class="text-sm text-base-content/60">No files uploaded yet.</p>
+    </div>
+    } @else {
+    <ul class="divide-y divide-base-200">
+      @for (file of largestFiles(); track file.id) {
+      <li class="flex items-center justify-between gap-4 py-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document" class="text-primary/70 shrink-0" [size]="6"></pc-icon>
+          <div class="min-w-0">
+            <p class="font-medium text-base-content truncate">{{ file.filename }}</p>
+            @if (file.attachedToLabel) {
+            <p class="text-xs text-base-content/60 truncate">Attached to {{ file.attachedToLabel }}</p>
+            }
+          </div>
+        </div>
+        <div class="flex items-center gap-4 shrink-0">
+          <span class="text-sm text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
+          <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
+            <pc-icon name="trash" [size]="4"></pc-icon>
+          </button>
+        </div>
+      </li>
+      }
+    </ul>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+interface LargestFile {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+  attachedToLabel: string | null;
+}
+
+@Component({
+  selector: 'pc-storage-settings',
+  imports: [Icon],
+  templateUrl: './storage-settings.html',
+})
+export class StorageSettingsComponent implements OnInit {
+  private readonly filesSvc = inject(FilesService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+
+  protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
+  protected readonly usedBytes = signal(0);
+  protected readonly quotaBytes = signal(0);
+  protected readonly planLabel = signal('');
+  protected readonly largestFiles = signal<LargestFile[]>([]);
+
+  protected readonly usedPct = computed(() => {
+    const quota = this.quotaBytes();
+    if (!quota) return 0;
+    return Math.min(100, Math.round((this.usedBytes() / quota) * 100));
+  });
+
+  protected readonly barColorClass = computed(() => {
+    const pct = this.usedPct();
+    if (pct >= 100) return 'bg-error';
+    if (pct >= 90) return 'bg-warning';
+    return 'bg-primary';
+  });
+
+  ngOnInit(): void {
+    void this.load();
+  }
+
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const summary = await this.filesSvc.getUsageSummary();
+      this.usedBytes.set(summary.usedBytes);
+      this.quotaBytes.set(summary.quotaBytes);
+      this.planLabel.set(this.formatPlanLabel(summary.planLabel));
+      this.largestFiles.set(summary.largestFiles);
+    } catch {
+      this.alerts.showError('Failed to load storage usage');
+    } finally {
+      end();
+    }
+  }
+
+  private formatPlanLabel(plan: string): string {
+    if (!plan) return 'Free trial plan';
+    return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
+  }
+
+  protected formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return '—';
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  protected async deleteFile(file: LargestFile): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete "${file.filename}"?`,
+      message: 'This permanently removes the file from cloud storage. This cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alerts.showSuccess(`"${file.filename}" deleted`);
+      await this.load();
+    } catch {
+      this.alerts.showError('Failed to delete file');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
 
 ```typescript
@@ -24588,536 +21392,6 @@ export class TaskAddComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <!-- Top Navigation Bar & Action Buttons -->
-    <div
-      class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <a routerLink="/tasks" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="arrow-left" [size]="4"></pc-icon>
-          Back to List
-        </a>
-        <a routerLink="/board" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="view-kanban" [size]="4"></pc-icon>
-          Task Board
-        </a>
-      </div>
-      <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-        @if (!isArchived()) {
-        <button (click)="archiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
-          <pc-icon name="archive-box" [size]="4"></pc-icon>
-          Archive
-        </button>
-        } @else {
-        <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
-          <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
-          Unarchive
-        </button>
-        }
-        <button (click)="deleteTask()" class="btn btn-outline btn-error btn-sm gap-2">
-          <pc-icon name="trash" [size]="4"></pc-icon>
-          Delete Task
-        </button>
-      </div>
-    </div>
-
-    @if (isLoading() && !task()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else { @if (task(); as t) {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Elegant Title & Description Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
-
-          <div class="p-6">
-            <!-- Inline Edit Task Name -->
-            <div class="group relative mb-4">
-              @if (isEditingName()) {
-              <div class="flex gap-2 items-center">
-                <input
-                  type="text"
-                  class="input input-bordered input-md font-bold text-2xl grow text-base-content"
-                  [(ngModel)]="tempName"
-                  (keydown.enter)="saveName()"
-                  (keydown.escape)="cancelEditingName()"
-                  placeholder="Task name"
-                  autofocus
-                />
-                <button (click)="saveName()" class="btn btn-primary btn-square btn-md" title="Save">
-                  <pc-icon name="save" [size]="5"></pc-icon>
-                </button>
-                <button (click)="cancelEditingName()" class="btn btn-ghost btn-square btn-md" title="Cancel">
-                  <pc-icon name="x-mark" [size]="5"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div class="flex items-start justify-between gap-4">
-                <h1
-                  (click)="startEditingName()"
-                  class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow"
-                >
-                  {{ t.name || '(No Name)' }}
-                  <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                    <pc-icon name="pencil-square" [size]="4" class="text-base-content/40 inline"></pc-icon>
-                  </span>
-                </h1>
-                <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getStatusBadgeClass(t.status)"
-                  >
-                    {{ statusLabel(t.status) }}
-                  </span>
-                  @if (t.priority) {
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getPriorityBadgeClass(t.priority)"
-                  >
-                    {{ toTitleCase(t.priority) }}
-                  </span>
-                  }
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Inline Edit Description -->
-            <div class="border-t border-base-200 mt-4 pt-4">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
-                @if (!isEditingDetails()) {
-                <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
-                  <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
-                </button>
-                }
-              </div>
-
-              @if (isEditingDetails()) {
-              <div class="grid gap-2">
-                <quill-editor
-                  [styles]="{ height: '220px' }"
-                  [(ngModel)]="tempDetails"
-                  placeholder="Describe this task..."
-                ></quill-editor>
-                <div class="flex justify-end gap-2 mt-2">
-                  <button (click)="cancelEditingDetails()" class="btn btn-sm btn-ghost">Cancel</button>
-                  <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
-                </div>
-              </div>
-              } @else {
-              <div
-                (click)="startEditingDetails()"
-                class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
-                [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
-              ></div>
-              }
-            </div>
-          </div>
-        </div>
-
-        <!-- Subtasks Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
-              Subtasks ({{ subtasks().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
-              {{ showSubtasks() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showSubtasks()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (subtasks().length > 0) {
-            <div class="grid gap-2.5">
-              @for (s of subtasks(); track s.id) {
-              <label
-                class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary checkbox-sm"
-                  [checked]="s.status === 'done'"
-                  (change)="toggleSubtask(s, $any($event.target).checked)"
-                />
-                <span
-                  class="text-sm font-medium text-base-content"
-                  [class.line-through]="s.status === 'done'"
-                  [class.opacity-50]="s.status === 'done'"
-                >
-                  {{ s.name }}
-                </span>
-              </label>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No subtasks defined. Add one below to break this task down.
-            </div>
-            }
-
-            <div class="flex gap-2 mt-2">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="Add a subtask..."
-                [(ngModel)]="subtaskName"
-                (keydown.enter)="addSubtask()"
-              />
-              <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
-                Add Subtask
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Comments / Collaboration Panel -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
-              Discussion ({{ comments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
-              {{ showComments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showComments()) {
-          <div class="p-6 flex flex-col gap-6">
-            @if (comments().length > 0) {
-            <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-              @for (c of comments(); track c.id) {
-              <div
-                class="chat"
-                [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
-                [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
-              >
-                <div class="chat-image">
-                  <pc-user-avatar
-                    [name]="userName(c.author_id || c.createdby_id)"
-                    [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
-                    [size]="8"
-                  />
-                </div>
-
-                <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
-                  <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
-                  @if (c.created_at) {
-                  <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
-                    {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
-                  </span>
-                  }
-                </div>
-
-                <div
-                  class="chat-bubble text-sm font-light shadow-sm"
-                  [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
-                  [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
-                ></div>
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No comments yet. Start the conversation!
-            </div>
-            }
-
-            <!-- Comment Composer with User Mentions -->
-            <div class="form-control relative mt-2 border-t border-base-200 pt-4">
-              <textarea
-                #taskComposer
-                [ngModel]="newComment()"
-                (ngModelChange)="newComment.set($event)"
-                placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
-                class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
-                (input)="onComposerInput($event)"
-                (keydown)="onComposerKeydown($event)"
-                (click)="onComposerClick($event)"
-              ></textarea>
-
-              <!-- Mentions Dropdown -->
-              @if (mc.open() && mc.candidates().length) {
-              <div
-                class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
-              >
-                @for (u of mc.candidates(); track u.id; let i = $index) {
-                <div
-                  class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
-                  [class.bg-base-200]="i === mc.index()"
-                  (mousedown)="selectMention(u, $event)"
-                >
-                  <div
-                    class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold"
-                  >
-                    {{ (u.first_name || u.email || '?') | slice:0:1 }}
-                  </div>
-                  <div class="truncate">
-                    <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
-                    <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
-                  </div>
-                </div>
-                }
-              </div>
-              }
-
-              <div class="mt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-ghost"
-                  (click)="newComment.set('')"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-primary px-4 gap-1.5"
-                  (click)="addComment()"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
-                </button>
-              </div>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Attachments Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
-              Attachments ({{ attachments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
-              {{ showAttachments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showAttachments()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (attachments().length > 0) {
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              @for (a of attachments(); track a.id) {
-              <div
-                class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
-                  <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
-                    {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
-                  </div>
-                </div>
-                @if (a.url) {
-                <a
-                  class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
-                  [href]="a.url"
-                  target="_blank"
-                  title="Open Attachment"
-                >
-                  <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                </a>
-                }
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
-            }
-
-            <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="File Name (e.g. report.pdf)"
-                [(ngModel)]="attName"
-              />
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="URL (e.g. https://...)"
-                [(ngModel)]="attUrl"
-              />
-              <button class="btn btn-accent btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
-                Attach File
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Task Status & Detail Settings Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
-          </div>
-
-          <div class="p-6 flex flex-col gap-4">
-            <!-- Status Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.status || 'todo'"
-                (change)="onStatusChange($event)"
-              >
-                @for (s of statuses; track s) {
-                <option [value]="s">{{ statusLabels[s] }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Priority Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.priority || 'medium'"
-                (change)="onPriorityChange($event)"
-              >
-                @for (p of priorities; track p) {
-                <option [value]="p">{{ toTitleCase(p) }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Due Date Calendar Picker -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
-              >
-              @if (!isEditingDueDate()) {
-              <div
-                (click)="isEditingDueDate.set(true)"
-                class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
-                  <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
-                </div>
-                <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
-              </div>
-              } @else {
-              <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
-                <calendar-date
-                  class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
-                  [value]="dateOnly(t.due_at)"
-                  (change)="onDueDateChange($event)"
-                >
-                  <calendar-month></calendar-month>
-                </calendar-date>
-                <div class="flex justify-end gap-1.5 mt-1">
-                  <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Assigned User Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
-              >
-              <div class="flex gap-2">
-                <select
-                  class="select select-bordered select-sm grow font-medium"
-                  [ngModel]="assignedTo()"
-                  (ngModelChange)="onAssignedChange($event)"
-                >
-                  <option value="">Unassigned</option>
-                  @for (u of users(); track u.id) {
-                  <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </select>
-                <button (click)="assignToMe()" class="btn btn-outline btn-sm font-semibold" title="Assign to me">
-                  Me
-                </button>
-              </div>
-            </div>
-
-            <!-- Associated Team Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="teamId()"
-                (change)="onTeamChange($event)"
-              >
-                <option value="">No Team</option>
-                @for (team of teamsList(); track team.id) {
-                <option [value]="'' + team.id">{{ team.name }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Divider -->
-            <div class="divider my-1"></div>
-
-            <!-- System Information Metadata -->
-            <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
-              <div class="flex justify-between">
-                <span>Created By:</span>
-                <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Created On:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Last Updated:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Task Audit Log Component -->
-        @if (id()) {
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
-              Activity History
-            </h3>
-          </div>
-          <div class="p-4 max-h-[350px] overflow-y-auto">
-            <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Task not found or failed to load.</span>
-    </div>
-    } }
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
 
 ```typescript
@@ -25595,126 +21869,6 @@ export class TaskView {
       .join(' ');
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
-
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 class="text-xl font-semibold">Task board</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
-      }
-    </div>
-    <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openList()">
-      <pc-icon name="queue-list" [size]="4"></pc-icon>
-      Open list
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-    @for (col of columns; track col) {
-    <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
-        <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
-      </div>
-
-      <div class="flex flex-1 flex-col gap-2 overflow-auto">
-        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div
-          class="card bg-base-100 border-line cursor-pointer border shadow-sm"
-          [class.animate-saved-flash]="isFlashed(t.id)"
-          (click)="openTask(t)"
-        >
-          <div class="card-body gap-1.5 p-3">
-            <div class="flex items-start justify-between gap-2">
-              <span class="text-sm font-medium break-words">{{ t.name }}</span>
-              @if (t.priority) {
-              <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-              }
-            </div>
-
-            @if (t.team_name || t.due_at) {
-            <div class="text-base-content/60 text-xs">
-              @if (t.team_name) {
-              <span>{{ t.team_name }}</span>
-              } @if (t.team_name && t.due_at) {
-              <span> · </span>
-              } @if (t.due_at) {
-              <span>Due {{ dateLabel(t.due_at) }}</span>
-              }
-            </div>
-            } @if (reason) {
-            <div class="text-warning flex items-center gap-1 text-xs">
-              <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="break-words">{{ reason }}</span>
-            </div>
-            } @if (pill) {
-            <span
-              class="badge badge-xs w-fit"
-              [class.badge-error]="pill.tone === 'error'"
-              [class.badge-warning]="pill.tone === 'warning'"
-              [class.badge-ghost]="pill.tone === 'neutral'"
-            >
-              {{ pill.text }}
-            </span>
-            }
-
-            <div class="mt-1 flex items-center justify-between gap-2">
-              @if (t.assigned_to) {
-              <span
-                class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
-                [attr.title]="assignee"
-                >{{ assigneeInitial(t.assigned_to) }}</span
-              >
-              } @else {
-              <button
-                type="button"
-                class="badge badge-outline border-dashed text-xs"
-                title="Take this task — one click assigns it to you"
-                (click)="takeTask(t); $event.stopPropagation()"
-              >
-                Unassigned
-              </button>
-              }
-
-              <div class="flex items-center gap-1">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle"
-                  [class.opacity-30]="!canMove(t.status, -1)"
-                  [disabled]="!canMove(t.status, -1)"
-                  [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
-                  (click)="moveCard(t, -1); $event.stopPropagation()"
-                >
-                  <pc-icon name="chevron-left" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle"
-                  [class.opacity-30]="!canMove(t.status, 1)"
-                  [disabled]="!canMove(t.status, 1)"
-                  [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
-                  (click)="moveCard(t, 1); $event.stopPropagation()"
-                >
-                  <pc-icon name="chevron-right" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
@@ -32705,89 +28859,6 @@ export class DataGridFilterDropdownComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
-
-```html
-<div class="fixed inset-0 z-40">
-  <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
-  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
-    <!-- Pinned Header Area -->
-    <div class="shrink-0">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-lg font-semibold">Filters</h3>
-        <button class="btn btn-ghost btn-sm px-2" (click)="closePanel.emit()">
-          <pc-icon name="chevron-right"></pc-icon>
-        </button>
-      </div>
-      <div class="flex justify-between items-center mb-3">
-        <span class="text-sm opacity-70">Combine column filters and operators.</span>
-        <button
-          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
-          [disabled]="hasActiveFilters()"
-          (click)="!hasActiveFilters() && openAdvanced.emit()"
-        >
-          Advanced Filter &gt;
-        </button>
-      </div>
-
-      <!-- Apply / Clear buttons pinned at top -->
-      <div class="flex gap-2 mb-1">
-        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
-        <button class="btn btn-outline btn-accent btn-sm flex-1" (click)="clear.emit()">Clear</button>
-      </div>
-
-      <div class="divider my-3"></div>
-    </div>
-
-    <!-- Scrollable Fields Area -->
-    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-      @for (field of panelFields(); track field) {
-      <div class="form-control">
-        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
-        <div class="flex gap-2 mt-1">
-          <select
-            class="select select-bordered select-xs w-28"
-            (change)="changeOp.emit({ field, op: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.op || 'contains'"
-          >
-            <option value="contains">contains</option>
-            <option value="notContains">does not contain</option>
-            <option value="equals">equals</option>
-            <option value="notEquals">does not equal</option>
-            <option value="startsWith">starts with</option>
-            <option value="endsWith">ends with</option>
-            <option value="isEmpty">is empty</option>
-            <option value="isNotEmpty">is not empty</option>
-          </select>
-          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
-          @if (optionsFor()(field)?.length) {
-          <select
-            class="select select-bordered select-xs flex-1"
-            (change)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          >
-            <option value="">Any</option>
-            @for (opt of optionsFor()(field)!; track opt) {
-            <option [value]="opt">{{ opt }}</option>
-            }
-          </select>
-          } @else {
-          <input
-            class="input input-bordered input-xs flex-1"
-            type="text"
-            placeholder="Value"
-            (input)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          />
-          } }
-        </div>
-      </div>
-      }
-    </div>
-  </aside>
-</div>
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
 
 ```typescript
@@ -33601,174 +29672,6 @@ export class GrainTabs {
     if (companies.status === 'fulfilled') this.companiesCount.set(companies.value);
   }
 }
-```
-
-## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
-
-```html
-<div class="flex flex-col gap-3">
-  <!-- Summary Bar -->
-  @if (showSummary()) {
-  <div
-    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
-  >
-    <div class="min-w-0">
-      <span class="font-medium mr-1">Summary:</span>
-      <span class="font-mono break-all text-primary">{{ summarizeGroup(group()) }}</span>
-    </div>
-    @if (summaryMatches() !== null || summaryCounting() || summaryError()) {
-    <div class="whitespace-nowrap font-medium shrink-0">
-      @if (summaryError()) {
-      <span class="text-warning">⚠️ {{ summaryError() }}</span>
-      } @else if (summaryCounting()) {
-      <span class="loading loading-spinner loading-xs vertical-middle mr-1"></span>
-      <span>Counting...</span>
-      } @else {
-      <span class="text-success">Matches: {{ summaryMatches() }}</span>
-      }
-    </div>
-    }
-  </div>
-  }
-
-  <!-- Group Header / Conjunction Toggle & Controls -->
-  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Conjunction:</span>
-      <div class="join border border-base-300">
-        <button
-          type="button"
-          class="btn btn-xs join-item font-medium px-3"
-          [class.btn-primary]="group().conjunction === 'AND'"
-          [class.btn-ghost]="group().conjunction !== 'AND'"
-          (click)="setConjunction('AND')"
-        >
-          AND (All)
-        </button>
-        <button
-          type="button"
-          class="btn btn-xs join-item font-medium px-3"
-          [class.btn-primary]="group().conjunction === 'OR'"
-          [class.btn-ghost]="group().conjunction !== 'OR'"
-          (click)="setConjunction('OR')"
-        >
-          OR (Any)
-        </button>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-1.5">
-      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
-      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
-    </div>
-  </div>
-
-  <!-- Rules and Nested Groups List -->
-  <div class="flex flex-col gap-3.5 pl-1">
-    @for (item of group().rules; track item.id; let i = $index) {
-    <!-- Rule Item -->
-    @if (isRule(item)) {
-    <div
-      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
-    >
-      <!-- Field Selector -->
-      <select
-        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
-        [value]="item.field"
-        (change)="setField(i, $any($event.target).value)"
-      >
-        @for (field of fields(); track field.name) {
-        <option [value]="field.name" [selected]="item.field === field.name">{{ field.label }}</option>
-        }
-      </select>
-
-      <!-- Operator Selector -->
-      @let fieldDef = getFieldDef(item.field);
-      <select
-        class="select select-bordered select-sm w-28 md:w-36 text-xs"
-        [value]="item.op"
-        (change)="setOp(i, $any($event.target).value)"
-      >
-        @for (op of fieldDef?.operators; track op.value) {
-        <option [value]="op.value" [selected]="item.op === op.value">{{ op.label }}</option>
-        }
-      </select>
-
-      <!-- Value Input -->
-      @if (showValueInput(item)) {
-      <div class="flex-1 min-w-[150px] flex items-center gap-2">
-        @if (fieldDef?.inputType === 'autocomplete') {
-        <div class="w-full max-w-xs">
-          <pc-autocomplete
-            [filterSvc]="tagSvc()!"
-            placeholder="Type a tag..."
-            (valueChange)="setRuleValue(i, $event)"
-          />
-        </div>
-        @if (item.value) {
-        <span class="badge badge-neutral text-xs px-2 py-1 select-none"
-          >{{ item.value.charAt(0).toUpperCase() + item.value.slice(1) }}</span
-        >
-        } } @else if (fieldDef?.inputType === 'select') {
-        <select
-          class="select select-bordered select-sm w-full max-w-xs text-xs"
-          [value]="item.value"
-          (change)="setRuleValue(i, $any($event.target).value)"
-        >
-          <option value="" disabled [selected]="!item.value">Select option...</option>
-          @for (choice of fieldDef?.choices; track choice.value) {
-          <option [value]="choice.value" [selected]="item.value === choice.value">{{ choice.label }}</option>
-          }
-        </select>
-        } @else {
-        <input
-          type="text"
-          class="input input-bordered input-sm w-full bg-base-100 text-xs"
-          placeholder="Enter value..."
-          [value]="item.value || ''"
-          (input)="setRuleValue(i, $any($event.target).value)"
-        />
-        }
-      </div>
-      }
-
-      <!-- Remove Button -->
-      <button
-        type="button"
-        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
-        title="Remove condition"
-        (click)="removeItem(i)"
-      >
-        ❌
-      </button>
-    </div>
-    }
-
-    <!-- Nested Group Item -->
-    @if (isGroup(item)) {
-    <div
-      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
-    >
-      <pc-query-builder
-        [group]="asGroup(item)"
-        [fields]="fields()"
-        [tagSvc]="tagSvc()"
-        [showSummary]="false"
-        (changed)="emitChange()"
-      ></pc-query-builder>
-      <div class="flex justify-end pt-1">
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold flex items-center gap-1"
-          (click)="removeItem(i)"
-        >
-          🗑️ Remove Group
-        </button>
-      </div>
-    </div>
-    } }
-  </div>
-</div>
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
@@ -35240,300 +31143,6 @@ export class RecordActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
-
-```html
-<div class="p-6 max-w-4xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
-        <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
-          >User Activity Feed</ng-container
-        >
-      </h1>
-      <p
-        class="text-sm text-base-content/60 mt-1"
-        i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
-      >
-        Real-time audit log of changes made to contacts, emails, tasks, and system settings.
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button
-        class="btn btn-outline btn-sm gap-2 text-primary hover:bg-primary/10"
-        (click)="exportFeed()"
-        [disabled]="isLoadingExport() || activities().length === 0"
-        title="Export activity feed as CSV"
-      >
-        @if (isLoadingExport()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } @else {
-        <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-        }
-        <span>Export log</span>
-      </button>
-      <button
-        class="btn btn-outline btn-sm gap-2"
-        (click)="refreshFeed()"
-        i18n-title="@@activityFeed.refreshButton.title"
-        title="Refresh the activity feed"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        <ng-container
-          i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label"
-          >Refresh Feed</ng-container
-        >
-      </button>
-    </div>
-  </div>
-
-  <!-- Filters -->
-  <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
-    <div class="card-body p-4 flex flex-col md:flex-row gap-4 items-end">
-      <!-- Actor filter -->
-      <div class="w-full">
-        <label class="label py-1"
-          ><span class="label-text font-semibold text-xs text-base-content/70">Actor</span></label
-        >
-        <select
-          class="select select-bordered select-sm w-full font-medium"
-          [value]="selectedUser()"
-          (change)="onUserChange($event)"
-        >
-          <option value="">Everyone</option>
-          @for (u of users(); track u.id) {
-          <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-          }
-        </select>
-      </div>
-
-      <!-- Item Type filter -->
-      <div class="w-full">
-        <label class="label py-1"
-          ><span class="label-text font-semibold text-xs text-base-content/70">Item Type</span></label
-        >
-        <select
-          class="select select-bordered select-sm w-full font-medium"
-          [value]="selectedEntity()"
-          (change)="onEntityChange($event)"
-        >
-          <option value="">All Items</option>
-          <option value="persons">People</option>
-          <option value="households">Households</option>
-          <option value="tasks">Tasks</option>
-          <option value="emails">Emails</option>
-          <option value="newsletters">Newsletters</option>
-          <option value="web_forms">Forms</option>
-          <option value="volunteer_events">Volunteer Events</option>
-          <option value="volunteer_shifts">Volunteer Shifts</option>
-          <option value="companies">Companies</option>
-          <option value="teams">Teams</option>
-          <option value="tags">Tags</option>
-        </select>
-      </div>
-
-      <!-- Action filter -->
-      <div class="w-full">
-        <label class="label py-1"
-          ><span class="label-text font-semibold text-xs text-base-content/70">Action</span></label
-        >
-        <select
-          class="select select-bordered select-sm w-full font-medium"
-          [value]="selectedActivity()"
-          (change)="onActivityChange($event)"
-        >
-          <option value="">All Actions</option>
-          <option value="create">Create</option>
-          <option value="update">Update</option>
-          <option value="delete">Delete</option>
-          <option value="merge">Merge</option>
-          <option value="import">Import</option>
-          <option value="export">Export</option>
-          <option value="assign">Assign</option>
-          <option value="unassign">Unassign</option>
-          <option value="close">Close</option>
-          <option value="reopen">Reopen</option>
-        </select>
-      </div>
-
-      <!-- Reset Button -->
-      @if (hasActiveFilters()) {
-      <button
-        class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
-        (click)="clearFilters()"
-        title="Clear all filters"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-        Clear
-      </button>
-      }
-    </div>
-  </div>
-
-  <!-- Loading State -->
-  @if (isLoading() && activities().length === 0) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span
-      class="loading loading-spinner loading-lg text-primary"
-      i18n-aria-label="@@activityFeed.loading.ariaLabel"
-      aria-label="Loading activity logs"
-    ></span>
-    <p
-      class="text-base-content/60 mt-4"
-      i18n="
-              Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message"
-    >
-      Loading system logs...
-    </p>
-  </div>
-  }
-
-  <!-- Empty State -->
-  @if (!isLoading() && activities().length === 0) {
-  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
-    <div class="card-body items-center text-center py-12">
-      <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <h2
-        class="card-title text-base-content/70"
-        i18n="
-                Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading"
-      >
-        No activity logged
-      </h2>
-      <p
-        class="text-sm text-base-content/50 mt-1"
-        i18n="
-                Activity feed empty state|Description text when no activity has been logged
-                yet@@activityFeed.emptyState.description"
-      >
-        Activity logs will appear here once actions are performed in the system.
-      </p>
-    </div>
-  </div>
-  }
-
-  <!-- Feed Timeline -->
-  @if (activities().length > 0) {
-  <div class="space-y-6">
-    <!-- Retention summary (§2 disclosure + §19): what's shown and how far back we keep it -->
-    <p class="text-xs text-base-content/50">
-      Showing {{ totalShown() }} {{ totalShown() === 1 ? 'event' : 'events' }} · pplcrm keeps the last 90 days of
-      activity.
-    </p>
-
-    @for (group of groupedActivities(); track group.key) {
-    <section class="space-y-3">
-      <!-- Day group header -->
-      <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/45">{{ group.label }}</h2>
-
-      <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
-        @for (act of group.items; track act.id) {
-        <div class="relative group">
-          <!-- Icon Indicator -->
-          <div
-            [class]="
-                      'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' +
-                      getActivityClass(act.activity)
-                    "
-          >
-            <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
-          </div>
-
-          <!-- Activity Card -->
-          <div
-            class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200"
-          >
-            <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
-              <!-- User Avatar -->
-              <div class="avatar placeholder hidden sm:flex">
-                <div
-                  class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs flex items-center justify-center font-semibold"
-                >
-                  {{ getUserInitials(act) }}
-                </div>
-              </div>
-
-              <!-- Event Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <!-- Kind chip + sentence -->
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span
-                      [class]="
-                        'badge badge-sm badge-outline font-semibold shrink-0 ' + getActivityClass(act.activity)
-                      "
-                      >{{ getKindLabel(act.activity) }}</span
-                    >
-                    @if (getCustomMessage(act); as msg) {
-                    <!-- Honest attribution: backend-authored sentence surfaced verbatim -->
-                    <p class="text-sm font-medium text-base-content">
-                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                      @if (getEntityLink(act); as link) { —
-                      <a
-                        [routerLink]="link.path"
-                        [queryParams]="link.params"
-                        class="text-primary hover:underline font-semibold"
-                        >{{ msg }}</a
-                      >
-                      } @else { — <span class="text-base-content/85">{{ msg }}</span> }
-                    </p>
-                    } @else {
-                    <p class="text-sm font-medium text-base-content">
-                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
-                      {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
-                      <a
-                        [routerLink]="link.path"
-                        [queryParams]="link.params"
-                        class="text-primary hover:underline font-semibold"
-                      >
-                        {{ getEntityLabelText(act) }}
-                      </a>
-                      } @else {
-                      <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
-                      } {{ getActivitySuffix(act) }}
-                    </p>
-                    } @if (getViaLabel(act); as via) {
-                    <span class="badge badge-sm badge-ghost gap-1 text-base-content/60">
-                      <pc-icon name="globe-americas" [size]="3"></pc-icon>
-                      {{ via }}
-                    </span>
-                    }
-                  </div>
-                  <span class="text-[11px] text-base-content/40 whitespace-nowrap"
-                    >{{ act.created_at | date: 'short' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        }
-      </div>
-    </section>
-    }
-
-    <!-- Load More Button -->
-    @if (hasMore()) {
-    <div class="flex justify-center pt-4">
-      <button class="btn btn-outline btn-primary gap-2" [disabled]="isLoading()" (click)="loadMore()">
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        }
-        <ng-container
-          i18n="
-                    Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label"
-          >Load More Activity</ng-container
-        >
-      </button>
-    </div>
-    }
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.ts
 
 ```typescript
@@ -36462,150 +32071,6 @@ export class CampaignFormComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.html
-
-```html
-<pc-detail-layout
-  [title]="name() || 'Campaign'"
-  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!campaign()"
-  [showDelete]="false"
-  [showActions]="!isArchived()"
-  [btn1Text]="'Edit campaign'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editCampaign()"
->
-  @if (campaign()) {
-  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
-  @if (isArchived()) {
-  <div class="alert mb-6 border-warning/40 bg-warning/10">
-    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
-    <div>
-      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
-      <p class="text-xs text-base-content/70" i18n>
-        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
-      </p>
-    </div>
-    <button type="button" class="btn btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
-  </div>
-  }
-
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left: campaign card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card iconName="square-3-stack-3d">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
-        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
-          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
-            · Archived</ng-container
-          >}
-        </p>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (description()) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
-          }
-
-          <pc-detail-row icon="file-calendar" iconClass="text-primary">
-            <span i18n>Starts:</span>
-            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="file-calendar" iconClass="text-primary">
-            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
-            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
-          </pc-detail-row>
-
-          @if (notes()) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
-            {{ notes() }}
-          </div>
-          }
-        </div>
-      </pc-profile-card>
-
-      <!-- Context actions -->
-      <div class="flex flex-col gap-2">
-        @if (isCurrentContext()) {
-        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
-          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
-        </div>
-        } @else {
-        <button type="button" class="btn btn-outline btn-sm gap-2" (click)="workInThis()">
-          <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          <span i18n>Work in this campaign</span>
-        </button>
-        } @if (!isOffice() && !isArchived()) {
-        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
-          <pc-icon name="archive-box" [size]="4"></pc-icon>
-          <span i18n>Archive campaign</span>
-        </button>
-        }
-      </div>
-
-      <!-- Carry-over (§15): seed this campaign from a prior one -->
-      @if (!isArchived() && carrySources().length) {
-      <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
-        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>
-          Start from a previous campaign
-        </h3>
-        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
-          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
-          behind an explicit confirmation — that judgment is yours.
-        </p>
-        <div class="flex flex-col gap-2">
-          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
-            <option value="" i18n>Choose a campaign…</option>
-            @for (source of carrySources(); track source.id) {
-            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
-            }
-          </select>
-          <label class="flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="carryCopySupport()"
-              (change)="carryCopySupport.set(!carryCopySupport())"
-            />
-            <span i18n>Copy support levels (as “carried over”)</span>
-          </label>
-          <label class="flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="carryCopySubscriptions()"
-              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
-            />
-            <span i18n>Copy email subscriptions (requires confirmation)</span>
-          </label>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm mt-1"
-            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
-            (click)="runCarryOver()"
-          >
-            @if (carryRunning()) {
-            <span class="loading loading-spinner loading-xs"></span>
-            }
-            <span i18n>Carry over</span>
-          </button>
-        </div>
-      </div>
-      }
-    </div>
-
-    <!-- Right: activity log -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.ts
 
 ```typescript
@@ -36969,113 +32434,6 @@ export class CampaignsPageComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.html
-
-```html
-<div class="mx-auto min-h-screen w-full max-w-md bg-base-100 p-4">
-  @if (loading()) {
-  <div class="flex h-40 items-center justify-center">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-  </div>
-  } @else if (loadError()) {
-  <div class="mt-10 text-center">
-    <pc-icon name="map-pin" [size]="8" />
-    <h1 class="mt-3 text-lg font-semibold">Can't open this turf</h1>
-    <p class="mt-1 text-sm text-base-content/60">{{ loadError() }}</p>
-  </div>
-  } @else if (turf(); as t) {
-  <!-- Header -->
-  <header class="sticky top-0 z-10 -mx-4 mb-3 border-b border-base-300 bg-base-100 px-4 py-3">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-lg font-semibold">{{ t.turf_name }}</h1>
-        <p class="text-xs text-base-content/60">{{ progress() }}</p>
-      </div>
-      @if (!online()) {
-      <span class="badge badge-warning badge-sm gap-1"> Offline · {{ queued() }} queued </span>
-      } @else if (queued() > 0) {
-      <span class="badge badge-info badge-sm">Syncing {{ queued() }}…</span>
-      } @else {
-      <span class="badge badge-success badge-sm">Synced</span>
-      }
-    </div>
-
-    <label class="mt-2 block">
-      <span class="sr-only">Your name</span>
-      <input
-        type="text"
-        class="input input-sm input-bordered w-full"
-        placeholder="Your name (shown on the record as the canvasser)"
-        [value]="canvasserName()"
-        (input)="setName($any($event.target).value)"
-      />
-    </label>
-  </header>
-
-  <!-- Door list -->
-  <ul class="space-y-2">
-    @for (door of t.doors; track door.household_id) {
-    <li class="rounded-lg border border-base-300">
-      <button
-        type="button"
-        class="flex w-full items-center justify-between p-3 text-left"
-        (click)="toggle(door.household_id)"
-      >
-        <span class="text-sm font-medium">{{ door.address }}</span>
-        @if (localOutcomes()[door.household_id]; as lo) {
-        <span class="badge badge-success badge-sm">{{ outcomeLabel(lo) }}</span>
-        } @else if (door.last_outcome) {
-        <span class="badge badge-ghost badge-sm">{{ outcomeLabel(door.last_outcome) }}</span>
-        } @else {
-        <span class="badge badge-ghost badge-sm opacity-60">Not yet knocked</span>
-        }
-      </button>
-
-      @if (expandedId() === door.household_id) {
-      <div class="border-t border-base-300 p-3">
-        <div class="flex flex-wrap gap-2">
-          @for (o of outcomes; track o.key) { @if (o.key === 'conversation') {
-          <div class="w-full">
-            <div class="mb-1 text-xs font-medium text-base-content/60">Talked — how did they lean?</div>
-            <div class="flex flex-wrap gap-2">
-              @for (r of responses; track r.key) {
-              <button type="button" class="btn btn-sm btn-outline" (click)="logKnock(door, 'conversation', r.key)">
-                {{ r.label }}
-              </button>
-              }
-            </div>
-          </div>
-          } @else {
-          <button type="button" class="btn btn-sm btn-ghost" (click)="logKnock(door, o.key, null)">
-            {{ o.label }}
-          </button>
-          } }
-        </div>
-        @if (door.lat != null && door.lng != null) {
-        <a
-          class="btn btn-sm btn-link mt-2 px-0"
-          [href]="'https://www.google.com/maps/search/?api=1&query=' + door.lat + ',' + door.lng"
-          target="_blank"
-          rel="noopener"
-        >
-          Open in Maps →
-        </a>
-        }
-      </div>
-      }
-    </li>
-    } @empty {
-    <li class="py-10 text-center text-sm text-base-content/60">No doors in this turf yet.</li>
-    }
-  </ul>
-
-  <p class="mt-4 text-center text-xs text-base-content/40">
-    Knocks sync live to the campaign. You can keep working with no signal — they'll upload when you're back online.
-  </p>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.ts
 
 ```typescript
@@ -37312,100 +32670,6 @@ export class CompanionPage implements OnInit {
     };
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/cut-turfs-dialog.html
-
-```html
-<div class="modal modal-open">
-  <div class="modal-box max-w-lg">
-    <h3 class="text-lg font-semibold">Cut new turfs</h3>
-    <p class="mt-1 text-sm text-base-content/60">
-      Turfs are cut from a smart list's geocoded doors into contiguous, walkable groups.
-    </p>
-
-    <!-- Universe -->
-    <div class="form-control mt-4">
-      <label class="label" for="cut-universe">
-        <span class="label-text font-medium">Universe — who gets knocked</span>
-      </label>
-      <select
-        id="cut-universe"
-        class="select select-bordered"
-        [value]="selectedListId()"
-        (change)="onListChange($any($event.target).value)"
-      >
-        <option value="" disabled>Select a list…</option>
-        @for (u of universes(); track u.id) {
-        <option [value]="u.id">
-          {{ u.name }} — {{ u.count.toLocaleString() }} {{ u.is_dynamic ? '(smart)' : '(static)' }}
-        </option>
-        }
-      </select>
-      <span class="label mt-1 text-xs text-base-content/50">
-        Turfs cut from a smart list stay refreshable when the list changes.
-      </span>
-    </div>
-
-    <!-- Doors per turf -->
-    <div class="form-control mt-4">
-      <span class="label-text font-medium">Doors per turf</span>
-      <div class="mt-2 flex flex-wrap gap-2">
-        @for (p of presets; track p) {
-        <button
-          type="button"
-          class="btn btn-sm"
-          [class.btn-primary]="doorsPerTurf() === p"
-          [class.btn-outline]="doorsPerTurf() !== p"
-          (click)="setDoors(p)"
-        >
-          {{ p }}
-        </button>
-        }
-      </div>
-      <span class="mt-2 text-xs text-base-content/50">{{ timeHelper() }}</span>
-    </div>
-
-    <!-- Preview -->
-    @if (preview(); as p) {
-    <div class="mt-4 rounded-lg border border-base-300 bg-base-200/40 p-4 text-sm">
-      @if (p.doors > 0) {
-      <p>
-        <span class="font-medium">{{ (selectedUniverse()?.count ?? p.doors).toLocaleString() }} people</span>
-        · ~{{ p.doors.toLocaleString() }} doors →
-        <span class="font-medium">{{ p.turfCount }} turfs of ~{{ p.avgDoorsPerTurf }} doors each</span>
-      </p>
-      <p class="mt-1 text-base-content/60">
-        Each turf is contiguous and won't cross Route 9, the rail line or the river. Rebalance on the map afterwards if
-        a turf feels off.
-      </p>
-      @if (p.unplaced > 0) {
-      <p class="mt-1 text-warning">
-        {{ p.unplaced }} household{{ p.unplaced === 1 ? '' : 's' }} aren't geocoded yet and won't be placed — they'll
-        join a turf once located.
-      </p>
-      } } @else {
-      <p class="text-base-content/60">No geocoded doors in that list yet — turfs are cut from located households.</p>
-      }
-    </div>
-    }
-
-    <div class="modal-action">
-      <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
-      <button
-        type="button"
-        class="btn btn-primary"
-        [disabled]="saving() || !preview() || (preview()?.turfCount ?? 0) === 0"
-        (click)="cut()"
-      >
-        @if (saving()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } Cut {{ preview()?.turfCount ?? 0 }} turfs
-      </button>
-    </div>
-  </div>
-  <div class="modal-backdrop bg-black/40" (click)="cancel()"></div>
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/cut-turfs-dialog.ts
@@ -38736,191 +34000,6 @@ export class DeliveriesRoutes implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
-        Donations
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
-    </div>
-    <div class="flex gap-2 items-center">
-      <button
-        id="donations-refresh-btn"
-        class="btn btn-outline btn-sm gap-2"
-        title="Refresh donations log"
-        pcSpinOnClick
-        [disabled]="_loading.visible()"
-        (click)="refresh()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-      <button
-        routerLink="/donation-pages/add"
-        class="btn btn-ghost btn-sm gap-2"
-        title="Create a public form that charges cards through Stripe and records every gift here"
-      >
-        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-        New donation form
-      </button>
-      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Record donation
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
-      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
-      One-time
-    </a>
-    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Monthly Pledges
-    </a>
-  </div>
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] mt-1">
-          @if (monthOverMonthDelta() !== null) {
-          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
-            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
-          </span>
-          } @else {
-          <span class="text-base-content/40">No prior month to compare</span>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ monthlyDonorCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-    <table class="table w-full">
-      <thead>
-        <tr class="bg-base-200/50">
-          <th>Donor</th>
-          <th class="text-right">Amount</th>
-          <th>Method</th>
-          <th>Date</th>
-          <th>Receipt</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (d of recentGifts(); track d.id) {
-        <tr
-          class="hover:bg-base-200/30 transition-all duration-200"
-          [class.animate-saved-flash]="highlightId() === d.id"
-        >
-          <td>
-            <div class="flex flex-col">
-              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
-                {{ d.person_first_name }} {{ d.person_last_name }}
-              </a>
-              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-            </div>
-          </td>
-          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
-          <td>
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
-              >{{ methodLabel(d.method) }}</span
-            >
-          </td>
-          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-          <td>
-            @if (d.receipt_sent) {
-            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Receipted
-            </span>
-            } @else {
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-            }
-          </td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="5" class="text-center py-16 text-base-content/50">
-            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-            <h3 class="font-semibold text-base-content/70">No donations found</h3>
-            <p class="text-xs text-base-content/50 mt-1 mb-3">
-              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-            </p>
-            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-              <pc-icon name="plus" [size]="4"></pc-icon>
-              Record donation
-            </button>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-    @if (totalGiftCount() > recentGifts().length) {
-    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
-      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
-    </div>
-    }
-  </div>
-</div>
-
-<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
-```
-
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
 
 ```typescript
@@ -39074,134 +34153,6 @@ export class DonationsGridComponent implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
-        Monthly Pledges
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
-    </div>
-    <button class="btn btn-outline btn-sm gap-2" pcSpinOnClick [disabled]="_loading.visible()" (click)="refresh()">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Refresh
-    </button>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
-      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
-      One-time
-    </a>
-    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Monthly Pledges
-    </a>
-  </div>
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Summary stats -->
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
-      <div class="stat-title text-xs">Active Pledges</div>
-      <div class="stat-value text-2xl text-success tabular-nums">{{ activePledgeCount() }}</div>
-    </div>
-    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
-      <div class="stat-title text-xs">Monthly Committed</div>
-      <div class="stat-value text-2xl text-primary tabular-nums">${{ totalMonthlyCommitted().toFixed(2) }}</div>
-    </div>
-    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
-      <div class="stat-title text-xs">Total Pledges</div>
-      <div class="stat-value text-2xl tabular-nums">{{ pledges().length }}</div>
-    </div>
-  </div>
-
-  <!-- Pledges table -->
-  @if (!_loading.visible() && pledges().length === 0) {
-  <div class="flex flex-col items-center justify-center py-20 text-center text-base-content/50 gap-3">
-    <pc-icon name="arrow-path" [size]="12" class="opacity-20"></pc-icon>
-    <p class="text-lg font-semibold">No pledges yet</p>
-    <p class="text-sm max-w-sm">
-      Monthly pledges will appear here once donors commit through a recurring donation form or direct checkout.
-    </p>
-  </div>
-  } @else {
-  <div class="overflow-x-auto border border-base-200 rounded-xl bg-base-100 shadow-sm">
-    <table class="table table-sm w-full text-xs">
-      <thead>
-        <tr class="border-b border-base-200 bg-base-50">
-          <th class="font-bold text-base-content/70">Donor</th>
-          <th class="font-bold text-base-content/70">Monthly</th>
-          <th class="font-bold text-base-content/70">Status</th>
-          <th class="font-bold text-base-content/70">Started</th>
-          <th class="font-bold text-base-content/70">Next Billing</th>
-          <th class="font-bold text-base-content/70">Region</th>
-          <th class="font-bold text-base-content/70 text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (pledge of pledges(); track pledge.id) {
-        <tr class="hover:bg-base-200/20 border-b border-base-200">
-          <td>
-            @if (pledge.person_id) {
-            <a [routerLink]="['/people', pledge.person_id]" class="font-semibold text-primary hover:underline">
-              {{ pledge.person_first_name }} {{ pledge.person_last_name }}
-            </a>
-            } @else {
-            <span class="font-semibold">{{ pledge.first_name }} {{ pledge.last_name }}</span>
-            }
-            <div class="text-base-content/50">{{ pledge.person_email }}</div>
-          </td>
-          <td class="font-bold text-primary">{{ formatCurrency(pledge.monthly_amount) }}/mo</td>
-          <td>
-            <span class="badge badge-sm font-semibold {{ statusBadgeClass(pledge.status) }}">
-              {{ pledge.status | titlecase }}
-            </span>
-          </td>
-          <td class="text-base-content/70">{{ formatDate(pledge.started_at) }}</td>
-          <td class="text-base-content/70">{{ formatDate(pledge.next_billing_date) }}</td>
-          <td class="text-base-content/60">
-            @if (pledge.state || pledge.country) { {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{
-            pledge.country }} } @else { — }
-          </td>
-          <td class="text-right">
-            @if (pledge.status === 'active' || pledge.status === 'past_due') {
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-error hover:bg-error/10"
-              [disabled]="cancelling() === toStr(pledge.id)"
-              (click)="cancelPledge(pledge)"
-            >
-              @if (cancelling() === toStr(pledge.id)) {
-              <span class="loading loading-spinner loading-xs"></span>
-              } @else { Cancel }
-            </button>
-            }
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
@@ -39513,6 +34464,537 @@ export class RecordDonationDialog {
     this.submitting.set(false);
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.html
+
+```html
+<pc-duplicate-page-shell
+  title="Companies"
+  icon="briefcase"
+  description="Review and merge duplicate company records sharing the same name."
+  entityRoute="companies"
+  [isLoading]="isLoading()"
+  [isEmpty]="groups().length === 0"
+  [currentPage]="currentPage()"
+  [totalPages]="totalPages()"
+  [totalGroups]="totalGroups()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
+>
+  @for (group of groups(); track group; let gIdx = $index) {
+  <div
+    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
+  >
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="badge badge-warning badge-sm">Warning</span>
+        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
+    </div>
+
+    <div class="card-body p-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        @for (company of group.items; track company.id) {
+        <div
+          [class]="
+                    'card bg-base-200/40 border transition-all duration-200 ' +
+                    (group.selectedTargetId === company.id
+                      ? 'border-success bg-success/5 shadow'
+                      : group.selectedSourceId === company.id
+                        ? 'border-error bg-error/5 opacity-80'
+                        : 'border-base-300')
+                  "
+        >
+          <div class="card-body p-4 justify-between h-full">
+            <div>
+              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
+                <span>{{ company.name }}</span>
+                <span class="text-xs font-light text-base-content/40">ID: {{ company.id }}</span>
+              </h4>
+              <div class="mt-3 space-y-2 text-sm">
+                @if (company.website) {
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="globe-americas" [size]="4" class="opacity-50"></pc-icon>
+                  <span class="truncate">{{ company.website }}</span>
+                </div>
+                }
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="briefcase" [size]="4" class="opacity-50"></pc-icon>
+                  <span>{{ company.industry || '—' }}</span>
+                </div>
+                <div class="text-[11px] text-base-content/40">Created: {{ company.created_at | date: 'short' }}</div>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
+              <button
+                [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline btn-accent')
+                        "
+                (click)="selectRole(gIdx, company.id, 'target')"
+              >
+                Keep
+              </button>
+              <button
+                [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline btn-accent')
+                        "
+                (click)="selectRole(gIdx, company.id, 'source')"
+              >
+                Merge
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+
+        <pc-merge-summary
+          mergeDescription="The duplicate company will be removed, transferring associated contacts and empty fields to the primary company."
+          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
+          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
+          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
+          (merge)="mergeGroup(gIdx)"
+        ></pc-merge-summary>
+      </div>
+    </div>
+  </div>
+  }
+</pc-duplicate-page-shell>
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/duplicates-households.html
+
+```html
+<pc-duplicate-page-shell
+  title="Households"
+  icon="house-modern"
+  description="Review and merge duplicate household records sharing the exact same address fingerprint."
+  entityRoute="households"
+  [isLoading]="isLoading()"
+  [isEmpty]="groups().length === 0"
+  [currentPage]="currentPage()"
+  [totalPages]="totalPages()"
+  [totalGroups]="totalGroups()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
+>
+  @for (group of groups(); track group; let gIdx = $index) {
+  <div
+    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
+  >
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="badge badge-warning badge-sm">Warning</span>
+        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
+    </div>
+
+    <div class="card-body p-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        @for (hh of group.items; track hh.id) {
+        <div
+          [class]="
+                    'card bg-base-200/40 border transition-all duration-200 ' +
+                    (group.selectedTargetId === hh.id
+                      ? 'border-success bg-success/5 shadow'
+                      : group.selectedSourceId === hh.id
+                        ? 'border-error bg-error/5 opacity-80'
+                        : 'border-base-300')
+                  "
+        >
+          <div class="card-body p-4 justify-between h-full">
+            <div>
+              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
+                <span>{{ getFullAddress(hh) }}</span>
+                <span class="text-xs font-light text-base-content/40">ID: {{ hh.id }}</span>
+              </h4>
+              <div class="mt-3 space-y-2 text-sm">
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="home" [size]="4" class="opacity-50"></pc-icon>
+                  <span>{{ hh.home_phone || '—' }}</span>
+                </div>
+                <div class="text-[11px] text-base-content/40">Created: {{ hh.created_at | date: 'short' }}</div>
+                <div class="mt-3 pt-3 border-t border-base-300/50">
+                  <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-1">
+                    Members ({{ hh.persons?.length || 0 }}):
+                  </div>
+                  <ul class="list-disc pl-4 space-y-1">
+                    @for (member of hh.persons; track member.id) {
+                    <li class="text-xs text-base-content/85">
+                      <span class="font-medium">{{ member.first_name }} {{ member.last_name }}</span>
+                    </li>
+                    }
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
+              <button
+                [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline btn-accent')
+                        "
+                (click)="selectRole(gIdx, hh.id, 'target')"
+              >
+                Keep
+              </button>
+              <button
+                [class]="
+                          'btn btn-xs flex-1 ' + (group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline btn-accent')
+                        "
+                (click)="selectRole(gIdx, hh.id, 'source')"
+              >
+                Merge
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+
+        <pc-merge-summary
+          mergeDescription="The duplicate household will be removed, transferring all members, tags, lists, and empty fields to the primary household."
+          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
+          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
+          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
+          (merge)="mergeGroup(gIdx)"
+        ></pc-merge-summary>
+      </div>
+    </div>
+  </div>
+  }
+</pc-duplicate-page-shell>
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.html
+
+```html
+<pc-duplicate-page-shell
+  title="People"
+  icon="identification"
+  description="Review and merge duplicate people records to keep your database clean."
+  entityRoute="people"
+  [isLoading]="isLoading()"
+  [isEmpty]="groups().length === 0"
+  [currentPage]="currentPage()"
+  [totalPages]="totalPages()"
+  [totalGroups]="totalGroups()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
+>
+  @for (group of groups(); track group; let gIdx = $index) { @if (group.items.length === 2) {
+  <!-- Spec §9.3 Fig. 12 pair card: confidence chip, why-flagged sentence, side-by-side
+           field grid with highlighted match rows, result preview, quiet/primary actions. -->
+  @let left = group.items[0]!; @let right = group.items[1]!;
+  <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span
+          class="badge badge-sm font-semibold"
+          [class]="confidence(group) === 'high' ? 'badge-warning' : 'badge-ghost'"
+        >
+          {{ confidence(group) === 'high' ? 'High confidence' : 'Possible match' }}
+        </span>
+        <span class="text-sm text-base-content/70">{{ whyFlagged(group) }}</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="dismissGroup(gIdx)">Not duplicates</button>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm gap-2"
+          [disabled]="!group.selectedTargetId || !group.selectedSourceId"
+          (click)="mergeGroup(gIdx)"
+        >
+          <pc-icon name="merge" [size]="4"></pc-icon> Merge into one
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+            <th class="w-28"></th>
+            <th>
+              <a
+                [routerLink]="['/people', left.id]"
+                class="link link-hover normal-case text-sm font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+              >
+                {{ getItemDisplayName(left) }}
+              </a>
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ left.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="font-semibold normal-case text-sm text-base-content">
+              {{ getItemDisplayName(right) }}
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ right.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="w-20"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr [class]="rowHighlighted(group, 'name') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Name</td>
+            <td>{{ getItemDisplayName(left) }}</td>
+            <td>{{ getItemDisplayName(right) }}</td>
+            <td></td>
+          </tr>
+          <tr [class]="rowHighlighted(group, 'email') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Email</td>
+            <td>{{ left.email || '—' }}</td>
+            <td>{{ right.email || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Mobile</td>
+            <td>{{ left.mobile || '—' }}</td>
+            <td>{{ right.mobile || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Ward</td>
+            <td>{{ left.ward || '—' }}</td>
+            <td>{{ right.ward || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Tags</td>
+            <td>{{ left.tags.length ? left.tags.join(', ') : '—' }}</td>
+            <td>{{ right.tags.length ? right.tags.join(', ') : '—' }}</td>
+            <td></td>
+          </tr>
+          <tr class="text-xs">
+            <td class="text-base-content/50 uppercase tracking-wide">Keep as</td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, left.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, left.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, right.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, right.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    @if (group.selectedTargetId && group.selectedSourceId) {
+    <div class="px-6 py-3 border-t border-base-300 bg-base-200/30 text-xs text-base-content/60">
+      <pc-icon name="information-circle" [size]="4" class="inline align-text-bottom mr-1"></pc-icon>
+      {{ resultPreview(group) }}
+    </div>
+    }
+  </div>
+  } @else {
+  <!-- Fallback for a cluster of 3+ records sharing the same signal (e.g. 3 people with the
+           same email) — the side-by-side pair card doesn't generalize past two records, so this
+           keeps the prior N-way "keep/merge" card grid. Documented gap: no confidence chip / why
+           -flagged sentence / field grid here yet. -->
+  <div
+    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
+  >
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="badge badge-warning badge-sm">Warning</span>
+        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
+    </div>
+
+    <div class="card-body p-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        @for (person of group.items; track person.id) {
+        <div
+          [class]="
+                        'card bg-base-200/40 border transition-all duration-200 ' +
+                        (group.selectedTargetId === person.id
+                          ? 'border-success bg-success/5 shadow'
+                          : group.selectedSourceId === person.id
+                            ? 'border-error bg-error/5 opacity-80'
+                            : 'border-base-300')
+                      "
+        >
+          <div class="card-body p-4 justify-between h-full">
+            <div>
+              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
+                <span>{{ person.first_name }} {{ person.last_name }}</span>
+                <span class="text-xs font-light text-base-content/40">ID: {{ person.id }}</span>
+              </h4>
+              <div class="mt-3 space-y-1.5 text-sm">
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
+                  <span class="truncate">{{ person.email || '—' }}</span>
+                </div>
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
+                  <span>{{ person.mobile || '—' }}</span>
+                </div>
+                <div class="text-[11px] text-base-content/40 mt-2">
+                  Created: {{ person.created_at | date: 'short' }}
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
+              <button
+                [class]="
+                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline btn-accent')
+                            "
+                (click)="selectRole(gIdx, person.id, 'target')"
+              >
+                Keep (Primary)
+              </button>
+              <button
+                [class]="
+                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline btn-accent')
+                            "
+                (click)="selectRole(gIdx, person.id, 'source')"
+              >
+                Delete (Merge)
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+
+        <pc-merge-summary
+          mergeDescription="The duplicate record will be removed, transferring tags, lists, and empty fields to the primary record."
+          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
+          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
+          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
+          (merge)="mergeGroup(gIdx)"
+        ></pc-merge-summary>
+      </div>
+    </div>
+  </div>
+  } }
+</pc-duplicate-page-shell>
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <div class="mb-4">
+    <a
+      routerLink="/duplicates"
+      class="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content px-0 no-underline"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to Duplicate Types
+    </a>
+  </div>
+
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon [name]="icon()" class="text-primary" [size]="7"></pc-icon>
+        Manage Duplicate {{ title() }}
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">{{ description() }}</p>
+      @if (!isLoading() && !isEmpty() && sweepSentence()) {
+      <p class="text-sm text-base-content/50 mt-1 tabular-nums">{{ sweepSentence() }}</p>
+      }
+    </div>
+  </div>
+
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4 font-light">Scanning database...</p>
+  </div>
+  } @if (!isLoading() && isEmpty()) {
+  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
+    <div class="card-body items-center text-center py-16">
+      <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
+        <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
+      </div>
+      <h2 class="card-title text-xl font-bold text-success">No duplicates waiting</h2>
+      <p class="text-base-content/60 mt-2 max-w-sm">
+        The sweep runs nightly at 3:00 AM. Imports catch most duplicates on the way in — this queue is for what slips
+        through.
+      </p>
+      <div class="card-actions mt-6">
+        <a [routerLink]="['/', entityRoute()]" class="btn btn-primary">Go to {{ title() }}</a>
+      </div>
+    </div>
+  </div>
+  } @if (!isLoading() && !isEmpty()) {
+  <div class="grid gap-6">
+    <ng-content></ng-content>
+  </div>
+
+  @if (totalPages() > 1) {
+  <div
+    class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
+  >
+    <div class="text-sm text-base-content/60 font-light">
+      Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
+      <span class="font-semibold text-base-content">{{ totalPages() }}</span>
+      ({{ totalGroups() }} duplicate groups total)
+    </div>
+    <div class="join">
+      <button
+        class="join-item btn btn-outline btn-accent btn-sm gap-1"
+        [disabled]="currentPage() === 1"
+        (click)="prev.emit()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
+      </button>
+      <button
+        class="join-item btn btn-outline btn-accent btn-sm gap-1"
+        [disabled]="currentPage() >= totalPages()"
+        (click)="next.emit()"
+      >
+        Next <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  } }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
@@ -40699,6 +36181,321 @@ export class EventFormComponent implements OnInit {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/event-view.html
+
+```html
+<pc-detail-layout
+  [title]="event()?.name || 'Event'"
+  [eyebrow]="'Event'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!event()"
+  [showDelete]="true"
+  [deleteText]="'Delete event'"
+  [btn1Text]="'Edit event'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editEvent()"
+  (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (event()) {
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: Event Info Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="calendar">
+        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+        <div class="flex flex-wrap gap-2 mb-4 justify-center">
+          @if (event().is_published) {
+          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
+          } @else {
+          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
+          } @if (eventPassed()) {
+          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
+          } @else {
+          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          }
+        </div>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (event().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+          }
+
+          <pc-detail-row icon="map-pin" iconClass="text-error">
+            <span class="text-xs">
+              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+            </span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="calendar" iconClass="text-info">
+            <div class="text-xs flex flex-col">
+              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
+            </div>
+          </pc-detail-row>
+
+          @if (event().contact_email || event().contact_phone) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
+          @if (event().contact_email) {
+          <pc-detail-row icon="envelope" iconClass="text-base-content/40">
+            <span class="text-xs">{{ event().contact_email }}</span>
+          </pc-detail-row>
+          } @if (event().contact_phone) {
+          <pc-detail-row icon="phone" iconClass="text-base-content/40">
+            <span class="text-xs">{{ event().contact_phone }}</span>
+          </pc-detail-row>
+          } } @if (ticketTypes().length > 0) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
+          @for (ticket of ticketTypes(); track ticket.id) {
+          <div class="flex justify-between text-xs px-1">
+            <span class="font-semibold">{{ ticket.name }}</span>
+            <span class="text-base-content/60">
+              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
+              {{ ticket.capacity }} max }
+            </span>
+          </div>
+          } }
+        </div>
+      </pc-profile-card>
+
+      @if (publicUrl()) {
+      <pc-card title="Public RSVP Link" icon="globe-americas">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
+        </button>
+        <div class="flex gap-2">
+          <input
+            type="text"
+            [value]="publicUrl()"
+            readonly
+            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+          />
+          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+          </a>
+        </div>
+        @if (!event().is_published) {
+        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
+          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
+        </div>
+        }
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right: Stats + Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <pc-stat-card
+          [title]="'Registered'"
+          [value]="activeCount()"
+          [description]="'Active registrations'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Attended'"
+          [value]="attendedCount()"
+          [description]="'Checked in'"
+          [icon]="'check-circle'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Capacity Left'"
+          [value]="remainingCapacity()"
+          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
+          [icon]="'adjustments-horizontal'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs -->
+      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Add Registration -->
+            <pc-card title="Add Registration" icon="user-plus">
+              <div class="flex flex-col sm:flex-row gap-3 items-end">
+                <div class="relative flex-1 space-y-1">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full pl-9"
+                      placeholder="Search by name or email..."
+                      [ngModel]="personSearch()"
+                      (ngModelChange)="onPersonSearch($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <div
+                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
+                    >
+                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
+                    </div>
+                  </div>
+                  @if (personSearchResults().length > 0) {
+                  <div
+                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+                  >
+                    @for (p of personSearchResults(); track p.id) {
+                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
+                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                    </div>
+                    }
+                  </div>
+                  }
+                </div>
+
+                @if (ticketTypes().length > 0) {
+                <div class="space-y-1 w-40">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    [ngModel]="selectedTicketTypeId()"
+                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
+                    [ngModelOptions]="{standalone: true}"
+                  >
+                    <option [value]="null">No ticket</option>
+                    @for (t of ticketTypes(); track t.id) {
+                    <option [value]="t.id">{{ t.name }}</option>
+                    }
+                  </select>
+                </div>
+                }
+
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm shrink-0"
+                  [disabled]="!selectedPersonId() || addingRegistration()"
+                  (click)="addRegistration()"
+                >
+                  @if (addingRegistration()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else {
+                  <pc-icon name="plus" [size]="4"></pc-icon>
+                  } Register
+                </button>
+              </div>
+            </pc-card>
+
+            <!-- Attendees Table -->
+            <div class="flex justify-between items-center">
+              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
+              @if (registrations().length > 0) {
+              <button type="button" class="btn btn-xs btn-outline btn-accent gap-1" (click)="exportCsv()">
+                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
+              </button>
+              }
+            </div>
+
+            @if (registrations().length === 0) {
+            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Name</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                    <th class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of registrations(); track reg.id) {
+                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
+                    <td>
+                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
+                        {{ reg.first_name }} {{ reg.last_name }}
+                      </a>
+                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
+                    </td>
+                    <td>
+                      @if (reg.ticket_type_name) {
+                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
+                      } @else {
+                      <span class="text-base-content/30">—</span>
+                      }
+                    </td>
+                    <td>
+                      <select
+                        class="select select-bordered select-xs font-medium"
+                        [ngModel]="reg.status"
+                        (ngModelChange)="updateStatus(reg, $event)"
+                        [ngModelOptions]="{standalone: true}"
+                        [class.select-success]="reg.status === 'attended'"
+                        [class.select-warning]="reg.status === 'registered'"
+                        [class.select-error]="reg.status === 'no_show'"
+                      >
+                        <option value="registered">Registered</option>
+                        <option value="attended">Attended</option>
+                        <option value="no_show">No Show</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td class="font-mono text-[10px]">
+                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
+                    </td>
+                    <td>
+                      <div class="flex items-center justify-center gap-1">
+                        @if (reg.status === 'registered') {
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-success"
+                          title="Check in"
+                          (click)="checkIn(reg)"
+                        >
+                          <pc-icon name="check-circle" [size]="4"></pc-icon>
+                        </button>
+                        }
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-error"
+                          title="Remove"
+                          (click)="deleteRegistration(reg)"
+                        >
+                          <pc-icon name="trash" [size]="4"></pc-icon>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
@@ -43475,390 +39272,409 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
 
 ```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
-      }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs: Imports N / Exports N -->
-  <div role="tablist" class="tabs tabs-border mb-4">
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'imports'"
-      (click)="switchTab('imports')"
-    >
-      Imports {{ itemCount() }}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'exports'"
-      (click)="switchTab('exports')"
-    >
-      Exports {{ exportCount() }}
-    </button>
-  </div>
-
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Outcome</th>
-            <th>Tags applied</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (item of items(); track item.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
-              <div class="text-xs text-base-content/60">
-                {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-              </div>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-            </td>
-            <td>
-              @if (item.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (item.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Pending</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <div class="text-sm text-base-content">
-                <div>{{ item.insertedCount }} imported</div>
-                @if (item.mergedCount > 0) {
-                <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-                } @if (item.skippedCount > 0) {
-                <div class="text-xs text-base-content/60 flex items-center gap-1">
-                  {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-                  <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                    download reasons
-                  </button>
-                  }
-                </div>
-                } @if (item.errorCount > 0) {
-                <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-                }
-              </div>
-              } @case ('failed') {
-              <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
-                Failed
-              </span>
-              } }
-            </td>
-            <td>
-              @if (item.tagsApplied.length > 0) {
-              <div class="flex flex-wrap gap-1">
-                @for (tag of item.tagsApplied; track tag) {
-                <span class="badge badge-outline text-xs">{{ tag }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (item.canDownloadSource) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download original file"
-                  (click)="downloadSource(item)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  (click)="openDeleteDialog(item, deleteDialog)"
-                  [disabled]="deleting()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="text-center py-12 text-base-content/50">
-              <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
-              <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-                <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-                Import CSV
-              </button>
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
+<div class="p-6 max-w-4xl mx-auto">
+  <!-- Where am I? / Where was I? -->
+  <div class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
+    <p class="text-sm text-base-content/60 mt-1">
+      Headers in the first row · duplicates are matched by email · nothing is written until the last step
     </p>
+  </div>
+
+  <!-- Step indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    @for (s of stepOrder; track s; let idx = $index) {
+    <li
+      class="step"
+      [class.step-primary]="idx <= currentStepIndex()"
+      [class.cursor-pointer]="canReachStep(s)"
+      (click)="canReachStep(s) && goToStep(s)"
+    >
+      {{ stepLabels[s] }}
+    </li>
+    }
+  </ul>
+
+  <!-- ============ UPLOAD ============ -->
+  @if (step() === 'upload') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @if (!fileName()) {
+      <div
+        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
+        [class.border-primary]="dragOver()"
+        [class.bg-primary/5]="dragOver()"
+        [class.border-base-300]="!dragOver()"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave()"
+        (drop)="onDrop($event)"
+      >
+        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
+        <label class="btn btn-primary gap-2 cursor-pointer">
+          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+          Drop a CSV here, or click to browse
+          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
+        </label>
+        @if (parsing()) {
+        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
+          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
+          Reading and parsing the file…
+        </p>
+        }
+      </div>
+      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
+        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
+        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
+        <li>UTF-8 and Excel both work.</li>
+      </ul>
+      } @else {
+      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
+          <span class="font-mono text-sm text-base-content truncate">
+            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
+          </span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
+      </div>
+      <div class="flex justify-end">
+        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
+          Continue to column mapping
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+      }
+    </div>
   </div>
   }
 
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-sm" (click)="toggleNewExportInfo()">New export</button>
+  <!-- ============ MAP COLUMNS ============ -->
+  @if (step() === 'map') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      <p class="text-sm text-base-content/70">
+        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
+        matching by the header row
+      </p>
+
+      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
+        @for (header of headers(); track header; let idx = $index) {
+        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
+          <div class="flex-1 min-w-0">
+            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
+            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <select
+              class="select select-bordered select-sm w-56"
+              [value]="mapping()[idx] || ''"
+              (change)="setMapping(idx, $any($event.target).value)"
+            >
+              <option value="">— Skip this column —</option>
+              @for (field of mappableFields; track field) {
+              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
+              }
+            </select>
+            @if (!mapping()[idx]) {
+            <span class="badge badge-ghost text-xs">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+      </div>
+
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary gap-2"
+          [disabled]="mappedColumnCount() === 0"
+          (click)="goToReview()"
+        >
+          Continue to review
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
     </div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+  </div>
+  }
+
+  <!-- ============ REVIEW ============ -->
+  @if (step() === 'review') {
+  <div class="flex flex-col gap-4">
+    @if (checkingDuplicates()) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body items-center py-10">
+        <progress class="progress progress-primary w-64"></progress>
+        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
+      </div>
     </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
+    } @else { @if (reviewIsClean()) {
+    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
+      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
+      <span>No duplicate emails and no email problems found in this file.</span>
+    </div>
+    } @if (duplicateMatches().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ duplicateRowCount() }} rows match people you already have
+        </p>
+        <ul class="space-y-1">
+          @for (match of duplicateMatches(); track match.person_id) {
+          <li class="text-sm flex items-center gap-2">
+            <span class="font-mono text-base-content/70">{{ match.email }}</span>
+            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
+            @if (match.slug) {
+            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
+              >{{ match.name }}</a
+            >
+            } @else {
+            <span class="text-base-content">{{ match.name }}</span>
+            }
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'merge'"
+              (change)="duplicateDecision.set('merge')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Merge into existing</span>
+              <span class="block text-xs text-base-content/60">
+                Recommended — fills blank fields, never overwrites
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'skip'"
+              (change)="duplicateDecision.set('skip')"
+            />
+            <span class="text-sm font-medium text-base-content">
+              Skip the {{ duplicateRowCount() }} duplicate rows
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'import_new'"
+              (change)="duplicateDecision.set('import_new')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import as new anyway</span>
+              <span class="block text-xs text-base-content/60">
+                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    } @if (badEmailRows().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ badEmailRows().length }} rows have email problems
+        </p>
+        <ul class="space-y-1">
+          @for (row of badEmailRows(); track row.idx) {
+          <li class="text-sm">
+            <span class="text-base-content/60">Row {{ row.idx }}:</span>
+            <span class="font-mono text-base-content">{{ row.email }}</span>
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'skip'"
+              (change)="badEmailDecision.set('skip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
+              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'strip'"
+              (change)="badEmailDecision.set('strip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import without an email</span>
+              <span class="block text-xs text-base-content/60">
+                They can't receive newsletters until an email is added
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
     }
 
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Contents</th>
-            <th class="text-right">Download</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (job of exportJobs(); track job.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-            </td>
-            <td>
-              @if (job.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (job.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Queued</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-              } @default {
-              <span class="badge badge-error text-xs">Failed</span>
-              } }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (job.status === 'completed') { @if (isExpired(job)) {
-                <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-                } @else if (job.downloadable) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download CSV"
-                  (click)="downloadExportJob(job)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                } @else {
-                <span
-                  class="text-xs text-base-content/40 italic mr-2"
-                  title="Downloaded directly to your device — not stored on the server"
-                >
-                  Downloaded
-                </span>
-                } }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  title="Delete export"
-                  (click)="deleteExportJob(job)"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="5" class="text-center py-12 text-base-content/50">
-              <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1">
-                Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
-              </p>
-            </td>
-          </tr>
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            placeholder="Comma separated e.g. donor, canvass-2026"
+            [value]="tagsText()"
+            (input)="tagsText.set($any($event.target).value)"
+          />
+        </label>
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            list="existing-static-lists"
+            placeholder="New or existing list name"
+            [value]="listName()"
+            (input)="listName.set($any($event.target).value)"
+          />
+          <datalist id="existing-static-lists">
+            @for (name of existingListNames(); track name) {
+            <option [value]="name"></option>
+            }
+          </datalist>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex justify-between">
+      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
+        Continue to import
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+    }
+  </div>
+  }
+
+  <!-- ============ CONFIRM & RUN ============ -->
+  @if (step() === 'confirm') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @let r = run(); @switch (r.status) { @case ('idle') {
+      <div class="space-y-2 text-sm text-base-content">
+        <p class="font-mono text-base-content/70">
+          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
+        </p>
+        <ul class="list-disc list-inside text-base-content/70 space-y-1">
+          <li>
+            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
+            'skip duplicate rows' : 'import as new anyway' }}
+          </li>
+          @if (badEmailRows().length > 0) {
+          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
+          } @if (parsedTags().length > 0) {
+          <li>Tags: {{ parsedTags().join(', ') }}</li>
+          } @if (listName().trim()) {
+          <li>Added to list: {{ listName().trim() }}</li>
           }
-        </tbody>
-      </table>
+        </ul>
+        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
+      </div>
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          Import {{ finalRowCount() }} people
+        </button>
+      </div>
+      } @case ('running') {
+      <div class="flex flex-col items-center gap-3 py-10">
+        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
+        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
+        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
+      </div>
+      } @case ('done') {
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
+          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
+        </div>
+        <ul class="text-sm text-base-content/70 space-y-1">
+          <li>{{ r.inserted }} imported</li>
+          @if (r.merged > 0) {
+          <li>{{ r.merged }} merged into existing people</li>
+          } @if (r.skipped > 0) {
+          <li>{{ r.skipped }} skipped</li>
+          } @if (r.errors > 0) {
+          <li class="text-error">{{ r.errors }} errors</li>
+          } @if (r.tag) {
+          <li>Tagged {{ r.tag }}</li>
+          }
+        </ul>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
+            <pc-icon name="user-group" [size]="4"></pc-icon>
+            View imported people
+          </button>
+          <button type="button" class="btn btn-outline btn-warning gap-2" (click)="startOver()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import another file
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
+            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+            Back to import history
+          </button>
+        </div>
+      </div>
+      } @case ('error') {
+      <div class="flex flex-col gap-4">
+        <div class="alert alert-error gap-2">
+          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+          <span>{{ r.message }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            Try again
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
+        </div>
+      </div>
+      } }
     </div>
   </div>
   }
 </div>
-
-<dialog #deleteDialog class="modal">
-  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
-    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
-    @if (pendingDelete(); as item) {
-    <p class="text-sm text-base-content/70 mt-2">
-      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-      records created by this import:
-    </p>
-
-    <div class="space-y-3 mt-4">
-      @if (item.contactCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deletePeople()"
-          (change)="deletePeople.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-      </label>
-      } @if (item.householdCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteHouseholds()"
-          (change)="deleteHouseholds.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-      </label>
-      } @if (item.companyCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteCompanies()"
-          (change)="deleteCompanies.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-      </label>
-      } @if (item.taskCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteTasks()"
-          (change)="deleteTasks.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-      </label>
-      }
-    </div>
-    }
-
-    <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
-        Cancel
-      </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
-        <pc-icon name="trash" [size]="4"></pc-icon>
-        Delete
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
-    <button type="submit">close</button>
-  </form>
-</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
@@ -44287,6 +40103,196 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
+  <!-- Top Navigation & Title -->
+  <!-- Top Navigation & Title -->
+  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
+    <div class="flex items-center gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
+            {{ listData()?.name }}
+          </h1>
+          @if (listData()?.is_dynamic) {
+          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
+          } @else {
+          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
+          }
+        </div>
+        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
+      </div>
+    </div>
+
+    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
+    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
+      @if (listData()?.is_dynamic) {
+      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
+        <div>Last Refreshed</div>
+        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
+      </div>
+      <button
+        class="btn btn-outline btn-accent btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
+        [disabled]="refreshing() || loading()"
+        (click)="refreshList()"
+      >
+        @if (refreshing()) {
+        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
+        Refreshing... } @else {
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh Now }
+      </button>
+      }
+      <pc-form-actions
+        [isLoading]="loading()"
+        [btn1Text]="'Edit List'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        (btn1Clicked)="editList()"
+      ></pc-form-actions>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (loading()) {
+  <div class="flex flex-1 flex-col items-center justify-center py-20">
+    <progress class="progress progress-primary w-56"></progress>
+    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
+  </div>
+  } @else {
+  <!-- KPI Stats Cards -->
+  <!-- KPI Stats Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    <pc-stat-card
+      [title]="'List Size'"
+      [value]="memberCount()"
+      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
+      [icon]="'users'"
+      [iconBgClass]="'bg-primary/10'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Newsletters Sent'"
+      [value]="stats()?.totalNewsletters || 0"
+      [description]="'Campaign dispatches'"
+      [icon]="'megaphone'"
+      [iconBgClass]="'bg-secondary/10'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Open Rate'"
+      [value]="formatPercent(stats()?.openRate)"
+      [icon]="'envelope'"
+      [iconBgClass]="'bg-accent/10'"
+      [iconColorClass]="'text-accent'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Click Rate'"
+      [value]="formatPercent(stats()?.clickRate)"
+      [icon]="'chart-pie'"
+      [iconBgClass]="'bg-info/10'"
+      [iconColorClass]="'text-info'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+  </div>
+
+  <!-- Tabs Panel -->
+  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="members" [activeTab]="activeTab()">
+      @if (isPeople()) {
+      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
+      } @else {
+      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
+      }
+    </pc-tab-panel>
+
+    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
+          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
+          <div class="p-12 text-center text-base-content/50">
+            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+            <p class="font-medium text-base">No campaign emails sent to this list</p>
+            <p class="text-xs mt-1">
+              Sent newsletters targeting this list will appear here with engagement statistics.
+            </p>
+          </div>
+          } @else {
+          <table class="table table-zebra table-md w-full">
+            <thead>
+              <tr class="bg-base-200/50 text-base-content/70">
+                <th class="font-bold">Newsletter Name</th>
+                <th class="font-bold">Subject</th>
+                <th class="font-bold">Send Date</th>
+                <th class="font-bold text-right">Recipients</th>
+                <th class="font-bold text-right">Open Rate</th>
+                <th class="font-bold text-right">Click Rate</th>
+                <th class="font-bold text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (n of stats().newsletters; track n.id) {
+              <tr class="hover:bg-base-200/40 transition-colors">
+                <td class="font-bold text-base-content">{{ n.name }}</td>
+                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
+                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
+                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-center">
+                  <a
+                    [routerLink]="['/newsletters', n.id]"
+                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
+                  >
+                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
+                    View Report
+                  </a>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+          }
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+  } @if (listData() && listData()?.id) {
+  <div class="mt-8 border-t border-base-250 pt-6">
+    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
 
 ```typescript
@@ -44385,7 +40391,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   private normalize(record: any) {
     if (!record) return record;
     const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const attachments = this.parseJsonArray<{ name: string; url?: string; size?: number }>(record.attachments);
     const asNumber = (value: unknown) => {
       if (value === null || value === undefined || value === '') return null;
       const num = Number(value);
@@ -44418,7 +40423,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
       created_at: asDate(record.created_at) ?? new Date(),
       updated_at: asDate(record.updated_at) ?? new Date(),
       top_links,
-      attachments,
     };
   }
 
@@ -44433,6 +40437,1653 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
+
+```html
+@if (mode() === 'options') {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
+      <div>
+        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
+        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
+      </div>
+
+      <button
+        type="button"
+        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
+        (click)="selectRegular()"
+      >
+        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
+        <div class="flex-1">
+          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
+          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
+        </div>
+        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
+      </button>
+
+      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
+        <div class="flex items-center gap-4">
+          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
+            <pc-icon name="arrow-path" [size]="6"></pc-icon>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
+              <span
+                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
+                >Coming soon</span
+              >
+            </div>
+            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
+          Create a regular newsletter instead
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+} @else if (mode() === 'regular') {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+
+    <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
+    <ol class="mt-4 flex flex-wrap gap-2">
+      @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
+      stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
+      <li>
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+          [class.bg-primary]="isCurrent"
+          [class.text-primary-content]="isCurrent"
+          [class.bg-primary/10]="isDone"
+          [class.text-primary]="isDone"
+          [class.cursor-pointer]="isDone"
+          [class.hover:bg-primary/20]="isDone"
+          [class.bg-base-200]="isLocked"
+          [class.text-base-content/50]="isLocked"
+          [class.cursor-not-allowed]="isLocked"
+          [class.tooltip]="isLocked"
+          [class.tooltip-bottom]="isLocked"
+          [attr.data-tip]="isLocked ? lockedStepTooltip : null"
+          [attr.aria-disabled]="isLocked"
+          (click)="goToStep(stepNo)"
+        >
+          <span
+            class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
+            [class.bg-primary-content/25]="isCurrent"
+            [class.bg-primary/15]="isDone"
+            [class.bg-base-300]="isLocked"
+          >
+            @if (isDone) { <pc-icon name="check-circle" [size]="3"></pc-icon> } @else { {{ stepNo }} }
+          </span>
+          <span>{{ label }}</span>
+        </button>
+      </li>
+      }
+    </ol>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 py-6">
+    <form
+      [formGroup]="regularForm"
+      class="mx-auto flex w-full flex-col gap-6"
+      [class.max-w-3xl]="currentStep() !== 2"
+      [class.max-w-none]="currentStep() === 2"
+    >
+      @switch (currentStep()) {
+
+      <!-- ============ STEP 1 · TEMPLATE ============ -->
+      @case (1) {
+      <div class="grid gap-5 sm:grid-cols-2">
+        @for (t of templateOptions; track t.id) {
+        <button
+          type="button"
+          class="overflow-hidden rounded-xl border text-left transition-colors"
+          [class.border-primary]="selectedTemplate() === t.id"
+          [class.bg-primary/5]="selectedTemplate() === t.id"
+          [class.border-base-300]="selectedTemplate() !== t.id"
+          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
+          (click)="selectTemplate(t.id)"
+        >
+          <div
+            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
+          >
+            template preview
+          </div>
+          <div class="flex items-start gap-3 p-4">
+            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
+            <div>
+              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
+              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
+            </div>
+          </div>
+        </button>
+        }
+      </div>
+      }
+
+      <!-- ============ STEP 2 · CONTENT ============ -->
+      @case (2) {
+      <div class="space-y-4">
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
+        >
+          <p class="max-w-xl text-xs text-base-content/60">
+            Personalize with merge fields like
+            <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[11px] text-base-content/80"
+              >{{ mergeFieldExample }}</code
+            >. The footer disclaimer and unsubscribe link are appended automatically from
+            <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
+          </p>
+          <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="sendTestEmail()">
+            <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+            Send test email
+          </button>
+        </div>
+        <pc-visual-newsletter-editor
+          [htmlContent]="regularForm.get('htmlContent')?.value || ''"
+          [plainTextContent]="regularForm.get('plainTextContent')?.value || ''"
+          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event); onFieldInput()"
+          (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
+        ></pc-visual-newsletter-editor>
+      </div>
+      }
+
+      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
+      @case (3) {
+      <div class="grid gap-6 md:grid-cols-2">
+        <!-- Email details -->
+        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Email details</h3>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">Subject</label>
+            <input
+              #subjectInput
+              class="input input-bordered input-sm w-full"
+              formControlName="subject"
+              placeholder="What recipients see first"
+              (input)="onFieldInput()"
+            />
+            <p
+              class="mt-1 text-xs"
+              [class.text-error]="isInvalid('subject')"
+              [class.text-base-content/55]="!isInvalid('subject')"
+            >
+              {{ subjectCoach }}
+            </p>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">Preview text</label>
+            <input
+              class="input input-bordered input-sm w-full"
+              formControlName="previewText"
+              placeholder="Optional — shows after the subject in most inboxes"
+              (input)="onFieldInput()"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">From name</label>
+            <input
+              #fromNameInput
+              class="input input-bordered input-sm w-full"
+              formControlName="fromName"
+              placeholder="Who is sending"
+              (input)="onFieldInput()"
+            />
+            @if (isInvalid('fromName')) {
+            <p class="mt-1 text-xs text-error">{{ fromNameCoach }}</p>
+            }
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">From address</label>
+            @if (verifiedSenders().length) {
+            <select
+              #fromAddressInput
+              class="select select-bordered select-sm w-full"
+              formControlName="fromAddress"
+              (change)="onFieldInput()"
+            >
+              <option value="" disabled>Choose a verified sender</option>
+              @for (sender of verifiedSenders(); track sender) {
+              <option [value]="sender">{{ sender }}</option>
+              }
+            </select>
+            <button type="button" class="link link-primary mt-1 text-xs" (click)="goToVerifySender()">
+              Verify a new sender…
+            </button>
+            } @else {
+            <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
+              <p class="text-xs text-base-content/60">
+                No verified senders yet — a verified address stops your sends from bouncing or spoofing.
+              </p>
+              <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
+                Verify a sender
+              </button>
+            </div>
+            } @if (isInvalid('fromAddress')) {
+            <p class="mt-1 text-xs text-error">{{ fromAddressCoach }}</p>
+            } @if (verifiedSenders().length) {
+            <p class="mt-1 text-xs text-base-content/50">Prefilled from Workspace settings → Communications.</p>
+            }
+          </div>
+        </div>
+
+        <!-- Audience -->
+        <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Audience</h3>
+          </div>
+
+          <!-- Include lists -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include lists</h4>
+            @if (loadingLists()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of includeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeIncludeList(id)" aria-label="Remove list">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of includeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary"
+                (click)="addIncludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!includeListIds().length && !includeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists yet — create one to target contacts.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Include tags -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include tags</h4>
+            @if (loadingTags()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of includeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-medium text-secondary"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeIncludeTag(name)" aria-label="Remove tag">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of includeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-secondary hover:text-secondary"
+                (click)="addIncludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!includeTagsList().length && !includeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags yet.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude lists -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude lists</h4>
+            @if (!loadingLists()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of excludeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeExcludeList(id)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of excludeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!excludeListIds().length && !excludeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude tags -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude tags</h4>
+            @if (!loadingTags()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of excludeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeExcludeTag(name)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of excludeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!excludeTagsList().length && !excludeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Estimated audience — the math, in public -->
+          <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+            <div class="mb-3 flex items-center gap-2">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/60"
+                >Estimated audience</span
+              >
+            </div>
+            @if (hasAudienceSelection()) {
+            <dl class="space-y-1.5 text-sm">
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">In included lists</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedListsTotal()) }}</dd>
+              </div>
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Matching included tags</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedTagsTotal()) }}</dd>
+              </div>
+              @if (excludedListsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by lists</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedListsTotal()) }}</dd>
+              </div>
+              } @if (excludedTagsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by tags</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedTagsTotal()) }}</dd>
+              </div>
+              }
+              <div class="flex items-center justify-between border-t border-base-300 pt-2 font-semibold">
+                <dt>Total</dt>
+                <dd class="tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+              </div>
+            </dl>
+            <p class="mt-2 text-[11px] text-base-content/55">
+              @if (skipBounced()) { Overlap between lists and tags is removed, and previously bounced addresses are
+              skipped, when you send. } @else { Overlap is removed when you send. Bounced addresses are
+              <strong>not</strong> being skipped (Workspace setting). }
+            </p>
+            } @else {
+            <p class="text-sm text-base-content/60">Add a list or tag above to see who this newsletter reaches.</p>
+            }
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
+      @case (4) {
+      <div class="grid gap-6 md:grid-cols-2">
+        <!-- Review -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3
+            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
+          >
+            Review
+          </h3>
+          <dl class="divide-y divide-base-200 text-sm">
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Template</dt>
+              <dd class="font-medium">{{ selectedTemplateName() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Subject</dt>
+              <dd class="truncate text-right font-medium">{{ regularForm.get('subject')?.value || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">From</dt>
+              <dd class="truncate text-right font-medium">
+                {{ regularForm.get('fromName')?.value }} &lt;{{ regularForm.get('fromAddress')?.value || '—' }}&gt;
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Audience</dt>
+              <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Timing</dt>
+              <dd class="text-right font-medium">
+                @if (regularForm.get('timingMode')?.value === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send
+                now }
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- Send timing -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3
+            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
+          >
+            Send timing
+          </h3>
+          <div class="space-y-3">
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="now"
+                formControlName="timingMode"
+                (change)="onTimingChange()"
+              />
+              <span>
+                <span class="block text-sm font-medium">Send now</span>
+                <span class="block text-xs text-base-content/60">Queued the moment you confirm.</span>
+              </span>
+            </label>
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="schedule"
+                formControlName="timingMode"
+                (change)="onTimingChange()"
+              />
+              <span>
+                <span class="block text-sm font-medium">Schedule for later</span>
+                <span class="block text-xs text-base-content/60">Delivered automatically at the time you pick.</span>
+              </span>
+            </label>
+          </div>
+
+          @if (regularForm.get('timingMode')?.value === 'schedule') {
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div class="relative flex flex-col gap-1">
+              <label class="text-xs font-medium">Send date</label>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-accent justify-between"
+                (click)="toggleDatePicker()"
+              >
+                <span>{{ scheduledDateDisplay() }}</span>
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              @if (showDatePicker()) {
+              <div class="absolute left-0 top-full z-20 mt-2">
+                <calendar-date
+                  class="cally rounded-box border border-base-300 bg-base-100 shadow-lg"
+                  [value]="scheduledDateValue()"
+                  (change)="onScheduledDateChange($event)"
+                >
+                  <calendar-month></calendar-month>
+                </calendar-date>
+              </div>
+              }
+              <input type="hidden" formControlName="scheduledDate" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium">Send time</label>
+              <input
+                type="time"
+                class="input input-bordered input-sm w-full"
+                formControlName="scheduledTime"
+                (input)="onTimingChange()"
+              />
+            </div>
+            @if (timingNeedsDate() && showFieldErrors()) {
+            <p class="text-xs text-error sm:col-span-2">{{ scheduleCoach }}</p>
+            }
+          </div>
+          }
+        </div>
+      </div>
+      } }
+    </form>
+  </main>
+
+  <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
+  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
+    <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
+      <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      @if (currentStep() === 1) { Back } @else { Back }
+    </button>
+    <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
+      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
+    </button>
+    <div class="flex-1"></div>
+    @if (currentStep() < 4) {
+    <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
+      Next
+      <pc-icon name="chevron-right" [size]="4"></pc-icon>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="sendRegular()">
+      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+      <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule') {
+      Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
+      peopleLabel(estimatedAudienceCount()) }} }
+    </button>
+    }
+  </footer>
+</div>
+} @else {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="switchToOptions()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletter types
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
+      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
+      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
+      <p class="mt-2 text-sm text-base-content/60">
+        Until then, create a regular newsletter and send it now or on a schedule.
+      </p>
+      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
+        Create a regular newsletter
+      </button>
+    </div>
+  </main>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
+
+```html
+<div
+  class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
+>
+  <!-- LEFT: VISUAL CANVAS PREVIEW -->
+  <div class="flex-1 flex flex-col bg-base-200 h-full overflow-hidden">
+    <!-- CANVAS HEADER / TOOLBAR -->
+    <div class="flex items-center justify-between px-4 py-3 bg-base-100 border-b border-base-300">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Preview Mode:</span>
+        <div class="join">
+          <button
+            type="button"
+            class="btn btn-xs join-item"
+            [class.btn-primary]="previewMode() === 'desktop'"
+            [class.btn-ghost]="previewMode() !== 'desktop'"
+            (click)="previewMode.set('desktop')"
+            title="Desktop View"
+          >
+            <pc-icon name="view-column" [size]="4"></pc-icon>
+            Desktop
+          </button>
+          <button
+            type="button"
+            class="btn btn-xs join-item"
+            [class.btn-primary]="previewMode() === 'mobile'"
+            [class.btn-ghost]="previewMode() !== 'mobile'"
+            (click)="previewMode.set('mobile')"
+            title="Mobile View"
+          >
+            <pc-icon name="collapse-content" [size]="4"></pc-icon>
+            Mobile
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Editor:</span>
+        <button
+          type="button"
+          class="btn btn-xs btn-outline btn-accent"
+          [class.btn-active]="editorMode() === 'code'"
+          (click)="toggleEditorMode()"
+        >
+          @if (editorMode() === 'visual') {
+          <pc-icon name="file-code" [size]="4" class="mr-1"></pc-icon>
+          View HTML } @else {
+          <pc-icon name="eye" [size]="4" class="mr-1"></pc-icon>
+          Visual Editor }
+        </button>
+      </div>
+    </div>
+
+    <!-- CANVAS CONTENT AREA -->
+    <div class="flex-1 overflow-y-auto p-6 flex justify-center items-start">
+      @if (editorMode() === 'visual') {
+      <!-- EMAIL CANVAS WRAPPER -->
+      <div
+        class="bg-white text-black shadow-md rounded-lg overflow-hidden transition-all duration-300 relative border border-slate-200"
+        [style.width]="previewMode() === 'mobile' ? '375px' : '100%'"
+        [style.max-width]="previewMode() === 'mobile' ? '375px' : '600px'"
+        style="min-height: 500px"
+      >
+        <!-- CANVAS CONTAINER -->
+        <div class="w-full bg-slate-100 py-6 px-4" style="min-height: 500px">
+          <table border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td align="center">
+                <!-- Inner Email Content -->
+                <table
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  class="bg-white rounded-lg overflow-hidden border border-slate-200 shadow-sm"
+                >
+                  <tr>
+                    <td style="padding: 0">
+                      @if (blocks().length === 0) {
+                      <div class="p-8 text-center text-slate-400">
+                        <pc-icon name="document-text" [size]="8" class="mx-auto text-slate-300 mb-2"></pc-icon>
+                        <p class="text-sm font-medium">Your canvas is empty.</p>
+                        <p class="text-xs text-slate-400 mt-1">Add blocks from the sidebar to begin designing.</p>
+                      </div>
+                      } @else { @for (block of blocks(); track block.id; let idx = $index) {
+                      <div
+                        class="group relative border-2 transition-all duration-150 cursor-pointer"
+                        [class.border-primary]="selectedBlockId() === block.id"
+                        [class.border-transparent]="selectedBlockId() !== block.id"
+                        [class.hover:border-primary/50]="selectedBlockId() !== block.id"
+                        (click)="selectBlock(block.id, $event)"
+                      >
+                        <!-- Hover controls -->
+                        <div
+                          class="absolute -top-3 right-2 z-10 hidden group-hover:flex items-center gap-1 bg-primary text-primary-content text-[10px] rounded px-1 shadow-md"
+                        >
+                          <button
+                            type="button"
+                            class="p-1 hover:bg-primary-focus rounded"
+                            (click)="moveBlockUp(idx, $event)"
+                            [disabled]="idx === 0"
+                            title="Move Up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            class="p-1 hover:bg-primary-focus rounded"
+                            (click)="moveBlockDown(idx, $event)"
+                            [disabled]="idx === blocks().length - 1"
+                            title="Move Down"
+                          >
+                            ▼
+                          </button>
+                          <button
+                            type="button"
+                            class="p-1 hover:bg-primary-focus rounded"
+                            (click)="duplicateBlock(block, $event)"
+                            title="Duplicate"
+                          >
+                            ❐
+                          </button>
+                          <button
+                            type="button"
+                            class="p-1 hover:bg-error rounded text-red-100 hover:text-white"
+                            (click)="deleteBlock(block.id, $event)"
+                            title="Delete"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <!-- Block Renderers inside standard tables to mimic layout -->
+                        <!-- HEADING BLOCK -->
+                        @if (block.type === 'heading') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [style.padding-top.px]="block.styles?.paddingTop || 16"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                              [style.color]="block.styles?.color || '#1f2937'"
+                              [style.font-size]="block.styles?.fontSize || '24px'"
+                              [style.text-align]="block.styles?.textAlign || 'center'"
+                              class="font-sans font-bold px-6 leading-tight select-none"
+                              [innerHTML]="
+                                            resolveVariablesForPreview(block.content || 'Heading Block', false)
+                                          "
+                            ></td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- TEXT BLOCK -->
+                        @if (block.type === 'text') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [style.padding-top.px]="block.styles?.paddingTop || 12"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                              [style.color]="block.styles?.color || '#4b5563'"
+                              [style.font-size]="block.styles?.fontSize || '16px'"
+                              [style.text-align]="block.styles?.textAlign || 'left'"
+                              class="font-sans px-6 leading-relaxed whitespace-pre-wrap select-none"
+                              [innerHTML]="
+                                            resolveVariablesForPreview(
+                                              block.content || 'Click here to write some text...',
+                                              false
+                                            )
+                                          "
+                            ></td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- IMAGE BLOCK -->
+                        @if (block.type === 'image') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [align]="block.styles?.textAlign || 'center'"
+                              [style.padding-top.px]="block.styles?.paddingTop || 12"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                              class="px-6"
+                            >
+                              <img
+                                [src]="
+                                              block.imageUrl ||
+                                              'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=600&q=80'
+                                            "
+                                [alt]="block.imageAlt || 'Newsletter Image'"
+                                [style.max-width]="block.imageWidth || '100%'"
+                                class="w-full height-auto border-0 block rounded"
+                              />
+                            </td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- BUTTON BLOCK -->
+                        @if (block.type === 'button') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [align]="block.styles?.textAlign || 'center'"
+                              [style.padding-top.px]="block.styles?.paddingTop || 16"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                              class="px-6"
+                            >
+                              <table border="0" cellpadding="0" cellspacing="0" class="border-separate">
+                                <tr>
+                                  <td
+                                    align="center"
+                                    valign="middle"
+                                    [style.background-color]="block.styles?.backgroundColor || '#2563eb'"
+                                    [style.border-radius.px]="block.styles?.borderRadius || 6"
+                                  >
+                                    <span
+                                      class="inline-block px-6 py-3 font-sans font-bold select-none text-decoration-none"
+                                      [style.color]="block.styles?.color || '#ffffff'"
+                                      [style.font-size]="block.styles?.fontSize || '16px'"
+                                      [innerHTML]="
+                                                    resolveVariablesForPreview(block.content || 'Click Me', true)
+                                                  "
+                                    >
+                                    </span>
+                                  </td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- DIVIDER BLOCK -->
+                        @if (block.type === 'divider') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [style.padding-top.px]="block.styles?.paddingTop || 12"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 12"
+                              class="px-6"
+                            >
+                              <div
+                                [style.border-top-width.px]="block.styles?.borderWidth || 1"
+                                [style.border-top-color]="block.styles?.borderColor || '#e5e7eb'"
+                                class="border-t"
+                              ></div>
+                            </td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- SPACER BLOCK -->
+                        @if (block.type === 'spacer') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td [style.height.px]="block.styles?.height || 20" style="font-size: 0; line-height: 0">
+                              &nbsp;
+                            </td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- SOCIAL LINKS BLOCK -->
+                        @if (block.type === 'social') {
+                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                          <tr>
+                            <td
+                              [align]="block.styles?.textAlign || 'center'"
+                              [style.padding-top.px]="block.styles?.paddingTop || 16"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 16"
+                              class="px-6"
+                            >
+                              <table border="0" cellpadding="0" cellspacing="0">
+                                <tr>
+                                  @for (social of block.socials || []; track social.platform) {
+                                  <td class="px-2">
+                                    <span
+                                      class="inline-flex items-center justify-center w-8 h-8 select-none"
+                                      [style.background-color]="
+                                                      getSocialBgColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                                      [style.color]="
+                                                      getSocialIconColor(
+                                                        social.platform,
+                                                        block.socialIconStyle || 'circular-solid'
+                                                      )
+                                                    "
+                                      [style.border-radius]="
+                                                      (block.socialIconStyle || 'circular-solid').startsWith('circular')
+                                                        ? '50%'
+                                                        : '0%'
+                                                    "
+                                    >
+                                      <svg
+                                        viewBox="0 0 24 24"
+                                        class="w-4 h-4 fill-current"
+                                        style="display: block; width: 16px; height: 16px"
+                                      >
+                                        <path [attr.d]="socialSvgPaths[social.platform]"></path>
+                                      </svg>
+                                    </span>
+                                  </td>
+                                  }
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                        }
+
+                        <!-- FOOTER BLOCK -->
+                        @if (block.type === 'footer') {
+                        <table
+                          border="0"
+                          cellpadding="0"
+                          cellspacing="0"
+                          width="100%"
+                          [style.background-color]="block.styles?.backgroundColor || '#f9fafb'"
+                        >
+                          <tr>
+                            <td
+                              [style.color]="block.styles?.color || '#9ca3af'"
+                              [style.padding-top.px]="block.styles?.paddingTop || 24"
+                              [style.padding-bottom.px]="block.styles?.paddingBottom || 24"
+                              class="font-sans px-6 text-xs text-center leading-normal"
+                            >
+                              <p
+                                class="font-bold mb-1"
+                                [innerHTML]="
+                                              resolveVariablesForPreview(
+                                                block.footerCompany || 'Company Name Inc.',
+                                                false
+                                              )
+                                            "
+                              ></p>
+                              <p
+                                class="mb-3 whitespace-pre-wrap"
+                                [innerHTML]="
+                                              resolveVariablesForPreview(
+                                                block.footerAddress || '123 Address Rd, City, State',
+                                                false
+                                              )
+                                            "
+                              ></p>
+                              <p>
+                                You are receiving this email because you opted in on our website.
+                                <br />
+                                <span class="underline text-primary">Unsubscribe</span>
+                              </p>
+                            </td>
+                          </tr>
+                        </table>
+                        }
+                      </div>
+                      } }
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      } @else {
+      <!-- RAW CODE VIEW -->
+      <div class="w-full h-full flex flex-col gap-2">
+        <div class="alert alert-warning text-xs py-2">
+          <pc-icon name="exclamation-triangle" [size]="4" class="mr-1"></pc-icon>
+          <span>
+            <strong>Caution:</strong> Editing raw HTML directly is fully supported, but manual changes cannot be
+            converted back into visual blocks.
+          </span>
+        </div>
+        <textarea
+          class="textarea textarea-bordered font-mono text-xs w-full flex-1"
+          [ngModel]="compiledHtml()"
+          (ngModelChange)="handleRawHtmlEdit($event)"
+          placeholder="Paste or edit HTML here..."
+        ></textarea>
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- RIGHT: CONTROL PANEL -->
+  <aside
+    class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
+  >
+    <!-- TABS -->
+    <div role="tablist" class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
+      <a
+        role="tab"
+        class="tab focus:outline-none cursor-pointer"
+        [class.tab-active]="activeTab() === 'blocks'"
+        (click)="activeTab.set('blocks')"
+      >
+        Blocks
+      </a>
+      <a
+        role="tab"
+        class="tab focus:outline-none cursor-pointer"
+        [class.tab-active]="activeTab() === 'edit'"
+        (click)="activeTab.set('edit')"
+      >
+        Customize
+      </a>
+    </div>
+
+    <!-- TAB CONTENT -->
+    <div class="flex-1 overflow-y-auto p-4">
+      <!-- BLOCKS TAB -->
+      @if (activeTab() === 'blocks') {
+      <div class="space-y-4">
+        <div>
+          <h3 class="text-sm font-bold text-base-content/75 mb-1">Add Elements</h3>
+          <p class="text-xs text-base-content/60">Click any block to insert it at the end of your newsletter.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('heading')"
+          >
+            <pc-icon name="document-text" [size]="5" class="text-primary"></pc-icon>
+            Heading
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('text')"
+          >
+            <pc-icon name="document-text" [size]="5" class="text-success"></pc-icon>
+            Paragraph
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('image')"
+          >
+            <pc-icon name="file-image" [size]="5" class="text-warning"></pc-icon>
+            Image
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('button')"
+          >
+            <pc-icon name="star-filled" [size]="5" class="text-info"></pc-icon>
+            CTA Button
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('divider')"
+          >
+            <pc-icon name="bars-3" [size]="5" class="text-neutral-content"></pc-icon>
+            Divider
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('spacer')"
+          >
+            <pc-icon name="arrows-pointing-out" [size]="5"></pc-icon>
+            Spacer
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('social')"
+          >
+            <pc-icon name="user-group" [size]="5" class="text-primary"></pc-icon>
+            Social Links
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            (click)="addBlock('footer')"
+          >
+            <pc-icon name="home" [size]="5" class="text-secondary"></pc-icon>
+            Email Footer
+          </button>
+        </div>
+
+        <!-- Quick action tip -->
+        <div class="mt-4 rounded bg-info/10 border border-info/20 p-3 text-xs text-info-content">
+          <p><strong>Tip:</strong> Hover over blocks on the canvas to move them up/down, duplicate, or delete them.</p>
+        </div>
+      </div>
+      }
+
+      <!-- EDIT TAB -->
+      @if (activeTab() === 'edit') { @if (selectedBlock(); as block) {
+      <div class="space-y-4">
+        <div class="flex items-center justify-between border-b border-base-200 pb-2">
+          <span class="text-xs uppercase font-bold text-base-content/60">Selected: {{ block.type }}</span>
+          <button type="button" class="btn btn-xs btn-error text-white" (click)="deleteBlock(block.id)">
+            Delete Block
+          </button>
+        </div>
+
+        <!-- HEADING AND TEXT EDIT FIELDS -->
+        @if (block.type === 'heading' || block.type === 'text') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Text Content</label>
+          @if (block.type === 'heading') {
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.content"
+            (ngModelChange)="updateBlocks()"
+          />
+          } @else {
+          <textarea
+            class="textarea textarea-bordered w-full textarea-sm min-h-24"
+            [(ngModel)]="block.content"
+            (ngModelChange)="updateBlocks()"
+          ></textarea>
+          }
+
+          <!-- Quick-Insert Variables -->
+          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
+              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'FirstName', 'content')"
+                title="Click to insert First Name placeholder"
+              >
+                + First Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'LastName', 'content')"
+                title="Click to insert Last Name placeholder"
+              >
+                + Last Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Email', 'content')"
+                title="Click to insert Email placeholder"
+              >
+                + Email
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Company', 'content')"
+                title="Click to insert Company placeholder"
+              >
+                + Company
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'JobTitle', 'content')"
+                title="Click to insert Job Title placeholder"
+              >
+                + Job Title
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Phone', 'content')"
+                title="Click to insert Phone placeholder"
+              >
+                + Phone
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Text Styles -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Font Size</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.styles!.fontSize"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="12px">12px (Small)</option>
+              <option value="14px">14px</option>
+              <option value="16px">16px (Normal)</option>
+              <option value="18px">18px</option>
+              <option value="20px">20px (H3)</option>
+              <option value="24px">24px (H2)</option>
+              <option value="28px">28px (H1)</option>
+              <option value="32px">32px</option>
+              <option value="36px">36px (Large)</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Align</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.styles!.textAlign"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.color"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Color Hex</label>
+            <input
+              type="text"
+              class="input input-bordered input-sm w-full font-mono text-xs"
+              [(ngModel)]="block.styles!.color"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+        </div>
+        }
+
+        <!-- IMAGE EDIT FIELDS -->
+        @if (block.type === 'image') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Image URL</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.imageUrl"
+            (ngModelChange)="updateBlocks()"
+            placeholder="https://..."
+          />
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Alt Text</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.imageAlt"
+            (ngModelChange)="updateBlocks()"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Max Width (e.g. 100%, 300px)</label>
+            <input
+              type="text"
+              class="input input-bordered w-full input-sm"
+              [(ngModel)]="block.imageWidth"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.styles!.textAlign"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Link URL (Optional)</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.linkUrl"
+            (ngModelChange)="updateBlocks()"
+            placeholder="https://..."
+          />
+        </div>
+        }
+
+        <!-- BUTTON EDIT FIELDS -->
+        @if (block.type === 'button') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Button Text</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.content"
+            (ngModelChange)="updateBlocks()"
+          />
+
+          <!-- Quick-Insert Variables -->
+          <div class="mt-2 p-2 bg-base-200/50 rounded-md border border-base-300">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-bold uppercase text-base-content/60">Insert Variable</span>
+              <span class="text-[9px] text-base-content/50">Tip: Use &#123;FirstName|Friend&#125; for fallbacks</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'FirstName', 'content')"
+                title="Click to insert First Name placeholder"
+              >
+                + First Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'LastName', 'content')"
+                title="Click to insert Last Name placeholder"
+              >
+                + Last Name
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                (click)="insertVariable(block, 'Email', 'content')"
+                title="Click to insert Email placeholder"
+              >
+                + Email
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Link URL</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.linkUrl"
+            (ngModelChange)="updateBlocks()"
+            placeholder="https://..."
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Bg Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.backgroundColor"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.color"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Border Radius (px)</label>
+            <input
+              type="number"
+              class="input input-bordered w-full input-sm"
+              [(ngModel)]="block.styles!.borderRadius"
+              (ngModelChange)="updateBlocks()"
+              min="0"
+              max="30"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.styles!.textAlign"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+        }
+
+        <!-- DIVIDER EDIT FIELDS -->
+        @if (block.type === 'divider') {
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Divider Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.borderColor"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Line Thickness (px)</label>
+            <input
+              type="number"
+              class="input input-bordered w-full input-sm"
+              [(ngModel)]="block.styles!.borderWidth"
+              (ngModelChange)="updateBlocks()"
+              min="1"
+              max="10"
+            />
+          </div>
+        </div>
+        }
+
+        <!-- SPACER EDIT FIELDS -->
+        @if (block.type === 'spacer') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Spacer Height (px)</label>
+          <input
+            type="number"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.styles!.height"
+            (ngModelChange)="updateBlocks()"
+            min="5"
+            max="150"
+            step="5"
+          />
+        </div>
+        }
+
+        <!-- SOCIAL LINKS EDIT FIELDS -->
+        @if (block.type === 'social') {
+        <div class="space-y-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.socialIconStyle"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="circular-solid">Circular Brand Color</option>
+              <option value="circular-gray">Circular Grayscale</option>
+              <option value="simple-color">Flat Brand Color</option>
+              <option value="simple-gray">Flat Grayscale</option>
+            </select>
+          </div>
+
+          <label class="label text-xs font-semibold py-1">Social Networks</label>
+          @for (social of block.socials; track social.platform) {
+          <div class="flex flex-col gap-1 border border-base-200 rounded p-2 bg-base-50">
+            <span class="text-[10px] font-bold uppercase text-base-content/60">{{ social.platform }} URL</span>
+            <input
+              type="text"
+              class="input input-bordered input-xs w-full font-mono"
+              [(ngModel)]="social.url"
+              (ngModelChange)="updateBlocks()"
+              placeholder="https://..."
+            />
+          </div>
+          }
+
+          <div class="form-control mt-2">
+            <label class="label text-xs font-semibold py-1">Alignment</label>
+            <select
+              class="select select-bordered select-sm w-full"
+              [(ngModel)]="block.styles!.textAlign"
+              (ngModelChange)="updateBlocks()"
+            >
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+        </div>
+        }
+
+        <!-- FOOTER EDIT FIELDS -->
+        @if (block.type === 'footer') {
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Company Name</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.footerCompany"
+            (ngModelChange)="updateBlocks()"
+          />
+          <div class="mt-1 flex flex-wrap gap-1">
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+              (click)="insertVariable(block, 'Company', 'footerCompany')"
+            >
+              + Company
+            </button>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Address Info</label>
+          <textarea
+            class="textarea textarea-bordered w-full textarea-sm min-h-16"
+            [(ngModel)]="block.footerAddress"
+            (ngModelChange)="updateBlocks()"
+          ></textarea>
+          <div class="mt-1 flex flex-wrap gap-1">
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+              (click)="insertVariable(block, 'Company', 'footerAddress')"
+            >
+              + Company
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+              (click)="insertVariable(block, 'Phone', 'footerAddress')"
+            >
+              + Phone
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-[9px] py-0.5 px-1.5 h-auto min-h-0 text-base-content/70 hover:bg-base-200"
+              (click)="insertVariable(block, 'Email', 'footerAddress')"
+            >
+              + Email
+            </button>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label text-xs font-semibold py-1">Unsubscribe Link</label>
+          <input
+            type="text"
+            class="input input-bordered w-full input-sm"
+            [(ngModel)]="block.footerUnsubscribeUrl"
+            (ngModelChange)="updateBlocks()"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Bg Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.backgroundColor"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-semibold py-1">Text Color</label>
+            <input
+              type="color"
+              class="input input-bordered p-1 w-full h-8"
+              [(ngModel)]="block.styles!.color"
+              (ngModelChange)="updateBlocks()"
+            />
+          </div>
+        </div>
+        }
+
+        <!-- COMMON BLOCK PADDING SETTINGS -->
+        <div class="border-t border-base-200 pt-3 mt-3">
+          <h4 class="text-xs font-bold text-base-content/60 mb-2">Block Margins</h4>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="form-control">
+              <label class="label text-[10px] uppercase font-bold py-0">Padding Top (px)</label>
+              <input
+                type="number"
+                class="input input-bordered w-full input-sm"
+                [(ngModel)]="block.styles!.paddingTop"
+                (ngModelChange)="updateBlocks()"
+                min="0"
+                max="80"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label text-[10px] uppercase font-bold py-0">Padding Bottom (px)</label>
+              <input
+                type="number"
+                class="input input-bordered w-full input-sm"
+                [(ngModel)]="block.styles!.paddingBottom"
+                (ngModelChange)="updateBlocks()"
+                min="0"
+                max="80"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      } @else {
+      <div class="h-48 flex flex-col justify-center items-center text-center text-base-content/40 p-4">
+        <pc-icon name="pencil-square" [size]="8" class="text-base-content/30 mb-2"></pc-icon>
+        <p class="text-sm font-semibold">No Block Selected</p>
+        <p class="text-xs mt-1">Click on any block inside the preview area to edit its content and styling.</p>
+      </div>
+      } }
+    </div>
+  </aside>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
@@ -45715,6 +43366,136 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/account/account-settings.html
+
+```html
+@if (loading()) {
+<div class="flex items-center gap-3 py-8 text-base-content/50">
+  <span class="loading loading-spinner loading-md"></span>
+  <span class="text-sm font-medium">Loading account status…</span>
+</div>
+} @else if (status()) {
+
+<!-- Account Status Banner -->
+@if (status()!.deletion_scheduled_at) {
+<div class="alert alert-error mb-6">
+  <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Deletion In Progress</h4>
+    <p class="text-sm">
+      Your account is being permanently deleted. All data will be removed. You will receive a confirmation email when
+      the process is complete.
+    </p>
+  </div>
+</div>
+} @else if (status()!.suspended_at) {
+<div class="alert alert-error mb-6">
+  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Suspended</h4>
+    <p class="text-sm">
+      Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Please contact support
+      to reactivate your account.
+    </p>
+  </div>
+</div>
+} @else if (status()!.paused_at) {
+<div class="alert alert-warning mb-6">
+  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Paused</h4>
+    <p class="text-sm">
+      Your account has been paused since {{ status()!.paused_at | date : 'mediumDate' }}. Your data is preserved and
+      billing is paused. Reactivate below to restore full access.
+    </p>
+  </div>
+</div>
+} @else {
+<div class="alert alert-success mb-6">
+  <pc-icon name="check-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Active</h4>
+    <p class="text-sm">Your account is active and in good standing.</p>
+  </div>
+</div>
+}
+
+<!-- Pause / Reactivate Section -->
+<div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
+  <div class="space-y-1">
+    <h3 class="text-base font-bold text-base-content/90">Pause Account</h3>
+    <p class="text-sm text-base-content/60">
+      Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
+      logging back in.
+    </p>
+  </div>
+  <div class="flex items-center gap-3">
+    @if (status()!.paused_at) {
+    <button
+      type="button"
+      class="btn btn-success btn-sm"
+      (click)="resumeAccount()"
+      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Reactivate Account
+    </button>
+    } @else if (!status()!.suspended_at) {
+    <button
+      type="button"
+      class="btn btn-warning btn-sm btn-outline"
+      (click)="pauseAccount()"
+      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Pause Account
+    </button>
+    }
+  </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="card border border-error/30 bg-error/5 rounded-xl p-6 space-y-4">
+  <div class="space-y-1">
+    <h3 class="text-base font-bold text-error">Danger Zone</h3>
+    <p class="text-sm text-base-content/60">
+      Permanently delete this organization and all its data. This includes all contacts, emails, campaigns, imports,
+      exports, and settings. This action cannot be undone.
+    </p>
+  </div>
+
+  @if (status()!.deletion_scheduled_at) {
+  <div class="space-y-3">
+    <p class="text-sm text-error font-medium">
+      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
+      removed.
+    </p>
+    <button
+      type="button"
+      class="btn btn-outline btn-warning btn-sm"
+      (click)="cancelDeletion()"
+      [disabled]="actionPending()"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Cancel Deletion
+    </button>
+  </div>
+  } @else {
+  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
+    @if (actionPending()) {
+    <span class="loading loading-spinner loading-xs"></span>
+    }
+    <pc-icon name="trash-forever" [size]="4"></pc-icon>
+    Delete Account Permanently
+  </button>
+  }
+</div>
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.ts
 
 ```typescript
@@ -46097,636 +43878,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
-
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
-
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        } @if (currentMode === 'settings') {
-        <!-- Passkeys custom section -->
-        <button
-          id="settings-nav-passkeys"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('passkeys')"
-        >
-          <pc-icon
-            name="lock-closed"
-            [class.text-primary]="isSelected('passkeys')"
-            [class.opacity-70]="!isSelected('passkeys')"
-            [size]="5"
-          />
-          Passkeys
-        </button>
-        } @if (currentMode === 'workspace') {
-        <!-- Email Sync custom section -->
-        <button
-          id="settings-nav-email-sync"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('email-sync')"
-        >
-          <pc-icon
-            name="envelope"
-            [class.text-primary]="isSelected('email-sync')"
-            [class.opacity-70]="!isSelected('email-sync')"
-            [size]="5"
-          />
-          Email sync
-        </button>
-
-        <!-- Domains custom section -->
-        <button
-          id="settings-nav-domains"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('domains')"
-        >
-          <pc-icon
-            name="globe-americas"
-            [class.text-primary]="isSelected('domains')"
-            [class.opacity-70]="!isSelected('domains')"
-            [size]="5"
-          />
-          Domain verification
-        </button>
-
-        <!-- Donations custom section -->
-        <button
-          id="settings-nav-donations"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('donations')"
-        >
-          <pc-icon
-            name="currency-dollar"
-            [class.text-primary]="isSelected('donations')"
-            [class.opacity-70]="!isSelected('donations')"
-            [size]="5"
-          />
-          Donations
-        </button>
-
-        <!-- Billing custom section -->
-        <button
-          id="settings-nav-billing"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('billing')"
-        >
-          <pc-icon
-            name="credit-card"
-            [class.text-primary]="isSelected('billing')"
-            [class.opacity-70]="!isSelected('billing')"
-            [size]="5"
-          />
-          Billing
-        </button>
-
-        <!-- Account custom section -->
-        <button
-          id="settings-nav-account"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('account')"
-        >
-          <pc-icon
-            name="user-circle"
-            [class.text-primary]="isSelected('account')"
-            [class.opacity-70]="!isSelected('account')"
-            [size]="5"
-          />
-          Account
-        </button>
-        }
-      </nav>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-[13px] leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets —
-              some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate Credentials
-              </button>
-            </div>
-          </div>
-          }
-
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-sm font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } } @if (field.config.helper) {
-              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request Verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <p class="text-sm text-base-content/50 italic">
-                No verified sender emails yet. Add one above to request verification.
-              </p>
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
-                  <pc-icon name="check-circle" [size]="14"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute Fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-sm text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
-              <table class="table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Email Sync custom section -->
-      @if (currentMode === 'workspace' && isSelected('email-sync')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
-          </p>
-        </header>
-
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-      </section>
-      }
-
-      <!-- Domains custom section -->
-      @if (currentMode === 'workspace' && isSelected('domains')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
-          </p>
-        </header>
-        <pc-domains-settings></pc-domains-settings>
-      </section>
-      }
-
-      <!-- Donations custom section -->
-      @if (currentMode === 'workspace' && isSelected('donations')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
-            account.
-          </p>
-        </header>
-        <pc-donations-settings></pc-donations-settings>
-      </section>
-      }
-
-      <!-- Billing custom section -->
-      @if (currentMode === 'workspace' && isSelected('billing')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your subscription plans, view invoice details, and update payment methods.
-          </p>
-        </header>
-        <pc-billing-settings></pc-billing-settings>
-      </section>
-      }
-
-      <!-- Passkeys custom section -->
-      @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
-          </p>
-        </header>
-        <pc-passkey-settings></pc-passkey-settings>
-      </section>
-      }
-
-      <!-- Account custom section -->
-      @if (currentMode === 'workspace' && isSelected('account')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your organization account — pause billing or permanently delete all data.
-          </p>
-        </header>
-        <pc-account-settings></pc-account-settings>
-      </section>
-      }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
 ```typescript
@@ -46751,6 +43902,7 @@ import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { PasskeySettingsComponent } from './security/passkey-settings';
 import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
 import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -46776,6 +43928,7 @@ interface SectionState {
     DonationsSettingsComponent,
     AccountSettingsComponent,
     PasskeySettingsComponent,
+    StorageSettingsComponent,
     DatePipe,
     NgClass,
   ],
@@ -49230,165 +46383,658 @@ export class Tags implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+    <!-- Top Navigation Bar & Action Buttons -->
+    <div
+      class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <a routerLink="/tasks" class="btn btn-sm btn-ghost gap-1">
+          <pc-icon name="arrow-left" [size]="4"></pc-icon>
+          Back to List
+        </a>
+        <a routerLink="/board" class="btn btn-sm btn-ghost gap-1">
+          <pc-icon name="view-kanban" [size]="4"></pc-icon>
+          Task Board
+        </a>
+      </div>
+      <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+        @if (!isArchived()) {
+        <button (click)="archiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+          <pc-icon name="archive-box" [size]="4"></pc-icon>
+          Archive
+        </button>
+        } @else {
+        <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+          <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
+          Unarchive
+        </button>
+        }
+        <button (click)="deleteTask()" class="btn btn-outline btn-error btn-sm gap-2">
+          <pc-icon name="trash" [size]="4"></pc-icon>
+          Delete Task
+        </button>
+      </div>
+    </div>
+
+    @if (isLoading() && !task()) {
+    <div class="flex justify-center items-center py-20">
+      <progress class="progress w-56"></progress>
+    </div>
+    } @else { @if (task(); as t) {
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
+      <div class="lg:col-span-2 flex flex-col gap-6">
+        <!-- Elegant Title & Description Card -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
+
+          <div class="p-6">
+            <!-- Inline Edit Task Name -->
+            <div class="group relative mb-4">
+              @if (isEditingName()) {
+              <div class="flex gap-2 items-center">
+                <input
+                  type="text"
+                  class="input input-bordered input-md font-bold text-2xl grow text-base-content"
+                  [(ngModel)]="tempName"
+                  (keydown.enter)="saveName()"
+                  (keydown.escape)="cancelEditingName()"
+                  placeholder="Task name"
+                  autofocus
+                />
+                <button (click)="saveName()" class="btn btn-primary btn-square btn-md" title="Save">
+                  <pc-icon name="save" [size]="5"></pc-icon>
+                </button>
+                <button (click)="cancelEditingName()" class="btn btn-ghost btn-square btn-md" title="Cancel">
+                  <pc-icon name="x-mark" [size]="5"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div class="flex items-start justify-between gap-4">
+                <h1
+                  (click)="startEditingName()"
+                  class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow"
+                >
+                  {{ t.name || '(No Name)' }}
+                  <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                    <pc-icon name="pencil-square" [size]="4" class="text-base-content/40 inline"></pc-icon>
+                  </span>
+                </h1>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <span
+                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+                    [class]="getStatusBadgeClass(t.status)"
+                  >
+                    {{ statusLabel(t.status) }}
+                  </span>
+                  @if (t.priority) {
+                  <span
+                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+                    [class]="getPriorityBadgeClass(t.priority)"
+                  >
+                    {{ toTitleCase(t.priority) }}
+                  </span>
+                  }
+                </div>
+              </div>
+              }
+            </div>
+
+            <!-- Inline Edit Description -->
+            <div class="border-t border-base-200 mt-4 pt-4">
+              <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
+                @if (!isEditingDetails()) {
+                <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
+                  <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
+                </button>
+                }
+              </div>
+
+              @if (isEditingDetails()) {
+              <div class="grid gap-2">
+                <quill-editor
+                  [styles]="{ height: '220px' }"
+                  [(ngModel)]="tempDetails"
+                  placeholder="Describe this task..."
+                ></quill-editor>
+                <div class="flex justify-end gap-2 mt-2">
+                  <button (click)="cancelEditingDetails()" class="btn btn-sm btn-ghost">Cancel</button>
+                  <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
+                </div>
+              </div>
+              } @else {
+              <div
+                (click)="startEditingDetails()"
+                class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
+                [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
+              ></div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtasks Card -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+              <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
+              Subtasks ({{ subtasks().length }})
+            </h3>
+            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
+              {{ showSubtasks() ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+
+          @if (showSubtasks()) {
+          <div class="p-6 flex flex-col gap-4">
+            @if (subtasks().length > 0) {
+            <div class="grid gap-2.5">
+              @for (s of subtasks(); track s.id) {
+              <label
+                class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary checkbox-sm"
+                  [checked]="s.status === 'done'"
+                  (change)="toggleSubtask(s, $any($event.target).checked)"
+                />
+                <span
+                  class="text-sm font-medium text-base-content"
+                  [class.line-through]="s.status === 'done'"
+                  [class.opacity-50]="s.status === 'done'"
+                >
+                  {{ s.name }}
+                </span>
+              </label>
+              }
+            </div>
+            } @else {
+            <div class="text-center py-6 text-sm text-base-content/40 italic">
+              No subtasks defined. Add one below to break this task down.
+            </div>
+            }
+
+            <div class="flex gap-2 mt-2">
+              <input
+                class="input input-bordered input-sm grow"
+                placeholder="Add a subtask..."
+                [(ngModel)]="subtaskName"
+                (keydown.enter)="addSubtask()"
+              />
+              <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
+                Add Subtask
+              </button>
+            </div>
+          </div>
+          }
+        </div>
+
+        <!-- Comments / Collaboration Panel -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+              <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
+              Discussion ({{ comments().length }})
+            </h3>
+            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
+              {{ showComments() ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+
+          @if (showComments()) {
+          <div class="p-6 flex flex-col gap-6">
+            @if (comments().length > 0) {
+            <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+              @for (c of comments(); track c.id) {
+              <div
+                class="chat"
+                [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
+                [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
+              >
+                <div class="chat-image">
+                  <pc-user-avatar
+                    [name]="userName(c.author_id || c.createdby_id)"
+                    [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
+                    [size]="8"
+                  />
+                </div>
+
+                <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
+                  <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
+                  @if (c.created_at) {
+                  <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
+                    {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+                  </span>
+                  }
+                </div>
+
+                <div
+                  class="chat-bubble text-sm font-light shadow-sm"
+                  [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
+                  [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
+                ></div>
+              </div>
+              }
+            </div>
+            } @else {
+            <div class="text-center py-6 text-sm text-base-content/40 italic">
+              No comments yet. Start the conversation!
+            </div>
+            }
+
+            <!-- Comment Composer with User Mentions -->
+            <div class="form-control relative mt-2 border-t border-base-200 pt-4">
+              <textarea
+                #taskComposer
+                [ngModel]="newComment()"
+                (ngModelChange)="newComment.set($event)"
+                placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
+                class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
+                (input)="onComposerInput($event)"
+                (keydown)="onComposerKeydown($event)"
+                (click)="onComposerClick($event)"
+              ></textarea>
+
+              <!-- Mentions Dropdown -->
+              @if (mc.open() && mc.candidates().length) {
+              <div
+                class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
+              >
+                @for (u of mc.candidates(); track u.id; let i = $index) {
+                <div
+                  class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
+                  [class.bg-base-200]="i === mc.index()"
+                  (mousedown)="selectMention(u, $event)"
+                >
+                  <div
+                    class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold"
+                  >
+                    {{ (u.first_name || u.email || '?') | slice:0:1 }}
+                  </div>
+                  <div class="truncate">
+                    <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
+                    <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
+                  </div>
+                </div>
+                }
+              </div>
+              }
+
+              <div class="mt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-ghost"
+                  (click)="newComment.set('')"
+                  [disabled]="!newComment() || isLoading()"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary px-4 gap-1.5"
+                  (click)="addComment()"
+                  [disabled]="!newComment() || isLoading()"
+                >
+                  <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
+                </button>
+              </div>
+            </div>
+          </div>
+          }
+        </div>
+
+        <!-- Attachments Card -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+              <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
+              Attachments ({{ attachments().length }})
+            </h3>
+            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
+              {{ showAttachments() ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+
+          @if (showAttachments()) {
+          <div class="p-6 flex flex-col gap-4">
+            @if (attachments().length > 0) {
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              @for (a of attachments(); track a.id) {
+              <div
+                class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
+                  <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
+                    {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
+                  </div>
+                </div>
+                @if (a.url) {
+                <a
+                  class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
+                  [href]="a.url"
+                  target="_blank"
+                  title="Open Attachment"
+                >
+                  <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                </a>
+                }
+              </div>
+              }
+            </div>
+            } @else {
+            <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
+            }
+
+            <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
+              <input
+                class="input input-bordered input-sm grow"
+                placeholder="File Name (e.g. report.pdf)"
+                [(ngModel)]="attName"
+              />
+              <input
+                class="input input-bordered input-sm grow"
+                placeholder="URL (e.g. https://...)"
+                [(ngModel)]="attUrl"
+              />
+              <button class="btn btn-accent btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
+                Attach File
+              </button>
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+
+      <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
+      <div class="lg:col-span-1 flex flex-col gap-6">
+        <!-- Task Status & Detail Settings Card -->
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="p-4 border-b border-base-200 bg-base-50/50">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
+          </div>
+
+          <div class="p-6 flex flex-col gap-4">
+            <!-- Status Dropdown Selector -->
+            <div class="form-control w-full">
+              <label class="label pt-0"
+                ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
+              >
+              <select
+                class="select select-bordered select-sm w-full font-medium"
+                [ngModel]="t.status || 'todo'"
+                (change)="onStatusChange($event)"
+              >
+                @for (s of statuses; track s) {
+                <option [value]="s">{{ statusLabels[s] }}</option>
+                }
+              </select>
+            </div>
+
+            <!-- Priority Dropdown Selector -->
+            <div class="form-control w-full">
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
+              >
+              <select
+                class="select select-bordered select-sm w-full font-medium"
+                [ngModel]="t.priority || 'medium'"
+                (change)="onPriorityChange($event)"
+              >
+                @for (p of priorities; track p) {
+                <option [value]="p">{{ toTitleCase(p) }}</option>
+                }
+              </select>
+            </div>
+
+            <!-- Due Date Calendar Picker -->
+            <div class="form-control w-full">
+              <label class="label pt-0"
+                ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
+              >
+              @if (!isEditingDueDate()) {
+              <div
+                (click)="isEditingDueDate.set(true)"
+                class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
+                  <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
+                </div>
+                <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
+              </div>
+              } @else {
+              <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
+                <calendar-date
+                  class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
+                  [value]="dateOnly(t.due_at)"
+                  (change)="onDueDateChange($event)"
+                >
+                  <calendar-month></calendar-month>
+                </calendar-date>
+                <div class="flex justify-end gap-1.5 mt-1">
+                  <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
+                </div>
+              </div>
+              }
+            </div>
+
+            <!-- Assigned User Selector -->
+            <div class="form-control w-full">
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
+              >
+              <div class="flex gap-2">
+                <select
+                  class="select select-bordered select-sm grow font-medium"
+                  [ngModel]="assignedTo()"
+                  (ngModelChange)="onAssignedChange($event)"
+                >
+                  <option value="">Unassigned</option>
+                  @for (u of users(); track u.id) {
+                  <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </select>
+                <button
+                  (click)="assignToMe()"
+                  class="btn btn-outline btn-accent btn-sm font-semibold"
+                  title="Assign to me"
+                >
+                  Me
+                </button>
+              </div>
+            </div>
+
+            <!-- Associated Team Selector -->
+            <div class="form-control w-full">
+              <label class="label"
+                ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
+              >
+              <select
+                class="select select-bordered select-sm w-full font-medium"
+                [ngModel]="teamId()"
+                (change)="onTeamChange($event)"
+              >
+                <option value="">No Team</option>
+                @for (team of teamsList(); track team.id) {
+                <option [value]="'' + team.id">{{ team.name }}</option>
+                }
+              </select>
+            </div>
+
+            <!-- Divider -->
+            <div class="divider my-1"></div>
+
+            <!-- System Information Metadata -->
+            <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
+              <div class="flex justify-between">
+                <span>Created By:</span>
+                <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Created On:</span>
+                <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Last Updated:</span>
+                <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Task Audit Log Component -->
+        @if (id()) {
+        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+          <div class="p-4 border-b border-base-200 bg-base-50/50">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+              <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
+              Activity History
+            </h3>
+          </div>
+          <div class="p-4 max-h-[350px] overflow-y-auto">
+            <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+    } @else {
+    <div class="alert alert-error">
+      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+      <span>Task not found or failed to load.</span>
+    </div>
+    } }
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
 
 ```html
 <div class="flex flex-col gap-4 p-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h2 class="text-xl font-semibold">Tasks</h2>
+      <h2 class="text-xl font-semibold">Task board</h2>
       @if (countSentence()) {
       <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
       }
     </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import
-      </button>
-      <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openBoard()">
-        <pc-icon name="view-kanban" [size]="4"></pc-icon>
-        Open board
-      </button>
-      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        New task
-      </button>
-    </div>
-  </div>
-
-  <!-- Quiet tab row with counts (design idiom table §4) -->
-  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
-    @for (t of tabs(); track t.key) {
-    <button
-      type="button"
-      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
-      [class.text-primary]="tab() === t.key"
-      [class.font-semibold]="tab() === t.key"
-      [class.border-primary]="tab() === t.key"
-      [class.text-base-content/70]="tab() !== t.key"
-      (click)="setTab(t.key)"
-    >
-      {{ t.label }}
-      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
-    </button>
-    }
-  </nav>
-
-  @if (loaded() && !filtered().length) {
-  <div class="flex flex-col items-center gap-3 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    @switch (tab()) { @case ('all') {
-    <span class="text-base font-medium">No tasks yet</span>
-    } @case ('mine') {
-    <span class="text-base font-medium">Nothing assigned to you yet</span>
-    } @case ('unassigned') {
-    <span class="text-base font-medium">Every open task has an owner</span>
-    } @case ('done') {
-    <span class="text-base font-medium">Nothing completed yet</span>
-    } }
-    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New task
+    <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openList()">
+      <pc-icon name="queue-list" [size]="4"></pc-icon>
+      Open list
     </button>
   </div>
-  } @else {
-  <div class="flex flex-col gap-5">
-    @for (group of groups(); track group.key) {
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2 px-1">
-        <span
-          class="text-xs font-semibold uppercase tracking-[0.06em]"
-          [class.text-error]="group.meta.tone === 'error'"
-          [class.text-warning]="group.meta.tone === 'warning'"
-          [class.text-info]="group.meta.tone === 'info'"
-          [class.text-base-content/50]="group.meta.tone === 'neutral'"
-        >
-          {{ group.meta.label }}
-        </span>
-        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    @for (col of columns; track col) {
+    <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
+        <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
       </div>
 
-      <div class="flex flex-col divide-y divide-base-200">
-        @for (t of group.rows; track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+      <div class="flex flex-1 flex-col gap-2 overflow-auto">
+        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
         assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-2 px-1" [class.animate-saved-flash]="isFlashed(t.id)">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle shrink-0"
-            [class.text-success]="t.status === 'done'"
-            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
-            (click)="toggleDone(t)"
-          >
-            <pc-icon name="check-circle" [size]="5"></pc-icon>
-          </button>
-
-          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
-            <div
-              class="truncate text-sm font-medium"
-              [class.line-through]="t.status === 'done'"
-              [class.opacity-50]="t.status === 'done'"
-            >
-              {{ t.name }}
+        <div
+          class="card bg-base-100 border-line cursor-pointer border shadow-sm"
+          [class.animate-saved-flash]="isFlashed(t.id)"
+          (click)="openTask(t)"
+        >
+          <div class="card-body gap-1.5 p-3">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-sm font-medium break-words">{{ t.name }}</span>
+              @if (t.priority) {
+              <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+              }
             </div>
-            @if (reason) {
-            <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
+
+            @if (t.team_name || t.due_at) {
+            <div class="text-base-content/60 text-xs">
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @if (t.team_name && t.due_at) {
+              <span> · </span>
+              } @if (t.due_at) {
+              <span>Due {{ dateLabel(t.due_at) }}</span>
+              }
+            </div>
+            } @if (reason) {
+            <div class="text-warning flex items-center gap-1 text-xs">
               <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="truncate">{{ reason }}</span>
+              <span class="break-words">{{ reason }}</span>
             </div>
+            } @if (pill) {
+            <span
+              class="badge badge-xs w-fit"
+              [class.badge-error]="pill.tone === 'error'"
+              [class.badge-warning]="pill.tone === 'warning'"
+              [class.badge-ghost]="pill.tone === 'neutral'"
+            >
+              {{ pill.text }}
+            </span>
             }
-          </div>
 
-          @if (t.priority) {
-          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (pill) {
-          <span
-            class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="pill.tone === 'error'"
-            [class.badge-warning]="pill.tone === 'warning'"
-            [class.badge-ghost]="pill.tone === 'neutral'"
-          >
-            {{ pill.text }}
-          </span>
-          } @if (t.due_at) {
-          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
-            >{{ dateLabel(t.due_at) }}</span
-          >
-          } @if (t.assigned_to) {
-          <span
-            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-            [attr.title]="assignee"
-            >{{ assigneeInitial(t.assigned_to) }}</span
-          >
-          } @else {
-          <button
-            type="button"
-            class="badge badge-outline shrink-0 border-dashed text-xs"
-            title="Take this task — one click assigns it to you"
-            (click)="takeTask(t); $event.stopPropagation()"
-          >
-            Unassigned
-          </button>
-          }
+            <div class="mt-1 flex items-center justify-between gap-2">
+              @if (t.assigned_to) {
+              <span
+                class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
+                [attr.title]="assignee"
+                >{{ assigneeInitial(t.assigned_to) }}</span
+              >
+              } @else {
+              <button
+                type="button"
+                class="badge badge-outline border-dashed text-xs"
+                title="Take this task — one click assigns it to you"
+                (click)="takeTask(t); $event.stopPropagation()"
+              >
+                Unassigned
+              </button>
+              }
+
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, -1)"
+                  [disabled]="!canMove(t.status, -1)"
+                  [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
+                  (click)="moveCard(t, -1); $event.stopPropagation()"
+                >
+                  <pc-icon name="chevron-left" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, 1)"
+                  [disabled]="!canMove(t.status, 1)"
+                  [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
+                  (click)="moveCard(t, 1); $event.stopPropagation()"
+                >
+                  <pc-icon name="chevron-right" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+        } @empty {
+        <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
         }
       </div>
     </div>
     }
   </div>
-  }
 </div>
-
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import tasks from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
-/>
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
@@ -50892,484 +48538,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
       updated_at: record.updated_at ? new Date(record.updated_at) : new Date(),
     };
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
-
-```html
-<div class="mx-auto flex h-full min-h-[calc(100vh-120px)] max-w-7xl flex-col gap-6 p-6">
-  <!-- Header ------------------------------------------------------------------->
-  <div class="mb-2 flex items-center justify-between border-b border-base-200 pb-4">
-    <div class="flex items-center gap-3">
-      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <pc-icon name="add-schedule" [size]="5"></pc-icon>
-      </div>
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          {{ isNew() && !triggerSelected() ? 'New automation' : payload().name || 'Untitled automation' }}
-        </h1>
-        <p class="mt-0.5 text-sm text-base-content/60">
-          {{ isNew() && !triggerSelected() ? 'Pick a trigger to begin.' : 'Design the sequence and set who enrolls.' }}
-        </p>
-      </div>
-    </div>
-    @if (triggerSelected()) {
-    <pc-form-actions
-      [isLoading]="isLoading()"
-      [signalForm]="form"
-      (btn1Clicked)="save($event)"
-      [buttonsToShow]="'two'"
-      [btn1Text]="'Save automation'"
-      [btn1Icon]="'save'"
-      [showDelete]="!isNew()"
-      [deleteText]="'Delete automation'"
-      (deleteClicked)="deleteWorkflow()"
-    ></pc-form-actions>
-    }
-  </div>
-
-  <!-- TRIGGER PICKER (new automation / Change) --------------------------------->
-  @if (!triggerSelected()) {
-  <div class="mx-auto flex w-full max-w-5xl flex-col items-center gap-8 py-6">
-    <div class="flex flex-col gap-2 text-center">
-      <h2 class="text-2xl font-bold tracking-tight text-base-content">Select a trigger event</h2>
-      <p class="text-sm text-base-content/60">
-        The trigger decides when someone enters this automation; everything after it is the sequence.
-      </p>
-    </div>
-
-    <div class="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (card of triggerCards; track card.type) {
-      <button
-        type="button"
-        (click)="selectTrigger(card.type)"
-        class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
-      >
-        <div
-          class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
-        >
-          <pc-icon [name]="card.icon" [size]="5"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
-          <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
-        </div>
-        <span class="mt-1 text-xs font-semibold text-primary">Select trigger →</span>
-      </button>
-      }
-    </div>
-  </div>
-  }
-
-  <!-- WORKSPACE ---------------------------------------------------------------->
-  @if (triggerSelected()) {
-  <pc-tabs [tabs]="tabs()" [(activeTab)]="activeTab">
-    <!-- SEQUENCE DESIGNER ------------------------------------------------------>
-    <pc-tab-panel id="sequence" [activeTab]="activeTab()">
-      <div class="flex w-full flex-col items-start gap-6 lg:flex-row">
-        <!-- Left: vertical sequence flow -->
-        <div
-          class="flex w-full flex-1 flex-col items-center gap-0 rounded-2xl border border-base-300 bg-base-200/40 p-8"
-        >
-          <!-- Trigger card -->
-          <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger — when</span>
-              <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
-            </div>
-            <div class="mt-2 flex items-center gap-2">
-              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <pc-icon [name]="triggerMeta()?.icon ?? 'user-plus'" [size]="5"></pc-icon>
-              </div>
-              <span class="text-sm font-semibold text-base-content">{{ triggerMeta()?.title ?? 'Trigger' }}</span>
-            </div>
-            @if (triggerNeedsTarget()) {
-            <select
-              class="select select-bordered select-sm mt-3 w-full text-xs"
-              [value]="payload().trigger_event_id"
-              (change)="setTriggerTarget($any($event.target).value)"
-            >
-              <option value="">Any</option>
-              @for (opt of triggerTargetOptions(); track opt.id) {
-              <option [value]="opt.id">{{ opt.name }}</option>
-              }
-            </select>
-            }
-          </div>
-
-          <!-- Insertion point 0 -->
-          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: 0 }"></ng-container>
-
-          <!-- Steps -->
-          @for (step of steps(); track step.uid; let i = $index) {
-          <!-- WAIT pill -->
-          @if (step.kind === 'wait') {
-          <div
-            class="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-warning-content"
-          >
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            <span>Wait</span>
-            <input
-              type="number"
-              min="0"
-              class="input input-xs w-14 text-center"
-              [value]="step.delay_days"
-              (input)="setStepDelay(i, $any($event.target).value)"
-            />
-            <select
-              class="select select-xs"
-              [value]="step.delay_unit"
-              (change)="setStepDelayUnit(i, $any($event.target).value)"
-            >
-              <option value="days">days</option>
-              <option value="hours">hours</option>
-            </select>
-            <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-          } @else {
-          <!-- STEP card -->
-          <div class="w-80 rounded-2xl border border-base-300 bg-base-100 p-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <pc-icon [name]="stepMeta(step.kind).icon" [size]="4"></pc-icon>
-                </div>
-                <span class="text-sm font-semibold text-base-content">{{ stepMeta(step.kind).label }}</span>
-              </div>
-              <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
-                <pc-icon name="x-mark" [size]="4"></pc-icon>
-              </button>
-            </div>
-
-            <!-- Inline value input per kind -->
-            <div class="mt-3">
-              @switch (step.kind) { @case ('send_email') {
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full text-xs"
-                placeholder="Email subject"
-                [value]="step.subject ?? ''"
-                (input)="setStepEmailSubject(i, $any($event.target).value)"
-              />
-              <button
-                type="button"
-                class="btn btn-outline btn-primary btn-xs mt-2 gap-1"
-                (click)="openEmailDesigner(i)"
-              >
-                <pc-icon name="pencil-square" [size]="4"></pc-icon>
-                Design email
-              </button>
-              } @case ('add_tag') {
-              <select
-                class="select select-bordered select-sm w-full text-xs"
-                [value]="step.config.tag_id ?? ''"
-                (change)="setStepTag(i, $any($event.target).value)"
-              >
-                <option value="">Choose a tag…</option>
-                @for (tag of tags(); track tag.id) {
-                <option [value]="tag.id">{{ tag.name }}</option>
-                }
-              </select>
-              } @case ('create_task') {
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full text-xs"
-                placeholder="Task title"
-                [value]="step.config.task_title ?? ''"
-                (input)="setStepTaskTitle(i, $any($event.target).value)"
-              />
-              } @case ('notify_team') {
-              <select
-                class="select select-bordered select-sm w-full text-xs"
-                [value]="step.config.notify_user_id ?? ''"
-                (change)="setStepNotifyMember(i, $any($event.target).value)"
-              >
-                <option value="">Automation owner</option>
-                @for (member of teamMembers(); track member.id) {
-                <option [value]="member.id">{{ member.name }}</option>
-                }
-              </select>
-              } }
-            </div>
-          </div>
-          }
-
-          <!-- Insertion point after this step -->
-          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: i + 1 }"></ng-container>
-          }
-
-          <!-- Empty state -->
-          @if (steps().length === 0) {
-          <div class="my-4 max-w-sm rounded-xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center">
-            <p class="text-sm text-base-content/60">
-              No steps yet — use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
-              mixed in any order.
-            </p>
-          </div>
-          }
-
-          <!-- Exit terminator -->
-          <div
-            class="flex items-center gap-2 rounded-2xl bg-neutral px-6 py-3 text-xs font-bold uppercase tracking-wider text-neutral-content"
-          >
-            <pc-icon name="check-circle" [size]="4"></pc-icon>
-            Exit automation
-          </div>
-        </div>
-
-        <!-- Right rail --------------------------------------------------------->
-        <aside class="flex w-full shrink-0 flex-col gap-6 lg:w-96">
-          <!-- WORKFLOW SETTINGS -->
-          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Workflow settings
-            </h3>
-            <div class="mt-3 flex flex-col gap-4">
-              <div class="form-control">
-                <label class="label label-text py-1 text-xs font-semibold">Name</label>
-                <input
-                  type="text"
-                  class="input input-bordered input-sm w-full"
-                  placeholder="e.g. Volunteer follow-up"
-                  [formField]="form.name"
-                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-                />
-                <p class="mt-1 text-[10px] text-base-content/50">
-                  Name the automation so the list and the Activity log can name it.
-                </p>
-              </div>
-
-              <div class="form-control">
-                <label class="label label-text py-1 text-xs font-semibold">Description</label>
-                <textarea
-                  class="textarea textarea-bordered textarea-sm w-full text-xs"
-                  rows="3"
-                  placeholder="What it does, for the next teammate"
-                  [formField]="form.description"
-                ></textarea>
-              </div>
-
-              <div class="form-control">
-                <label class="label cursor-pointer justify-start gap-3 py-1">
-                  <input
-                    type="checkbox"
-                    class="toggle toggle-primary toggle-sm"
-                    [checked]="payload().status === 'active'"
-                    (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
-                  />
-                  <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
-                </label>
-                <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
-                  @if (payload().status === 'active') { Runs every time the trigger fires; nothing queues. } @else {
-                  Paused — nothing runs or queues until you resume it. }
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <!-- ONLY ENROLL IF -->
-          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Only enroll if
-            </h3>
-            <div class="mt-3">
-              <pc-query-builder
-                [group]="conditions()"
-                [fields]="conditionFields"
-                [showSummary]="false"
-                (changed)="onConditionsChange()"
-              ></pc-query-builder>
-              @if (!hasConditions()) {
-              <p class="mt-2 text-[10px] text-base-content/50">
-                No conditions — everyone who hits the trigger enrolls.
-              </p>
-              }
-            </div>
-          </section>
-
-          <!-- SEQUENCE OVERVIEW -->
-          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Sequence overview
-            </h3>
-            <div class="mt-3 flex flex-col gap-1.5 text-xs text-base-content/70">
-              <div class="flex justify-between">
-                <span>Total steps</span><span class="font-mono">{{ steps().length }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Enrolled contacts</span><span class="font-mono">{{ enrollments().length }}</span>
-              </div>
-            </div>
-          </section>
-
-          <!-- RECENT RUNS -->
-          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Recent runs
-            </h3>
-            @if (runs().length === 0) {
-            <p class="mt-3 text-[10px] text-base-content/50">
-              No runs yet — history appears here after the first trigger fires.
-            </p>
-            } @else {
-            <ul class="mt-3 flex flex-col gap-2">
-              @for (run of runs(); track run.id) {
-              <li class="flex items-center justify-between gap-2 text-xs">
-                <div class="flex min-w-0 items-center gap-2">
-                  <span
-                    class="badge badge-sm border-none"
-                    [class.badge-success]="run.status === 'success'"
-                    [class.badge-error]="run.status === 'failed'"
-                    >{{ run.status === 'success' ? 'Success' : 'Failed' }}</span
-                  >
-                  <span class="truncate text-base-content/70">{{ runContact(run) }}</span>
-                </div>
-                @if (run.status === 'failed' && run.error) {
-                <span class="truncate text-[10px] text-error" [title]="run.error">{{ run.error }}</span>
-                }
-              </li>
-              }
-            </ul>
-            }
-          </section>
-        </aside>
-      </div>
-    </pc-tab-panel>
-
-    <!-- ENROLLED CONTACTS ------------------------------------------------------>
-    <pc-tab-panel id="enrolled" [activeTab]="activeTab()">
-      <div class="flex flex-col gap-4">
-        <p class="text-xs text-base-content/60">
-          Enrollment is per contact — someone already in the sequence isn't enrolled twice by the same trigger.
-        </p>
-
-        @if (enrollments().length === 0) {
-        <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center">
-          <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-base-200">
-            <pc-icon name="user-group" [size]="5"></pc-icon>
-          </div>
-          <p class="mx-auto max-w-md text-sm text-base-content/60">
-            No one enrolled yet — Contacts appear here the first time the trigger fires. Save the automation active and
-            it starts watching immediately.
-          </p>
-        </div>
-        } @else {
-        <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100">
-          <table class="table table-sm w-full">
-            <thead>
-              <tr>
-                <th>Contact</th>
-                <th>Entered</th>
-                <th>Where they are</th>
-                <th>Status</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (en of enrollments(); track en.id) {
-              <tr>
-                <td class="text-xs font-semibold">{{ contactName(en) }}</td>
-                <td class="text-xs text-base-content/60">{{ en.enrolled_at | date: 'mediumDate' }}</td>
-                <td class="text-xs text-base-content/70">{{ stepPositionLabel(en) }}</td>
-                <td>
-                  <span
-                    class="badge badge-sm border-none"
-                    [class.badge-info]="en.status === 'active'"
-                    [class.badge-success]="en.status === 'completed'"
-                    [class.badge-ghost]="en.status === 'cancelled'"
-                    >{{ en.status }}</span
-                  >
-                </td>
-                <td class="text-right">
-                  @if (en.status === 'active') {
-                  <button type="button" class="btn btn-ghost btn-xs gap-1 text-error" (click)="cancelEnrollment(en.id)">
-                    <pc-icon name="x-mark" [size]="4"></pc-icon>
-                    Cancel
-                  </button>
-                  }
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-
-  @if (!isNew() && workflowId()) {
-  <div class="mt-8 border-t border-base-200 pt-6">
-    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
-  </div>
-  } }
-</div>
-
-<!-- ADD A STEP insertion point (dashed connector + menu) ----------------------->
-<ng-template #insertionPoint let-index="index">
-  <div class="flex flex-col items-center">
-    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
-    <div class="dropdown dropdown-bottom dropdown-center">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-circle btn-outline btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
-        title="Add a step"
-      >
-        <pc-icon name="add-schedule" [size]="4"></pc-icon>
-      </div>
-      <ul
-        tabindex="0"
-        class="menu dropdown-content z-10 mt-1 w-64 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-      >
-        <li class="menu-title text-[10px] uppercase tracking-wider">Add a step</li>
-        @for (sk of stepKinds; track sk.kind) {
-        <li>
-          <a class="flex items-start gap-2 py-2" (click)="addStepAt(index, sk.kind)">
-            <pc-icon [name]="sk.icon" [size]="4" class="text-primary"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-xs font-semibold">{{ sk.label }}</span>
-              <span class="text-[10px] text-base-content/50">{{ sk.hint }}</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </div>
-    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
-  </div>
-</ng-template>
-
-<!-- EMAIL DESIGNER modal ------------------------------------------------------->
-@if (editingEmailStepIndex() !== null) {
-<div class="animate-fade-in fixed inset-0 z-[150] flex flex-col bg-base-100">
-  <div class="flex items-center justify-between border-b border-base-300 bg-base-100 px-6 py-4">
-    <div class="flex items-center gap-3">
-      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <pc-icon name="paper-airplane" [size]="5"></pc-icon>
-      </div>
-      <div class="flex flex-col">
-        <h2 class="text-base font-bold text-base-content">Email designer</h2>
-        <p class="text-xs text-base-content/50">Step {{ editingEmailStepIndex()! + 1 }} email</p>
-      </div>
-    </div>
-    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="closeEmailDesigner()">
-      <pc-icon name="check-circle" [size]="4"></pc-icon>
-      Done
-    </button>
-  </div>
-  <div class="flex-1 overflow-hidden bg-base-200 p-6">
-    <pc-visual-newsletter-editor
-      [htmlContent]="editingEmailHtml()"
-      [plainTextContent]="editingEmailText()"
-      (htmlContentChange)="onEmailHtmlChange($event)"
-      (plainTextContentChange)="onEmailTextChange($event)"
-    ></pc-visual-newsletter-editor>
-  </div>
-</div>
 }
 ```
 
@@ -52923,6 +50091,695 @@ type DeleteCtx = {
 };
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
+
+```html
+<div class="fixed inset-0 z-40">
+  <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
+  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
+    <!-- Pinned Header Area -->
+    <div class="shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold">Filters</h3>
+        <button class="btn btn-ghost btn-sm px-2" (click)="closePanel.emit()">
+          <pc-icon name="chevron-right"></pc-icon>
+        </button>
+      </div>
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm opacity-70">Combine column filters and operators.</span>
+        <button
+          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
+          [disabled]="hasActiveFilters()"
+          (click)="!hasActiveFilters() && openAdvanced.emit()"
+        >
+          Advanced Filter &gt;
+        </button>
+      </div>
+
+      <!-- Apply / Clear buttons pinned at top -->
+      <div class="flex gap-2 mb-1">
+        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
+        <button class="btn btn-outline btn-accent btn-sm flex-1" (click)="clear.emit()">Clear</button>
+      </div>
+
+      <div class="divider my-3"></div>
+    </div>
+
+    <!-- Scrollable Fields Area -->
+    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+      @for (field of panelFields(); track field) {
+      <div class="form-control">
+        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
+        <div class="flex gap-2 mt-1">
+          <select
+            class="select select-bordered select-xs w-28"
+            (change)="changeOp.emit({ field, op: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.op || 'contains'"
+          >
+            <option value="contains">contains</option>
+            <option value="notContains">does not contain</option>
+            <option value="equals">equals</option>
+            <option value="notEquals">does not equal</option>
+            <option value="startsWith">starts with</option>
+            <option value="endsWith">ends with</option>
+            <option value="isEmpty">is empty</option>
+            <option value="isNotEmpty">is not empty</option>
+          </select>
+          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
+          @if (optionsFor()(field)?.length) {
+          <select
+            class="select select-bordered select-xs flex-1"
+            (change)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          >
+            <option value="">Any</option>
+            @for (opt of optionsFor()(field)!; track opt) {
+            <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+          } @else {
+          <input
+            class="input input-bordered input-xs flex-1"
+            type="text"
+            placeholder="Value"
+            (input)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          />
+          } }
+        </div>
+      </div>
+      }
+    </div>
+  </aside>
+</div>
+```
+
+## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
+
+```html
+<div class="flex flex-col gap-3">
+  <!-- Summary Bar -->
+  @if (showSummary()) {
+  <div
+    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
+  >
+    <div class="min-w-0">
+      <span class="font-medium mr-1">Summary:</span>
+      <span class="font-mono break-all text-primary">{{ summarizeGroup(group()) }}</span>
+    </div>
+    @if (summaryMatches() !== null || summaryCounting() || summaryError()) {
+    <div class="whitespace-nowrap font-medium shrink-0">
+      @if (summaryError()) {
+      <span class="text-warning">⚠️ {{ summaryError() }}</span>
+      } @else if (summaryCounting()) {
+      <span class="loading loading-spinner loading-xs vertical-middle mr-1"></span>
+      <span>Counting...</span>
+      } @else {
+      <span class="text-success">Matches: {{ summaryMatches() }}</span>
+      }
+    </div>
+    }
+  </div>
+  }
+
+  <!-- Group Header / Conjunction Toggle & Controls -->
+  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Conjunction:</span>
+      <div class="join border border-base-300">
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'AND'"
+          [class.btn-ghost]="group().conjunction !== 'AND'"
+          (click)="setConjunction('AND')"
+        >
+          AND (All)
+        </button>
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'OR'"
+          [class.btn-ghost]="group().conjunction !== 'OR'"
+          (click)="setConjunction('OR')"
+        >
+          OR (Any)
+        </button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
+      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
+    </div>
+  </div>
+
+  <!-- Rules and Nested Groups List -->
+  <div class="flex flex-col gap-3.5 pl-1">
+    @for (item of group().rules; track item.id; let i = $index) {
+    <!-- Rule Item -->
+    @if (isRule(item)) {
+    <div
+      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
+    >
+      <!-- Field Selector -->
+      <select
+        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
+        [value]="item.field"
+        (change)="setField(i, $any($event.target).value)"
+      >
+        @for (field of fields(); track field.name) {
+        <option [value]="field.name" [selected]="item.field === field.name">{{ field.label }}</option>
+        }
+      </select>
+
+      <!-- Operator Selector -->
+      @let fieldDef = getFieldDef(item.field);
+      <select
+        class="select select-bordered select-sm w-28 md:w-36 text-xs"
+        [value]="item.op"
+        (change)="setOp(i, $any($event.target).value)"
+      >
+        @for (op of fieldDef?.operators; track op.value) {
+        <option [value]="op.value" [selected]="item.op === op.value">{{ op.label }}</option>
+        }
+      </select>
+
+      <!-- Value Input -->
+      @if (showValueInput(item)) {
+      <div class="flex-1 min-w-[150px] flex items-center gap-2">
+        @if (fieldDef?.inputType === 'autocomplete') {
+        <div class="w-full max-w-xs">
+          <pc-autocomplete
+            [filterSvc]="tagSvc()!"
+            placeholder="Type a tag..."
+            (valueChange)="setRuleValue(i, $event)"
+          />
+        </div>
+        @if (item.value) {
+        <span class="badge badge-neutral text-xs px-2 py-1 select-none"
+          >{{ item.value.charAt(0).toUpperCase() + item.value.slice(1) }}</span
+        >
+        } } @else if (fieldDef?.inputType === 'select') {
+        <select
+          class="select select-bordered select-sm w-full max-w-xs text-xs"
+          [value]="item.value"
+          (change)="setRuleValue(i, $any($event.target).value)"
+        >
+          <option value="" disabled [selected]="!item.value">Select option...</option>
+          @for (choice of fieldDef?.choices; track choice.value) {
+          <option [value]="choice.value" [selected]="item.value === choice.value">{{ choice.label }}</option>
+          }
+        </select>
+        } @else {
+        <input
+          type="text"
+          class="input input-bordered input-sm w-full bg-base-100 text-xs"
+          placeholder="Enter value..."
+          [value]="item.value || ''"
+          (input)="setRuleValue(i, $any($event.target).value)"
+        />
+        }
+      </div>
+      }
+
+      <!-- Remove Button -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
+        title="Remove condition"
+        (click)="removeItem(i)"
+      >
+        ❌
+      </button>
+    </div>
+    }
+
+    <!-- Nested Group Item -->
+    @if (isGroup(item)) {
+    <div
+      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
+    >
+      <pc-query-builder
+        [group]="asGroup(item)"
+        [fields]="fields()"
+        [tagSvc]="tagSvc()"
+        [showSummary]="false"
+        (changed)="emitChange()"
+      ></pc-query-builder>
+      <div class="flex justify-end pt-1">
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold flex items-center gap-1"
+          (click)="removeItem(i)"
+        >
+          🗑️ Remove Group
+        </button>
+      </div>
+    </div>
+    } }
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
+
+```html
+<div class="p-6 max-w-4xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
+        <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
+          >User Activity Feed</ng-container
+        >
+      </h1>
+      <p
+        class="text-sm text-base-content/60 mt-1"
+        i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
+      >
+        Real-time audit log of changes made to contacts, emails, tasks, and system settings.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button
+        class="btn btn-outline btn-accent btn-sm gap-2 text-primary hover:bg-primary/10"
+        (click)="exportFeed()"
+        [disabled]="isLoadingExport() || activities().length === 0"
+        title="Export activity feed as CSV"
+      >
+        @if (isLoadingExport()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } @else {
+        <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+        }
+        <span>Export log</span>
+      </button>
+      <button
+        class="btn btn-outline btn-accent btn-sm gap-2"
+        (click)="refreshFeed()"
+        i18n-title="@@activityFeed.refreshButton.title"
+        title="Refresh the activity feed"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        <ng-container
+          i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label"
+          >Refresh Feed</ng-container
+        >
+      </button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
+    <div class="card-body p-4 flex flex-col md:flex-row gap-4 items-end">
+      <!-- Actor filter -->
+      <div class="w-full">
+        <label class="label py-1"
+          ><span class="label-text font-semibold text-xs text-base-content/70">Actor</span></label
+        >
+        <select
+          class="select select-bordered select-sm w-full font-medium"
+          [value]="selectedUser()"
+          (change)="onUserChange($event)"
+        >
+          <option value="">Everyone</option>
+          @for (u of users(); track u.id) {
+          <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Item Type filter -->
+      <div class="w-full">
+        <label class="label py-1"
+          ><span class="label-text font-semibold text-xs text-base-content/70">Item Type</span></label
+        >
+        <select
+          class="select select-bordered select-sm w-full font-medium"
+          [value]="selectedEntity()"
+          (change)="onEntityChange($event)"
+        >
+          <option value="">All Items</option>
+          <option value="persons">People</option>
+          <option value="households">Households</option>
+          <option value="tasks">Tasks</option>
+          <option value="emails">Emails</option>
+          <option value="newsletters">Newsletters</option>
+          <option value="web_forms">Forms</option>
+          <option value="volunteer_events">Volunteer Events</option>
+          <option value="volunteer_shifts">Volunteer Shifts</option>
+          <option value="companies">Companies</option>
+          <option value="teams">Teams</option>
+          <option value="tags">Tags</option>
+        </select>
+      </div>
+
+      <!-- Action filter -->
+      <div class="w-full">
+        <label class="label py-1"
+          ><span class="label-text font-semibold text-xs text-base-content/70">Action</span></label
+        >
+        <select
+          class="select select-bordered select-sm w-full font-medium"
+          [value]="selectedActivity()"
+          (change)="onActivityChange($event)"
+        >
+          <option value="">All Actions</option>
+          <option value="create">Create</option>
+          <option value="update">Update</option>
+          <option value="delete">Delete</option>
+          <option value="merge">Merge</option>
+          <option value="import">Import</option>
+          <option value="export">Export</option>
+          <option value="assign">Assign</option>
+          <option value="unassign">Unassign</option>
+          <option value="close">Close</option>
+          <option value="reopen">Reopen</option>
+        </select>
+      </div>
+
+      <!-- Reset Button -->
+      @if (hasActiveFilters()) {
+      <button
+        class="btn btn-ghost btn-sm text-error gap-1 px-2 w-full md:w-auto hover:bg-error/10"
+        (click)="clearFilters()"
+        title="Clear all filters"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+        Clear
+      </button>
+      }
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (isLoading() && activities().length === 0) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span
+      class="loading loading-spinner loading-lg text-primary"
+      i18n-aria-label="@@activityFeed.loading.ariaLabel"
+      aria-label="Loading activity logs"
+    ></span>
+    <p
+      class="text-base-content/60 mt-4"
+      i18n="
+              Activity feed loading state|Text shown while the feed is initially loading@@activityFeed.loading.message"
+    >
+      Loading system logs...
+    </p>
+  </div>
+  }
+
+  <!-- Empty State -->
+  @if (!isLoading() && activities().length === 0) {
+  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
+    <div class="card-body items-center text-center py-12">
+      <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+      <h2
+        class="card-title text-base-content/70"
+        i18n="
+                Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading"
+      >
+        No activity logged
+      </h2>
+      <p
+        class="text-sm text-base-content/50 mt-1"
+        i18n="
+                Activity feed empty state|Description text when no activity has been logged
+                yet@@activityFeed.emptyState.description"
+      >
+        Activity logs will appear here once actions are performed in the system.
+      </p>
+    </div>
+  </div>
+  }
+
+  <!-- Feed Timeline -->
+  @if (activities().length > 0) {
+  <div class="space-y-6">
+    <!-- Retention summary (§2 disclosure + §19): what's shown and how far back we keep it -->
+    <p class="text-xs text-base-content/50">
+      Showing {{ totalShown() }} {{ totalShown() === 1 ? 'event' : 'events' }} · pplcrm keeps the last 90 days of
+      activity.
+    </p>
+
+    @for (group of groupedActivities(); track group.key) {
+    <section class="space-y-3">
+      <!-- Day group header -->
+      <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/45">{{ group.label }}</h2>
+
+      <div class="relative pl-6 border-l-2 border-base-300 space-y-6">
+        @for (act of group.items; track act.id) {
+        <div class="relative group">
+          <!-- Icon Indicator -->
+          <div
+            [class]="
+                      'absolute -left-[37px] top-1.5 w-6 h-6 rounded-full border-2 bg-base-100 flex items-center justify-center transition-all duration-200 ' +
+                      getActivityClass(act.activity)
+                    "
+          >
+            <pc-icon [name]="getActivityIcon(act.activity)" [size]="3"></pc-icon>
+          </div>
+
+          <!-- Activity Card -->
+          <div
+            class="card bg-base-100 border border-base-300 hover:border-primary/20 shadow-md group-hover:shadow-lg transition-all duration-200"
+          >
+            <div class="card-body p-4 sm:p-5 flex flex-row items-start gap-4">
+              <!-- User Avatar -->
+              <div class="avatar placeholder hidden sm:flex">
+                <div
+                  class="bg-neutral text-neutral-content rounded-full w-10 h-10 text-xs flex items-center justify-center font-semibold"
+                >
+                  {{ getUserInitials(act) }}
+                </div>
+              </div>
+
+              <!-- Event Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <!-- Kind chip + sentence -->
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span
+                      [class]="
+                        'badge badge-sm badge-outline font-semibold shrink-0 ' + getActivityClass(act.activity)
+                      "
+                      >{{ getKindLabel(act.activity) }}</span
+                    >
+                    @if (getCustomMessage(act); as msg) {
+                    <!-- Honest attribution: backend-authored sentence surfaced verbatim -->
+                    <p class="text-sm font-medium text-base-content">
+                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
+                      @if (getEntityLink(act); as link) { —
+                      <a
+                        [routerLink]="link.path"
+                        [queryParams]="link.params"
+                        class="text-primary hover:underline font-semibold"
+                        >{{ msg }}</a
+                      >
+                      } @else { — <span class="text-base-content/85">{{ msg }}</span> }
+                    </p>
+                    } @else {
+                    <p class="text-sm font-medium text-base-content">
+                      <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
+                      {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
+                      <a
+                        [routerLink]="link.path"
+                        [queryParams]="link.params"
+                        class="text-primary hover:underline font-semibold"
+                      >
+                        {{ getEntityLabelText(act) }}
+                      </a>
+                      } @else {
+                      <span class="font-semibold text-base-content/85">{{ getEntityLabelText(act) }}</span>
+                      } {{ getActivitySuffix(act) }}
+                    </p>
+                    } @if (getViaLabel(act); as via) {
+                    <span class="badge badge-sm badge-ghost gap-1 text-base-content/60">
+                      <pc-icon name="globe-americas" [size]="3"></pc-icon>
+                      {{ via }}
+                    </span>
+                    }
+                  </div>
+                  <span class="text-[11px] text-base-content/40 whitespace-nowrap"
+                    >{{ act.created_at | date: 'short' }}</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        }
+      </div>
+    </section>
+    }
+
+    <!-- Load More Button -->
+    @if (hasMore()) {
+    <div class="flex justify-center pt-4">
+      <button class="btn btn-outline btn-primary gap-2" [disabled]="isLoading()" (click)="loadMore()">
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        }
+        <ng-container
+          i18n="
+                    Activity feed pagination|Label on the button to load more activity rows@@activityFeed.loadMore.label"
+          >Load More Activity</ng-container
+        >
+      </button>
+    </div>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.html
+
+```html
+<pc-detail-layout
+  [title]="name() || 'Campaign'"
+  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!campaign()"
+  [showDelete]="false"
+  [showActions]="!isArchived()"
+  [btn1Text]="'Edit campaign'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editCampaign()"
+>
+  @if (campaign()) {
+  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
+  @if (isArchived()) {
+  <div class="alert mb-6 border-warning/40 bg-warning/10">
+    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
+    <div>
+      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
+      <p class="text-xs text-base-content/70" i18n>
+        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
+      </p>
+    </div>
+    <button type="button" class="btn btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
+  </div>
+  }
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: campaign card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="square-3-stack-3d">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
+        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
+          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
+            · Archived</ng-container
+          >}
+        </p>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (description()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
+          }
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>Starts:</span>
+            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
+            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          @if (notes()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
+            {{ notes() }}
+          </div>
+          }
+        </div>
+      </pc-profile-card>
+
+      <!-- Context actions -->
+      <div class="flex flex-col gap-2">
+        @if (isCurrentContext()) {
+        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
+          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
+        </div>
+        } @else {
+        <button type="button" class="btn btn-outline btn-primary btn-sm gap-2" (click)="workInThis()">
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        } @if (!isOffice() && !isArchived()) {
+        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
+          <pc-icon name="archive-box" [size]="4"></pc-icon>
+          <span i18n>Archive campaign</span>
+        </button>
+        }
+      </div>
+
+      <!-- Carry-over (§15): seed this campaign from a prior one -->
+      @if (!isArchived() && carrySources().length) {
+      <div class="rounded-2xl border border-base-200 bg-base-100 p-4 shadow-sm">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>
+          Start from a previous campaign
+        </h3>
+        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
+          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
+          behind an explicit confirmation — that judgment is yours.
+        </p>
+        <div class="flex flex-col gap-2">
+          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
+            <option value="" i18n>Choose a campaign…</option>
+            @for (source of carrySources(); track source.id) {
+            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
+            }
+          </select>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySupport()"
+              (change)="carryCopySupport.set(!carryCopySupport())"
+            />
+            <span i18n>Copy support levels (as “carried over”)</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySubscriptions()"
+              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
+            />
+            <span i18n>Copy email subscriptions (requires confirmation)</span>
+          </label>
+          <button
+            type="button"
+            class="btn btn-outline btn-primary btn-sm mt-1"
+            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
+            (click)="runCarryOver()"
+          >
+            @if (carryRunning()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            }
+            <span i18n>Carry over</span>
+          </button>
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Right: activity log -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
 
 ```typescript
@@ -53004,429 +50861,6 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
-
-```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
-      @if (headline()) {
-      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
-      } @else {
-      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
-      }
-    </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-bordered mb-4">
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
-      Turfs &amp; assignments
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
-      Field report
-    </button>
-  </div>
-
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
-            }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
-      }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
-
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table table-sm">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
-      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
-      the person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
-        }
-      </div>
-      <button type="button" class="btn btn-outline btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
-      </button>
-    </div>
-
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
-
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
-          >
-            Street map
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
-          >
-            By ward
-          </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
-        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Strong {{ r.responseMix.strong_support }}</span>
-        <span>Lean {{ r.responseMix.lean_support }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Opposed {{ r.responseMix.opposed }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
-
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
-          </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
-        </div>
-        }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
-
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
-
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
-
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
-    </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
@@ -53779,6 +51213,212 @@ export class CanvassingPage implements OnInit {
     return Math.max(1, ...r.byHour.map((h) => h.attempts));
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.html
+
+```html
+<div class="mx-auto min-h-screen w-full max-w-md bg-base-100 p-4">
+  @if (loading()) {
+  <div class="flex h-40 items-center justify-center">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+  } @else if (loadError()) {
+  <div class="mt-10 text-center">
+    <pc-icon name="map-pin" [size]="8" />
+    <h1 class="mt-3 text-lg font-semibold">Can't open this turf</h1>
+    <p class="mt-1 text-sm text-base-content/60">{{ loadError() }}</p>
+  </div>
+  } @else if (turf(); as t) {
+  <!-- Header -->
+  <header class="sticky top-0 z-10 -mx-4 mb-3 border-b border-base-300 bg-base-100 px-4 py-3">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold">{{ t.turf_name }}</h1>
+        <p class="text-xs text-base-content/60">{{ progress() }}</p>
+      </div>
+      @if (!online()) {
+      <span class="badge badge-warning badge-sm gap-1"> Offline · {{ queued() }} queued </span>
+      } @else if (queued() > 0) {
+      <span class="badge badge-info badge-sm">Syncing {{ queued() }}…</span>
+      } @else {
+      <span class="badge badge-success badge-sm">Synced</span>
+      }
+    </div>
+
+    <label class="mt-2 block">
+      <span class="sr-only">Your name</span>
+      <input
+        type="text"
+        class="input input-sm input-bordered w-full"
+        placeholder="Your name (shown on the record as the canvasser)"
+        [value]="canvasserName()"
+        (input)="setName($any($event.target).value)"
+      />
+    </label>
+  </header>
+
+  <!-- Door list -->
+  <ul class="space-y-2">
+    @for (door of t.doors; track door.household_id) {
+    <li class="rounded-lg border border-base-300">
+      <button
+        type="button"
+        class="flex w-full items-center justify-between p-3 text-left"
+        (click)="toggle(door.household_id)"
+      >
+        <span class="text-sm font-medium">{{ door.address }}</span>
+        @if (localOutcomes()[door.household_id]; as lo) {
+        <span class="badge badge-success badge-sm">{{ outcomeLabel(lo) }}</span>
+        } @else if (door.last_outcome) {
+        <span class="badge badge-ghost badge-sm">{{ outcomeLabel(door.last_outcome) }}</span>
+        } @else {
+        <span class="badge badge-ghost badge-sm opacity-60">Not yet knocked</span>
+        }
+      </button>
+
+      @if (expandedId() === door.household_id) {
+      <div class="border-t border-base-300 p-3">
+        <div class="flex flex-wrap gap-2">
+          @for (o of outcomes; track o.key) { @if (o.key === 'conversation') {
+          <div class="w-full">
+            <div class="mb-1 text-xs font-medium text-base-content/60">Talked — how did they lean?</div>
+            <div class="flex flex-wrap gap-2">
+              @for (r of responses; track r.key) {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-accent"
+                (click)="logKnock(door, 'conversation', r.key)"
+              >
+                {{ r.label }}
+              </button>
+              }
+            </div>
+          </div>
+          } @else {
+          <button type="button" class="btn btn-sm btn-ghost" (click)="logKnock(door, o.key, null)">
+            {{ o.label }}
+          </button>
+          } }
+        </div>
+        @if (door.lat != null && door.lng != null) {
+        <a
+          class="btn btn-sm btn-link mt-2 px-0"
+          [href]="'https://www.google.com/maps/search/?api=1&query=' + door.lat + ',' + door.lng"
+          target="_blank"
+          rel="noopener"
+        >
+          Open in Maps →
+        </a>
+        }
+      </div>
+      }
+    </li>
+    } @empty {
+    <li class="py-10 text-center text-sm text-base-content/60">No doors in this turf yet.</li>
+    }
+  </ul>
+
+  <p class="mt-4 text-center text-xs text-base-content/40">
+    Knocks sync live to the campaign. You can keep working with no signal — they'll upload when you're back online.
+  </p>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/cut-turfs-dialog.html
+
+```html
+<div class="modal modal-open">
+  <div class="modal-box max-w-lg">
+    <h3 class="text-lg font-semibold">Cut new turfs</h3>
+    <p class="mt-1 text-sm text-base-content/60">
+      Turfs are cut from a smart list's geocoded doors into contiguous, walkable groups.
+    </p>
+
+    <!-- Universe -->
+    <div class="form-control mt-4">
+      <label class="label" for="cut-universe">
+        <span class="label-text font-medium">Universe — who gets knocked</span>
+      </label>
+      <select
+        id="cut-universe"
+        class="select select-bordered"
+        [value]="selectedListId()"
+        (change)="onListChange($any($event.target).value)"
+      >
+        <option value="" disabled>Select a list…</option>
+        @for (u of universes(); track u.id) {
+        <option [value]="u.id">
+          {{ u.name }} — {{ u.count.toLocaleString() }} {{ u.is_dynamic ? '(smart)' : '(static)' }}
+        </option>
+        }
+      </select>
+      <span class="label mt-1 text-xs text-base-content/50">
+        Turfs cut from a smart list stay refreshable when the list changes.
+      </span>
+    </div>
+
+    <!-- Doors per turf -->
+    <div class="form-control mt-4">
+      <span class="label-text font-medium">Doors per turf</span>
+      <div class="mt-2 flex flex-wrap gap-2">
+        @for (p of presets; track p) {
+        <button
+          type="button"
+          class="btn btn-sm"
+          [class.btn-primary]="doorsPerTurf() === p"
+          [class.btn-outline]="doorsPerTurf() !== p"
+          [class.btn-accent]="doorsPerTurf() !== p"
+          (click)="setDoors(p)"
+        >
+          {{ p }}
+        </button>
+        }
+      </div>
+      <span class="mt-2 text-xs text-base-content/50">{{ timeHelper() }}</span>
+    </div>
+
+    <!-- Preview -->
+    @if (preview(); as p) {
+    <div class="mt-4 rounded-lg border border-base-300 bg-base-200/40 p-4 text-sm">
+      @if (p.doors > 0) {
+      <p>
+        <span class="font-medium">{{ (selectedUniverse()?.count ?? p.doors).toLocaleString() }} people</span>
+        · ~{{ p.doors.toLocaleString() }} doors →
+        <span class="font-medium">{{ p.turfCount }} turfs of ~{{ p.avgDoorsPerTurf }} doors each</span>
+      </p>
+      <p class="mt-1 text-base-content/60">
+        Each turf is contiguous and won't cross Route 9, the rail line or the river. Rebalance on the map afterwards if
+        a turf feels off.
+      </p>
+      @if (p.unplaced > 0) {
+      <p class="mt-1 text-warning">
+        {{ p.unplaced }} household{{ p.unplaced === 1 ? '' : 's' }} aren't geocoded yet and won't be placed — they'll
+        join a turf once located.
+      </p>
+      } } @else {
+      <p class="text-base-content/60">No geocoded doors in that list yet — turfs are cut from located households.</p>
+      }
+    </div>
+    }
+
+    <div class="modal-action">
+      <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="saving() || !preview() || (preview()?.turfCount ?? 0) === 0"
+        (click)="cut()"
+      >
+        @if (saving()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } Cut {{ preview()?.turfCount ?? 0 }} turfs
+      </button>
+    </div>
+  </div>
+  <div class="modal-backdrop bg-black/40" (click)="cancel()"></div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
@@ -55038,665 +52678,322 @@ export class PublicRoute implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
 
 ```html
-<!-- Preview panel (shared by browse + edit) ---------------------------------->
-<ng-template #previewPanel let-showEdit="showEdit">
-  @if (selected(); as form) {
-  <div class="rounded-2xl border border-base-300 bg-base-100">
-    <!-- Actions row -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
-      <div class="join">
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'form'"
-          [class.text-neutral-500]="tab() !== 'form'"
-          (click)="setTab('form')"
-          type="button"
-        >
-          Form
-        </button>
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'responses'"
-          [class.text-neutral-500]="tab() !== 'responses'"
-          (click)="setTab('responses')"
-          type="button"
-        >
-          Responses
-          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
-        </button>
-      </div>
-
-      <div class="flex items-center gap-2">
-        @if (showEdit) {
-        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
-          <pc-icon name="pencil-square" [size]="4"></pc-icon>
-          Edit form
-        </button>
-        } @switch (form.status) { @case ('draft') {
-        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
-          Publish
-        </button>
-        } @case ('published') {
-        <button class="btn btn-outline btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
-          Unpublish
-        </button>
-        } @case ('archived') {
-        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
-          Restore
-        </button>
-        } }
-      </div>
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
+        Donations
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
     </div>
-
-    <!-- Public link row -->
-    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
-      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openPublicLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
-          type="button"
-          aria-label="Open public page"
-        >
-          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="copyLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
-          type="button"
-          aria-label="Copy public link"
-        >
-          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openEmbed()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
-          type="button"
-          aria-label="Embed form"
-        >
-          <pc-icon name="file-code" [size]="4"></pc-icon>
-        </button>
-      </div>
+    <div class="flex gap-2 items-center">
+      <button
+        id="donations-refresh-btn"
+        class="btn btn-outline btn-accent btn-sm gap-2"
+        title="Refresh donations log"
+        pcSpinOnClick
+        [disabled]="_loading.visible()"
+        (click)="refresh()"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
+      </button>
+      <button
+        routerLink="/donation-pages/add"
+        class="btn btn-ghost btn-sm gap-2"
+        title="Create a public form that charges cards through Stripe and records every gift here"
+      >
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        New donation form
+      </button>
+      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Record donation
+      </button>
     </div>
-
-    <!-- State banner -->
-    @if (form.status === 'draft') {
-    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
-      Draft — only your team can see this preview. Publish to accept responses.
-    </div>
-    } @else if (form.status === 'archived') {
-    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
-      Archived — the public link shows a closed notice. Restore to edit or publish again.
-    </div>
-    }
-
-    <!-- Tab content -->
-    @if (tab() === 'form') {
-    <div class="bg-base-200/40 p-8">
-      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
-    </div>
-    } @else {
-    <div class="p-4">
-      @if (submissionsLoading()) {
-      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
-      } @else if (submissions().length > 0) {
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>Person</th>
-              <th>Submitted</th>
-              <th>Answers</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of submissions(); track row.id) {
-            <tr>
-              <td>
-                <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
-                  {{ row.person_name || 'View person' }}
-                </a>
-              </td>
-              <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
-              <td class="text-base-content/70">{{ answerSummary(row) }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
-        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
-      </div>
-      <p class="mt-2 px-1 text-xs text-base-content/50">
-        Each response created or updated a person, applied the form’s tags and joined its lists.
-      </p>
-      } @else {
-      <div class="flex flex-col items-center gap-2 py-12 text-center">
-        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
-        @switch (form.status) { @case ('draft') {
-        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
-        } @case ('published') {
-        <p class="text-sm text-base-content/60">
-          Share the link to start collecting responses — each one becomes a person.
-        </p>
-        } @case ('archived') {
-        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
-        } }
-      </div>
-      }
-    </div>
-    }
   </div>
-  }
-</ng-template>
 
-<!-- Page ---------------------------------------------------------------------->
-@if (loading() && forms().length === 0) {
-<div class="flex flex-col gap-4 p-4">
-  <div class="skeleton h-10 w-48"></div>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-    <div class="flex flex-col gap-3">
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
+    <a
+      routerLink="/donations"
+      routerLinkActive="tab-active"
+      [routerLinkActiveOptions]="{exact:true}"
+      role="tab"
+      class="tab font-semibold gap-1.5"
+    >
+      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
+      One-time
+    </a>
+    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Monthly Pledges
+    </a>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
+        </div>
+      </div>
     </div>
-    <div class="skeleton h-96 w-full"></div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+    <table class="table w-full">
+      <thead>
+        <tr class="bg-base-200/50">
+          <th>Donor</th>
+          <th class="text-right">Amount</th>
+          <th>Method</th>
+          <th>Date</th>
+          <th>Receipt</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of recentGifts(); track d.id) {
+        <tr
+          class="hover:bg-base-200/30 transition-all duration-200"
+          [class.animate-saved-flash]="highlightId() === d.id"
+        >
+          <td>
+            <div class="flex flex-col">
+              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
+                {{ d.person_first_name }} {{ d.person_last_name }}
+              </a>
+              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+            </div>
+          </td>
+          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
+          <td>
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
+              >{{ methodLabel(d.method) }}</span
+            >
+          </td>
+          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+          <td>
+            @if (d.receipt_sent) {
+            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Receipted
+            </span>
+            } @else {
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
+            }
+          </td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="5" class="text-center py-16 text-base-content/50">
+            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+            <h3 class="font-semibold text-base-content/70">No donations found</h3>
+            <p class="text-xs text-base-content/50 mt-1 mb-3">
+              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
+            </p>
+            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+              <pc-icon name="plus" [size]="4"></pc-icon>
+              Record donation
+            </button>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    @if (totalGiftCount() > recentGifts().length) {
+    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
   </div>
 </div>
-} @else if (mode() === 'browse') {
-<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
     <div>
-      <h2 class="text-xl font-semibold">Forms</h2>
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
+        Monthly Pledges
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
     </div>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
+    <button
+      class="btn btn-outline btn-accent btn-sm gap-2"
+      pcSpinOnClick
+      [disabled]="_loading.visible()"
+      (click)="refresh()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Refresh
     </button>
   </div>
 
-  @if (forms().length === 0) {
-  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    <span class="text-base font-medium">No forms yet — create one to start collecting signups, RSVPs and more.</span>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
+    <a
+      routerLink="/donations"
+      routerLinkActive="tab-active"
+      [routerLinkActiveOptions]="{exact:true}"
+      role="tab"
+      class="tab font-semibold gap-1.5"
+    >
+      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
+      One-time
+    </a>
+    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Monthly Pledges
+    </a>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Summary stats -->
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Active Pledges</div>
+      <div class="stat-value text-2xl text-success tabular-nums">{{ activePledgeCount() }}</div>
+    </div>
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Monthly Committed</div>
+      <div class="stat-value text-2xl text-primary tabular-nums">${{ totalMonthlyCommitted().toFixed(2) }}</div>
+    </div>
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Total Pledges</div>
+      <div class="stat-value text-2xl tabular-nums">{{ pledges().length }}</div>
+    </div>
+  </div>
+
+  <!-- Pledges table -->
+  @if (!_loading.visible() && pledges().length === 0) {
+  <div class="flex flex-col items-center justify-center py-20 text-center text-base-content/50 gap-3">
+    <pc-icon name="arrow-path" [size]="12" class="opacity-20"></pc-icon>
+    <p class="text-lg font-semibold">No pledges yet</p>
+    <p class="text-sm max-w-sm">
+      Monthly pledges will appear here once donors commit through a recurring donation form or direct checkout.
+    </p>
   </div>
   } @else {
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-    <!-- Left rail -->
-    <div class="flex flex-col gap-1 divide-y divide-base-200">
-      @for (form of activeForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
-        [class.border-primary]="form.id === selectedId()"
-        [class.bg-primary/10]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
-            >{{ form.name }}</span
-          >
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span
-            class="badge badge-xs shrink-0"
-            [class.badge-success]="form.status === 'published'"
-            [class.badge-ghost]="form.status !== 'published'"
-          >
-            {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </span>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
-          form.updated_at | date: 'MMM d' }}
-        </span>
-      </button>
-      }
-
-      <button
-        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
-        (click)="toggleArchived()"
-        type="button"
-      >
-        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
-        Archived ({{ archivedForms().length }})
-      </button>
-      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
-        [class.text-primary]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium">{{ form.name }}</span>
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
-        </span>
-      </button>
-      } } @if (archivedOpen() && archivedForms().length === 0) {
-      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
-      }
-
-      <p class="mt-2 px-1 text-xs text-base-content/40">
-        Responses land in People with the form’s tag applied — no copy-paste step.
-      </p>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
+  <div class="overflow-x-auto border border-base-200 rounded-xl bg-base-100 shadow-sm">
+    <table class="table table-sm w-full text-xs">
+      <thead>
+        <tr class="border-b border-base-200 bg-base-50">
+          <th class="font-bold text-base-content/70">Donor</th>
+          <th class="font-bold text-base-content/70">Monthly</th>
+          <th class="font-bold text-base-content/70">Status</th>
+          <th class="font-bold text-base-content/70">Started</th>
+          <th class="font-bold text-base-content/70">Next Billing</th>
+          <th class="font-bold text-base-content/70">Region</th>
+          <th class="font-bold text-base-content/70 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (pledge of pledges(); track pledge.id) {
+        <tr class="hover:bg-base-200/20 border-b border-base-200">
+          <td>
+            @if (pledge.person_id) {
+            <a [routerLink]="['/people', pledge.person_id]" class="font-semibold text-primary hover:underline">
+              {{ pledge.person_first_name }} {{ pledge.person_last_name }}
+            </a>
+            } @else {
+            <span class="font-semibold">{{ pledge.first_name }} {{ pledge.last_name }}</span>
+            }
+            <div class="text-base-content/50">{{ pledge.person_email }}</div>
+          </td>
+          <td class="font-bold text-primary">{{ formatCurrency(pledge.monthly_amount) }}/mo</td>
+          <td>
+            <span class="badge badge-sm font-semibold {{ statusBadgeClass(pledge.status) }}">
+              {{ pledge.status | titlecase }}
+            </span>
+          </td>
+          <td class="text-base-content/70">{{ formatDate(pledge.started_at) }}</td>
+          <td class="text-base-content/70">{{ formatDate(pledge.next_billing_date) }}</td>
+          <td class="text-base-content/60">
+            @if (pledge.state || pledge.country) { {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{
+            pledge.country }} } @else { — }
+          </td>
+          <td class="text-right">
+            @if (pledge.status === 'active' || pledge.status === 'past_due') {
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-error hover:bg-error/10"
+              [disabled]="cancelling() === toStr(pledge.id)"
+              (click)="cancelPledge(pledge)"
+            >
+              @if (cancelling() === toStr(pledge.id)) {
+              <span class="loading loading-spinner loading-xs"></span>
+              } @else { Cancel }
+            </button>
+            }
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
   </div>
   }
 </div>
-} @else if (selected(); as form) {
-<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <button
-        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
-        (click)="exitEdit()"
-        type="button"
-      >
-        <pc-icon name="arrow-left" [size]="3"></pc-icon>
-        All forms
-      </button>
-      <div class="flex items-center gap-2">
-        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
-        <span class="badge badge-info badge-xs">Editing</span>
-      </div>
-      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
-    </div>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
-      <pc-icon name="check-circle" [size]="4"></pc-icon>
-      Done editing
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
-    <!-- Settings column -->
-    <div class="flex flex-col gap-6">
-      <!-- FORM -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Form name</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.name"
-            (input)="editName($any($event.target).value)"
-          />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Public description</span>
-          <textarea
-            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
-            (input)="editDescription($any($event.target).value)"
-          >
-{{ form.description }}</textarea
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.redirect_url ?? ''"
-            (input)="editRedirect($any($event.target).value)"
-            placeholder="https://…"
-          />
-          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Submit button label</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.submit_label ?? ''"
-            (input)="editSubmitLabel($any($event.target).value)"
-          />
-        </label>
-      </section>
-
-      <!-- AFTER SUBMIT -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.send_confirmation"
-            (change)="toggleConfirmEmail($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Confirmation email</span>
-            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
-            @if (form.send_confirmation) {
-            <button
-              class="mt-1 self-start text-xs text-primary hover:underline"
-              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
-              type="button"
-            >
-              Edit the confirmation email
-            </button>
-            }
-          </span>
-        </label>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.notify_team_on"
-            (change)="toggleNotifyTeam($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Notify the team</span>
-            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
-          </span>
-        </label>
-      </section>
-
-      <!-- FIELDS -->
-      <section class="flex flex-col gap-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
-        @for (field of form.fields; track field.key) {
-        <div class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            [checked]="field.on"
-            [disabled]="field.key === 'email'"
-            (change)="toggleField(field.key, $any($event.target).checked)"
-          />
-          <span
-            class="flex-1 text-sm text-base-content"
-            [class.text-base-content]="field.on"
-            [class.text-base-content/40]="!field.on"
-          >
-            {{ field.label }}
-          </span>
-          <button
-            class="badge badge-sm"
-            [class.badge-primary]="field.required"
-            [class.badge-ghost]="!field.required"
-            (click)="toggleRequired(field.key)"
-            type="button"
-          >
-            {{ field.required ? 'Required' : 'Optional' }}
-          </button>
-        </div>
-        }
-        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
-      </section>
-
-      <!-- AUDIENCE -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
-          <select
-            class="select select-bordered select-sm w-full"
-            (change)="addList($any($event.target).value); $any($event.target).value = ''"
-          >
-            <option value="">Choose a list…</option>
-            @for (list of lists(); track list.id) {
-            <option [value]="list.id">{{ list.name }}</option>
-            }
-          </select>
-        </label>
-        @if (form.target_lists.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (id of form.target_lists; track id) {
-          <span class="badge badge-outline gap-1">
-            {{ listName(id) }}
-            <button (click)="removeList(id)" type="button" aria-label="Remove list">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            placeholder="Add a tag, press Enter"
-            #tagInput
-            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
-          />
-        </label>
-        @if (form.target_tags.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (tag of form.target_tags; track tag) {
-          <span class="badge badge-primary badge-outline gap-1">
-            {{ tag }}
-            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-        <p class="text-xs text-base-content/50">
-          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
-          applied automatically.
-        </p>
-      </section>
-
-      <!-- ARCHIVE -->
-      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
-        @if (canDelete(form)) {
-        <p class="text-xs text-base-content/60">
-          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
-        </p>
-        } @else {
-        <p class="text-xs text-base-content/60">
-          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
-        </p>
-        }
-        <div class="flex gap-2">
-          @if (form.status !== 'archived') {
-          <button
-            class="btn btn-outline btn-accent btn-sm gap-1"
-            (click)="archiveForm()"
-            [disabled]="mutating()"
-            type="button"
-          >
-            <pc-icon name="archive-box" [size]="4"></pc-icon>
-            Archive form
-          </button>
-          } @if (canDelete(form)) {
-          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
-            <pc-icon name="trash-forever" [size]="4"></pc-icon>
-            Delete draft
-          </button>
-          }
-        </div>
-      </section>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
-  </div>
-</div>
-}
-
-<!-- New form dialog ----------------------------------------------------------->
-<dialog #newFormDialog class="modal">
-  <div class="modal-box max-w-md">
-    <div class="mb-4 flex items-center gap-2">
-      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
-      </div>
-      <h3 class="text-lg font-semibold text-base-content">New form</h3>
-    </div>
-
-    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Form name</span>
-        <input
-          class="input input-bordered w-full"
-          [class.input-error]="!!newFormError()"
-          [value]="newFormName()"
-          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
-          placeholder="June phone bank signup"
-          autofocus
-        />
-        @if (newFormError()) {
-        <span class="text-xs text-error">{{ newFormError() }}</span>
-        }
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Start from</span>
-        <select
-          class="select select-bordered w-full"
-          [value]="newFormType()"
-          (change)="newFormType.set($any($event.target).value)"
-        >
-          @for (opt of templateOptions; track opt.type) {
-          <option [value]="opt.type">{{ opt.label }}</option>
-          }
-        </select>
-        <span class="text-xs text-base-content/50"
-          >Starts as a draft with the template’s fields — publish when it’s ready.</span
-        >
-      </label>
-
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
-        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
-      </div>
-    </form>
-
-    <div class="divider my-1 text-xs text-base-content/40">or</div>
-
-    <div class="flex flex-col gap-2">
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToFundraisingForm()" type="button">
-        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-        Create a fundraising form
-      </button>
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToEventForm()" type="button">
-        <pc-icon name="ticket" [size]="4"></pc-icon>
-        Create an event page
-      </button>
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToShiftForm()" type="button">
-        <pc-icon name="add-schedule" [size]="4"></pc-icon>
-        Create a volunteer shift
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<!-- Embed dialog -------------------------------------------------------------->
-<dialog #embedDialog class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
-        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
-        Embed this form
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="join mb-3">
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'iframe'"
-        (click)="embedMode.set('iframe')"
-        type="button"
-      >
-        Embed (iframe)
-      </button>
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'html'"
-        (click)="embedMode.set('html')"
-        type="button"
-      >
-        Raw HTML form
-      </button>
-    </div>
-
-    <p class="mb-2 text-xs text-base-content/60">
-      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
-      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
-    </p>
-
-    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
-{{ embedCode() }}</pre
-    >
-
-    <div class="mt-4 flex justify-end">
-      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy code
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<!-- Confirmation-email dialog ------------------------------------------------->
-<dialog #confirmEmailDialog class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Subject</span>
-        <input
-          class="input input-bordered w-full"
-          [value]="confirmSubjectDraft()"
-          (input)="confirmSubjectDraft.set($any($event.target).value)"
-        />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Body</span>
-        <textarea
-          class="textarea textarea-bordered min-h-[140px] w-full"
-          [value]="confirmBodyDraft()"
-          (input)="confirmBodyDraft.set($any($event.target).value)"
-        ></textarea>
-      </label>
-      <p class="text-xs text-base-content/50">
-        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
-        greeting.
-      </p>
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
-        <button class="btn btn-primary" type="submit">Save</button>
-      </div>
-    </form>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
@@ -55725,7 +53022,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
           '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
           '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
+          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
           '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
         ],
       },
@@ -55973,7 +53270,6 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           { keys: ['g', 'f'], action: '[Forms](/forms)' },
           { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
           { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-          { keys: ['g', 'm'], action: '[Files](/files)' },
         ],
       },
       { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
@@ -56778,240 +54074,392 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
 
 ```html
-<div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
-  <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
     <div>
-      <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
-      <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
+        Import / export
+      </h1>
+      @if (tab() === 'imports') {
+      <p class="text-sm text-base-content/60 mt-1">
+        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
+        duplicatesMergedThisYear() }} duplicates merged
+      </p>
+      }
     </div>
-    <div class="flex items-center justify-center gap-2 sm:justify-end">
-      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        New Newsletter
-      </a>
+    <div class="flex gap-2 items-center">
+      @if (tab() === 'imports') {
+      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import CSV
+      </button>
+      }
       <button
-        class="btn btn-sm btn-outline btn-ghost gap-1 font-medium capitalize"
-        (click)="collapsed.set(!collapsed())"
+        type="button"
+        class="btn btn-outline btn-accent btn-sm gap-2"
+        pcSpinOnClick
+        (click)="tab() === 'imports' ? refresh() : refreshExports()"
+        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
       >
-        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
       </button>
     </div>
   </div>
 
-  @if (!collapsed()) {
-  <div class="mt-5 flex flex-col gap-6">
-    <!-- Stats Cards Grid -->
-    <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
-      <!-- Total Campaigns Sent -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Sent Campaigns
-          </div>
-          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1 tabular-nums">
-            {{ stats().totalSent }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
-        </div>
-      </div>
+  <!-- Tabs: Imports N / Exports N -->
+  <div role="tablist" class="tabs tabs-border mb-4">
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'imports'"
+      (click)="switchTab('imports')"
+    >
+      Imports {{ itemCount() }}
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'exports'"
+      (click)="switchTab('exports')"
+    >
+      Exports {{ exportCount() }}
+    </button>
+  </div>
 
-      <!-- Total Recipients -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Total Delivered
-          </div>
-          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1 tabular-nums">
-            {{ formatNumber(stats().totalRecipients) }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
-        </div>
-      </div>
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
 
-      <!-- Avg Open Rate -->
-      <div
-        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
-      >
-        <div>
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Avg Open Rate
-          </div>
-          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1 tabular-nums">
-            {{ stats().avgOpenRate.toFixed(1) }}%
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
-        </div>
-        <div
-          class="radial-progress text-success font-bold text-[10px] flex-shrink-0"
-          [style.--value]="stats().avgOpenRate"
-          [style.--size]="'3rem'"
-          [style.--thickness]="'4px'"
-          role="progressbar"
-        >
-          {{ stats().avgOpenRate.toFixed(0) }}%
-        </div>
-      </div>
-
-      <!-- Avg Click Rate -->
-      <div
-        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
-      >
-        <div>
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Avg Click Rate
-          </div>
-          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1 tabular-nums">
-            {{ stats().avgClickRate.toFixed(1) }}%
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
-        </div>
-        <div
-          class="radial-progress text-accent font-bold text-[10px] flex-shrink-0"
-          [style.--value]="stats().avgClickRate"
-          [style.--size]="'3rem'"
-          [style.--thickness]="'4px'"
-          role="progressbar"
-        >
-          {{ stats().avgClickRate.toFixed(0) }}%
-        </div>
-      </div>
-
-      <!-- Bounces & Drops -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1 tabular-nums">
-            {{ stats().totalBounces }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
-        </div>
-      </div>
+    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+      <table class="table w-full">
+        <thead>
+          <tr class="bg-base-200/50">
+            <th>File</th>
+            <th>When</th>
+            <th>By</th>
+            <th>Outcome</th>
+            <th>Tags applied</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of items(); track item.id) {
+          <tr class="hover:bg-base-200/30 transition-all duration-200">
+            <td>
+              <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
+              <div class="text-xs text-base-content/60">
+                {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+              </div>
+            </td>
+            <td>
+              <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+            </td>
+            <td>
+              @if (item.createdBy) {
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
+                <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td>
+              @switch (item.status) { @case ('pending') {
+              <span class="badge badge-ghost text-xs">Pending</span>
+              } @case ('processing') {
+              <span class="badge badge-info text-xs gap-1">
+                <span class="loading loading-spinner loading-xs"></span>
+                Processing
+              </span>
+              } @case ('completed') {
+              <div class="text-sm text-base-content">
+                <div>{{ item.insertedCount }} imported</div>
+                @if (item.mergedCount > 0) {
+                <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+                } @if (item.skippedCount > 0) {
+                <div class="text-xs text-base-content/60 flex items-center gap-1">
+                  {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+                  <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                    download reasons
+                  </button>
+                  }
+                </div>
+                } @if (item.errorCount > 0) {
+                <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+                }
+              </div>
+              } @case ('failed') {
+              <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+                Failed
+              </span>
+              } }
+            </td>
+            <td>
+              @if (item.tagsApplied.length > 0) {
+              <div class="flex flex-wrap gap-1">
+                @for (tag of item.tagsApplied; track tag) {
+                <span class="badge badge-outline text-xs">{{ tag }}</span>
+                }
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td class="text-right">
+              <div class="flex justify-end gap-1">
+                @if (item.canDownloadSource) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-primary"
+                  title="Download original file"
+                  (click)="downloadSource(item)"
+                >
+                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                </button>
+                }
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-error"
+                  (click)="openDeleteDialog(item, deleteDialog)"
+                  [disabled]="deleting()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="text-center py-12 text-base-content/50">
+              <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+              <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+              <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
+              <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+                <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+                Import CSV
+              </button>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    <!-- Comparative Chart Panel -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">
-          Campaign Comparison (Last 8 Dispatched)
-        </h3>
-        <div class="flex items-center gap-4 text-xs font-medium">
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block h-3 w-3 rounded bg-primary"></span>
-            <span class="text-base-content/70">Open Rate</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block h-3 w-3 rounded bg-secondary"></span>
-            <span class="text-base-content/70">Click Rate</span>
-          </div>
-        </div>
-      </div>
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
+  </div>
+  }
 
-      <!-- SVG Chart -->
-      <div class="relative w-full h-[220px]">
-        @if (chartData().length > 0) {
-        <svg viewBox="0 0 800 220" width="100%" height="100%" class="overflow-visible">
-          <!-- Y-Axis Grid Lines & Labels -->
-          <g class="text-[10px] fill-base-content/40 stroke-base-content/5 font-sans" stroke-width="1">
-            <!-- 100% -->
-            <line x1="50" y1="20" x2="780" y2="20" stroke-dasharray="3,3" />
-            <text x="40" y="23" text-anchor="end">100%</text>
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    <div class="flex justify-end mb-3">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="toggleNewExportInfo()">
+        New export
+      </button>
+    </div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
 
-            <!-- 75% -->
-            <line x1="50" y1="60" x2="780" y2="60" stroke-dasharray="3,3" />
-            <text x="40" y="63" text-anchor="end">75%</text>
-
-            <!-- 50% -->
-            <line x1="50" y1="100" x2="780" y2="100" stroke-dasharray="3,3" />
-            <text x="40" y="103" text-anchor="end">50%</text>
-
-            <!-- 25% -->
-            <line x1="50" y1="140" x2="780" y2="140" stroke-dasharray="3,3" />
-            <text x="40" y="143" text-anchor="end">25%</text>
-
-            <!-- 0% -->
-            <line x1="50" y1="180" x2="780" y2="180" class="stroke-base-content/20" />
-            <text x="40" y="183" text-anchor="end">0%</text>
-          </g>
-
-          <!-- Bar Groups -->
-          @for (item of chartData(); track $index; let i = $index) {
-          <g>
-            <!-- Group X offset: leftMargin(50) + i * groupWidth -->
-            <g class="transition-all duration-300 hover:opacity-90">
-              <!-- Open Rate Bar -->
-              <rect
-                [attr.x]="50 + i * groupWidth() + barSpacing()"
-                [attr.y]="180 - openBarHeight(item.openRate)"
-                [attr.width]="barWidth()"
-                [attr.height]="openBarHeight(item.openRate)"
-                rx="3"
-                class="fill-primary cursor-pointer transition-all duration-300"
-              >
-                <title>{{ item.name }} - Open Rate: {{ item.openRate.toFixed(1) }}%</title>
-              </rect>
-
-              <!-- Click Rate Bar -->
-              <rect
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() + 2"
-                [attr.y]="180 - clickBarHeight(item.clickRate)"
-                [attr.width]="barWidth()"
-                [attr.height]="clickBarHeight(item.clickRate)"
-                rx="3"
-                class="fill-secondary cursor-pointer transition-all duration-300"
-              >
-                <title>{{ item.name }} - Click Rate: {{ item.clickRate.toFixed(1) }}%</title>
-              </rect>
-
-              <!-- Values above bars -->
-              <text
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() / 2"
-                [attr.y]="180 - openBarHeight(item.openRate) - 4"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/70 font-sans"
-              >
-                {{ item.openRate > 0 ? item.openRate.toFixed(0) + '%' : '' }}
-              </text>
-              <text
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() * 1.5 + 2"
-                [attr.y]="180 - clickBarHeight(item.clickRate) - 4"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/70 font-sans"
-              >
-                {{ item.clickRate > 0 ? item.clickRate.toFixed(0) + '%' : '' }}
-              </text>
-
-              <!-- X Axis Label (Newsletter Name) -->
-              <text
-                [attr.x]="50 + i * groupWidth() + groupWidth() / 2"
-                y="198"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/60 font-sans"
-              >
-                {{ truncate(item.name) }}
-              </text>
-            </g>
-          </g>
+    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+      <table class="table w-full">
+        <thead>
+          <tr class="bg-base-200/50">
+            <th>File</th>
+            <th>When</th>
+            <th>By</th>
+            <th>Contents</th>
+            <th class="text-right">Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (job of exportJobs(); track job.id) {
+          <tr class="hover:bg-base-200/30 transition-all duration-200">
+            <td>
+              <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
+            </td>
+            <td>
+              <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+            </td>
+            <td>
+              @if (job.createdBy) {
+              <div class="flex flex-col">
+                <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
+                <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+              </div>
+              } @else {
+              <span class="text-sm text-base-content/40">—</span>
+              }
+            </td>
+            <td>
+              @switch (job.status) { @case ('pending') {
+              <span class="badge badge-ghost text-xs">Queued</span>
+              } @case ('processing') {
+              <span class="badge badge-info text-xs gap-1">
+                <span class="loading loading-spinner loading-xs"></span>
+                Processing
+              </span>
+              } @case ('completed') {
+              <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+              } @default {
+              <span class="badge badge-error text-xs">Failed</span>
+              } }
+            </td>
+            <td class="text-right">
+              <div class="flex justify-end gap-1">
+                @if (job.status === 'completed') { @if (isExpired(job)) {
+                <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
+                } @else if (job.downloadable) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-primary"
+                  title="Download CSV"
+                  (click)="downloadExportJob(job)"
+                >
+                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                </button>
+                } @else {
+                <span
+                  class="text-xs text-base-content/40 italic mr-2"
+                  title="Downloaded directly to your device — not stored on the server"
+                >
+                  Downloaded
+                </span>
+                } }
+                <button
+                  type="button"
+                  class="btn btn-sm btn-circle btn-ghost text-error"
+                  title="Delete export"
+                  (click)="deleteExportJob(job)"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="5" class="text-center py-12 text-base-content/50">
+              <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+              <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+              <p class="text-xs text-base-content/50 mt-1">
+                Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
+              </p>
+            </td>
+          </tr>
           }
-        </svg>
-        } @else {
-        <div
-          class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center"
-        >
-          <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
-          <span class="text-sm font-medium text-base-content/40">No analytics data available</span>
-          <span class="text-xs text-base-content/30"
-            >Analytics comparison will appear here once campaigns are sent and tracked.</span
-          >
-        </div>
-        }
-      </div>
+        </tbody>
+      </table>
     </div>
   </div>
   }
 </div>
+
+<dialog #deleteDialog class="modal">
+  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
+    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
+    @if (pendingDelete(); as item) {
+    <p class="text-sm text-base-content/70 mt-2">
+      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+      records created by this import:
+    </p>
+
+    <div class="space-y-3 mt-4">
+      @if (item.contactCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deletePeople()"
+          (change)="deletePeople.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+      </label>
+      } @if (item.householdCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteHouseholds()"
+          (change)="deleteHouseholds.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+      </label>
+      } @if (item.companyCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteCompanies()"
+          (change)="deleteCompanies.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+      </label>
+      } @if (item.taskCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteTasks()"
+          (change)="deleteTasks.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+      </label>
+      }
+    </div>
+    }
+
+    <div class="modal-action flex gap-2">
+      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+        Cancel
+      </button>
+      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
+    <button type="submit">close</button>
+  </form>
+</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
@@ -58356,434 +55804,661 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.html
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
 
 ```html
-<div class="mx-auto max-w-7xl space-y-6 p-6">
-  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
-      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
-      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
-        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ unassignedOpenCount() }} unassigned conversations</a
-        >
-        need an owner and
-        <button
-          type="button"
-          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          (click)="toggleSlaDetails('tasks')"
-        >
-          {{ totalTaskSlaBreaches() }} tasks
-        </button>
-        have breached SLA. Email response is {{ emailHealthWord() }},
-        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ activeContactsCount() }} new contacts</a
-        >
-        arrived this month@if (draftNewsletter(); as draft) {, and
-        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
-        >}.
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
       </p>
     </div>
 
-    <button
-      class="btn btn-outline btn-sm shrink-0 gap-2"
-      pcSpinOnClick
-      (click)="loadStats(true)"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload stats
-    </button>
-  </div>
-
-  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
-
-  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <!-- Task SLA -->
-    @if (totalTaskSlaBreaches() > 0) {
-    <button
-      type="button"
-      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
-      (click)="toggleSlaDetails('tasks')"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
-        <span class="text-sm font-semibold">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs opacity-70">
-        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
-        View the {{ totalTaskSlaBreaches() }} tasks
-      </div>
-    </button>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
     </div>
     }
+  </header>
 
-    <!-- Unassigned conversations -->
-    @if (unassignedOpenCount() > 0) {
-    <a
-      routerLink="/inbox"
-      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
-        <span class="text-sm font-semibold">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/60">
-        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
-        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
-    </a>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
-    </div>
-    }
-
-    <!-- Draft newsletter -->
-    @if (draftNewsletter(); as draft) {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
-        <span class="text-sm font-semibold">Draft newsletter</span>
-      </div>
-      <div class="mt-1 truncate text-xs text-base-content/60">
-        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
-    </a>
-    } @else {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
-        <span class="text-sm font-semibold">Draft newsletters</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
-    </a>
-    }
-  </div>
-
-  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
-  @if (showSlaDetails()) {
-  <pc-sla-details
-    [breachedEmails]="breachedEmails()"
-    [breachedTasks]="breachedTasks()"
-    [emailSlaHours]="emailSlaHours()"
-    [taskSlaHours]="taskSlaHours()"
-    [totalEmailBreaches]="totalEmailSlaBreaches()"
-    [totalTaskBreaches]="totalTaskSlaBreaches()"
-    [hasMoreEmails]="hasMoreEmails()"
-    [hasMoreTasks]="hasMoreTasks()"
-    [isLoadingEmails]="isLoadingEmails()"
-    [isLoadingTasks]="isLoadingTasks()"
-    (loadMoreEmails)="loadMoreEmails()"
-    (loadMoreTasks)="loadMoreTasks()"
-    [(activeTab)]="defaultSlaTab"
-  />
-  }
-
-  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
-        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
-        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
-        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
-        {{ avgFirstResponse() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
-        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
-        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
-        +{{ activeContactsCount() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
-    </div>
-  </div>
-
-  <!-- Growth chart (2fr) + Coming up (1fr) -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- New contacts line chart -->
-    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
-        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
-      </div>
-
-      @if (isInitialLoading()) {
-      <div class="skeleton h-[200px] w-full rounded-lg"></div>
-      } @else if (linePoints().length > 0) {
-      <div class="relative h-[200px] w-full">
-        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
-              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
-            </linearGradient>
-          </defs>
-
-          @for (label of yAxisLabels(); track label.y) {
-          <line
-            x1="20"
-            [attr.y1]="label.y"
-            x2="580"
-            [attr.y2]="label.y"
-            stroke="currentColor"
-            class="text-base-content/10"
-            stroke-dasharray="4"
-          ></line>
-          <text
-            [attr.x]="12"
-            [attr.y]="label.y + 3"
-            text-anchor="end"
-            class="fill-current text-[9px] tabular-nums text-base-content/40"
-          >
-            {{ label.value }}
-          </text>
-          }
-
-          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
-          <path
-            [attr.d]="linePath()"
-            fill="none"
-            stroke="var(--color-primary)"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-
-          @for (p of linePoints(); track p.date) {
-          <circle
-            [attr.cx]="p.x"
-            [attr.cy]="p.y"
-            r="4"
-            fill="var(--color-base-100)"
-            stroke="var(--color-primary)"
-            stroke-width="2"
-            class="cursor-pointer"
-            (mouseenter)="hoveredPoint.set(p)"
-            (mouseleave)="hoveredPoint.set(null)"
-          ></circle>
-          } @for (label of xAxisLabels(); track label.x) {
-          <text
-            [attr.x]="label.x"
-            [attr.y]="195"
-            text-anchor="middle"
-            class="fill-current text-[9px] text-base-content/40"
-          >
-            {{ label.label }}
-          </text>
-          }
-        </svg>
-
-        @if (hoveredPoint(); as p) {
-        <div
-          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
-          [style.left.%]="(p.x / 600) * 100"
-          [style.top.%]="(p.y / 200) * 100"
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection(section.config.id)"
         >
-          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
-            {{ formatDate(p.date) }}
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        } @if (currentMode === 'settings') {
+        <!-- Passkeys custom section -->
+        <button
+          id="settings-nav-passkeys"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('passkeys')"
+        >
+          <pc-icon
+            name="lock-closed"
+            [class.text-primary]="isSelected('passkeys')"
+            [class.opacity-70]="!isSelected('passkeys')"
+            [size]="5"
+          />
+          Passkeys
+        </button>
+        } @if (currentMode === 'workspace') {
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon
+            name="envelope"
+            [class.text-primary]="isSelected('email-sync')"
+            [class.opacity-70]="!isSelected('email-sync')"
+            [size]="5"
+          />
+          Email sync
+        </button>
+
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon
+            name="globe-americas"
+            [class.text-primary]="isSelected('domains')"
+            [class.opacity-70]="!isSelected('domains')"
+            [size]="5"
+          />
+          Domain verification
+        </button>
+
+        <!-- Donations custom section -->
+        <button
+          id="settings-nav-donations"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('donations')"
+        >
+          <pc-icon
+            name="currency-dollar"
+            [class.text-primary]="isSelected('donations')"
+            [class.opacity-70]="!isSelected('donations')"
+            [size]="5"
+          />
+          Donations
+        </button>
+
+        <!-- Storage custom section -->
+        <button
+          id="settings-nav-storage"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('storage')"
+        >
+          <pc-icon
+            name="archive-box"
+            [class.text-primary]="isSelected('storage')"
+            [class.opacity-70]="!isSelected('storage')"
+            [size]="5"
+          />
+          Storage
+        </button>
+
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon
+            name="credit-card"
+            [class.text-primary]="isSelected('billing')"
+            [class.opacity-70]="!isSelected('billing')"
+            [size]="5"
+          />
+          Billing
+        </button>
+
+        <!-- Account custom section -->
+        <button
+          id="settings-nav-account"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('account')"
+        >
+          <pc-icon
+            name="user-circle"
+            [class.text-primary]="isSelected('account')"
+            [class.opacity-70]="!isSelected('account')"
+            [size]="5"
+          />
+          Account
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-[13px] leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets —
+              some may immediately count as breached (or clear) on the dashboard.
+            </p>
           </div>
-          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
-            <span class="h-2 w-2 rounded-full bg-primary"></span>
-            +{{ p.count }} contacts
+          } @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
+
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-sm font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
+              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request Verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <p class="text-sm text-base-content/50 italic">
+                No verified sender emails yet. Add one above to request verification.
+              </p>
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute Fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-sm text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
+              <table class="table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Email Sync custom section -->
+      @if (currentMode === 'workspace' && isSelected('email-sync')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
+          </p>
+        </header>
+
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
           </div>
         </div>
-        }
-      </div>
-      } @else {
-      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
-        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
-        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Import your people</a
-        >
-      </div>
-      }
-    </div>
-
-    <!-- Coming up -->
-    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
-      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
-
-      @if (upcomingEvents().length > 0) {
-      <ul class="flex flex-col gap-1">
-        @for (ev of upcomingEvents(); track ev.id) {
-        <li>
-          <a
-            [routerLink]="['/events/shifts', ev.id]"
-            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
-          >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
-              <span class="block text-xs text-base-content/55">
-                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
-              </span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-      } @else {
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Plan an event</a
-        >
-      </div>
+      </section>
       }
 
-      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
-        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
-        below
-      </div>
+      <!-- Domains custom section -->
+      @if (currentMode === 'workspace' && isSelected('domains')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
+          </p>
+        </header>
+        <pc-domains-settings></pc-domains-settings>
+      </section>
+      }
+
+      <!-- Donations custom section -->
+      @if (currentMode === 'workspace' && isSelected('donations')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
+            account.
+          </p>
+        </header>
+        <pc-donations-settings></pc-donations-settings>
+      </section>
+      }
+
+      <!-- Storage custom section -->
+      @if (currentMode === 'workspace' && isSelected('storage')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Storage</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
+        </header>
+        <pc-storage-settings></pc-storage-settings>
+      </section>
+      }
+
+      <!-- Billing custom section -->
+      @if (currentMode === 'workspace' && isSelected('billing')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your subscription plans, view invoice details, and update payment methods.
+          </p>
+        </header>
+        <pc-billing-settings></pc-billing-settings>
+      </section>
+      }
+
+      <!-- Passkeys custom section -->
+      @if (currentMode === 'settings' && isSelected('passkeys')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
+          </p>
+        </header>
+        <pc-passkey-settings></pc-passkey-settings>
+      </section>
+      }
+
+      <!-- Account custom section -->
+      @if (currentMode === 'workspace' && isSelected('account')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your organization account — pause billing or permanently delete all data.
+          </p>
+        </header>
+        <pc-account-settings></pc-account-settings>
+      </section>
+      }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
     </div>
   </div>
-
-  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
-  <div class="rounded-xl border border-line bg-base-100 p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
-      <span class="text-xs text-base-content/50">Real-time</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr
-            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
-          >
-            <th class="py-2 pr-4 font-medium">Representative</th>
-            <th class="py-2 pr-4 text-right font-medium">Open</th>
-            <th class="py-2 pr-4 text-right font-medium">Closed</th>
-            <th class="py-2 pr-4 font-medium">Resolution</th>
-            <th class="py-2 pr-4 font-medium">Avg first response</th>
-            <th class="py-2 font-medium">SLA breaches</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of userStats(); track user.user_id) {
-          <tr class="border-b border-line last:border-0">
-            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
-            <td class="py-2.5 pr-4">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.resolutionRate >= 75"
-                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                [class.badge-error]="user.resolutionRate < 40"
-                >{{ user.resolutionRate }}%</span
-              >
-            </td>
-            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
-            <td class="py-2.5">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
-                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
-                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
-              >
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
+  }
 </div>
 ```
 
@@ -59004,134 +56679,6 @@ export class IssuesAdmin implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
-
-```html
-<div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
-      @if (loaded()) {
-      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="add-label" [size]="4"></pc-icon>
-      New tag
-    </a>
-  </div>
-
-  @if (loaded() && unusedRows().length > 0) {
-  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
-    <div class="flex items-center gap-3">
-      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm text-base-content/80">
-        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
-        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
-      </span>
-    </div>
-    <button type="button" class="btn btn-outline btn-sm shrink-0" (click)="showUnusedOnly.set(!showUnusedOnly())">
-      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
-    </button>
-  </div>
-  }
-
-  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-    <table class="table">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
-          <th>Tag</th>
-          <th>People</th>
-          <th>Last applied</th>
-          <th>Created by</th>
-          <th class="w-10"></th>
-        </tr>
-      </thead>
-      <tbody>
-        @if (loading()) { @for (i of skeletonRows; track i) {
-        <tr>
-          <td colspan="5"><div class="skeleton h-6 w-full"></div></td>
-        </tr>
-        } } @else if (visibleRows().length === 0) {
-        <tr>
-          <td colspan="5" class="py-12 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
-              <p class="text-sm text-base-content/60">
-                {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
-              </p>
-              @if (showUnusedOnly()) {
-              <button type="button" class="btn btn-sm btn-outline" (click)="showUnusedOnly.set(false)">
-                Show all tags
-              </button>
-              } @else {
-              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
-              }
-            </div>
-          </td>
-        </tr>
-        } @else { @for (row of visibleRows(); track row.id) {
-        <tr>
-          <td>
-            <div class="flex items-center gap-2">
-              <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
-              @if (isUnused(row)) {
-              <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
-              }
-            </div>
-          </td>
-          <td class="tabular-nums">
-            <a
-              [routerLink]="'/people'"
-              [queryParams]="{ tag: row.name }"
-              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-            >
-              {{ row.use_count_people.toLocaleString() }}
-            </a>
-            @if (row.use_count_households > 0) {
-            <span class="text-xs text-base-content/50">
-              · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
-            </span>
-            }
-          </td>
-          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
-          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
-          <td>
-            <div class="dropdown dropdown-end dropdown-bottom">
-              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
-                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-              </label>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
-              >
-                <li>
-                  <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
-                </li>
-                <li>
-                  <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
-                </li>
-                <li><hr class="my-1 border-base-300" /></li>
-                <li>
-                  <a (click)="delete(row)" class="text-error">
-                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </td>
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="text-xs text-base-content/50 px-1">
-    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
-  </p>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.ts
 
 ```typescript
@@ -59258,6 +56805,645 @@ export class TagsAdmin implements OnInit {
       end();
     }
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Tasks</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Quiet tab row with counts (design idiom table §4) -->
+  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
+    @for (t of tabs(); track t.key) {
+    <button
+      type="button"
+      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
+      [class.text-primary]="tab() === t.key"
+      [class.font-semibold]="tab() === t.key"
+      [class.border-primary]="tab() === t.key"
+      [class.text-base-content/70]="tab() !== t.key"
+      (click)="setTab(t.key)"
+    >
+      {{ t.label }}
+      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
+    </button>
+    }
+  </nav>
+
+  @if (loaded() && !filtered().length) {
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    @switch (tab()) { @case ('all') {
+    <span class="text-base font-medium">No tasks yet</span>
+    } @case ('mine') {
+    <span class="text-base font-medium">Nothing assigned to you yet</span>
+    } @case ('unassigned') {
+    <span class="text-base font-medium">Every open task has an owner</span>
+    } @case ('done') {
+    <span class="text-base font-medium">Nothing completed yet</span>
+    } }
+    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New task
+    </button>
+  </div>
+  } @else {
+  <div class="flex flex-col gap-5">
+    @for (group of groups(); track group.key) {
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2 px-1">
+        <span
+          class="text-xs font-semibold uppercase tracking-[0.06em]"
+          [class.text-error]="group.meta.tone === 'error'"
+          [class.text-warning]="group.meta.tone === 'warning'"
+          [class.text-info]="group.meta.tone === 'info'"
+          [class.text-base-content/50]="group.meta.tone === 'neutral'"
+        >
+          {{ group.meta.label }}
+        </span>
+        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+      </div>
+
+      <div class="flex flex-col divide-y divide-base-200">
+        @for (t of group.rows; track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div class="flex items-center gap-3 py-2 px-1" [class.animate-saved-flash]="isFlashed(t.id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle shrink-0"
+            [class.text-success]="t.status === 'done'"
+            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+            (click)="toggleDone(t)"
+          >
+            <pc-icon name="check-circle" [size]="5"></pc-icon>
+          </button>
+
+          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+            <div
+              class="truncate text-sm font-medium"
+              [class.line-through]="t.status === 'done'"
+              [class.opacity-50]="t.status === 'done'"
+            >
+              {{ t.name }}
+            </div>
+            @if (reason) {
+            <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
+              <pc-icon name="clock" [size]="3"></pc-icon>
+              <span class="truncate">{{ reason }}</span>
+            </div>
+            }
+          </div>
+
+          @if (t.priority) {
+          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+          } @if (pill) {
+          <span
+            class="badge badge-xs w-fit shrink-0"
+            [class.badge-error]="pill.tone === 'error'"
+            [class.badge-warning]="pill.tone === 'warning'"
+            [class.badge-ghost]="pill.tone === 'neutral'"
+          >
+            {{ pill.text }}
+          </span>
+          } @if (t.due_at) {
+          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
+            >{{ dateLabel(t.due_at) }}</span
+          >
+          } @if (t.assigned_to) {
+          <span
+            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            [attr.title]="assignee"
+            >{{ assigneeInitial(t.assigned_to) }}</span
+          >
+          } @else {
+          <button
+            type="button"
+            class="badge badge-outline shrink-0 border-dashed text-xs"
+            title="Take this task — one click assigns it to you"
+            (click)="takeTask(t); $event.stopPropagation()"
+          >
+            Unassigned
+          </button>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+
+<pc-csv-importer
+  [open]="importerOpen()"
+  [title]="'Import tasks from CSV'"
+  [mappableFields]="mappableFields"
+  [autoMapHeader]="autoMapHeader"
+  [summary]="importSummary()"
+  (submit)="onImportSubmit($event)"
+  (close)="importerOpen.set(false); importSummary.set(null)"
+  (closeSummary)="importSummary.set(null)"
+/>
+```
+
+## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
+
+```html
+<div class="mx-auto flex h-full min-h-[calc(100vh-120px)] max-w-7xl flex-col gap-6 p-6">
+  <!-- Header ------------------------------------------------------------------->
+  <div class="mb-2 flex items-center justify-between border-b border-base-200 pb-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <pc-icon name="add-schedule" [size]="5"></pc-icon>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">
+          {{ isNew() && !triggerSelected() ? 'New automation' : payload().name || 'Untitled automation' }}
+        </h1>
+        <p class="mt-0.5 text-sm text-base-content/60">
+          {{ isNew() && !triggerSelected() ? 'Pick a trigger to begin.' : 'Design the sequence and set who enrolls.' }}
+        </p>
+      </div>
+    </div>
+    @if (triggerSelected()) {
+    <pc-form-actions
+      [isLoading]="isLoading()"
+      [signalForm]="form"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="'Save automation'"
+      [btn1Icon]="'save'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete automation'"
+      (deleteClicked)="deleteWorkflow()"
+    ></pc-form-actions>
+    }
+  </div>
+
+  <!-- TRIGGER PICKER (new automation / Change) --------------------------------->
+  @if (!triggerSelected()) {
+  <div class="mx-auto flex w-full max-w-5xl flex-col items-center gap-8 py-6">
+    <div class="flex flex-col gap-2 text-center">
+      <h2 class="text-2xl font-bold tracking-tight text-base-content">Select a trigger event</h2>
+      <p class="text-sm text-base-content/60">
+        The trigger decides when someone enters this automation; everything after it is the sequence.
+      </p>
+    </div>
+
+    <div class="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (card of triggerCards; track card.type) {
+      <button
+        type="button"
+        (click)="selectTrigger(card.type)"
+        class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      >
+        <div
+          class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
+        >
+          <pc-icon [name]="card.icon" [size]="5"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
+          <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
+        </div>
+        <span class="mt-1 text-xs font-semibold text-primary">Select trigger →</span>
+      </button>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- WORKSPACE ---------------------------------------------------------------->
+  @if (triggerSelected()) {
+  <pc-tabs [tabs]="tabs()" [(activeTab)]="activeTab">
+    <!-- SEQUENCE DESIGNER ------------------------------------------------------>
+    <pc-tab-panel id="sequence" [activeTab]="activeTab()">
+      <div class="flex w-full flex-col items-start gap-6 lg:flex-row">
+        <!-- Left: vertical sequence flow -->
+        <div
+          class="flex w-full flex-1 flex-col items-center gap-0 rounded-2xl border border-base-300 bg-base-200/40 p-8"
+        >
+          <!-- Trigger card -->
+          <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger — when</span>
+              <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="triggerMeta()?.icon ?? 'user-plus'" [size]="5"></pc-icon>
+              </div>
+              <span class="text-sm font-semibold text-base-content">{{ triggerMeta()?.title ?? 'Trigger' }}</span>
+            </div>
+            @if (triggerNeedsTarget()) {
+            <select
+              class="select select-bordered select-sm mt-3 w-full text-xs"
+              [value]="payload().trigger_event_id"
+              (change)="setTriggerTarget($any($event.target).value)"
+            >
+              <option value="">Any</option>
+              @for (opt of triggerTargetOptions(); track opt.id) {
+              <option [value]="opt.id">{{ opt.name }}</option>
+              }
+            </select>
+            }
+          </div>
+
+          <!-- Insertion point 0 -->
+          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: 0 }"></ng-container>
+
+          <!-- Steps -->
+          @for (step of steps(); track step.uid; let i = $index) {
+          <!-- WAIT pill -->
+          @if (step.kind === 'wait') {
+          <div
+            class="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-warning-content"
+          >
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            <span>Wait</span>
+            <input
+              type="number"
+              min="0"
+              class="input input-xs w-14 text-center"
+              [value]="step.delay_days"
+              (input)="setStepDelay(i, $any($event.target).value)"
+            />
+            <select
+              class="select select-xs"
+              [value]="step.delay_unit"
+              (change)="setStepDelayUnit(i, $any($event.target).value)"
+            >
+              <option value="days">days</option>
+              <option value="hours">hours</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
+              <pc-icon name="x-mark" [size]="4"></pc-icon>
+            </button>
+          </div>
+          } @else {
+          <!-- STEP card -->
+          <div class="w-80 rounded-2xl border border-base-300 bg-base-100 p-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <pc-icon [name]="stepMeta(step.kind).icon" [size]="4"></pc-icon>
+                </div>
+                <span class="text-sm font-semibold text-base-content">{{ stepMeta(step.kind).label }}</span>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
+                <pc-icon name="x-mark" [size]="4"></pc-icon>
+              </button>
+            </div>
+
+            <!-- Inline value input per kind -->
+            <div class="mt-3">
+              @switch (step.kind) { @case ('send_email') {
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full text-xs"
+                placeholder="Email subject"
+                [value]="step.subject ?? ''"
+                (input)="setStepEmailSubject(i, $any($event.target).value)"
+              />
+              <button
+                type="button"
+                class="btn btn-outline btn-primary btn-xs mt-2 gap-1"
+                (click)="openEmailDesigner(i)"
+              >
+                <pc-icon name="pencil-square" [size]="4"></pc-icon>
+                Design email
+              </button>
+              } @case ('add_tag') {
+              <select
+                class="select select-bordered select-sm w-full text-xs"
+                [value]="step.config.tag_id ?? ''"
+                (change)="setStepTag(i, $any($event.target).value)"
+              >
+                <option value="">Choose a tag…</option>
+                @for (tag of tags(); track tag.id) {
+                <option [value]="tag.id">{{ tag.name }}</option>
+                }
+              </select>
+              } @case ('create_task') {
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full text-xs"
+                placeholder="Task title"
+                [value]="step.config.task_title ?? ''"
+                (input)="setStepTaskTitle(i, $any($event.target).value)"
+              />
+              } @case ('notify_team') {
+              <select
+                class="select select-bordered select-sm w-full text-xs"
+                [value]="step.config.notify_user_id ?? ''"
+                (change)="setStepNotifyMember(i, $any($event.target).value)"
+              >
+                <option value="">Automation owner</option>
+                @for (member of teamMembers(); track member.id) {
+                <option [value]="member.id">{{ member.name }}</option>
+                }
+              </select>
+              } }
+            </div>
+          </div>
+          }
+
+          <!-- Insertion point after this step -->
+          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: i + 1 }"></ng-container>
+          }
+
+          <!-- Empty state -->
+          @if (steps().length === 0) {
+          <div class="my-4 max-w-sm rounded-xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center">
+            <p class="text-sm text-base-content/60">
+              No steps yet — use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
+              mixed in any order.
+            </p>
+          </div>
+          }
+
+          <!-- Exit terminator -->
+          <div
+            class="flex items-center gap-2 rounded-2xl bg-neutral px-6 py-3 text-xs font-bold uppercase tracking-wider text-neutral-content"
+          >
+            <pc-icon name="check-circle" [size]="4"></pc-icon>
+            Exit automation
+          </div>
+        </div>
+
+        <!-- Right rail --------------------------------------------------------->
+        <aside class="flex w-full shrink-0 flex-col gap-6 lg:w-96">
+          <!-- WORKFLOW SETTINGS -->
+          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
+            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
+              Workflow settings
+            </h3>
+            <div class="mt-3 flex flex-col gap-4">
+              <div class="form-control">
+                <label class="label label-text py-1 text-xs font-semibold">Name</label>
+                <input
+                  type="text"
+                  class="input input-bordered input-sm w-full"
+                  placeholder="e.g. Volunteer follow-up"
+                  [formField]="form.name"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+                />
+                <p class="mt-1 text-[10px] text-base-content/50">
+                  Name the automation so the list and the Activity log can name it.
+                </p>
+              </div>
+
+              <div class="form-control">
+                <label class="label label-text py-1 text-xs font-semibold">Description</label>
+                <textarea
+                  class="textarea textarea-bordered textarea-sm w-full text-xs"
+                  rows="3"
+                  placeholder="What it does, for the next teammate"
+                  [formField]="form.description"
+                ></textarea>
+              </div>
+
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3 py-1">
+                  <input
+                    type="checkbox"
+                    class="toggle toggle-primary toggle-sm"
+                    [checked]="payload().status === 'active'"
+                    (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
+                  />
+                  <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
+                </label>
+                <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
+                  @if (payload().status === 'active') { Runs every time the trigger fires; nothing queues. } @else {
+                  Paused — nothing runs or queues until you resume it. }
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ONLY ENROLL IF -->
+          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
+            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
+              Only enroll if
+            </h3>
+            <div class="mt-3">
+              <pc-query-builder
+                [group]="conditions()"
+                [fields]="conditionFields"
+                [showSummary]="false"
+                (changed)="onConditionsChange()"
+              ></pc-query-builder>
+              @if (!hasConditions()) {
+              <p class="mt-2 text-[10px] text-base-content/50">
+                No conditions — everyone who hits the trigger enrolls.
+              </p>
+              }
+            </div>
+          </section>
+
+          <!-- SEQUENCE OVERVIEW -->
+          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
+            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
+              Sequence overview
+            </h3>
+            <div class="mt-3 flex flex-col gap-1.5 text-xs text-base-content/70">
+              <div class="flex justify-between">
+                <span>Total steps</span><span class="font-mono">{{ steps().length }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Enrolled contacts</span><span class="font-mono">{{ enrollments().length }}</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- RECENT RUNS -->
+          <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
+            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
+              Recent runs
+            </h3>
+            @if (runs().length === 0) {
+            <p class="mt-3 text-[10px] text-base-content/50">
+              No runs yet — history appears here after the first trigger fires.
+            </p>
+            } @else {
+            <ul class="mt-3 flex flex-col gap-2">
+              @for (run of runs(); track run.id) {
+              <li class="flex items-center justify-between gap-2 text-xs">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span
+                    class="badge badge-sm border-none"
+                    [class.badge-success]="run.status === 'success'"
+                    [class.badge-error]="run.status === 'failed'"
+                    >{{ run.status === 'success' ? 'Success' : 'Failed' }}</span
+                  >
+                  <span class="truncate text-base-content/70">{{ runContact(run) }}</span>
+                </div>
+                @if (run.status === 'failed' && run.error) {
+                <span class="truncate text-[10px] text-error" [title]="run.error">{{ run.error }}</span>
+                }
+              </li>
+              }
+            </ul>
+            }
+          </section>
+        </aside>
+      </div>
+    </pc-tab-panel>
+
+    <!-- ENROLLED CONTACTS ------------------------------------------------------>
+    <pc-tab-panel id="enrolled" [activeTab]="activeTab()">
+      <div class="flex flex-col gap-4">
+        <p class="text-xs text-base-content/60">
+          Enrollment is per contact — someone already in the sequence isn't enrolled twice by the same trigger.
+        </p>
+
+        @if (enrollments().length === 0) {
+        <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center">
+          <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-base-200">
+            <pc-icon name="user-group" [size]="5"></pc-icon>
+          </div>
+          <p class="mx-auto max-w-md text-sm text-base-content/60">
+            No one enrolled yet — Contacts appear here the first time the trigger fires. Save the automation active and
+            it starts watching immediately.
+          </p>
+        </div>
+        } @else {
+        <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100">
+          <table class="table table-sm w-full">
+            <thead>
+              <tr>
+                <th>Contact</th>
+                <th>Entered</th>
+                <th>Where they are</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (en of enrollments(); track en.id) {
+              <tr>
+                <td class="text-xs font-semibold">{{ contactName(en) }}</td>
+                <td class="text-xs text-base-content/60">{{ en.enrolled_at | date: 'mediumDate' }}</td>
+                <td class="text-xs text-base-content/70">{{ stepPositionLabel(en) }}</td>
+                <td>
+                  <span
+                    class="badge badge-sm border-none"
+                    [class.badge-info]="en.status === 'active'"
+                    [class.badge-success]="en.status === 'completed'"
+                    [class.badge-ghost]="en.status === 'cancelled'"
+                    >{{ en.status }}</span
+                  >
+                </td>
+                <td class="text-right">
+                  @if (en.status === 'active') {
+                  <button type="button" class="btn btn-ghost btn-xs gap-1 text-error" (click)="cancelEnrollment(en.id)">
+                    <pc-icon name="x-mark" [size]="4"></pc-icon>
+                    Cancel
+                  </button>
+                  }
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+
+  @if (!isNew() && workflowId()) {
+  <div class="mt-8 border-t border-base-200 pt-6">
+    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+  </div>
+  } }
+</div>
+
+<!-- ADD A STEP insertion point (dashed connector + menu) ----------------------->
+<ng-template #insertionPoint let-index="index">
+  <div class="flex flex-col items-center">
+    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
+    <div class="dropdown dropdown-bottom dropdown-center">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-circle btn-outline btn-accent btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
+        title="Add a step"
+      >
+        <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      </div>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-1 w-64 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+      >
+        <li class="menu-title text-[10px] uppercase tracking-wider">Add a step</li>
+        @for (sk of stepKinds; track sk.kind) {
+        <li>
+          <a class="flex items-start gap-2 py-2" (click)="addStepAt(index, sk.kind)">
+            <pc-icon [name]="sk.icon" [size]="4" class="text-primary"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-xs font-semibold">{{ sk.label }}</span>
+              <span class="text-[10px] text-base-content/50">{{ sk.hint }}</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </div>
+    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
+  </div>
+</ng-template>
+
+<!-- EMAIL DESIGNER modal ------------------------------------------------------->
+@if (editingEmailStepIndex() !== null) {
+<div class="animate-fade-in fixed inset-0 z-[150] flex flex-col bg-base-100">
+  <div class="flex items-center justify-between border-b border-base-300 bg-base-100 px-6 py-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <pc-icon name="paper-airplane" [size]="5"></pc-icon>
+      </div>
+      <div class="flex flex-col">
+        <h2 class="text-base font-bold text-base-content">Email designer</h2>
+        <p class="text-xs text-base-content/50">Step {{ editingEmailStepIndex()! + 1 }} email</p>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="closeEmailDesigner()">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
+      Done
+    </button>
+  </div>
+  <div class="flex-1 overflow-hidden bg-base-200 p-6">
+    <pc-visual-newsletter-editor
+      [htmlContent]="editingEmailHtml()"
+      [plainTextContent]="editingEmailText()"
+      (htmlContentChange)="onEmailHtmlChange($event)"
+      (plainTextContentChange)="onEmailTextChange($event)"
+    ></pc-visual-newsletter-editor>
+  </div>
+</div>
 }
 ```
 
@@ -59769,157 +57955,427 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
 
 ```html
-<pc-detail-layout
-  [title]="company()?.name || 'Company'"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Company'"
-  [avatarText]="initials()"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!company()"
-  [showDelete]="true"
-  [deleteText]="'Delete company'"
-  [btn1Text]="'Edit company'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editCompany()"
-  (delete)="deleteCompany()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (company()) {
-  <pc-log-interaction
-    pc-actions-prefix
-    [entity]="'companies'"
-    [entityId]="id()"
-    (logged)="onInteractionLogged()"
-  ></pc-log-interaction>
-  } @if (company(); as c) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Left Column: Contact, Google enrichment, Internal notes -->
-    <div class="flex flex-col gap-6 lg:col-span-1">
-      <!-- Contact card -->
-      <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
-        <div class="flex w-full flex-col text-sm">
-          <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Phone" [value]="c.phone" icon="phone" [copyable]="true"></pc-detail-item>
-        </div>
-        <pc-system-metadata
-          [createdAt]="c.created_at"
-          [createdBy]="getUserName(c.createdby_id)"
-          [updatedAt]="c.updated_at"
-          [updatedBy]="getUserName(c.updatedby_id)"
-        ></pc-system-metadata>
-      </pc-card>
-
-      <!-- Google enrichment card (§7) -->
-      <pc-card>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
-          @if (isEnriched()) {
-          <pc-status-badge type="success">Enriched</pc-status-badge>
-          } @else {
-          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
-          }
-        </div>
-        <p class="text-sm font-light leading-relaxed text-base-content/65">
-          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
-          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
-        </p>
-        <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
-        <button
-          type="button"
-          class="btn btn-sm btn-outline mt-1 w-fit gap-2"
-          [disabled]="enriching()"
-          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
-          (click)="enrichCompany()"
-        >
-          <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
-          {{ enrichLabel() }}
-        </button>
-      </pc-card>
-
-      <!-- Internal notes card -->
-      <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
-        @if (c.notes) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
-        } @else {
-        <p class="text-sm italic text-base-content/40">No internal notes recorded.</p>
-        }
-      </pc-card>
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
+      @if (headline()) {
+      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
     </div>
-
-    <!-- Right Column: pill tab bar + content card (matches person view) -->
-    <div class="flex flex-col gap-6 lg:col-span-2">
-      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
-      <div role="tablist" class="flex flex-wrap gap-2">
-        @for (tab of companyTabs(); track tab.id) {
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="activeTab() === tab.id"
-          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
-          [class]="
-            activeTab() === tab.id
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
-          "
-          (click)="activeTab.set(tab.id)"
-        >
-          <span>{{ tab.label }}</span>
-          @if (tab.badge !== undefined && tab.badge !== null) {
-          <span
-            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
-            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
-            >{{ tab.badge }}</span
-          >
-          }
-        </button>
-        }
-      </div>
-
-      <!-- Content card -->
-      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="people" [activeTab]="activeTab()">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton h-32 w-full"></div>
-          }
-          <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
-            Grouped from the employer field — edit a person’s employer and they move companies.
-          </p>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="about" [activeTab]="activeTab()">
-          @if (c.description) {
-          <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
-          } @else {
-          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
-          }
-        </pc-tab-panel>
-      </div>
-    </div>
+    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+      <pc-icon name="map-pin" [size]="4" />
+      Cut new turfs
+    </button>
   </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-bordered mb-4">
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
+      Turfs &amp; assignments
+    </button>
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
+      Field report
+    </button>
+  </div>
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span class="text-sm">{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
+      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
+      the person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
+        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Strong {{ r.responseMix.strong_support }}</span>
+        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
   }
-</pc-detail-layout>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
@@ -60153,6 +58609,667 @@ export class CompanyView {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
+
+```html
+<!-- Preview panel (shared by browse + edit) ---------------------------------->
+<ng-template #previewPanel let-showEdit="showEdit">
+  @if (selected(); as form) {
+  <div class="rounded-2xl border border-base-300 bg-base-100">
+    <!-- Actions row -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
+      <div class="join">
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'form'"
+          [class.text-neutral-500]="tab() !== 'form'"
+          (click)="setTab('form')"
+          type="button"
+        >
+          Form
+        </button>
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'responses'"
+          [class.text-neutral-500]="tab() !== 'responses'"
+          (click)="setTab('responses')"
+          type="button"
+        >
+          Responses
+          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        @if (showEdit) {
+        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          Edit form
+        </button>
+        } @switch (form.status) { @case ('draft') {
+        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
+          Publish
+        </button>
+        } @case ('published') {
+        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+          Unpublish
+        </button>
+        } @case ('archived') {
+        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
+          Restore
+        </button>
+        } }
+      </div>
+    </div>
+
+    <!-- Public link row -->
+    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openPublicLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
+          type="button"
+          aria-label="Open public page"
+        >
+          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="copyLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
+          type="button"
+          aria-label="Copy public link"
+        >
+          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openEmbed()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
+          type="button"
+          aria-label="Embed form"
+        >
+          <pc-icon name="file-code" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- State banner -->
+    @if (form.status === 'draft') {
+    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
+      Draft — only your team can see this preview. Publish to accept responses.
+    </div>
+    } @else if (form.status === 'archived') {
+    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
+      Archived — the public link shows a closed notice. Restore to edit or publish again.
+    </div>
+    }
+
+    <!-- Tab content -->
+    @if (tab() === 'form') {
+    <div class="bg-base-200/40 p-8">
+      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
+    </div>
+    } @else {
+    <div class="p-4">
+      @if (submissionsLoading()) {
+      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      } @else if (submissions().length > 0) {
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Person</th>
+              <th>Submitted</th>
+              <th>Answers</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of submissions(); track row.id) {
+            <tr>
+              <td>
+                <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
+                  {{ row.person_name || 'View person' }}
+                </a>
+              </td>
+              <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
+              <td class="text-base-content/70">{{ answerSummary(row) }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
+        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
+      </div>
+      <p class="mt-2 px-1 text-xs text-base-content/50">
+        Each response created or updated a person, applied the form’s tags and joined its lists.
+      </p>
+      } @else {
+      <div class="flex flex-col items-center gap-2 py-12 text-center">
+        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
+        @switch (form.status) { @case ('draft') {
+        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
+        } @case ('published') {
+        <p class="text-sm text-base-content/60">
+          Share the link to start collecting responses — each one becomes a person.
+        </p>
+        } @case ('archived') {
+        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
+        } }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</ng-template>
+
+<!-- Page ---------------------------------------------------------------------->
+@if (loading() && forms().length === 0) {
+<div class="flex flex-col gap-4 p-4">
+  <div class="skeleton h-10 w-48"></div>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <div class="flex flex-col gap-3">
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+    </div>
+    <div class="skeleton h-96 w-full"></div>
+  </div>
+</div>
+} @else if (mode() === 'browse') {
+<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Forms</h2>
+      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+
+  @if (forms().length === 0) {
+  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    <span class="text-base font-medium">No forms yet — create one to start collecting signups, RSVPs and more.</span>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+    <!-- Left rail -->
+    <div class="flex flex-col gap-1 divide-y divide-base-200">
+      @for (form of activeForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
+        [class.border-primary]="form.id === selectedId()"
+        [class.bg-primary/10]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
+            >{{ form.name }}</span
+          >
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span
+            class="badge badge-xs shrink-0"
+            [class.badge-success]="form.status === 'published'"
+            [class.badge-ghost]="form.status !== 'published'"
+          >
+            {{ form.status === 'published' ? 'Published' : 'Draft' }}
+          </span>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
+          form.updated_at | date: 'MMM d' }}
+        </span>
+      </button>
+      }
+
+      <button
+        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
+        (click)="toggleArchived()"
+        type="button"
+      >
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
+        Archived ({{ archivedForms().length }})
+      </button>
+      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.text-primary]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium">{{ form.name }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+        </span>
+      </button>
+      } } @if (archivedOpen() && archivedForms().length === 0) {
+      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
+      }
+
+      <p class="mt-2 px-1 text-xs text-base-content/40">
+        Responses land in People with the form’s tag applied — no copy-paste step.
+      </p>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
+  </div>
+  }
+</div>
+} @else if (selected(); as form) {
+<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <button
+        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
+        (click)="exitEdit()"
+        type="button"
+      >
+        <pc-icon name="arrow-left" [size]="3"></pc-icon>
+        All forms
+      </button>
+      <div class="flex items-center gap-2">
+        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
+        <span class="badge badge-info badge-xs">Editing</span>
+      </div>
+      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
+      Done editing
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+    <!-- Settings column -->
+    <div class="flex flex-col gap-6">
+      <!-- FORM -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Form name</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.name"
+            (input)="editName($any($event.target).value)"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Public description</span>
+          <textarea
+            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
+            (input)="editDescription($any($event.target).value)"
+          >
+{{ form.description }}</textarea
+          >
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.redirect_url ?? ''"
+            (input)="editRedirect($any($event.target).value)"
+            placeholder="https://…"
+          />
+          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Submit button label</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.submit_label ?? ''"
+            (input)="editSubmitLabel($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <!-- AFTER SUBMIT -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.send_confirmation"
+            (change)="toggleConfirmEmail($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Confirmation email</span>
+            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
+            @if (form.send_confirmation) {
+            <button
+              class="mt-1 self-start text-xs text-primary hover:underline"
+              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
+              type="button"
+            >
+              Edit the confirmation email
+            </button>
+            }
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.notify_team_on"
+            (change)="toggleNotifyTeam($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Notify the team</span>
+            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
+          </span>
+        </label>
+      </section>
+
+      <!-- FIELDS -->
+      <section class="flex flex-col gap-2">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        @for (field of form.fields; track field.key) {
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            [checked]="field.on"
+            [disabled]="field.key === 'email'"
+            (change)="toggleField(field.key, $any($event.target).checked)"
+          />
+          <span
+            class="flex-1 text-sm text-base-content"
+            [class.text-base-content]="field.on"
+            [class.text-base-content/40]="!field.on"
+          >
+            {{ field.label }}
+          </span>
+          <button
+            class="badge badge-sm"
+            [class.badge-primary]="field.required"
+            [class.badge-ghost]="!field.required"
+            (click)="toggleRequired(field.key)"
+            type="button"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+        </div>
+        }
+        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+      </section>
+
+      <!-- AUDIENCE -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
+          <select
+            class="select select-bordered select-sm w-full"
+            (change)="addList($any($event.target).value); $any($event.target).value = ''"
+          >
+            <option value="">Choose a list…</option>
+            @for (list of lists(); track list.id) {
+            <option [value]="list.id">{{ list.name }}</option>
+            }
+          </select>
+        </label>
+        @if (form.target_lists.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (id of form.target_lists; track id) {
+          <span class="badge badge-outline gap-1">
+            {{ listName(id) }}
+            <button (click)="removeList(id)" type="button" aria-label="Remove list">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            placeholder="Add a tag, press Enter"
+            #tagInput
+            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
+          />
+        </label>
+        @if (form.target_tags.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (tag of form.target_tags; track tag) {
+          <span class="badge badge-primary badge-outline gap-1">
+            {{ tag }}
+            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+        <p class="text-xs text-base-content/50">
+          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
+          applied automatically.
+        </p>
+      </section>
+
+      <!-- ARCHIVE -->
+      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        @if (canDelete(form)) {
+        <p class="text-xs text-base-content/60">
+          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
+        </p>
+        } @else {
+        <p class="text-xs text-base-content/60">
+          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
+        </p>
+        }
+        <div class="flex gap-2">
+          @if (form.status !== 'archived') {
+          <button
+            class="btn btn-outline btn-accent btn-sm gap-1"
+            (click)="archiveForm()"
+            [disabled]="mutating()"
+            type="button"
+          >
+            <pc-icon name="archive-box" [size]="4"></pc-icon>
+            Archive form
+          </button>
+          } @if (canDelete(form)) {
+          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
+            <pc-icon name="trash-forever" [size]="4"></pc-icon>
+            Delete draft
+          </button>
+          }
+        </div>
+      </section>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
+  </div>
+</div>
+}
+
+<!-- New form dialog ----------------------------------------------------------->
+<dialog #newFormDialog class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      </div>
+      <h3 class="text-lg font-semibold text-base-content">New form</h3>
+    </div>
+
+    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Form name</span>
+        <input
+          class="input input-bordered w-full"
+          [class.input-error]="!!newFormError()"
+          [value]="newFormName()"
+          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
+          placeholder="June phone bank signup"
+          autofocus
+        />
+        @if (newFormError()) {
+        <span class="text-xs text-error">{{ newFormError() }}</span>
+        }
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Start from</span>
+        <select
+          class="select select-bordered w-full"
+          [value]="newFormType()"
+          (change)="newFormType.set($any($event.target).value)"
+        >
+          @for (opt of templateOptions; track opt.type) {
+          <option [value]="opt.type">{{ opt.label }}</option>
+          }
+        </select>
+        <span class="text-xs text-base-content/50"
+          >Starts as a draft with the template’s fields — publish when it’s ready.</span
+        >
+      </label>
+
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
+        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
+      </div>
+    </form>
+
+    <div class="divider my-1 text-xs text-base-content/40">or</div>
+
+    <div class="flex flex-col gap-2">
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToFundraisingForm()" type="button">
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        Create a fundraising form
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToEventForm()" type="button">
+        <pc-icon name="ticket" [size]="4"></pc-icon>
+        Create an event page
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToShiftForm()" type="button">
+        <pc-icon name="add-schedule" [size]="4"></pc-icon>
+        Create a volunteer shift
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Embed dialog -------------------------------------------------------------->
+<dialog #embedDialog class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
+        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
+        Embed this form
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="join mb-3">
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'iframe'"
+        (click)="embedMode.set('iframe')"
+        type="button"
+      >
+        Embed (iframe)
+      </button>
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'html'"
+        (click)="embedMode.set('html')"
+        type="button"
+      >
+        Raw HTML form
+      </button>
+    </div>
+
+    <p class="mb-2 text-xs text-base-content/60">
+      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
+      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    </p>
+
+    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+    >
+
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        Copy code
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Confirmation-email dialog ------------------------------------------------->
+<dialog #confirmEmailDialog class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Subject</span>
+        <input
+          class="input input-bordered w-full"
+          [value]="confirmSubjectDraft()"
+          (input)="confirmSubjectDraft.set($any($event.target).value)"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Body</span>
+        <textarea
+          class="textarea textarea-bordered min-h-[140px] w-full"
+          [value]="confirmBodyDraft()"
+          (input)="confirmBodyDraft.set($any($event.target).value)"
+        ></textarea>
+      </label>
+      <p class="text-xs text-base-content/50">
+        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
+        greeting.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
@@ -60796,23 +59913,51 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       >
     </div>
   </section>
-  } @if (email()?.attachments?.length) {
+  } @if (attachments().length > 0 || canManageAttachments()) {
   <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Attachments</h2>
-    <div class="mt-3 grid gap-3">
-      @for (attachment of email()?.attachments ?? []; track attachment.name) {
-      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat">
-          <div class="stat-title truncate text-sm text-base-content/60" [title]="attachment.name">
-            {{ attachment.name }}
-          </div>
-          @if (attachment.size) {
-          <div class="stat-desc text-xs text-base-content/60">{{ formatBytes(attachment.size) }}</div>
-          }
-        </div>
-      </div>
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">Attachments</h2>
+      @if (canManageAttachments()) {
+      <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+      <button
+        class="btn btn-primary btn-sm gap-2"
+        [disabled]="isUploadingAttachment()"
+        (click)="attachmentInput.click()"
+      >
+        @if (isUploadingAttachment()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        Attaching… } @else {
+        <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+        Attach file }
+      </button>
       }
     </div>
+
+    @if (attachments().length === 0) {
+    <p class="mt-3 text-sm text-base-content/60">No files attached to this newsletter.</p>
+    } @else {
+    <ul class="mt-3 divide-y divide-base-200">
+      @for (attachment of attachments(); track attachment.id) {
+      <li class="flex items-center justify-between gap-3 py-2">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+          @if (attachment.size_bytes) {
+          <p class="text-xs text-base-content/60">{{ formatBytes(attachment.size_bytes) }}</p>
+          }
+        </div>
+        @if (canManageAttachments()) {
+        <button
+          class="btn btn-sm btn-circle btn-ghost text-error"
+          title="Remove attachment"
+          (click)="removeAttachment(attachment)"
+        >
+          <pc-icon name="trash" [size]="4"></pc-icon>
+        </button>
+        }
+      </li>
+      }
+    </ul>
+    }
   </section>
   } @if (error()) {
   <div class="alert alert-error">
@@ -60832,6 +59977,242 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
   {{ error() }}
 </div>
 } }
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
+
+```html
+<div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
+  <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
+      <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
+    </div>
+    <div class="flex items-center justify-center gap-2 sm:justify-end">
+      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        New Newsletter
+      </a>
+      <button
+        class="btn btn-sm btn-outline btn-accent gap-1 font-medium capitalize"
+        (click)="collapsed.set(!collapsed())"
+      >
+        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+      </button>
+    </div>
+  </div>
+
+  @if (!collapsed()) {
+  <div class="mt-5 flex flex-col gap-6">
+    <!-- Stats Cards Grid -->
+    <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
+      <!-- Total Campaigns Sent -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Sent Campaigns
+          </div>
+          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1 tabular-nums">
+            {{ stats().totalSent }}
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
+        </div>
+      </div>
+
+      <!-- Total Recipients -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Total Delivered
+          </div>
+          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1 tabular-nums">
+            {{ formatNumber(stats().totalRecipients) }}
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
+        </div>
+      </div>
+
+      <!-- Avg Open Rate -->
+      <div
+        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+      >
+        <div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Avg Open Rate
+          </div>
+          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1 tabular-nums">
+            {{ stats().avgOpenRate.toFixed(1) }}%
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
+        </div>
+        <div
+          class="radial-progress text-success font-bold text-[10px] flex-shrink-0"
+          [style.--value]="stats().avgOpenRate"
+          [style.--size]="'3rem'"
+          [style.--thickness]="'4px'"
+          role="progressbar"
+        >
+          {{ stats().avgOpenRate.toFixed(0) }}%
+        </div>
+      </div>
+
+      <!-- Avg Click Rate -->
+      <div
+        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+      >
+        <div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Avg Click Rate
+          </div>
+          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1 tabular-nums">
+            {{ stats().avgClickRate.toFixed(1) }}%
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
+        </div>
+        <div
+          class="radial-progress text-accent font-bold text-[10px] flex-shrink-0"
+          [style.--value]="stats().avgClickRate"
+          [style.--size]="'3rem'"
+          [style.--thickness]="'4px'"
+          role="progressbar"
+        >
+          {{ stats().avgClickRate.toFixed(0) }}%
+        </div>
+      </div>
+
+      <!-- Bounces & Drops -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1 tabular-nums">
+            {{ stats().totalBounces }}
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparative Chart Panel -->
+    <div class="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">
+          Campaign Comparison (Last 8 Dispatched)
+        </h3>
+        <div class="flex items-center gap-4 text-xs font-medium">
+          <div class="flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded bg-primary"></span>
+            <span class="text-base-content/70">Open Rate</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded bg-secondary"></span>
+            <span class="text-base-content/70">Click Rate</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SVG Chart -->
+      <div class="relative w-full h-[220px]">
+        @if (chartData().length > 0) {
+        <svg viewBox="0 0 800 220" width="100%" height="100%" class="overflow-visible">
+          <!-- Y-Axis Grid Lines & Labels -->
+          <g class="text-[10px] fill-base-content/40 stroke-base-content/5 font-sans" stroke-width="1">
+            <!-- 100% -->
+            <line x1="50" y1="20" x2="780" y2="20" stroke-dasharray="3,3" />
+            <text x="40" y="23" text-anchor="end">100%</text>
+
+            <!-- 75% -->
+            <line x1="50" y1="60" x2="780" y2="60" stroke-dasharray="3,3" />
+            <text x="40" y="63" text-anchor="end">75%</text>
+
+            <!-- 50% -->
+            <line x1="50" y1="100" x2="780" y2="100" stroke-dasharray="3,3" />
+            <text x="40" y="103" text-anchor="end">50%</text>
+
+            <!-- 25% -->
+            <line x1="50" y1="140" x2="780" y2="140" stroke-dasharray="3,3" />
+            <text x="40" y="143" text-anchor="end">25%</text>
+
+            <!-- 0% -->
+            <line x1="50" y1="180" x2="780" y2="180" class="stroke-base-content/20" />
+            <text x="40" y="183" text-anchor="end">0%</text>
+          </g>
+
+          <!-- Bar Groups -->
+          @for (item of chartData(); track $index; let i = $index) {
+          <g>
+            <!-- Group X offset: leftMargin(50) + i * groupWidth -->
+            <g class="transition-all duration-300 hover:opacity-90">
+              <!-- Open Rate Bar -->
+              <rect
+                [attr.x]="50 + i * groupWidth() + barSpacing()"
+                [attr.y]="180 - openBarHeight(item.openRate)"
+                [attr.width]="barWidth()"
+                [attr.height]="openBarHeight(item.openRate)"
+                rx="3"
+                class="fill-primary cursor-pointer transition-all duration-300"
+              >
+                <title>{{ item.name }} - Open Rate: {{ item.openRate.toFixed(1) }}%</title>
+              </rect>
+
+              <!-- Click Rate Bar -->
+              <rect
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() + 2"
+                [attr.y]="180 - clickBarHeight(item.clickRate)"
+                [attr.width]="barWidth()"
+                [attr.height]="clickBarHeight(item.clickRate)"
+                rx="3"
+                class="fill-secondary cursor-pointer transition-all duration-300"
+              >
+                <title>{{ item.name }} - Click Rate: {{ item.clickRate.toFixed(1) }}%</title>
+              </rect>
+
+              <!-- Values above bars -->
+              <text
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() / 2"
+                [attr.y]="180 - openBarHeight(item.openRate) - 4"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/70 font-sans"
+              >
+                {{ item.openRate > 0 ? item.openRate.toFixed(0) + '%' : '' }}
+              </text>
+              <text
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() * 1.5 + 2"
+                [attr.y]="180 - clickBarHeight(item.clickRate) - 4"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/70 font-sans"
+              >
+                {{ item.clickRate > 0 ? item.clickRate.toFixed(0) + '%' : '' }}
+              </text>
+
+              <!-- X Axis Label (Newsletter Name) -->
+              <text
+                [attr.x]="50 + i * groupWidth() + groupWidth() / 2"
+                y="198"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/60 font-sans"
+              >
+                {{ truncate(item.name) }}
+              </text>
+            </g>
+          </g>
+          }
+        </svg>
+        } @else {
+        <div
+          class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center"
+        >
+          <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
+          <span class="text-sm font-medium text-base-content/40">No analytics data available</span>
+          <span class="text-xs text-base-content/30"
+            >Analytics comparison will appear here once campaigns are sent and tracked.</span
+          >
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
@@ -60947,6 +60328,625 @@ export class PersonConnections implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+
+```html
+<!-- Template for persons grid -->
+<div class="flex flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.html
+
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
+
+    <button
+      class="btn btn-outline btn-accent btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats(true)"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
+
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
+
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
+
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
+          }
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
+          }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {{ formatDate(p.date) }}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
+        }
+      </div>
+      } @else {
+      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
+        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
+        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Import your people</a
+        >
+      </div>
+      }
+    </div>
+
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
+
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            [routerLink]="['/events/shifts', ev.id]"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
+        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Plan an event</a
+        >
+      </div>
+      }
+
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
+
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
+
+```html
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
+      @if (loaded()) {
+      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
+      }
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="add-label" [size]="4"></pc-icon>
+      New tag
+    </a>
+  </div>
+
+  @if (loaded() && unusedRows().length > 0) {
+  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
+    <div class="flex items-center gap-3">
+      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm text-base-content/80">
+        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
+        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
+      </span>
+    </div>
+    <button
+      type="button"
+      class="btn btn-outline btn-accent btn-sm shrink-0"
+      (click)="showUnusedOnly.set(!showUnusedOnly())"
+    >
+      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
+    </button>
+  </div>
+  }
+
+  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+    <table class="table">
+      <thead>
+        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+          <th>Tag</th>
+          <th>People</th>
+          <th>Last applied</th>
+          <th>Created by</th>
+          <th class="w-10"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading()) { @for (i of skeletonRows; track i) {
+        <tr>
+          <td colspan="5"><div class="skeleton h-6 w-full"></div></td>
+        </tr>
+        } } @else if (visibleRows().length === 0) {
+        <tr>
+          <td colspan="5" class="py-12 text-center">
+            <div class="flex flex-col items-center gap-2">
+              <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
+              <p class="text-sm text-base-content/60">
+                {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
+              </p>
+              @if (showUnusedOnly()) {
+              <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="showUnusedOnly.set(false)">
+                Show all tags
+              </button>
+              } @else {
+              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
+              }
+            </div>
+          </td>
+        </tr>
+        } @else { @for (row of visibleRows(); track row.id) {
+        <tr>
+          <td>
+            <div class="flex items-center gap-2">
+              <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
+              @if (isUnused(row)) {
+              <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
+              }
+            </div>
+          </td>
+          <td class="tabular-nums">
+            <a
+              [routerLink]="'/people'"
+              [queryParams]="{ tag: row.name }"
+              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+            >
+              {{ row.use_count_people.toLocaleString() }}
+            </a>
+            @if (row.use_count_households > 0) {
+            <span class="text-xs text-base-content/50">
+              · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
+            </span>
+            }
+          </td>
+          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
+          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
+          <td>
+            <div class="dropdown dropdown-end dropdown-bottom">
+              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
+                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+              </label>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
+              >
+                <li>
+                  <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
+                </li>
+                <li>
+                  <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
+                </li>
+                <li><hr class="my-1 border-base-300" /></li>
+                <li>
+                  <a (click)="delete(row)" class="text-error">
+                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
+  </p>
+</div>
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
@@ -61961,6 +61961,159 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+
+```html
+<pc-detail-layout
+  [title]="company()?.name || 'Company'"
+  [subtitle]="subtitle()"
+  [eyebrow]="'Company'"
+  [avatarText]="initials()"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete company'"
+  [btn1Text]="'Edit company'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (company()) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'companies'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (company(); as c) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Left Column: Contact, Google enrichment, Internal notes -->
+    <div class="flex flex-col gap-6 lg:col-span-1">
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+        <div class="flex w-full flex-col text-sm">
+          <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Phone" [value]="c.phone" icon="phone" [copyable]="true"></pc-detail-item>
+        </div>
+        <pc-system-metadata
+          [createdAt]="c.created_at"
+          [createdBy]="getUserName(c.createdby_id)"
+          [updatedAt]="c.updated_at"
+          [updatedBy]="getUserName(c.updatedby_id)"
+        ></pc-system-metadata>
+      </pc-card>
+
+      <!-- Google enrichment card (§7) -->
+      <pc-card>
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
+          @if (isEnriched()) {
+          <pc-status-badge type="success">Enriched</pc-status-badge>
+          } @else {
+          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+          }
+        </div>
+        <p class="text-sm font-light leading-relaxed text-base-content/65">
+          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
+          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
+        </p>
+        <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline btn-accent mt-1 w-fit gap-2"
+          [disabled]="enriching()"
+          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+          (click)="enrichCompany()"
+        >
+          <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
+          {{ enrichLabel() }}
+        </button>
+      </pc-card>
+
+      <!-- Internal notes card -->
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        @if (c.notes) {
+        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
+        } @else {
+        <p class="text-sm italic text-base-content/40">No internal notes recorded.</p>
+        }
+      </pc-card>
+    </div>
+
+    <!-- Right Column: pill tab bar + content card (matches person view) -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
+      <div role="tablist" class="flex flex-wrap gap-2">
+        @for (tab of companyTabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.id"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
+          [class]="
+            activeTab() === tab.id
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
+          "
+          (click)="activeTab.set(tab.id)"
+        >
+          <span>{{ tab.label }}</span>
+          @if (tab.badge !== undefined && tab.badge !== null) {
+          <span
+            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+            >{{ tab.badge }}</span
+          >
+          }
+        </button>
+        }
+      </div>
+
+      <!-- Content card -->
+      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="people" [activeTab]="activeTab()">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton h-32 w-full"></div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
+            Grouped from the employer field — edit a person’s employer and they move companies.
+          </p>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="about" [activeTab]="activeTab()">
+          @if (c.description) {
+          <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
+          } @else {
+          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+          }
+        </pc-tab-panel>
+      </div>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
 
 ```typescript
@@ -62463,60 +62616,453 @@ export class HouseholdsGrid implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
 
-```html
-<!-- Template for persons grid -->
-<div class="flex flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
       }
-    </div>
-  </pc-datagrid>
-</div>
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
 
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
-  </div>
-</dialog>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.html
@@ -63230,6 +63776,12 @@ export const dashboardRoutes: Routes = [
     redirectTo: '/workspace/billing',
     pathMatch: 'full',
   },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
   {
     path: 'profile',
     loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
@@ -63274,10 +63826,6 @@ export const dashboardRoutes: Routes = [
         resolve: { id: companyRecordIdResolver },
       },
     ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
   },
   {
     path: 'activity',
@@ -64509,455 +65057,6 @@ export class PersonView {
 
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  SUPPORT_LEVEL_LABELS,
-  UpdatePersonsObj,
-  UpdatePersonsType,
-  VOTING_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    {
-      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
-      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
-      field: 'support_level',
-      headerName: 'Support (context)',
-      editable: false,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
-    },
-    {
-      field: 'voting_status',
-      headerName: 'Voting (context)',
-      editable: false,
-      hide: true,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
-    },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor/volunteer are just tag filters now — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
   }
 }
 
@@ -66297,12 +66396,6 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/automations',
         icon: 'cog',
         shortcut: 'a',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
       },
     ],
   },
