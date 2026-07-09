@@ -18,7 +18,7 @@ import { PcIconNameType } from '@icons/icons.index';
         @if (value() && link()) {
           <button
             type="button"
-            class="text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
             (click)="linkClicked.emit()"
           >
             {{ value() }}

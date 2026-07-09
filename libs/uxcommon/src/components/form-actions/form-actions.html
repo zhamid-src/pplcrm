@@ -39,8 +39,7 @@
     <span class="loading loading-spinner loading-xs text-primary-content"></span>
     } @else { {{ btn2Text() }} }
   </button>
-  }
-
+  } @if (showCancel()) {
   <button
     type="button"
     class="btn btn-ghost gap-2"
@@ -52,4 +51,5 @@
     <pc-icon name="x-mark" [size]="4" />
     Cancel
   </button>
+  }
 </div>
