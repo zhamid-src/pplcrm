@@ -1,6 +1,6 @@
 <!-- Split-button: primary action opens the menu of interaction types -->
 <div class="dropdown dropdown-end">
-  <div tabindex="0" role="button" class="btn btn-primary btn-xs flex-nowrap gap-1.5 whitespace-nowrap">
+  <div tabindex="0" role="button" class="btn btn-outline btn-primary btn-xs flex-nowrap gap-1.5 whitespace-nowrap">
     <pc-icon name="plus" [size]="4"></pc-icon>
     <span>{{ label() }}</span>
     <pc-icon name="chevron-down" [size]="4"></pc-icon>
@@ -48,9 +48,6 @@
     </div>
 
     <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
-      <button type="button" class="btn btn-ghost text-xs font-semibold" [disabled]="saving()" (click)="close()">
-        Cancel
-      </button>
       <button
         type="button"
         class="btn btn-primary min-w-[110px] text-xs btn-xs font-semibold"

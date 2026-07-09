@@ -12,14 +12,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
   imports: [ConnectionCard, AddConnectionDrawer, Icon],
   template: `
     <div class="flex flex-col gap-4">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h4 i18n class="font-semibold text-base-content/80">
-          Connections
-          @if (connections().length > 0) {
-            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
-          }
-        </h4>
+      <!-- Header — the section title lives on the host page; this row only offers the add action -->
+      <div class="flex items-center justify-end">
         <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
           <pc-icon name="plus" [size]="4"></pc-icon>
           Add Connection

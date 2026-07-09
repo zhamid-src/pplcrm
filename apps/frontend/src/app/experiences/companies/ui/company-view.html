@@ -20,19 +20,7 @@
   (prevRecord)="recordNav.goToPrev()"
   (nextRecord)="recordNav.goToNext()"
 >
-  <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
   @if (company()) {
-  <button
-    pc-actions-prefix
-    type="button"
-    class="btn btn-sm btn-ghost gap-2"
-    [disabled]="enriching()"
-    [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
-    (click)="enrichCompany()"
-  >
-    <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
-    {{ enrichLabel() }}
-  </button>
   <pc-log-interaction
     pc-actions-prefix
     [entity]="'companies'"
@@ -74,6 +62,17 @@
           Runs as a background job — a Places text search finds the business, then place details fill website, phone,
           industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
         </p>
+        <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline mt-1 w-fit gap-2"
+          [disabled]="enriching()"
+          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+          (click)="enrichCompany()"
+        >
+          <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
+          {{ enrichLabel() }}
+        </button>
       </pc-card>
 
       <!-- Internal notes card -->

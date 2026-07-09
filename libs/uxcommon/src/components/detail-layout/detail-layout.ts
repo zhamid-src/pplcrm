@@ -27,6 +27,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           [disabled]="disabled()"
           [showActions]="showActions()"
           [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
           [deleteText]="deleteText()"
           [btn1Text]="btn1Text()"
           [btn1Icon]="btn1Icon()"
@@ -86,6 +87,9 @@ export class DetailLayout {
 
   public showActions = input<boolean>(true);
   public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
   public deleteText = input<string>('Delete');
   public btn1Text = input<string>('Edit');
   public btn1Icon = input<PcIconNameType>('pencil-square');

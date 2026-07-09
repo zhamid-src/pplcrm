@@ -88,6 +88,7 @@ import { FormActions } from '../form-actions/form-actions';
               [btn1Text]="btn1Text()"
               [btn1Icon]="btn1Icon()"
               [showDelete]="false"
+              [showCancel]="showCancel()"
               (btn1Clicked)="save.emit($event)"
             ></pc-form-actions>
           }
@@ -144,6 +145,9 @@ export class DetailHeader {
   public isLoading = input.required<boolean>();
   public showActions = input<boolean>(true);
   public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
   public subtitle = input<string | null | undefined>();
   public title = input.required<string>();
 

@@ -482,7 +482,11 @@
 
             <!-- Connections (folded into Household) -->
             <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
+              <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/60">
+                Connections @if (connectionCount() > 0) {
+                <span class="badge badge-sm badge-neutral">{{ connectionCount() }}</span>
+                }
+              </span>
               <pc-person-connections
                 [personId]="id()"
                 (countChange)="connectionCount.set($event)"
