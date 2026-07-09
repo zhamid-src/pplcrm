@@ -6,7 +6,7 @@
     (replyAll)="emitReplyAll()"
     (forward)="emitForward()"
   ></pc-email-header>
-  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
+  <main class="flex-1 h-full overflow-hidden px-4 flex flex-col gap-3">
     <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
     @if (slaPill(); as sla) {
     <div>
