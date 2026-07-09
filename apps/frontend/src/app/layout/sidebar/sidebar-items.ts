@@ -195,12 +195,6 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'cog',
         shortcut: 'a',
       },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
-      },
     ],
   },
   {

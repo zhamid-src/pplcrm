@@ -3,6 +3,9 @@ import { FilesRepo } from './repositories/files.repo';
 import { StorageService } from '../../lib/storage.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { logger } from '../../logger';
+import { getPlanLimits } from '../billing/usage-limits';
+
+const LARGEST_FILES_LIMIT = 5;
 
 export class FilesController extends BaseController<'files', FilesRepo> {
   private storageService = new StorageService();
@@ -15,6 +18,27 @@ export class FilesController extends BaseController<'files', FilesRepo> {
     return this.getAllWithCounts(auth.tenant_id, options);
   }
 
+  public async getUsageSummary(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select('subscription_plan')
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    const planLimits = getPlanLimits(tenant?.subscription_plan as string | null | undefined);
+    const [usedBytes, largestFiles] = await Promise.all([
+      this.getRepo().getTotalBytes(auth.tenant_id),
+      this.getRepo().getLargestFiles(auth.tenant_id, LARGEST_FILES_LIMIT),
+    ]);
+
+    return {
+      usedBytes,
+      quotaBytes: planLimits.storageBytes,
+      planLabel: (tenant?.subscription_plan as string | null | undefined) || 'Free trial',
+      largestFiles,
+    };
+  }
+
   public async registerFile(
     input: {
       filename: string;
@@ -22,6 +46,8 @@ export class FilesController extends BaseController<'files', FilesRepo> {
       sizeBytes?: number | null;
       storageKey: string;
       sha256Hex?: string | null;
+      entityType?: string | null;
+      entityId?: string | null;
     },
     auth: IAuthKeyPayload,
   ) {
@@ -51,6 +77,8 @@ export class FilesController extends BaseController<'files', FilesRepo> {
       storage_key: input.storageKey,
       sha256_hex: input.sha256Hex || null,
       uploaded_by: auth.user_id,
+      entity_type: input.entityType || null,
+      entity_id: input.entityId || null,
     });
   }
 

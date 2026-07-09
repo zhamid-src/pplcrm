@@ -3,12 +3,15 @@ import { sql } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
 import { logger } from '../../../logger';
-import type { NewsletterRecipient } from '../../mail/newsletter-mail.service';
+import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
 import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
 import { UserActivityRepo } from '../../user-activity.repo';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
+import { FilesRepo } from '../../../modules/files/repositories/files.repo';
+import { StorageService } from '../../storage.service';
+import { getPlanLimits } from '../../../modules/billing/usage-limits';
 
 const NEWSLETTER_BATCH_SIZE = 500;
 const BATCH_DELAY_MS = 1000;
@@ -115,6 +118,8 @@ export async function handleSendNewsletter(
   const finalHtml = renderedHtml + footer.html;
   const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
 
+  const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
+
   while (offset < totalRecipients) {
     // Query a chunk of recipients dynamically using LIMIT and OFFSET.
     // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
@@ -162,6 +167,7 @@ export async function handleSendNewsletter(
       subuserUsername,
       newsletterId,
       tenantId,
+      attachments,
     });
 
     deliveredCount += batchDelivered;
@@ -384,6 +390,54 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
       logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
     }
   }
+}
+
+/**
+ * Fetches files attached to this newsletter (entity_type = 'newsletter') and downloads them as
+ * base64 email attachments. If the tenant is at or over its storage quota, attachments are skipped
+ * (the newsletter still sends, just without them) — mirrors the Storage settings quota warning.
+ */
+export async function buildNewsletterAttachments(
+  db: Kysely<Models>,
+  tenantId: string,
+  newsletterId: string,
+): Promise<NewsletterAttachment[] | undefined> {
+  const filesRepo = new FilesRepo();
+  const { rows } = await filesRepo.getAllWithCounts({
+    tenant_id: tenantId,
+    options: { entityType: 'newsletter', entityId: newsletterId },
+  });
+  if (rows.length === 0) return undefined;
+
+  const tenant = await db
+    .selectFrom('tenants')
+    .select('subscription_plan')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  const quotaBytes = getPlanLimits(tenant?.subscription_plan).storageBytes;
+  const usedBytes = await filesRepo.getTotalBytes(tenantId);
+  if (usedBytes >= quotaBytes) {
+    logger.warn(
+      `Newsletter ${newsletterId} for tenant ${tenantId} is at/over its storage quota — sending without attachments.`,
+    );
+    return undefined;
+  }
+
+  const storageService = new StorageService();
+  const attachments: NewsletterAttachment[] = [];
+  for (const file of rows as { filename: string; storage_key: string; mime_type: string | null }[]) {
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      attachments.push({
+        content: buffer.toString('base64'),
+        filename: file.filename,
+        type: file.mime_type || undefined,
+      });
+    } catch (err) {
+      logger.error({ err }, `Failed to download newsletter attachment ${file.storage_key}`);
+    }
+  }
+  return attachments.length > 0 ? attachments : undefined;
 }
 
 /**

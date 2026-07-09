@@ -44,6 +44,7 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('files').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
 }
@@ -73,6 +74,32 @@ describe('Usage Limits System', () => {
     const representativeLimits = getPlanLimits('representative');
     expect(representativeLimits.contacts).toBe(50000);
     expect(representativeLimits.seats).toBe(10);
+
+    expect(freeLimits.storageBytes).toBeGreaterThan(0);
+    expect(grassrootsLimits.storageBytes).toBeGreaterThan(freeLimits.storageBytes);
+    expect(representativeLimits.storageBytes).toBeGreaterThan(grassrootsLimits.storageBytes);
+  });
+
+  it('triggers a storage capacity alert when uploaded files exceed the plan quota', async () => {
+    const quota = getPlanLimits('free').storageBytes;
+    await db
+      .insertInto('files')
+      .values({
+        tenant_id: tenantId,
+        filename: 'huge.zip',
+        size_bytes: quota,
+        storage_key: `uploads/${tenantId}/huge.zip`,
+      })
+      .execute();
+
+    await checkTenantUsage(tenantId, db);
+
+    const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
+    const storageAlert = jobs.find((j: any) => {
+      const p = typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload;
+      return p.type === 'send-transactional-email' && p.text?.includes('file storage');
+    });
+    expect(storageAlert).toBeDefined();
   });
 
   it('should trigger alert at 90% and 100% capacity and reset flag on reduction', async () => {

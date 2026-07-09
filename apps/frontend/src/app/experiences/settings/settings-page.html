@@ -138,6 +138,23 @@
           Donations
         </button>
 
+        <!-- Storage custom section -->
+        <button
+          id="settings-nav-storage"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('storage')"
+        >
+          <pc-icon
+            name="archive-box"
+            [class.text-primary]="isSelected('storage')"
+            [class.opacity-70]="!isSelected('storage')"
+            [size]="5"
+          />
+          Storage
+        </button>
+
         <!-- Billing custom section -->
         <button
           id="settings-nav-billing"
@@ -571,6 +588,17 @@
           </p>
         </header>
         <pc-donations-settings></pc-donations-settings>
+      </section>
+      }
+
+      <!-- Storage custom section -->
+      @if (currentMode === 'workspace' && isSelected('storage')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Storage</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
+        </header>
+        <pc-storage-settings></pc-storage-settings>
       </section>
       }
 

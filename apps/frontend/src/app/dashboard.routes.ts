@@ -455,6 +455,12 @@ export const dashboardRoutes: Routes = [
     redirectTo: '/workspace/billing',
     pathMatch: 'full',
   },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
   {
     path: 'profile',
     loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
@@ -499,10 +505,6 @@ export const dashboardRoutes: Routes = [
         resolve: { id: companyRecordIdResolver },
       },
     ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
   },
   {
     path: 'activity',

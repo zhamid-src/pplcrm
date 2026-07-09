@@ -661,7 +661,6 @@ interface Newsletters extends RecordType {
   html_content: string | null;
   plain_text_content: string | null;
   top_links: Json | null;
-  attachments: Json | null;
 }
 
 export interface NewsletterEvents {
@@ -986,6 +985,9 @@ export interface Files {
   storage_key: string;
   sha256_hex: string | null;
   uploaded_by: string | null;
+  /** Polymorphic link — what this file belongs to (e.g. 'newsletter', 'team'). Null for untethered uploads. */
+  entity_type: string | null;
+  entity_id: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

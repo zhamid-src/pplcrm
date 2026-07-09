@@ -96,4 +96,25 @@ describe('FilesRouter', () => {
     expect(spy).toHaveBeenCalledWith('10', ['1', '2'], '20');
     expect(result).toBe(true);
   });
+
+  it('calls getUsageSummary on the controller', async () => {
+    const mockSummary = { usedBytes: 100, quotaBytes: 1000, planLabel: 'Free trial', largestFiles: [] };
+    const spy = vi.spyOn(FilesController.prototype, 'getUsageSummary').mockResolvedValue(mockSummary as any);
+
+    const caller = FilesRouter.createCaller({ auth: AUTH } as any);
+    const result = await caller.getUsageSummary();
+
+    expect(spy).toHaveBeenCalledWith(AUTH_MATCHER);
+    expect(result).toEqual(mockSummary);
+  });
+
+  it('accepts entityType/entityId filters on getAll', async () => {
+    const mockResult = { rows: [], count: 0 };
+    const spy = vi.spyOn(FilesController.prototype, 'getAllFiles').mockResolvedValue(mockResult as any);
+
+    const caller = FilesRouter.createCaller({ auth: AUTH } as any);
+    await caller.getAll({ entityType: 'newsletter', entityId: '5' });
+
+    expect(spy).toHaveBeenCalledWith(AUTH_MATCHER, { entityType: 'newsletter', entityId: '5' });
+  });
 });

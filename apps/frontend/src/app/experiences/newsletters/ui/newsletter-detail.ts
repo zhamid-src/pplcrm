@@ -2,8 +2,17 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 
 import { MarketingEmailTopLinkType, MarketingEmailType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { NewslettersService } from '../services/newsletters-service';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+interface NewsletterAttachment {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+}
 
 interface DetailMetric {
   help?: string;
@@ -20,8 +29,18 @@ export class NewsletterDetailComponent {
   readonly id = input.required<string>();
 
   private readonly service = inject(NewslettersService);
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly attachments = signal<NewsletterAttachment[]>([]);
+  protected readonly isUploadingAttachment = signal(false);
+  /** Attachments can only be managed before a newsletter has gone out. */
+  protected readonly canManageAttachments = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
   protected readonly stats = signal<{
     activities: Array<{
       email: string;
@@ -245,9 +264,65 @@ export class NewsletterDetailComponent {
 
       const statsData = await this.service.getEngagementStats(id);
       this.stats.set(statsData);
+
+      await this.loadAttachments(id);
     } catch (err: unknown) {
       console.error(err);
       this.error.set('Unable to load newsletter.');
+    }
+  }
+
+  private async loadAttachments(id: string): Promise<void> {
+    try {
+      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
+      this.attachments.set(
+        (rows as Record<string, unknown>[]).map((r) => ({
+          id: String(r['id']),
+          filename: String(r['filename']),
+          size_bytes: r['size_bytes'] as number | null,
+        })),
+      );
+    } catch {
+      // Non-fatal — attachments are supplementary to the newsletter report.
+    }
+  }
+
+  protected async onAttachmentSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    const newsletterId = this.id();
+    if (!file || !newsletterId) return;
+
+    this.isUploadingAttachment.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
+      this.alertSvc.showSuccess(`"${file.name}" attached`);
+      await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to attach file');
+    } finally {
+      this.isUploadingAttachment.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Remove "${attachment.filename}"?`,
+      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(attachment.id);
+      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
+      const newsletterId = this.id();
+      if (newsletterId) await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to remove attachment');
     }
   }
 

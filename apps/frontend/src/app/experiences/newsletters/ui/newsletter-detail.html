@@ -461,23 +461,51 @@
       >
     </div>
   </section>
-  } @if (email()?.attachments?.length) {
+  } @if (attachments().length > 0 || canManageAttachments()) {
   <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Attachments</h2>
-    <div class="mt-3 grid gap-3">
-      @for (attachment of email()?.attachments ?? []; track attachment.name) {
-      <div class="stats stats-vertical rounded border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat">
-          <div class="stat-title truncate text-sm text-base-content/60" [title]="attachment.name">
-            {{ attachment.name }}
-          </div>
-          @if (attachment.size) {
-          <div class="stat-desc text-xs text-base-content/60">{{ formatBytes(attachment.size) }}</div>
-          }
-        </div>
-      </div>
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">Attachments</h2>
+      @if (canManageAttachments()) {
+      <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+      <button
+        class="btn btn-primary btn-sm gap-2"
+        [disabled]="isUploadingAttachment()"
+        (click)="attachmentInput.click()"
+      >
+        @if (isUploadingAttachment()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        Attaching… } @else {
+        <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+        Attach file }
+      </button>
       }
     </div>
+
+    @if (attachments().length === 0) {
+    <p class="mt-3 text-sm text-base-content/60">No files attached to this newsletter.</p>
+    } @else {
+    <ul class="mt-3 divide-y divide-base-200">
+      @for (attachment of attachments(); track attachment.id) {
+      <li class="flex items-center justify-between gap-3 py-2">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+          @if (attachment.size_bytes) {
+          <p class="text-xs text-base-content/60">{{ formatBytes(attachment.size_bytes) }}</p>
+          }
+        </div>
+        @if (canManageAttachments()) {
+        <button
+          class="btn btn-sm btn-circle btn-ghost text-error"
+          title="Remove attachment"
+          (click)="removeAttachment(attachment)"
+        >
+          <pc-icon name="trash" [size]="4"></pc-icon>
+        </button>
+        }
+      </li>
+      }
+    </ul>
+    }
   </section>
   } @if (error()) {
   <div class="alert alert-error">

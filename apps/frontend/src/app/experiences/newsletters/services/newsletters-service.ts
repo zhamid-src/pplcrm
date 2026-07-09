@@ -93,7 +93,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   private normalize(record: any) {
     if (!record) return record;
     const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const attachments = this.parseJsonArray<{ name: string; url?: string; size?: number }>(record.attachments);
     const asNumber = (value: unknown) => {
       if (value === null || value === undefined || value === '') return null;
       const num = Number(value);
@@ -126,7 +125,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
       created_at: asDate(record.created_at) ?? new Date(),
       updated_at: asDate(record.updated_at) ?? new Date(),
       top_links,
-      attachments,
     };
   }
 
