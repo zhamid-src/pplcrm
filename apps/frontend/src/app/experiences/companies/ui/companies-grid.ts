@@ -1,4 +1,4 @@
-import { Component, signal, inject } from '@angular/core';
+import { Component, signal, inject, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
@@ -33,6 +33,7 @@ import { CompaniesService } from '../services/companies-service';
         [addRoute]="'add'"
         [totalSentence]="totalSentence()"
         (importCSV)="openImportWizard()"
+        (rowsDeleted)="onRowsDeleted()"
         plusIcon="add-company"
         i18n-plusIcon
       >
@@ -61,6 +62,14 @@ export class CompaniesGrid {
 
   /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
   protected readonly totalSentence = signal<string | null>(null);
+
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    this.grainTabs()?.reloadCounts();
+  }
 
   constructor() {
     // Mute every column except the bold "Company Name" door, so the door reads as the way in.

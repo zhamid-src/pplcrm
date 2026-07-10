@@ -56,6 +56,11 @@ export class GrainTabs {
     void this.loadCounts();
   }
 
+  /** Re-query the per-grain totals (e.g. after a delete on the hosting grid). */
+  public reloadCounts(): void {
+    void this.loadCounts();
+  }
+
   private format(count: number | null): string | null {
     return count === null ? null : this.formatter.format(count);
   }

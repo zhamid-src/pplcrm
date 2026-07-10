@@ -19,6 +19,8 @@ import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-
 import {
   DATA_GRID_CONFIG,
   DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
   provideDataGridConfig,
 } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -56,8 +58,15 @@ export class PersonsGrid implements OnInit {
   private readonly personsService = inject(PersonsService);
 
   private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
 
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
+  }
 
   public inline = input<boolean>(false);
 
@@ -370,14 +379,9 @@ export class PersonsGrid implements OnInit {
     const ids = selected.map((r: any) => r.id);
 
     // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
     const ok = await this.dialogs.confirm({
       title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
       variant: this.config.messages.deleteConfirmVariant,
       icon: this.config.messages.deleteConfirmIcon,
       confirmText: this.config.messages.deleteConfirmText,
@@ -390,7 +394,7 @@ export class PersonsGrid implements OnInit {
     try {
       // Call deleteMany without force, skipping global error toast
       await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
     } catch (err) {
       // Check if it's the captain error message
       const errMsg =
@@ -414,7 +418,7 @@ export class PersonsGrid implements OnInit {
         if (forceOk) {
           try {
             await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
           } catch (forceErr) {
             const forceErrMsg =
               forceErr instanceof Error && forceErr.message
