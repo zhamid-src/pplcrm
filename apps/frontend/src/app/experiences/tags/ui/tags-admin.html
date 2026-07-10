@@ -3,7 +3,7 @@
     <div>
       <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
       @if (loaded()) {
-      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
+      <p class="text-xs text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
     <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
@@ -16,7 +16,7 @@
   <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
     <div class="flex items-center gap-3">
       <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm text-base-content/80">
+      <span class="text-xs text-base-content/80">
         {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
         or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
       </span>
@@ -52,7 +52,7 @@
           <td colspan="5" class="py-12 text-center">
             <div class="flex flex-col items-center gap-2">
               <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
-              <p class="text-sm text-base-content/60">
+              <p class="text-xs text-base-content/60">
                 {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
               </p>
               @if (showUnusedOnly()) {
@@ -79,7 +79,7 @@
             <a
               [routerLink]="'/people'"
               [queryParams]="{ tag: row.name }"
-              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+              class="link link-hover text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
             >
               {{ row.use_count_people.toLocaleString() }}
             </a>
@@ -89,8 +89,8 @@
             </span>
             }
           </td>
-          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
-          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
+          <td class="text-xs text-base-content/70">{{ relativeLastApplied(row) }}</td>
+          <td class="text-xs text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
           <td>
             <div class="dropdown dropdown-end dropdown-bottom">
               <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
