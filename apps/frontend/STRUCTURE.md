@@ -46537,6 +46537,133 @@ type DeleteCtx = {
 </div>
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
+
+```typescript
+import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-grid-tool-btn',
+  template: `
+    <li
+      [class.tooltip-left]="placement() === 'left'"
+      [class.tooltip-right]="placement() === 'right'"
+      [class.tooltip-top]="placement() === 'top'"
+      [class.tooltip-bottom]="placement() === 'bottom'"
+      [class.hidden]="hidden()"
+      [class.disabled]="!enabled() || spinning()"
+      [class.cursor-not-allowed]="!enabled() || spinning()"
+      [class.text-neutral-400]="!enabled() || spinning()"
+      [class.opacity-50]="spinning()"
+      class="tooltip tooltip-accent "
+      [class.text-primary]="active()"
+      [attr.data-tip]="tip()"
+      (click)="onLiClick($event)"
+    >
+      @if (hasDropdown()) {
+        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
+          <summary
+            class="list-none cursor-pointer"
+            [class.pc-no-caret]="hideCaret()"
+            [class.touch-target]="touch()"
+            (click)="onSummaryClick($event)"
+          >
+            <div class="flex h-full items-center justify-center ">
+              <a role="button" class="relative pointer-events-none ">
+                <pc-icon
+                  [name]="icon()"
+                  [size]="4"
+                  class="group-hover:text-primary"
+                  [class]="spinning() ? 'animate-spin' : ''"
+                ></pc-icon>
+                @if (badge() && badge()! > 0) {
+                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+                    {{ badge() }}
+                  </span>
+                }
+              </a>
+            </div>
+          </summary>
+          <ng-content></ng-content>
+        </details>
+      } @else {
+        <a class="flex items-center justify-center" [class.touch-target]="touch()"
+          ><pc-icon
+            [name]="icon()"
+            [size]="4"
+            class="group-hover:text-primary"
+            [class]="spinning() ? 'animate-spin' : ''"
+          ></pc-icon
+        ></a>
+      }
+    </li>
+  `,
+  imports: [Icon],
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
+         dropdown buttons that opt out via [hideCaret]. */
+      summary.pc-no-caret::after {
+        display: none;
+      }
+    `,
+  ],
+})
+export class GridActionComponent {
+  private readonly el = inject(ElementRef);
+
+  public readonly action = output<void>();
+
+  public enabled = input(true);
+  public hidden = input(false);
+  public active = input(false);
+  public spinning = input(false);
+  public icon = input.required<PcIconNameType>();
+  public tip = input.required<string>();
+  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
+  public hasDropdown = input(false);
+  public dropdownEnd = input(true);
+  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
+  public touch = input(false);
+  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
+  public hideCaret = input(false);
+  public badge = input<number | undefined>(undefined);
+
+  public emitClick() {
+    this.action.emit();
+  }
+
+  public onLiClick(_event: MouseEvent) {
+    if (this.hasDropdown()) {
+      return;
+    }
+    if (this.enabled() && !this.spinning()) {
+      this.emitClick();
+    }
+  }
+
+  public onSummaryClick(event: MouseEvent) {
+    if (!this.enabled() || this.spinning()) {
+      event.preventDefault();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  public onDocumentClick(event: MouseEvent) {
+    if (!this.hasDropdown()) return;
+    const detailsEl = this.el.nativeElement.querySelector('details');
+    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
+      detailsEl.removeAttribute('open');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
 
 ```html
@@ -51936,420 +52063,6 @@ export class PersonConnections implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
-
-```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
-import {
-  IAuthUserDetail,
-  IUserStatsSnapshot,
-  UpdateAuthUserType,
-  authRoleLabel,
-} from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
-
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-  });
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
-  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
-
-  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
-  protected readonly roleWithAccess = computed(() => {
-    const role = this.detail()?.role;
-    const descriptions: Record<string, string> = {
-      owner: 'Owner — full access',
-      admin: 'Admin — users & workspace settings',
-      user: 'Editor — day-to-day work',
-      viewer: 'Viewer — read-only',
-    };
-    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
-  });
-
-  // Narrate unsaved identity edits (§2 disclosure).
-  protected readonly dirtyFieldCount = computed(() => {
-    const f = this.form;
-    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
-  protected readonly activityRows = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-    const emails = s.emails_assigned;
-    const emailRest =
-      emails.total === 0
-        ? 'assigned to you'
-        : emails.open === emails.total
-          ? 'assigned to you — all open'
-          : emails.open === 0
-            ? 'assigned to you — all closed'
-            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
-    return [
-      {
-        key: 'emails',
-        icon: 'inbox-stack' as const,
-        link: '/inbox',
-        count: plural(emails.total, 'conversation'),
-        rest: emailRest,
-      },
-      {
-        key: 'contacts',
-        icon: 'user-group' as const,
-        link: '/people',
-        count: plural(s.contacts_added.total, 'contact'),
-        rest: 'added by you',
-      },
-      {
-        key: 'files',
-        icon: 'arrows-up-down-tray' as const,
-        link: null,
-        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
-        rest: 'all time',
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const user = this.detail();
-    if (!user) return;
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    // Identity only — notification preferences live in Settings (avatar menu), not here.
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
 ```typescript
@@ -54845,6 +54558,130 @@ export class UsersPageComponent implements OnInit {
 <pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="!font-semibold !text-primary"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
+        >{{ nav.badgeCount }}</span
+      >
+      }
+    </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
+  </a>
+</ng-template>
+
+<div
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <a
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </a>
+
+  <a
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
+    routerLink="/dashboard"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
+  >
+    <span aria-hidden="true">pC</span>
+  </a>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
+        <hr class="text-neutral w-6" />
+        } } @else { {{ item.name }} }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow()"
+        swapOnIcon="chevron-right"
+        swapOffIcon="chevron-down"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-base-content/40 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
+      [checked]="isDrawerFull()"
+      animation="flip"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
 
 ```typescript
@@ -54928,6 +54765,317 @@ export class FetchController {
     return { ids, count: filteredRows.length };
   }
 }
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.addRoute()"
+    [tip]="addLabel()"
+    [icon]="grid.plusIcon()"
+    (action)="onAdd()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canUndo()"
+    [tip]="'Undo'"
+    icon="arrow-uturn-left"
+    (action)="onUndo()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canRedo()"
+    [tip]="'Redo'"
+    icon="arrow-uturn-right"
+    (action)="onRedo()"
+  />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [touch]="true"
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
+    >
+      <!-- Grab handle — bottom-sheet affordance, touch only -->
+      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
+      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
+        Filters
+      </h3>
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onClone()">
+          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Clone</span>
+            @if (!grid.hasSingleSelection()) {
+            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
+          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Merge</span>
+            @if (grid.getCountRowSelected() !== 2) {
+            <span class="text-base-content/50 text-[11px]"
+              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+            >
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider divider-horizontal"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
@@ -55077,133 +55225,6 @@ export const SELECTION_COLUMN: ColumnDef = {};
  * primary way into the record and everything else recedes. Apply as a column `cellClass`.
  */
 export const SECONDARY_CELL_CLASS = 'text-base-content/70';
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
-
-```typescript
-import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-grid-tool-btn',
-  template: `
-    <li
-      [class.tooltip-left]="placement() === 'left'"
-      [class.tooltip-right]="placement() === 'right'"
-      [class.tooltip-top]="placement() === 'top'"
-      [class.tooltip-bottom]="placement() === 'bottom'"
-      [class.hidden]="hidden()"
-      [class.disabled]="!enabled() || spinning()"
-      [class.cursor-not-allowed]="!enabled() || spinning()"
-      [class.text-neutral-400]="!enabled() || spinning()"
-      [class.opacity-50]="spinning()"
-      class="tooltip tooltip-accent "
-      [class.text-primary]="active()"
-      [attr.data-tip]="tip()"
-      (click)="onLiClick($event)"
-    >
-      @if (hasDropdown()) {
-        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary
-            class="list-none cursor-pointer"
-            [class.pc-no-caret]="hideCaret()"
-            [class.touch-target]="touch()"
-            (click)="onSummaryClick($event)"
-          >
-            <div class="flex h-full items-center justify-center ">
-              <a role="button" class="relative pointer-events-none ">
-                <pc-icon
-                  [name]="icon()"
-                  [size]="4"
-                  class="group-hover:text-primary"
-                  [class]="spinning() ? 'animate-spin' : ''"
-                ></pc-icon>
-                @if (badge() && badge()! > 0) {
-                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
-                    {{ badge() }}
-                  </span>
-                }
-              </a>
-            </div>
-          </summary>
-          <ng-content></ng-content>
-        </details>
-      } @else {
-        <a class="flex items-center justify-center" [class.touch-target]="touch()"
-          ><pc-icon
-            [name]="icon()"
-            [size]="4"
-            class="group-hover:text-primary"
-            [class]="spinning() ? 'animate-spin' : ''"
-          ></pc-icon
-        ></a>
-      }
-    </li>
-  `,
-  imports: [Icon],
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
-         dropdown buttons that opt out via [hideCaret]. */
-      summary.pc-no-caret::after {
-        display: none;
-      }
-    `,
-  ],
-})
-export class GridActionComponent {
-  private readonly el = inject(ElementRef);
-
-  public readonly action = output<void>();
-
-  public enabled = input(true);
-  public hidden = input(false);
-  public active = input(false);
-  public spinning = input(false);
-  public icon = input.required<PcIconNameType>();
-  public tip = input.required<string>();
-  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
-  public hasDropdown = input(false);
-  public dropdownEnd = input(true);
-  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
-  public touch = input(false);
-  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
-  public hideCaret = input(false);
-  public badge = input<number | undefined>(undefined);
-
-  public emitClick() {
-    this.action.emit();
-  }
-
-  public onLiClick(_event: MouseEvent) {
-    if (this.hasDropdown()) {
-      return;
-    }
-    if (this.enabled() && !this.spinning()) {
-      this.emitClick();
-    }
-  }
-
-  public onSummaryClick(event: MouseEvent) {
-    if (!this.enabled() || this.spinning()) {
-      event.preventDefault();
-    }
-  }
-
-  @HostListener('document:click', ['$event'])
-  public onDocumentClick(event: MouseEvent) {
-    if (!this.hasDropdown()) return;
-    const detailsEl = this.el.nativeElement.querySelector('details');
-    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
-      detailsEl.removeAttribute('open');
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
@@ -57422,304 +57443,418 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 </dialog>
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.html
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <!-- Loading State -->
-  @if (error() && !detail()) {
-  <div class="alert alert-error m-4 shadow-sm rounded-xl">
-    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!detail()) {
-  <div
-    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
-  >
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="font-medium text-sm">Loading your profile…</p>
-    </div>
-  </div>
-  } @else {
+```typescript
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
+import { FormsModule } from '@angular/forms';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
 
-  <div class="space-y-6">
-    <!-- Identity header card -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-      <div class="flex items-center gap-5">
-        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
-        <div class="relative shrink-0">
-          <input
-            id="avatar-file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            class="sr-only"
-            (change)="onAvatarFileChange($event)"
-          />
-          <label
-            for="avatar-file-input"
-            class="block cursor-pointer"
-            [class.pointer-events-none]="uploadingAvatar()"
-            title="Change profile photo"
-          >
-            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
-            @if (uploadingAvatar()) {
-            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-              <span class="loading loading-spinner loading-sm text-white"></span>
-            </span>
-            } @else {
-            <span
-              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
-              aria-hidden="true"
-            >
-              <pc-icon name="pencil-square" [size]="3"></pc-icon>
-            </span>
-            }
-          </label>
-          @if (avatarUrl() && !uploadingAvatar()) {
-          <button
-            type="button"
-            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
-            (click)="removeAvatar()"
-          >
-            Remove photo
-          </button>
-          }
-        </div>
+@Component({
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  templateUrl: './profile-page.html',
+})
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
 
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
-            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
-            @if (detail()?.verified) {
-            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Verified
-            </span>
-            }
-          </div>
-          <p class="mt-0.5 truncate text-sm text-base-content/60">
-            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
-            'mediumDate' }} }
-          </p>
-        </div>
-      </div>
-    </div>
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
 
-    @if (detail()?.previous_email) {
-    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
-      <div class="flex items-center gap-3">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <div>
-          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
-          <div i18n class="text-xs text-warning-content/80">
-            A verification link was sent to your new email. You will not be able to make changes until verified.
-          </div>
-        </div>
-      </div>
-      <button
-        i18n
-        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
-        (click)="cancelEmailChange()"
-      >
-        Undo change
-      </button>
-    </div>
-    } @if (error()) {
-    <div class="alert alert-error shadow-sm rounded-xl">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
+
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
+
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+  });
+
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner — full access',
+      admin: 'Admin — users & workspace settings',
+      user: 'Editor — day-to-day work',
+      viewer: 'Viewer — read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
+
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly initials = computed(() => {
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
+    }
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
+  });
+
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you — all open'
+          : emails.open === 0
+            ? 'assigned to you — all closed'
+            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
+    return [
+      {
+        key: 'emails',
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
+      },
+      {
+        key: 'contacts',
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
+      },
+      {
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
+      },
+    ];
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
     }
 
-    <div class="grid items-start gap-6 lg:grid-cols-3">
-      <!-- Left column: profile form + notifications -->
-      <div class="space-y-6 lg:col-span-2">
-        <!-- Profile card (explicit save) -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
 
-          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
-            <div class="grid gap-4 md:grid-cols-2">
-              <pc-input
-                label="First name"
-                placeholder="Your first name"
-                [formField]="form.first_name"
-                autocomplete="given-name"
-              ></pc-input>
+    const user = this.detail();
+    if (!user) return;
 
-              <pc-input
-                label="Last name"
-                placeholder="Your last name"
-                [formField]="form.last_name"
-                autocomplete="family-name"
-              ></pc-input>
+    const payload = this.buildPayload();
 
-              <div class="md:col-span-2">
-                <pc-input
-                  label="Email address"
-                  type="email"
-                  placeholder="you@example.com"
-                  [formField]="form.email"
-                  autocomplete="email"
-                ></pc-input>
-                <p class="mt-1 text-xs text-base-content/50">
-                  Email is how you sign in — changing it sends a confirmation to the new address first.
-                </p>
-              </div>
-            </div>
-
-            <!-- Dirty state narrated, not implied (§2) -->
-            <div class="flex items-center justify-between gap-3 pt-2">
-              <p class="text-xs text-base-content/50">
-                @if (dirtyFieldCount() > 0) {
-                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
-                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
-                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
-                </span>
-                } @else {
-                <span>No unsaved changes</span>
-                }
-              </p>
-              <div class="flex items-center gap-2">
-                <button
-                  class="btn btn-outline btn-accent btn-sm"
-                  type="button"
-                  (click)="resetForm()"
-                  [disabled]="saving() || !form().dirty()"
-                >
-                  Reset
-                </button>
-                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
-                <button
-                  class="btn btn-primary btn-sm"
-                  type="submit"
-                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
-                >
-                  @if (saving()) {
-                  <span class="loading loading-spinner loading-xs mr-2"></span>
-                  } Save changes
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Right column: account facts + activity -->
-      <div class="space-y-6">
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
-          <div class="mt-2">
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Role</span>
-              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">User ID</span>
-              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Member since</span>
-              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
-              <span class="text-base-content/60">Last update</span>
-              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
-            </div>
-          </div>
-          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
-          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
-            Roles are managed in
-            <a routerLink="/users" class="link link-hover text-primary">Users</a>
-            — you can't demote yourself.
-          </p>
-        </div>
-
-        @if (stats()) {
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
-          <div class="mt-1">
-            @for (row of activityRows(); track row.key) {
-            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
-              </span>
-              <p class="leading-relaxed">
-                @if (row.link) {
-                <a
-                  [routerLink]="row.link"
-                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
-                  >{{ row.count }}</a
-                >
-                } @else {
-                <span class="font-semibold">{{ row.count }}</span>
-                } {{ row.rest }}
-              </p>
-            </div>
-            }
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-  </div>
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
   }
 
-  <!-- Cropping Modal -->
-  @if (cropImageSrc()) {
-  <dialog class="modal modal-open">
-    <div
-      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
-    >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
-
-      <!-- Drag & Crop Container -->
-      <div
-        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
-        (mousedown)="onCropDragStart($event)"
-        (mousemove)="onCropDragMove($event)"
-        (mouseup)="onCropDragEnd()"
-        (mouseleave)="onCropDragEnd()"
-      >
-        <!-- The user drags this image around inside the container -->
-        <img
-          [src]="cropImageSrc()!"
-          [style.transform]="getCropTransformStyle()"
-          [style.width.px]="displayWidth()"
-          [style.height.px]="displayHeight()"
-          class="absolute top-1/2 left-1/2 max-w-none"
-          draggable="false"
-        />
-      </div>
-
-      <!-- Zoom Slider -->
-      <div class="form-control w-full max-w-xs mt-6">
-        <div class="flex justify-between items-center px-1 mb-1">
-          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
-          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="0.05"
-          [ngModel]="cropZoom()"
-          (ngModelChange)="cropZoom.set($event)"
-          class="range range-primary range-sm"
-        />
-      </div>
-
-      <!-- Action buttons -->
-      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
-      </div>
-    </div>
-  </dialog>
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
   }
-</div>
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
+      }
+
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
@@ -59228,441 +59363,6 @@ export class TasksList implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
-    [class.animate-up]="nav.justPinned"
-    [class.tooltip]="isEffectivelyNarrow()"
-    [class.tooltip-right]="isEffectivelyNarrow()"
-    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="!font-semibold !text-primary"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.!font-semibold]="pendingRoute() === nav.route"
-    [class.!text-primary]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      } @if (nav.badgeCount) {
-      <span
-        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
-        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
-        >{{ nav.badgeCount }}</span
-      >
-      }
-    </span>
-    @if (nav.shortcut && !isEffectivelyNarrow()) {
-    <span
-      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
-      aria-hidden="true"
-    >
-      <kbd class="kbd kbd-xs">g</kbd>
-      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
-    </span>
-    }
-  </a>
-</ng-template>
-
-<div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <a
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </a>
-
-  <a
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
-    routerLink="/dashboard"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
-    (click)="this.closeMobile()"
-  >
-    <span aria-hidden="true">pC</span>
-  </a>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
-        <hr class="text-neutral w-6" />
-        } } @else { {{ item.name }} }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow()"
-        swapOnIcon="chevron-right"
-        swapOffIcon="chevron-down"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow items-start flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-base-content/40 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="arrow-right-end-on-rectangle"
-      swapOnIcon="arrow-left-start-on-rectangle"
-      [checked]="isDrawerFull()"
-      animation="flip"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.addRoute()"
-    [tip]="addLabel()"
-    [icon]="grid.plusIcon()"
-    (action)="onAdd()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canUndo()"
-    [tip]="'Undo'"
-    icon="arrow-uturn-left"
-    (action)="onUndo()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canRedo()"
-    [tip]="'Redo'"
-    icon="arrow-uturn-right"
-    (action)="onRedo()"
-  />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [touch]="true"
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
-         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
-    >
-      <!-- Grab handle — bottom-sheet affordance, touch only -->
-      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
-      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
-        Filters
-      </h3>
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onClone()">
-          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Clone</span>
-            @if (!grid.hasSingleSelection()) {
-            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
-          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Merge</span>
-            @if (grid.getCountRowSelected() !== 2) {
-            <span class="text-base-content/50 text-[11px]"
-              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
-            >
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider divider-horizontal"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
-     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3 rounded-lg">
-  <ul
-    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
-  >
-    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-      [spinning]="grid.isRefreshing()"
-      [tip]="'Refresh the grid'"
-      icon="arrow-path"
-      (action)="onRefresh()"
-    />
-    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
-    <pc-grid-tool-btn
-      icon="arrows-up-down-tray"
-      tip="Import / export"
-      [hasDropdown]="true"
-      [dropdownEnd]="true"
-      [hideCaret]="true"
-      [hidden]="grid.disableImport() && grid.disableExport()"
-    >
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
-      >
-        @if (!grid.disableImport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
-            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">Import from CSV…</span>
-              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
-            </span>
-          </a>
-        </li>
-        } @if (!grid.disableExport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
-            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </pc-grid-tool-btn>
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
-    <pc-grid-tool-btn
-      icon="funnel"
-      tip="Advanced Filters"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.anyFilterActive()"
-      [enabled]="!grid.hasActiveAdvancedFilters()"
-      (action)="onToggleFilters()"
-    />
-    <pc-grid-tool-btn
-      icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-      (action)="grid.openAdvancedFilterBuilder()"
-    />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-      <pc-dg-columns-dropdown [grid]="grid" />
-    </pc-grid-tool-btn>
-
-    <pc-grid-tool-btn
-      [icon]="grid.archiveIcon()"
-      [tip]="grid.archiveTip()"
-      [hidden]="!grid.showArchiveIcon()"
-      [active]="grid.archiveModeState()"
-      (action)="onToggleArchive()"
-    />
-  </ul>
-
-  <!-- + Add — a solid-primary button outside the group (spec §5). -->
-  @if (grid.addRoute()) {
-  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
-    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
-    <span>{{ addLabel() }}</span>
-  </button>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
 
 ```html
@@ -60859,6 +60559,306 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/profile/profile-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <!-- Loading State -->
+  @if (error() && !detail()) {
+  <div class="alert alert-error m-4 shadow-sm rounded-xl">
+    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!detail()) {
+  <div
+    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
+  >
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="font-medium text-sm">Loading your profile…</p>
+    </div>
+  </div>
+  } @else {
+
+  <div class="space-y-6">
+    <!-- Identity header card -->
+    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div class="flex items-center gap-5">
+        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
+        <div class="relative shrink-0">
+          <input
+            id="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="sr-only"
+            (change)="onAvatarFileChange($event)"
+          />
+          <label
+            for="avatar-file-input"
+            class="block cursor-pointer"
+            [class.pointer-events-none]="uploadingAvatar()"
+            title="Change profile photo"
+          >
+            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
+            @if (uploadingAvatar()) {
+            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+              <span class="loading loading-spinner loading-sm text-white"></span>
+            </span>
+            } @else {
+            <span
+              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
+              aria-hidden="true"
+            >
+              <pc-icon name="pencil-square" [size]="3"></pc-icon>
+            </span>
+            }
+          </label>
+          @if (avatarUrl() && !uploadingAvatar()) {
+          <button
+            type="button"
+            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
+            (click)="removeAvatar()"
+          >
+            Remove photo
+          </button>
+          }
+        </div>
+
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
+            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
+            @if (detail()?.verified) {
+            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Verified
+            </span>
+            }
+          </div>
+          <p class="mt-0.5 truncate text-sm text-base-content/60">
+            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
+            'mediumDate' }} }
+          </p>
+        </div>
+      </div>
+    </div>
+
+    @if (detail()?.previous_email) {
+    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <div>
+          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
+          <div i18n class="text-xs text-warning-content/80">
+            A verification link was sent to your new email. You will not be able to make changes until verified.
+          </div>
+        </div>
+      </div>
+      <button
+        i18n
+        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
+        (click)="cancelEmailChange()"
+      >
+        Undo change
+      </button>
+    </div>
+    } @if (error()) {
+    <div class="alert alert-error shadow-sm rounded-xl">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- Left column: profile form + notifications -->
+      <div class="space-y-6 lg:col-span-2">
+        <!-- Profile card (explicit save) -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
+
+          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
+            <div class="grid gap-4 md:grid-cols-2">
+              <pc-input
+                label="First name"
+                placeholder="Your first name"
+                [formField]="form.first_name"
+                autocomplete="given-name"
+              ></pc-input>
+
+              <pc-input
+                label="Last name"
+                placeholder="Your last name"
+                [formField]="form.last_name"
+                autocomplete="family-name"
+              ></pc-input>
+
+              <div class="md:col-span-2">
+                <pc-input
+                  label="Email address"
+                  type="email"
+                  placeholder="you@example.com"
+                  [formField]="form.email"
+                  autocomplete="email"
+                ></pc-input>
+                <p class="mt-1 text-xs text-base-content/50">
+                  Email is how you sign in — changing it sends a confirmation to the new address first.
+                </p>
+              </div>
+            </div>
+
+            <!-- Dirty state narrated, not implied (§2) -->
+            <div class="flex items-center justify-between gap-3 pt-2">
+              <p class="text-xs text-base-content/50">
+                @if (dirtyFieldCount() > 0) {
+                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
+                </span>
+                } @else {
+                <span>No unsaved changes</span>
+                }
+              </p>
+              <div class="flex items-center gap-2">
+                <button
+                  class="btn btn-outline btn-accent btn-sm"
+                  type="button"
+                  (click)="resetForm()"
+                  [disabled]="saving() || !form().dirty()"
+                >
+                  Reset
+                </button>
+                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
+                <button
+                  class="btn btn-primary btn-sm"
+                  type="submit"
+                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
+                >
+                  @if (saving()) {
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                  } Save changes
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Right column: account facts + activity -->
+      <div class="space-y-6">
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
+          <div class="mt-2">
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Role</span>
+              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">User ID</span>
+              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Member since</span>
+              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
+              <span class="text-base-content/60">Last update</span>
+              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
+            </div>
+          </div>
+          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
+          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
+            Roles are managed in
+            <a routerLink="/users" class="link link-hover text-primary">Users</a>
+            — you can't demote yourself.
+          </p>
+        </div>
+
+        @if (stats()) {
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
+          <div class="mt-1">
+            @for (row of activityRows(); track row.key) {
+            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
+              </span>
+              <p class="leading-relaxed">
+                @if (row.link) {
+                <a
+                  [routerLink]="row.link"
+                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
+                  >{{ row.count }}</a
+                >
+                } @else {
+                <span class="font-semibold">{{ row.count }}</span>
+                } {{ row.rest }}
+              </p>
+            </div>
+            }
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- Cropping Modal -->
+  @if (cropImageSrc()) {
+  <dialog class="modal modal-open">
+    <div
+      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
+    >
+      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
+
+      <!-- Drag & Crop Container -->
+      <div
+        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
+        (mousedown)="onCropDragStart($event)"
+        (mousemove)="onCropDragMove($event)"
+        (mouseup)="onCropDragEnd()"
+        (mouseleave)="onCropDragEnd()"
+      >
+        <!-- The user drags this image around inside the container -->
+        <img
+          [src]="cropImageSrc()!"
+          [style.transform]="getCropTransformStyle()"
+          [style.width.px]="displayWidth()"
+          [style.height.px]="displayHeight()"
+          class="absolute top-1/2 left-1/2 max-w-none"
+          draggable="false"
+        />
+      </div>
+
+      <!-- Zoom Slider -->
+      <div class="form-control w-full max-w-xs mt-6">
+        <div class="flex justify-between items-center px-1 mb-1">
+          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
+          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.05"
+          [ngModel]="cropZoom()"
+          (ngModelChange)="cropZoom.set($event)"
+          class="range range-primary range-sm"
+        />
+      </div>
+
+      <!-- Action buttons -->
+      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
+        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+      </div>
+    </div>
+  </dialog>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
 
 ```typescript
@@ -61118,234 +61118,6 @@ export class TagsAdmin implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
-   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
-  badgeCount?: number | null;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  /**
-   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
-   * A single lowercase letter, unique across all items. Rendered as a hint in the
-   * sidebar and consumed by KeyboardShortcutsService to route there.
-   */
-  shortcut?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-// Sidebar IA follows the North Star module map (spec §0). Section order and
-// membership are load-bearing; do not reshuffle without checking the spec.
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/dashboard',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-    shortcut: 'h',
-  },
-  {
-    name: `PINS`,
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `WORK`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-        shortcut: 'i',
-        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
-        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
-      },
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
-        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
-      },
-      // Hidden: the board is reachable from the Tasks page via the header swap button
-      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
-      // `g b` chord, the pin button and the help overlay working.
-      {
-        name: `Task board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-        hidden: true,
-      },
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      // Hidden: Households and Companies are grains of the People grid (spec §5)
-      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
-      // pin button and the help overlay keep working.
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-        hidden: true,
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-        hidden: true,
-      },
-    ],
-  },
-  {
-    name: `OUTREACH`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'mailbox',
-        shortcut: 'n',
-      },
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-        shortcut: 'l',
-      },
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-        shortcut: 'o',
-      },
-    ],
-  },
-  {
-    name: `FIELD`,
-    type: 'subheading',
-    children: [
-      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
-      {
-        name: 'Canvassing',
-        route: '/canvassing',
-        icon: 'route',
-        shortcut: 'v',
-      },
-      {
-        name: 'Deliveries',
-        route: '/deliveries',
-        icon: 'house-modern',
-        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
-        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
-      },
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
-      },
-    ],
-  },
-  {
-    name: `DATA`,
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
-        // CSV import wizard at /imports/new. Exports' standalone entry folded
-        // in here — see the redirect in dashboard.routes.ts.
-        name: 'Import / export',
-        route: '/imports',
-        icon: 'arrows-up-down-tray',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
-        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'chat-bubble-bottom-center-text',
-      },
-      {
-        name: `Automations`,
-        route: '/automations',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `ADMIN`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Activity',
-        route: '/activity',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Workspace',
-        route: '/workspace',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
@@ -64622,6 +64394,233 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 <pc-add-issue-dialog (saved)="onIssueSaved()" />
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
+   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
+  badgeCount?: number | null;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+// Sidebar IA follows the North Star module map (spec §0). Section order and
+// membership are load-bearing; do not reshuffle without checking the spec.
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/dashboard',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+    shortcut: 'h',
+  },
+  {
+    name: `PINS`,
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `WORK`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+        shortcut: 'i',
+        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
+        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
+      },
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
+        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
+      },
+      // Hidden: the board is reachable from the Tasks page via the header swap button
+      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
+      // `g b` chord, the pin button and the help overlay working.
+      {
+        name: `Task board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+        hidden: true,
+      },
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      // Hidden: Households and Companies are grains of the People grid (spec §5)
+      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
+      // pin button and the help overlay keep working.
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+        hidden: true,
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+        hidden: true,
+      },
+    ],
+  },
+  {
+    name: `OUTREACH`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'mailbox',
+        shortcut: 'n',
+      },
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+        shortcut: 'l',
+      },
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+        shortcut: 'o',
+      },
+    ],
+  },
+  {
+    name: `FIELD`,
+    type: 'subheading',
+    children: [
+      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
+      {
+        name: 'Canvassing',
+        route: '/canvassing',
+        icon: 'route',
+        shortcut: 'v',
+      },
+      {
+        name: 'Deliveries',
+        route: '/deliveries',
+        icon: 'house-modern',
+        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
+        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
+      },
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+    ],
+  },
+  {
+    name: `DATA`,
+    type: 'subheading',
+    children: [
+      {
+        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
+        // CSV import wizard at /imports/new. Exports' standalone entry folded
+        // in here — see the redirect in dashboard.routes.ts.
+        name: 'Import / export',
+        route: '/imports',
+        icon: 'arrows-up-down-tray',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
+        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'chat-bubble-bottom-center-text',
+      },
+      {
+        name: `Automations`,
+        route: '/automations',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+    ],
+  },
+  {
+    name: `ADMIN`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Activity',
+        route: '/activity',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Workspace',
+        route: '/workspace',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
 
 ```html
@@ -65656,6 +65655,258 @@ export class HouseholdsGrid implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
+
+```html
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Tags" [totalSentence]="loaded() ? sentence() : null">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
+      <pc-icon name="add-label" [size]="4"></pc-icon>
+      New tag
+    </button>
+  </pc-grid-header>
+
+  @if (loaded() && unusedRows().length > 0) {
+  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
+    <div class="flex items-center gap-3">
+      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
+      <span class="text-xs text-base-content/80">
+        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
+        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
+      </span>
+    </div>
+    <button
+      type="button"
+      class="btn btn-outline btn-secondary btn-sm shrink-0"
+      (click)="showUnusedOnly.set(!showUnusedOnly())"
+    >
+      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
+    </button>
+  </div>
+  }
+
+  <pc-table [loading]="loading()" [columns]="5">
+    <ng-container pcTableHead>
+      <th>Tag</th>
+      <th>People</th>
+      <th>Last applied</th>
+      <th>Created by</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (visibleRows().length === 0) {
+    <tr>
+      <td colspan="5" class="py-12 text-center">
+        <div class="flex flex-col items-center gap-2">
+          <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
+          <p class="text-xs text-base-content/60">
+            {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
+          </p>
+          @if (showUnusedOnly()) {
+          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="showUnusedOnly.set(false)">
+            Show all tags
+          </button>
+          } @else {
+          <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New tag</button>
+          }
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of visibleRows(); track row.id) {
+    <tr>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
+          @if (isUnused(row)) {
+          <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
+          }
+        </div>
+      </td>
+      <td class="tabular-nums">
+        <a
+          [routerLink]="'/people'"
+          [queryParams]="{ tag: row.name }"
+          class="link link-hover text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+        >
+          {{ row.use_count_people.toLocaleString() }}
+        </a>
+        @if (row.use_count_households > 0) {
+        <span class="text-xs text-base-content/50">
+          · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
+        </span>
+        }
+      </td>
+      <td class="text-xs text-base-content/70">{{ relativeLastApplied(row) }}</td>
+      <td class="text-xs text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
+          >
+            <li>
+              <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
+            </li>
+            <li>
+              <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
+            </li>
+            <li><hr class="my-1 border-base-300" /></li>
+            <li>
+              <a (click)="delete(row)" class="text-error">
+                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+  </pc-table>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
+  </p>
+</div>
+
+<pc-add-tag-dialog (saved)="onTagSaved()" />
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Tasks</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs with counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
+
+  @if (loaded() && !filtered().length) {
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    @switch (tab()) { @case ('all') {
+    <span class="text-base font-medium">No tasks yet</span>
+    } @case ('mine') {
+    <span class="text-base font-medium">Nothing assigned to you yet</span>
+    } @case ('unassigned') {
+    <span class="text-base font-medium">Every open task has an owner</span>
+    } @case ('done') {
+    <span class="text-base font-medium">Nothing completed yet</span>
+    } }
+    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New task
+    </button>
+  </div>
+  } @else {
+  <div class="flex flex-col gap-5">
+    @for (group of groups(); track group.key) {
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2 px-1">
+        <span
+          class="text-xs font-semibold uppercase tracking-[0.06em]"
+          [class.text-error]="group.meta.tone === 'error'"
+          [class.text-warning]="group.meta.tone === 'warning'"
+          [class.text-info]="group.meta.tone === 'info'"
+          [class.text-base-content/50]="group.meta.tone === 'neutral'"
+        >
+          {{ group.meta.label }}
+        </span>
+        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+      </div>
+
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle shrink-0"
+            [class.text-success]="t.status === 'done'"
+            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+            (click)="toggleDone(t)"
+          >
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
+          </button>
+
+          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+            <div
+              class="truncate text-xs font-medium"
+              [class.line-through]="t.status === 'done'"
+              [class.opacity-50]="t.status === 'done'"
+            >
+              {{ t.name }}
+            </div>
+            @if (reason) {
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
+            }
+          </div>
+
+          @if (t.priority) {
+          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+          } @if (badge) {
+          <span
+            class="badge badge-xs w-fit shrink-0"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
+          >
+            {{ badge.text }}
+          </span>
+          } @if (t.due_at) {
+          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
+            >{{ dateLabel(t.due_at) }}</span
+          >
+          } @if (t.assigned_to) {
+          <span
+            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            [attr.title]="assignee"
+            >{{ assigneeInitial(t.assigned_to) }}</span
+          >
+          } @else {
+          <button
+            type="button"
+            class="badge badge-outline shrink-0 border-dashed text-xs"
+            title="Take this task — one click assigns it to you"
+            (click)="takeTask(t); $event.stopPropagation()"
+          >
+            Unassigned
+          </button>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
 
 ```html
@@ -65669,7 +65920,7 @@ export class HouseholdsGrid implements OnInit {
     </button>
     } @else {
     <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
       <span>New export</span>
     </button>
     }
@@ -66007,258 +66258,6 @@ export class HouseholdsGrid implements OnInit {
     <button type="submit">close</button>
   </form>
 </dialog>
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
-
-```html
-<div class="flex flex-col gap-4 p-4 sm:p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Tags" [totalSentence]="loaded() ? sentence() : null">
-    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
-      <pc-icon name="add-label" [size]="4"></pc-icon>
-      New tag
-    </button>
-  </pc-grid-header>
-
-  @if (loaded() && unusedRows().length > 0) {
-  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
-    <div class="flex items-center gap-3">
-      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
-      <span class="text-xs text-base-content/80">
-        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
-        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
-      </span>
-    </div>
-    <button
-      type="button"
-      class="btn btn-outline btn-secondary btn-sm shrink-0"
-      (click)="showUnusedOnly.set(!showUnusedOnly())"
-    >
-      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
-    </button>
-  </div>
-  }
-
-  <pc-table [loading]="loading()" [columns]="5">
-    <ng-container pcTableHead>
-      <th>Tag</th>
-      <th>People</th>
-      <th>Last applied</th>
-      <th>Created by</th>
-      <th class="w-10"></th>
-    </ng-container>
-
-    @if (visibleRows().length === 0) {
-    <tr>
-      <td colspan="5" class="py-12 text-center">
-        <div class="flex flex-col items-center gap-2">
-          <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
-          <p class="text-xs text-base-content/60">
-            {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
-          </p>
-          @if (showUnusedOnly()) {
-          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="showUnusedOnly.set(false)">
-            Show all tags
-          </button>
-          } @else {
-          <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New tag</button>
-          }
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of visibleRows(); track row.id) {
-    <tr>
-      <td>
-        <div class="flex items-center gap-2">
-          <pc-tagitem [name]="row.name" [color]="row.color" [canDelete]="false" [compact]="true" />
-          @if (isUnused(row)) {
-          <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
-          }
-        </div>
-      </td>
-      <td class="tabular-nums">
-        <a
-          [routerLink]="'/people'"
-          [queryParams]="{ tag: row.name }"
-          class="link link-hover text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-        >
-          {{ row.use_count_people.toLocaleString() }}
-        </a>
-        @if (row.use_count_households > 0) {
-        <span class="text-xs text-base-content/50">
-          · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
-        </span>
-        }
-      </td>
-      <td class="text-xs text-base-content/70">{{ relativeLastApplied(row) }}</td>
-      <td class="text-xs text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
-      <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
-          >
-            <li>
-              <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
-            </li>
-            <li>
-              <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
-            </li>
-            <li><hr class="my-1 border-base-300" /></li>
-            <li>
-              <a (click)="delete(row)" class="text-error">
-                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
-              </a>
-            </li>
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-  </pc-table>
-
-  <p class="text-xs text-base-content/50 px-1">
-    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
-  </p>
-</div>
-
-<pc-add-tag-dialog (saved)="onTagSaved()" />
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
-
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h2 class="sr-only">Tasks</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
-      }
-    </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import
-      </button>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
-        <pc-icon name="view-kanban" [size]="4"></pc-icon>
-        Open board
-      </button>
-      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        New task
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs with counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
-
-  @if (loaded() && !filtered().length) {
-  <div class="flex flex-col items-center gap-3 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    @switch (tab()) { @case ('all') {
-    <span class="text-base font-medium">No tasks yet</span>
-    } @case ('mine') {
-    <span class="text-base font-medium">Nothing assigned to you yet</span>
-    } @case ('unassigned') {
-    <span class="text-base font-medium">Every open task has an owner</span>
-    } @case ('done') {
-    <span class="text-base font-medium">Nothing completed yet</span>
-    } }
-    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New task
-    </button>
-  </div>
-  } @else {
-  <div class="flex flex-col gap-5">
-    @for (group of groups(); track group.key) {
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2 px-1">
-        <span
-          class="text-xs font-semibold uppercase tracking-[0.06em]"
-          [class.text-error]="group.meta.tone === 'error'"
-          [class.text-warning]="group.meta.tone === 'warning'"
-          [class.text-info]="group.meta.tone === 'info'"
-          [class.text-base-content/50]="group.meta.tone === 'neutral'"
-        >
-          {{ group.meta.label }}
-        </span>
-        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
-      </div>
-
-      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
-        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle shrink-0"
-            [class.text-success]="t.status === 'done'"
-            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
-            (click)="toggleDone(t)"
-          >
-            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
-          </button>
-
-          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
-            <div
-              class="truncate text-xs font-medium"
-              [class.line-through]="t.status === 'done'"
-              [class.opacity-50]="t.status === 'done'"
-            >
-              {{ t.name }}
-            </div>
-            @if (reason) {
-            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
-            }
-          </div>
-
-          @if (t.priority) {
-          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (badge) {
-          <span
-            class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="badge.tone === 'error'"
-            [class.badge-warning]="badge.tone === 'warning'"
-          >
-            {{ badge.text }}
-          </span>
-          } @if (t.due_at) {
-          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
-            >{{ dateLabel(t.due_at) }}</span
-          >
-          } @if (t.assigned_to) {
-          <span
-            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-            [attr.title]="assignee"
-            >{{ assigneeInitial(t.assigned_to) }}</span
-          >
-          } @else {
-          <button
-            type="button"
-            class="badge badge-outline shrink-0 border-dashed text-xs"
-            title="Take this task — one click assigns it to you"
-            (click)="takeTask(t); $event.stopPropagation()"
-          >
-            Unassigned
-          </button>
-          }
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
@@ -70046,6 +70045,11 @@ body {
 body {
   font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
   font-weight: 400;
+  /* App-wide default type is text-xs (UX-GUIDELINES §8). Without this, any
+     element missing an explicit text-* class silently falls back to the
+     browser's 16px — larger sizes must always be opted into. */
+  font-size: 0.75rem;
+  line-height: calc(1 / 0.75);
 }
 
 /* Custom scrollbar styles for email components */
