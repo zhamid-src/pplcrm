@@ -5197,429 +5197,6 @@ export class EmailAssign {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
-
-```typescript
-import { Component, computed, effect, inject, input, untracked } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { environment } from '../../../../../environments/environment';
-
-@Component({
-  selector: 'pc-email-body',
-  imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
-  template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
-    <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
-    @if (attachments().length > 0) {
-      <div class="mt-4 flex flex-wrap gap-2">
-        @for (att of attachments(); track att.id) {
-          <a
-            class="badge badge-outline no-underline hover:text-primary group"
-            [href]="getAttachmentUrl(att)"
-            target="_blank"
-            rel="noopener"
-            i18n-rel
-          >
-            <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
-            <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
-            <span>{{ att.filename }} | {{ att.size_bytes | fileSize }}</span>
-          </a>
-        }
-      </div>
-    }
-  </div>`,
-})
-export class EmailBody {
-  private readonly alerts = inject(AlertService);
-  private readonly emailId = computed(() => {
-    const em = this.email();
-    return em ? String(em.id) : null;
-  });
-  private readonly store = inject(EmailsStore);
-
-  protected readonly attachments = computed(() => {
-    const id = this.emailId();
-    if (!id) return [] as any[];
-    const header = this.store.getEmailHeaderById(id)();
-    return (header?.attachments || []).filter((a: any) => !a.is_inline);
-  });
-  protected readonly bodyHtml = computed(() => {
-    const id = this.emailId();
-    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
-  });
-
-  public email = input<EmailType | null>(null);
-
-  constructor() {
-    effect(() => {
-      const id = this.emailId();
-      if (!id) return;
-
-      // Only fetch if truly not cached (undefined); empty string is a valid "loaded" result.
-      const cached = untracked(() => this.store.getEmailBodyById(id)());
-      if (typeof cached === 'undefined') {
-        this.store.loadEmailWithHeaders(id).catch((err) => {
-          console.error('Failed to load email data:', err);
-          this.alerts.showError('Failed to load email data. Please try again later.');
-        });
-      }
-    });
-  }
-
-  protected getAttachmentUrl(att: any): string {
-    // The backend returns a short-lived, email-scoped signed URL (download_url).
-    // We never build a URL with a session token in it (SECURITY-REVIEW.md 1.3).
-    return att?.download_url ? `${environment.apiUrl}${att.download_url}` : '';
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { EmailsService } from '../../services/emails-service';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
-import { EmailDetails } from '../email-details/email-details';
-import { EmailFolderList } from '../email-folder-list/email-folder-list';
-import { EmailList } from '../email-list/email-list';
-import { EmailPersonRail } from '../email-person-rail/email-person-rail';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { AuthService } from '@frontend/auth/auth-service';
-
-@Component({
-  selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
-  host: {
-    class: 'block h-full',
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-client.html',
-})
-export class EmailClient {
-  private readonly composer = viewChild<ComposeEmailComponent>('composer');
-
-  private authService = inject(AuthService);
-
-  protected readonly store = inject(EmailsStore);
-  private readonly stateStore = inject(EmailStateStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  protected composePrefill = signal<ComposeInitial | null>(null);
-  protected draftIdToLoad = signal<string | null>(null);
-  protected isComposing = signal(false);
-
-  protected mobileView = this.stateStore.mobilePanelView;
-
-  protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
-  );
-
-  protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
-  );
-
-  protected detailPanelClass = computed(() =>
-    this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
-  );
-
-  /** The person context rail (§5) shows only for a real selection on desktop. */
-  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
-
-  constructor() {
-    effect(() => {
-      const id = this.email();
-      if (id) {
-        void untracked(() => this.loadEmailData(id));
-      }
-    });
-  }
-
-  /** Router query-param input (`?email=<id>`); name matches the binding, no alias. */
-  readonly email = input<string | undefined>(undefined);
-
-  private async loadEmailData(emailId: string): Promise<void> {
-    try {
-      // 1. Fetch the email header/details from backend to know its folder_id
-      const res = await this.emailSvc.getEmailHeader(emailId);
-      if (res && res.email) {
-        const folderId = res.email.folder_id;
-
-        // 2. Ensure folders list is loaded
-        let folders = this.store.allFolders();
-        if (!folders || folders.length === 0) {
-          folders = await this.store.loadAllFoldersWithCounts();
-        }
-
-        // 3. Find the folder
-        const folder = folders.find((f) => String(f.id) === String(folderId));
-        if (folder) {
-          const emailObj: EmailType = {
-            id: String(res.email.id),
-            folder_id: String(res.email.folder_id),
-            updated_at: new Date(res.email.updated_at),
-            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-            is_favourite: !!res.email.is_favourite,
-            attachment_count: res.email.attachment_count ?? 0,
-            status: res.email.status || 'open',
-            from_email: res.email.from_email ?? undefined,
-            to_email: res.email.to_email ?? undefined,
-            subject: res.email.subject ?? undefined,
-            preview: res.email.preview ?? undefined,
-            assigned_to: res.email.assigned_to ?? undefined,
-            has_attachment: !!res.email.has_attachment,
-            is_read: !!(res.email as any).is_read,
-          };
-
-          // Add to store's normalized map so it is available immediately
-          this.stateStore.replaceEmail(emailObj.id, emailObj);
-
-          // Select the folder and email
-          this.store.selectFolder(folder);
-          this.store.selectEmail(emailObj);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to pre-select email from notification link', err);
-    }
-  }
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly isBodyExpanded = this.store.isBodyExpanded;
-
-  public readonly selectedEmail = this.store.currentSelectedEmail;
-
-  public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  public closeCompose() {
-    this.isComposing.set(false);
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(null);
-  }
-
-  public newEmail() {
-    this.openCompose();
-  }
-
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
-  public async onEmail(email: EmailType | null): Promise<void> {
-    const folderId = this.store.currentSelectedFolderId();
-    if (this.isComposing()) {
-      try {
-        const c = this.composer();
-        if (c?.form.dirty) {
-          await c.saveDraft();
-        }
-      } catch (e) {
-        console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
-        // Abort the function here.
-        // Do not close the composer or navigate to the new email.
-        return;
-      }
-      this.closeCompose();
-    }
-
-    // Always update the store selection so the list can reflect it
-    this.store.selectEmail(email);
-    this.mobileView.set('detail');
-
-    // In the drafts folder, also open the composer for the selected draft
-    if (folderId === ALL_FOLDERS.DRAFTS && email) {
-      this.draftIdToLoad.set(String(email.id));
-      this.isComposing.set(true);
-    }
-  }
-
-  public onFolder(folder: EmailFolderType): void {
-    this.store.selectFolder(folder);
-    this.mobileView.set('list');
-  }
-
-  public mobileGoBack(): void {
-    if (this.isComposing()) {
-      this.closeCompose();
-    }
-    if (this.mobileView() === 'detail') {
-      this.mobileView.set('list');
-    } else if (this.mobileView() === 'list') {
-      this.mobileView.set('folders');
-    }
-  }
-
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
-  }
-
-  public onReply(email: EmailType) {
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to: email.from_email || '', subject });
-  }
-
-  public async onReplyAll(email: EmailType) {
-    const header = this.store.getEmailHeaderById(email.id)();
-    const recipients = new Set<string>();
-
-    const currentUser = await this.authService.getCurrentUser();
-    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
-
-    if (email.from_email) recipients.add(email.from_email);
-
-    header?.email?.to_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-    header?.email?.cc_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-
-    const to = Array.from(recipients)
-      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
-      .join(', ');
-
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to, subject });
-  }
-
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
-    this.mobileView.set('detail');
-  }
-
-  public toggleExpanded(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    // Existing behaviour: Escape collapses an expanded body first.
-    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
-
-    // Stay out of the way while composing, typing into a field, or when a
-    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
-    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
-      return;
-    }
-
-    // Shortcuts that work without a selection.
-    switch (ev.key) {
-      case 'c':
-        ev.preventDefault();
-        this.openCompose();
-        return;
-      case 'j':
-        ev.preventDefault();
-        this.selectRelative(1);
-        return;
-      case 'k':
-        ev.preventDefault();
-        this.selectRelative(-1);
-        return;
-    }
-
-    // Everything below acts on the currently selected email.
-    const email = this.selectedEmail();
-    if (!email) return;
-
-    switch (ev.key) {
-      case 'r':
-        ev.preventDefault();
-        this.onReply(email);
-        return;
-      case 'a':
-        ev.preventDefault();
-        void this.onReplyAll(email);
-        return;
-      case 'f':
-        ev.preventDefault();
-        this.onForward(email);
-        return;
-      case 'e':
-        ev.preventDefault();
-        void this.store.updateEmailStatus(email.id, 'closed');
-        return;
-      case 's':
-        ev.preventDefault();
-        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-        return;
-      case 'I': // Shift+I — mark as read
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, true);
-        return;
-      case 'U': // Shift+U — mark as unread
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, false);
-        return;
-      case '#':
-        ev.preventDefault();
-        void this.store.deleteEmail(email.id);
-        return;
-      case 'Enter':
-      case 'o':
-        ev.preventDefault();
-        this.toggleExpanded();
-        return;
-      case 'u':
-        ev.preventDefault();
-        this.store.selectEmail(null);
-        this.mobileView.set('list');
-        return;
-    }
-  }
-
-  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
-  private selectRelative(delta: number): void {
-    const list = this.emails();
-    if (!list.length) return;
-    const current = this.selectedEmail();
-    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
-    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
-    const next = list[nextIdx];
-    if (!next) return;
-    void this.onEmail(next);
-  }
-
-  /** True when the event originates from a field the user is typing into. */
-  private isTypingTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    const tag = target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    if (target.isContentEditable) return true;
-    return target.getAttribute('role') === 'textbox';
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
 
 ```html
@@ -6351,119 +5928,6 @@ export type DraftPayload = {
 };
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
-
-```html
-<section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
-  @if (email()) {
-  <pc-email-header
-    [email]="email()!"
-    (reply)="emitReply()"
-    (replyAll)="emitReplyAll()"
-    (forward)="emitForward()"
-  ></pc-email-header>
-  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
-    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
-    @if (slaPill(); as sla) {
-    <div>
-      <span
-        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
-        [class.bg-base-200]="sla.tone === 'neutral'"
-        [class.text-base-content]="sla.tone === 'neutral'"
-        [class.bg-warning/15]="sla.tone === 'warning'"
-        [class.text-warning]="sla.tone === 'warning'"
-        [class.bg-error/15]="sla.tone === 'error'"
-        [class.text-error]="sla.tone === 'error'"
-      >
-        <pc-icon name="clock" [size]="4"></pc-icon>
-        {{ sla.text }}
-      </span>
-    </div>
-    }
-
-    <!-- Body owns the space (§5) -->
-    <pc-email-body
-      class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
-      [email]="email()!"
-    >
-    </pc-email-body>
-
-    @if (!store.isBodyExpanded()) {
-    <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
-    <div class="flex items-center gap-4 border-b border-base-200 text-[12.5px]">
-      <button
-        type="button"
-        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
-        [class.!border-primary]="openPanel() === 'comments'"
-        [class.!text-primary]="openPanel() === 'comments'"
-        [class.font-semibold]="openPanel() === 'comments'"
-        (click)="toggleCommentsTab()"
-      >
-        <pc-icon name="chat-bubble-bottom-center-text" [size]="4"></pc-icon>
-        <ng-container i18n="EmailDetails|Comments tab@@emailDetails.tab.comments">Comments</ng-container>
-        @if (commentCount() > 0) {
-        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
-          >{{ commentCount() }}</span
-        >
-        }
-      </button>
-      <button
-        type="button"
-        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
-        [class.!border-primary]="openPanel() === 'activity'"
-        [class.!text-primary]="openPanel() === 'activity'"
-        [class.font-semibold]="openPanel() === 'activity'"
-        (click)="toggleActivityTab()"
-      >
-        <pc-icon name="clock" [size]="4"></pc-icon>
-        <ng-container i18n="EmailDetails|Activity tab@@emailDetails.tab.activity">Activity</ng-container>
-        @if (activityCount() > 0) {
-        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
-          >{{ activityCount() }}</span
-        >
-        }
-      </button>
-      <span class="flex-1"></span>
-      @if (openPanel()) {
-      <button
-        type="button"
-        class="text-xs text-base-content/50 underline underline-offset-2 hover:text-base-content"
-        (click)="closePanel()"
-        i18n="EmailDetails|Hide open panel@@emailDetails.tab.hide"
-      >
-        Hide
-      </button>
-      }
-    </div>
-
-    @if (openPanel() === 'comments') {
-    <div
-      class="animate-drop max-h-60 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
-    >
-      <pc-email-comments [email]="email()"></pc-email-comments>
-    </div>
-    } @else if (openPanel() === 'activity') {
-    <div
-      class="animate-drop max-h-52 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
-    >
-      <pc-email-activities [email]="email()" [headerless]="true"></pc-email-activities>
-    </div>
-    } }
-  </main>
-
-  } @else if (isLoading()) {
-  <div class="min-h-screen flex items-center justify-center">
-    <span class="loading loading-bars"></span>
-  </div>
-  } @else if (showNoEmailMsg()){
-  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
-    <img class="max-w-64" src="assets/waiting.svg" />
-    <span>No emails here!</span>
-  </div>
-  }
-</section>
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.ts
 
 ```typescript
@@ -6573,1016 +6037,6 @@ export class EmailDetails {
     if (e) this.replyAll.emit(e);
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
-
-```typescript
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-folder-list',
-  imports: [Swap, Icon, TimeAgoPipe],
-  templateUrl: 'email-folder-list.html',
-})
-export class EmailFolderList implements OnInit {
-  protected readonly store = inject(EmailsStore);
-
-  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
-
-  public readonly folderSelected = output<EmailFolderType>();
-
-  public readonly folders = this.store.allFolders;
-
-  public readonly foldersCollapsed = signal(false);
-
-  public readonly realFoldersCollapsed = signal(true);
-
-  public readonly newEmail = output<void>();
-
-  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
-  protected readonly asideClass = computed(
-    () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full md:w-12 ' +
-      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
-  );
-
-  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
-  protected readonly labelClass = computed(
-    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly countClass = computed(
-    () =>
-      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly sectionHeaderClass = computed(
-    () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' lg:flex'),
-  );
-
-  protected readonly buttonLabelClass = computed(
-    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
-  );
-
-  protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
-  );
-
-  public emitNewEmail() {
-    this.newEmail.emit();
-  }
-
-  public getEmailCount(folder: EmailFolderType): number {
-    return (folder as any).email_count ?? 0;
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    try {
-      await this.store.loadAllFoldersWithCounts();
-    } catch (e) {
-      console.error('Failed to load folders with counts', e);
-    }
-  }
-
-  public selectFolder(folder: EmailFolderType): void {
-    this.folderSelected.emit(folder);
-  }
-
-  public toggleFolders(): void {
-    this.foldersCollapsed.update((v) => !v);
-  }
-
-  public toggleRealFolders(): void {
-    this.realFoldersCollapsed.update((v) => !v);
-  }
-
-  protected getIcon(folder: EmailFolderType): PcIconNameType {
-    return folder.icon as PcIconNameType;
-  }
-
-  protected isSelected(folder: EmailFolderType): boolean {
-    return String(folder.id) === String(this.store.currentSelectedFolderId());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
-
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
-
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
-        <div class="dropdown dropdown-end inline-block align-middle">
-          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
-            <pc-icon name="reply" [size]="4"></pc-icon>
-            <pc-icon name="chevron-down" [size]="3"></pc-icon>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-          >
-            <li>
-              <a
-                (click)="handleReply()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleReplyAll()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleForward()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        @if (!isFolderTrash()) {
-
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore"
-          aria-label="Restore"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
-
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
-
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
-
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
-
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
-
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
-
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
-
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
-
-```typescript
-import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailAssign } from '../email-assign/email-assign';
-import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-header',
-  // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
-  host: {
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-header.html',
-})
-export class EmailHeader {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private personsSvc = inject(PersonsService);
-
-  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
-
-  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
-  protected isClosed = signal(false);
-  protected isFavourite = signal(false);
-
-  protected personTags = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.tags?.map((t: any) => t.name) ?? [];
-  });
-
-  protected personIssues = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.issues?.map((t: any) => t.name) ?? [];
-  });
-
-  protected async onTagAdded(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
-    } catch (e) {
-      console.error('Failed to attach tag:', e);
-      this.alertSvc.showError('Failed to add tag');
-    }
-  }
-
-  protected async onTagRemoved(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach tag:', e);
-      this.alertSvc.showError('Failed to remove tag');
-    }
-  }
-
-  protected async onIssueAdded(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
-    } catch (e) {
-      console.error('Failed to attach issue:', e);
-      this.alertSvc.showError('Failed to add issue');
-    }
-  }
-
-  protected async onIssueRemoved(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach issue:', e);
-      this.alertSvc.showError('Failed to remove issue');
-    }
-  }
-
-  public readonly forward = output<void>();
-  public readonly reply = output<void>();
-  public readonly replyAll = output<void>();
-
-  public email = input.required<EmailType>();
-
-  public isExpanded = this.store.isBodyExpanded;
-
-  constructor() {
-    // isFavourite and isClosed are settable, so can't use computed
-    effect(() => {
-      const email = this.email();
-
-      this.isFavourite.set(email.is_favourite);
-      this.isClosed.set(email.status === 'closed');
-    });
-  }
-
-  public getFavouriteIcon() {
-    return this.isFavourite() ? 'star-filled' : 'star';
-  }
-
-  protected async deleteEmail() {
-    try {
-      await this.store.deleteEmail(this.email().id);
-    } catch (e) {
-      console.error('Failed to delete email', e);
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected getAllRecipients(): any[] {
-    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
-  }
-
-  protected getBccRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.bcc_list || [];
-  }
-
-  protected getCcRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.cc_list || [];
-  }
-
-  protected getDateSent(): Date | null {
-    const header = this.headerData();
-    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
-  }
-
-  protected getHeaderInfo() {
-    const header = this.headerData();
-    const email = this.email();
-
-    return {
-      subject: email.subject,
-      date: this.getDateSent() || email.updated_at,
-      from: email.from_email,
-      to: email.to_email,
-      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
-      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
-      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
-      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
-      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
-      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
-    };
-  }
-
-  protected getToRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.to_list || [];
-  }
-
-  protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && this.isExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.stopPropagation();
-      ev.preventDefault();
-    }
-  }
-
-  protected handleForward() {
-    this.forward.emit();
-  }
-
-  protected handleMarkAsUnread() {
-    void this.store.toggleEmailReadStatus(this.email().id, false);
-    this.store.selectEmail(null);
-  }
-
-  protected handleReply() {
-    this.reply.emit();
-  }
-
-  protected handleReplyAll() {
-    this.replyAll.emit();
-  }
-
-  protected isFolderTrash(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.SPAM;
-  }
-
-  protected async markAsSpam() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to mark email as spam', e);
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-
-  protected async moveToInbox() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to move email to Inbox', e);
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected markAsDoneText() {
-    return this.isClosed() ? 'Reopen' : 'Mark as done';
-  }
-
-  protected restoreFromTrash() {
-    void this.store.restoreFromTrash(this.email().id);
-  }
-
-  protected async toggleClosed() {
-    const email = this.email();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-
-    // Optimistically update UI
-    this.isClosed.set(newStatus === 'closed');
-
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_error) {
-      // Revert UI state on error
-      this.isClosed.set(currentStatus === 'closed');
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected handleCreateTask(): void {
-    void this.createTaskDialog()?.open();
-  }
-
-  protected toggleExpand(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected async toggleFavourite() {
-    const e = this.email();
-    this.isFavourite.update((value) => !value);
-    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
-
-```html
-<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
-  <!-- Toolbar -->
-  <div
-    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
-  >
-    <span class="text-xs font-semibold text-neutral-content">Sort</span>
-    <div class="dropdown dropdown-end">
-      <label
-        tabindex="0"
-        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
-      >
-        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
-        <pc-icon name="chevron-down" [size]="3"></pc-icon>
-      </label>
-      <ul
-        tabindex="0"
-        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
-      >
-        <li>
-          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
-        </li>
-        <li>
-          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
-    @for (email of sortedEmails(); track email.id) {
-    <li
-      (click)="selectEmail(email)"
-      (contextmenu)="onContextMenu($event, email)"
-      [class.bg-primary/10]="isSelected(email.id)"
-      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
-    >
-      <div
-        class="truncate text-xs flex gap-1 items-center"
-        [class.text-base-content/90]="!email.is_read"
-        [class.text-base-content/60]="email.is_read"
-      >
-        @if (!email.is_read) {
-        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
-        } @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
-          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
-          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
-        </span>
-        } @else {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
-        }
-        <span class="flex-none"
-          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
-        >
-      </div>
-      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
-        @if (email?.subject) {
-        <span class="truncate flex-1">{{ email.subject }}</span>
-        } @else {
-        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
-        } @if (email.has_attachment) {
-        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
-        }
-      </div>
-      <div class="mt-1 flex items-center gap-2">
-        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
-        @if (rowStatus(email); as st) {
-        <span
-          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
-          [class.bg-warning/15]="st.tone === 'warning'"
-          [class.text-warning]="st.tone === 'warning'"
-          [class.bg-info/15]="st.tone === 'info'"
-          [class.text-info]="st.tone === 'info'"
-          [class.bg-base-300]="st.tone === 'neutral'"
-          [class.text-base-content/70]="st.tone === 'neutral'"
-          >{{ st.label }}</span
-        >
-        }
-      </div>
-    </li>
-    } @empty {
-    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
-      <pc-icon name="inbox" [size]="8"></pc-icon>
-      <span>No emails</span>
-    </li>
-    } @if (isLoadingMore()) {
-    <li class="flex justify-center p-3 border-b border-base-200">
-      <span class="loading loading-spinner loading-sm text-primary"></span>
-    </li>
-    }
-  </ul>
-
-  @if (showContextMenu() && contextMenuEmail()) {
-  <div
-    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
-    [style.left.px]="contextMenuPosition().x"
-    [style.top.px]="contextMenuPosition().y"
-  >
-    @for (section of menuSections; track $index; let last = $last) {
-    <div class="px-1.5 py-0.5">
-      @for (item of section.items; track item.label) {
-      <button
-        (click)="item.action()"
-        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
-      >
-        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
-        <span>{{ item.label }}</span>
-      </button>
-      }
-    </div>
-
-    @if (!last) {
-    <div class="border-t border-base-300 my-1"></div>
-    } }
-  </div>
-  }
-</section>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
@@ -7931,217 +6385,6 @@ export class EmailList {
     } catch (_e) {
       this.alertSvc.showError('Failed to mark email as spam');
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
-
-```html
-@if (collapsed()) {
-<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
-<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 border-l border-base-300 bg-base-200 py-3">
-  <button
-    type="button"
-    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
-    [attr.data-tip]="'Expand person context — ' + displayName()"
-    aria-label="Expand person context"
-    (click)="toggle()"
-  >
-    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-  </button>
-  <div
-    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
-    [attr.data-tip]="displayName()"
-  >
-    {{ initial() }}
-  </div>
-</aside>
-} @else {
-<!-- Expanded: 236px context card -->
-<aside
-  class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-base-300 bg-base-200 p-4"
->
-  <div class="flex items-center justify-between">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
-    <button
-      type="button"
-      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
-      data-tip="Collapse person context"
-      aria-label="Collapse person context"
-      (click)="toggle()"
-    >
-      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-    </button>
-  </div>
-
-  <!-- Identity -->
-  <div class="flex flex-col items-start gap-2">
-    <div
-      class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary select-none"
-    >
-      {{ initial() }}
-    </div>
-    @if (person(); as p) {
-    <a
-      [routerLink]="['/people', p.id]"
-      class="text-[15px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
-    >
-      {{ displayName() }}
-    </a>
-    } @else {
-    <span class="text-[15px] font-semibold text-base-content">{{ displayName() }}</span>
-    } @if (subline()) {
-    <span class="text-xs text-base-content/60">{{ subline() }}</span>
-    }
-  </div>
-
-  @if (person(); as p) {
-  <!-- Contact card -->
-  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
-    @if (p.email) {
-    <div class="flex items-center gap-2 min-w-0">
-      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
-      <span class="truncate">{{ p.email }}</span>
-    </div>
-    } @if (email()?.date_sent) {
-    <div class="flex items-center gap-2 text-base-content/60">
-      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
-      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
-    </div>
-    }
-  </div>
-
-  <!-- Tags -->
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
-    @if (tags().length) {
-    <div class="flex flex-wrap gap-1.5">
-      @for (t of tags(); track t.name) {
-      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-      }
-    </div>
-    } @else {
-    <span class="text-xs text-base-content/40">None yet</span>
-    }
-  </div>
-
-  <!-- Issues of interest -->
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
-    @if (issues().length) {
-    <div class="flex flex-wrap gap-1.5">
-      @for (t of issues(); track t.name) {
-      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-      }
-    </div>
-    } @else {
-    <span class="text-xs text-base-content/40">None yet</span>
-    }
-  </div>
-
-  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
-    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-    Open record
-  </a>
-  } @else {
-  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
-  <div
-    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
-  >
-    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
-    <span>This sender isn't matched to a person record yet.</span>
-  </div>
-  }
-</aside>
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-interface RailTag {
-  color?: string | null;
-  name: string;
-}
-
-interface RailPerson {
-  company_name?: string | null;
-  email?: string | null;
-  first_name?: string | null;
-  id: string;
-  issues?: RailTag[];
-  last_name?: string | null;
-  tags?: RailTag[];
-}
-
-/**
- * Person context rail (§5) — a 236px card giving the inbox a "who am I talking to"
- * answer. Reuses the person already resolved for the email header; adds no backend.
- * Collapses to a 48px strip that keeps the avatar initials (identity, never hidden).
- */
-@Component({
-  selector: 'pc-email-person-rail',
-  imports: [RouterLink, Icon, TagItem, TimeAgoPipe],
-  templateUrl: 'email-person-rail.html',
-})
-export class EmailPersonRail {
-  protected readonly stateStore = inject(EmailStateStore);
-  private readonly store = inject(EmailsStore);
-
-  public readonly email = input<EmailType | null>(null);
-
-  protected readonly collapsed = this.stateStore.personRailCollapsed;
-
-  protected readonly person = computed<RailPerson | null>(() => {
-    const e = this.email();
-    if (!e) return null;
-    const header = this.store.getEmailHeaderById(e.id)();
-    const p = (header as { person?: RailPerson } | null | undefined)?.person;
-    return p ?? null;
-  });
-
-  /** Falls back to the raw sender when no person record is matched. */
-  protected readonly displayName = computed<string>(() => {
-    const p = this.person();
-    if (p) {
-      const full = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim();
-      if (full) return full;
-      if (p.email) return p.email;
-    }
-    const e = this.email();
-    return e?.from_email ?? 'Unknown sender';
-  });
-
-  protected readonly initial = computed<string>(() => (this.displayName()[0] ?? '?').toUpperCase());
-
-  /** Honest role subline: only what the tags/fields actually say (§0 — no faked data). */
-  protected readonly subline = computed<string | null>(() => {
-    const p = this.person();
-    if (!p) return null;
-    const parts: string[] = [];
-    const tagNames = (p.tags ?? []).map((t) => t.name.toLowerCase());
-    if (tagNames.includes('donor')) parts.push('Donor');
-    else if (tagNames.includes('volunteer')) parts.push('Volunteer');
-    if (p.company_name) parts.push(p.company_name);
-    return parts.length ? parts.join(' · ') : null;
-  });
-
-  protected readonly tags = computed<RailTag[]>(() => this.person()?.tags ?? []);
-  protected readonly issues = computed<RailTag[]>(() => this.person()?.issues ?? []);
-
-  protected toggle(): void {
-    this.stateStore.togglePersonRail();
   }
 }
 ```
@@ -8917,139 +7160,6 @@ export class ExportsService extends TRPCService<unknown> {
 
   public delete(id: string): Promise<unknown> {
     return this.api.exports.delete.mutate({ id });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/files/services/files.service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
-
-@Service()
-export class FilesService extends AbstractAPIService<'files', any> {
-  protected override readonly endpointName = 'files';
-
-  public add(_row: any) {
-    return Promise.resolve({});
-  }
-
-  public addMany(rows: any[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(true);
-  }
-
-  public async getAll(options?: getAllOptionsType & { entityType?: string; entityId?: string }) {
-    return this.api.files.getAll.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(_id: string) {
-    return Promise.resolve(undefined);
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public async update(_id: string, _data: any) {
-    return Promise.resolve({});
-  }
-
-  public async getUploadUrl(
-    filename: string,
-    mimeType?: string | null,
-  ): Promise<{ uploadUrl: string; storageKey: string }> {
-    return (await this.api.files.getUploadUrl.query({ filename, mimeType })) as {
-      uploadUrl: string;
-      storageKey: string;
-    };
-  }
-
-  public async registerFile(data: {
-    filename: string;
-    mimeType?: string | null;
-    sizeBytes?: number | null;
-    storageKey: string;
-    sha256Hex?: string | null;
-    entityType?: string | null;
-    entityId?: string | null;
-  }): Promise<any> {
-    return await this.api.files.registerFile.mutate(data);
-  }
-
-  public async getUsageSummary(): Promise<{
-    usedBytes: number;
-    quotaBytes: number;
-    planLabel: string;
-    largestFiles: {
-      id: string;
-      filename: string;
-      size_bytes: number | null;
-      entity_type: string | null;
-      entity_id: string | null;
-      attachedToLabel: string | null;
-    }[];
-  }> {
-    return (await this.api.files.getUsageSummary.query()) as any;
-  }
-
-  private async computeSha256(file: File): Promise<string> {
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  public async uploadFileDirectly(file: File, entity?: { entityType: string; entityId: string }): Promise<any> {
-    const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
-
-    const sha256Hex = await this.computeSha256(file);
-
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'x-ms-blob-type': 'BlockBlob',
-        'Content-Type': file.type || 'application/octet-stream',
-      },
-      body: file,
-    });
-
-    if (!res.ok) {
-      throw new Error(`Upload to storage failed with status ${res.status}`);
-    }
-
-    return await this.registerFile({
-      filename: file.name,
-      mimeType: file.type || null,
-      sizeBytes: file.size,
-      storageKey,
-      sha256Hex,
-      entityType: entity?.entityType || null,
-      entityId: entity?.entityId || null,
-    });
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.resolve({ csv: '', columns: [], fileName: '', rowCount: 0 });
   }
 }
 ```
@@ -9982,91 +8092,304 @@ export class PublicFormComponent implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
+## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
 
 ```typescript
 import type { HelpArticle } from '../help-types';
 
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+export const DATA_ARTICLES: HelpArticle[] = [
   {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks — list and board',
+    id: 'import',
+    category: 'data',
+    title: 'Import people from CSV',
     summary:
-      'Track the work — assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
-    related: ['dashboard', 'teams', 'automations'],
+      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
+    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
     blocks: [
       {
         kind: 'p',
-        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
       },
-      { kind: 'h2', id: 'views', text: 'List or board — one dataset, two views' },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
         kind: 'list',
         items: [
-          '[Tasks](/tasks) — the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) — one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
-          'Every header carries a swap button — Open board / Open list — so you never have to hunt for the sidebar to switch.',
+          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
+          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
         ],
       },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'A task with no assignee shows a dashed Unassigned pill — one click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).",
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one — "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Storage & attachments',
-    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
-    related: ['grid-basics', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
-      },
-      { kind: 'h2', id: 'attach', text: 'Attach a file' },
-      {
-        kind: 'p',
-        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
-      },
-      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Workspace settings → Storage](/workspace/storage)',
-            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
           },
           {
-            title: 'Delete a large file',
+            title: 'Map columns',
             detail:
-              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
           },
+          {
+            title: 'Review',
+            detail:
+              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Quota affects newsletter sending',
-        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
+          },
+          {
+            title: 'Merge into one — or Not duplicates',
+            detail:
+              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/segmentation.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const SEGMENTATION_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tags-issues',
+    category: 'segmentation',
+    title: 'Tags and issues',
+    summary:
+      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
+    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
+    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tags are free-form labels — **volunteer**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful.',
+      },
+      { kind: 'h2', id: 'apply', text: 'Apply tags' },
+      {
+        kind: 'list',
+        items: [
+          'On a profile — add or remove tags directly on the record.',
+          'In bulk — select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
+          'On import — tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
+        ],
+      },
+      { kind: 'h2', id: 'use', text: 'Put them to work' },
+      {
+        kind: 'p',
+        text: 'Every grid has a tag filter and an issue filter — check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
+      },
+      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
+      {
+        kind: 'p',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary — how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Rename** — updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
+          '**Merge into another tag/issue** ("Move everyone to…") — folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
+          '**Delete** — the confirmation names how many applications would be affected, so you never delete a label blind.',
+          'The PEOPLE / PEOPLE INTERESTED count on each row is a door — click it to open the People grid pre-filtered to that exact tag or issue.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about — not to describe who someone is, which is what tags are for.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'A tag taxonomy that stays useful',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    category: 'segmentation',
+    title: 'Smart and static lists',
+    summary:
+      'Lists are reusable audiences — smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+    keywords: [
+      'list',
+      'audience',
+      'segment',
+      'static list',
+      'smart list',
+      'dynamic list',
+      'snapshot',
+      'membership',
+      'rule',
+      'query',
+    ],
+    related: ['tags-issues', 'filters', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A list is a saved group of people or households you can reuse anywhere — as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+      },
+      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
+      {
+        kind: 'p',
+        text: 'A smart list is defined by rules in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+      },
+      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
+      {
+        kind: 'p',
+        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot — today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Lists](/lists) and click +',
+            detail: 'Name the list something your teammates will recognize in a dropdown.',
+          },
+          {
+            title: 'Pick Smart or Static',
+            detail:
+              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
+          },
+          {
+            title: 'Choose People or Households',
+            detail: 'A list targets one or the other — pick what you are grouping.',
+          },
+          {
+            title: 'Build the rule',
+            detail:
+              'Compose conditions in the query builder — match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
+          },
+          {
+            title: 'Create it',
+            detail:
+              'The button carries the scale it will act on — “Create smart list — 1,284 now” or “Create static list — snapshot 1,284”.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
+      {
+        kind: 'list',
+        items: [
+          '**List** — the name is a door: click it to open People or Households with that list applied as a removable filter chip.',
+          '**Type** — a Smart or Static chip.',
+          '**Of** — People or Households.',
+          '**Definition** — the rule written as a plain sentence.',
+          '**Members** — how many records are in the list right now.',
+          '**Last used in** — the most recent newsletter, form, or turf that used this list.',
+          '**Updated** — when the list last changed.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Deleting a list names what it will affect',
+        text: 'If a list is in use, the delete confirmation names its consumers — the newsletters, forms, and turfs that reference it — so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Lists are how good newsletters start',
+        text: 'A newsletter audience built on a smart list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
       },
     ],
   },
@@ -14011,375 +12334,6 @@ type CreationMode = 'options' | 'regular' | 'automated';
 type StepIndex = 1 | 2 | 3 | 4;
 
 type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-
-import { MarketingEmailTopLinkType, MarketingEmailType } from '../../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { NewslettersService } from '../services/newsletters-service';
-import { FilesService } from '../../files/services/files.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-interface NewsletterAttachment {
-  id: string;
-  filename: string;
-  size_bytes: number | null;
-}
-
-interface DetailMetric {
-  help?: string;
-  label: string;
-  value: string;
-}
-
-@Component({
-  selector: 'pc-newsletter-detail',
-  imports: [Icon],
-  templateUrl: './newsletter-detail.html',
-})
-export class NewsletterDetailComponent {
-  readonly id = input.required<string>();
-
-  private readonly service = inject(NewslettersService);
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly email = signal<MarketingEmailType | null>(null);
-  protected readonly attachments = signal<NewsletterAttachment[]>([]);
-  protected readonly isUploadingAttachment = signal(false);
-  /** Attachments can only be managed before a newsletter has gone out. */
-  protected readonly canManageAttachments = computed(() => {
-    const status = this.email()?.status;
-    return status === 'draft' || status === 'scheduled';
-  });
-  protected readonly stats = signal<{
-    activities: Array<{
-      email: string;
-      event_type: string;
-      timestamp: string | Date;
-      url: string | null;
-      ip: string | null;
-      user_agent: string | null;
-    }>;
-    timeline: Array<{
-      time: string;
-      opens: number;
-      clicks: number;
-    }>;
-  } | null>(null);
-  protected readonly coreMetrics = computed<DetailMetric[]>(() => {
-    const data = this.email();
-    if (!data) return [];
-    return [
-      {
-        label: 'Send date',
-        value: this.formatDate(data.send_date) ?? 'Not scheduled',
-        help: data.last_engagement_at ? `Last engagement ${this.formatDate(data.last_engagement_at)}` : undefined,
-      },
-      {
-        label: 'Created at',
-        value: this.formatDate(data.created_at) ?? '—',
-        help: `Created by user ${data.createdby_id}`,
-      },
-      {
-        label: 'Updated at',
-        value: this.formatDate(data.updated_at) ?? '—',
-        help: `Updated by user ${data.updatedby_id}`,
-      },
-    ];
-  });
-  protected readonly engagementMetrics = computed<DetailMetric[]>(() => {
-    const data = this.email();
-    if (!data) return [];
-    return [
-      {
-        label: 'Open rate',
-        value: this.formatPercent(data.open_rate),
-        help: `${this.formatNumber(data.unique_opens)} unique opens`,
-      },
-      {
-        label: 'Click rate',
-        value: this.formatPercent(data.click_rate),
-        help: `${this.formatNumber(data.unique_clicks)} unique clicks`,
-      },
-      {
-        label: 'Replies',
-        value: this.formatNumber(data.reply_count),
-      },
-      {
-        label: 'Unsubscribes',
-        value: this.formatNumber(data.unsubscribe_count),
-      },
-      {
-        label: 'Spam complaints',
-        value: this.formatNumber(data.spam_complaint_count),
-      },
-    ];
-  });
-  protected readonly error = signal<string | null>(null);
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.load(currentId));
-    });
-  }
-  protected readonly topLinks = computed<MarketingEmailTopLinkType[]>(() => {
-    const data = this.email();
-    if (!data?.top_links) return [];
-    return Array.isArray(data.top_links) ? data.top_links : [];
-  });
-
-  protected readonly funnelMetrics = computed(() => {
-    const data = this.email();
-    if (!data) return null;
-    const sent = Number(data.total_recipients ?? 0);
-    const delivered = Number(data.delivered_count ?? 0);
-    const opened = Number(data.unique_opens ?? 0);
-    const clicked = Number(data.unique_clicks ?? 0);
-
-    const delPct = sent > 0 ? (delivered / sent) * 100 : 0;
-    const opPct = delivered > 0 ? (opened / delivered) * 100 : 0;
-    const clPct = opened > 0 ? (clicked / opened) * 100 : 0; // CTOR
-
-    return {
-      sent,
-      delivered,
-      opened,
-      clicked,
-      delPct,
-      opPct,
-      clPct,
-    };
-  });
-
-  protected readonly timelinePoints = computed(() => {
-    const data = this.stats();
-    if (!data || !data.timeline || data.timeline.length === 0) {
-      return { opensPath: '', clicksPath: '', opensArea: '', clicksArea: '', points: [], gridLines: [] };
-    }
-
-    const timeline = data.timeline;
-    const width = 600;
-    const height = 150;
-    const paddingLeft = 50;
-    const paddingRight = 20;
-    const paddingTop = 20;
-    const paddingBottom = 30;
-
-    const chartWidth = width - paddingLeft - paddingRight;
-    const chartHeight = height - paddingTop - paddingBottom;
-
-    // Find max value for Y scaling
-    let maxVal = 10;
-    for (const t of timeline) {
-      if (t.opens > maxVal) maxVal = t.opens;
-      if (t.clicks > maxVal) maxVal = t.clicks;
-    }
-    // Round maxVal to nice number
-    maxVal = Math.ceil(maxVal * 1.15);
-
-    const points = timeline.map((t, i) => {
-      const x = paddingLeft + (timeline.length > 1 ? (i / (timeline.length - 1)) * chartWidth : chartWidth / 2);
-      const yOpens = height - paddingBottom - (t.opens / maxVal) * chartHeight;
-      const yClicks = height - paddingBottom - (t.clicks / maxVal) * chartHeight;
-      return {
-        label: this.formatTimeBucket(t.time),
-        opens: t.opens,
-        clicks: t.clicks,
-        x,
-        yOpens,
-        yClicks,
-      };
-    });
-
-    // Generate path strings
-    let opensPath = '';
-    let clicksPath = '';
-    let opensArea = '';
-    let clicksArea = '';
-
-    if (timeline.length > 0) {
-      opensPath =
-        `M ${points[0]!.x} ${points[0]!.yOpens} ` +
-        points
-          .slice(1)
-          .map((p) => `L ${p.x} ${p.yOpens}`)
-          .join(' ');
-      clicksPath =
-        `M ${points[0]!.x} ${points[0]!.yClicks} ` +
-        points
-          .slice(1)
-          .map((p) => `L ${p.x} ${p.yClicks}`)
-          .join(' ');
-
-      const bottomY = height - paddingBottom;
-      opensArea = opensPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
-      clicksArea = clicksPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
-    }
-
-    const gridLines = [
-      { y: height - paddingBottom, label: '0' },
-      { y: height - paddingBottom - chartHeight * 0.25, label: Math.round(maxVal * 0.25).toString() },
-      { y: height - paddingBottom - chartHeight * 0.5, label: Math.round(maxVal * 0.5).toString() },
-      { y: height - paddingBottom - chartHeight * 0.75, label: Math.round(maxVal * 0.75).toString() },
-      { y: height - paddingBottom - chartHeight, label: maxVal.toString() },
-    ];
-
-    return {
-      opensPath,
-      clicksPath,
-      opensArea,
-      clicksArea,
-      points,
-      gridLines,
-    };
-  });
-
-  public audienceLabel(): string {
-    const data = this.email();
-    if (!data) return '—';
-    if (data.target_lists) return data.target_lists;
-    if (data.segments) return data.segments;
-    return '—';
-  }
-
-  public formatBytes(value: number | null | undefined): string {
-    if (!value) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let unitIndex = 0;
-    let size = value;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-  }
-
-  public goBack() {
-    window.history.back();
-  }
-
-  private async load(id: string) {
-    if (!id) {
-      this.error.set('Newsletter not found.');
-      return;
-    }
-    try {
-      const record = (await this.service.getById(id)) as MarketingEmailType | null;
-      if (!record) {
-        this.error.set('Newsletter not found.');
-        return;
-      }
-      this.email.set(record);
-
-      const statsData = await this.service.getEngagementStats(id);
-      this.stats.set(statsData);
-
-      await this.loadAttachments(id);
-    } catch (err: unknown) {
-      console.error(err);
-      this.error.set('Unable to load newsletter.');
-    }
-  }
-
-  private async loadAttachments(id: string): Promise<void> {
-    try {
-      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
-      this.attachments.set(
-        (rows as Record<string, unknown>[]).map((r) => ({
-          id: String(r['id']),
-          filename: String(r['filename']),
-          size_bytes: r['size_bytes'] as number | null,
-        })),
-      );
-    } catch {
-      // Non-fatal — attachments are supplementary to the newsletter report.
-    }
-  }
-
-  protected async onAttachmentSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    const newsletterId = this.id();
-    if (!file || !newsletterId) return;
-
-    this.isUploadingAttachment.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
-      this.alertSvc.showSuccess(`"${file.name}" attached`);
-      await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to attach file');
-    } finally {
-      this.isUploadingAttachment.set(false);
-      input.value = '';
-    }
-  }
-
-  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: `Remove "${attachment.filename}"?`,
-      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(attachment.id);
-      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
-      const newsletterId = this.id();
-      if (newsletterId) await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to remove attachment');
-    }
-  }
-
-  protected formatActivityDate(value: Date | string | null | undefined): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
-  }
-
-  private formatTimeBucket(timeStr: string): string {
-    try {
-      const [datePart = '', hourPart = ''] = timeStr.split(' ');
-      const [year = NaN, month = NaN, day = NaN] = datePart.split('-').map(Number);
-      const [hour = NaN] = hourPart.split(':').map(Number);
-      const date = new Date(year, month - 1, day, hour);
-      return new Intl.DateTimeFormat(undefined, { hour: 'numeric', hour12: true }).format(date);
-    } catch {
-      return timeStr;
-    }
-  }
-
-  protected formatNumber(value: number | null | undefined): string {
-    if (value == null) return '--';
-    return new Intl.NumberFormat().format(value);
-  }
-
-  private formatDate(value: Date | string | null | undefined): string | undefined {
-    if (!value) return undefined;
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return undefined;
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  }
-
-  private formatPercent(value: number | null | undefined): string {
-    if (value == null) return '--';
-    return `${value.toFixed(1)}%`;
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-templates.ts
@@ -18994,177 +16948,6 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
 
   public pending(): boolean {
     return this.isPendingSignal();
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.html
-
-```html
-<div class="space-y-8">
-  @if (!loaded()) {
-  <div class="flex items-center justify-center py-16">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-  </div>
-  } @else {
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
-    </div>
-
-    <div class="pt-2">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <span class="font-semibold text-base-content">
-          {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
-        </span>
-        @if (usedPct() >= 100) {
-        <span class="text-sm text-error font-medium">Newsletters pause sending attachments at 100%</span>
-        } @else if (usedPct() >= 90) {
-        <span class="text-sm text-warning font-medium">Approaching your storage limit</span>
-        }
-      </div>
-      <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
-        <div class="h-full rounded-full transition-all" [class]="barColorClass()" [style.width.%]="usedPct()"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
-    </div>
-
-    @if (largestFiles().length === 0) {
-    <div class="flex flex-col items-center text-center py-10">
-      <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <p class="text-sm text-base-content/60">No files uploaded yet.</p>
-    </div>
-    } @else {
-    <ul class="divide-y divide-base-200">
-      @for (file of largestFiles(); track file.id) {
-      <li class="flex items-center justify-between gap-4 py-3">
-        <div class="flex items-center gap-3 min-w-0">
-          <pc-icon name="document" class="text-primary/70 shrink-0" [size]="6"></pc-icon>
-          <div class="min-w-0">
-            <p class="font-medium text-base-content truncate">{{ file.filename }}</p>
-            @if (file.attachedToLabel) {
-            <p class="text-xs text-base-content/60 truncate">Attached to {{ file.attachedToLabel }}</p>
-            }
-          </div>
-        </div>
-        <div class="flex items-center gap-4 shrink-0">
-          <span class="text-sm text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
-          <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
-            <pc-icon name="trash" [size]="4"></pc-icon>
-          </button>
-        </div>
-      </li>
-      }
-    </ul>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FilesService } from '../../files/services/files.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-interface LargestFile {
-  id: string;
-  filename: string;
-  size_bytes: number | null;
-  attachedToLabel: string | null;
-}
-
-@Component({
-  selector: 'pc-storage-settings',
-  imports: [Icon],
-  templateUrl: './storage-settings.html',
-})
-export class StorageSettingsComponent implements OnInit {
-  private readonly filesSvc = inject(FilesService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-
-  protected readonly loading = this._loading.visible;
-  protected readonly loaded = this._loading.loaded;
-  protected readonly usedBytes = signal(0);
-  protected readonly quotaBytes = signal(0);
-  protected readonly planLabel = signal('');
-  protected readonly largestFiles = signal<LargestFile[]>([]);
-
-  protected readonly usedPct = computed(() => {
-    const quota = this.quotaBytes();
-    if (!quota) return 0;
-    return Math.min(100, Math.round((this.usedBytes() / quota) * 100));
-  });
-
-  protected readonly barColorClass = computed(() => {
-    const pct = this.usedPct();
-    if (pct >= 100) return 'bg-error';
-    if (pct >= 90) return 'bg-warning';
-    return 'bg-primary';
-  });
-
-  ngOnInit(): void {
-    void this.load();
-  }
-
-  private async load(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const summary = await this.filesSvc.getUsageSummary();
-      this.usedBytes.set(summary.usedBytes);
-      this.quotaBytes.set(summary.quotaBytes);
-      this.planLabel.set(this.formatPlanLabel(summary.planLabel));
-      this.largestFiles.set(summary.largestFiles);
-    } catch {
-      this.alerts.showError('Failed to load storage usage');
-    } finally {
-      end();
-    }
-  }
-
-  private formatPlanLabel(plan: string): string {
-    if (!plan) return 'Free trial plan';
-    return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
-  }
-
-  protected formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  protected async deleteFile(file: LargestFile): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: `Delete "${file.filename}"?`,
-      message: 'This permanently removes the file from cloud storage. This cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(file.id);
-      this.alerts.showSuccess(`"${file.filename}" deleted`);
-      await this.load();
-    } catch {
-      this.alerts.showError('Failed to delete file');
-    }
   }
 }
 ```
@@ -29196,6 +26979,7 @@ export class SingleselectFilterComponent {
 :host table :where(th, td) {
   box-sizing: border-box;
   vertical-align: middle;
+  padding-block: 0.375rem;
 }
 
 :host table tbody td {
@@ -35213,89 +32997,429 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
 
-```html
-<div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
-  <div [class]="folderPanelClass()">
-    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
-  </div>
+```typescript
+import { Component, computed, effect, inject, input, untracked } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
+import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 
-  <!-- Email list panel -->
-  @if (!isBodyExpanded()) {
-  <div [class]="listPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
-      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to folders">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Folders
-      </button>
-    </div>
-    <pc-email-list
-      class="flex-1 min-h-0 block"
-      (emailSelected)="onEmail($event!)"
-      (reply)="onReply($event)"
-      (replyAll)="onReplyAll($event)"
-      (forward)="onForward($event)"
-    ></pc-email-list>
-  </div>
-  }
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { environment } from '../../../../../environments/environment';
+import { EmailsStore } from '../../services/store/emailstore';
 
-  <!-- Right pane: compose OR details -->
-  <div [class]="detailPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center mb-2 shrink-0">
-      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to list">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-    </div>
-
-    <div class="flex-1 min-h-0 overflow-hidden">
-      @if (isComposing()) {
-      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
-        <pc-compose-email
-          #composer
-          class="h-full"
-          [draftId]="draftIdToLoad()"
-          [initial]="composePrefill()"
-          (finished)="closeCompose()"
-        ></pc-compose-email>
+@Component({
+  selector: 'pc-email-body',
+  imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
+  template: `<div
+    class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar border border-1 border-base-300 rounded-xl"
+  >
+    <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
+    @if (attachments().length > 0) {
+      <div class="mt-4 flex flex-wrap gap-2">
+        @for (att of attachments(); track att.id) {
+          <a
+            class="badge badge-outline no-underline hover:text-primary group"
+            [href]="getAttachmentUrl(att)"
+            target="_blank"
+            rel="noopener"
+            i18n-rel
+          >
+            <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
+            <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
+            <span>{{ att.filename }} | {{ att.size_bytes | fileSize }}</span>
+          </a>
+        }
       </div>
-      } @else {
-      <pc-email-details
-        class="h-full"
-        [email]="selectedEmail()"
-        (reply)="onReply($event)"
-        (replyAll)="onReplyAll($event)"
-        (forward)="onForward($event)"
-      ></pc-email-details>
+    }
+  </div>`,
+})
+export class EmailBody {
+  private readonly alerts = inject(AlertService);
+  private readonly emailId = computed(() => {
+    const em = this.email();
+    return em ? String(em.id) : null;
+  });
+  private readonly store = inject(EmailsStore);
+
+  protected readonly attachments = computed(() => {
+    const id = this.emailId();
+    if (!id) return [] as any[];
+    const header = this.store.getEmailHeaderById(id)();
+    return (header?.attachments || []).filter((a: any) => !a.is_inline);
+  });
+  protected readonly bodyHtml = computed(() => {
+    const id = this.emailId();
+    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
+  });
+
+  public email = input<EmailType | null>(null);
+
+  constructor() {
+    effect(() => {
+      const id = this.emailId();
+      if (!id) return;
+
+      // Only fetch if truly not cached (undefined); empty string is a valid "loaded" result.
+      const cached = untracked(() => this.store.getEmailBodyById(id)());
+      if (typeof cached === 'undefined') {
+        this.store.loadEmailWithHeaders(id).catch((err) => {
+          console.error('Failed to load email data:', err);
+          this.alerts.showError('Failed to load email data. Please try again later.');
+        });
       }
-    </div>
-  </div>
-
-  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
-  @if (showPersonRail()) {
-  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
-  } @if (isBodyExpanded() && selectedEmail()) {
-  <!-- Keep your existing BODY overlay when expanded -->
-  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
-    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
-      <div class="flex items-center justify-end">
-        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
-          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
-        </button>
-      </div>
-      <div class="flex-1 min-h-0">
-        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
-          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
-        </div>
-      </div>
-    </div>
-  </div>
+    });
   }
-</div>
+
+  protected getAttachmentUrl(att: any): string {
+    // The backend returns a short-lived, email-scoped signed URL (download_url).
+    // We never build a URL with a session token in it (SECURITY-REVIEW.md 1.3).
+    return att?.download_url ? `${environment.apiUrl}${att.download_url}` : '';
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { EmailsService } from '../../services/emails-service';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
+import { EmailPersonRail } from '../email-person-rail/email-person-rail';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
+
+@Component({
+  selector: 'pc-email-client',
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-client.html',
+})
+export class EmailClient {
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+
+  private authService = inject(AuthService);
+
+  protected readonly store = inject(EmailsStore);
+  private readonly stateStore = inject(EmailStateStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  protected composePrefill = signal<ComposeInitial | null>(null);
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
+
+  protected mobileView = this.stateStore.mobilePanelView;
+
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
+  );
+
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
+  );
+
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10 bg-base-100'
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10 bg-base-100',
+  );
+
+  /** The person context rail (§5) shows only for a real selection on desktop. */
+  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
+
+  constructor() {
+    effect(() => {
+      const id = this.email();
+      if (id) {
+        void untracked(() => this.loadEmailData(id));
+      }
+    });
+  }
+
+  /** Router query-param input (`?email=<id>`); name matches the binding, no alias. */
+  readonly email = input<string | undefined>(undefined);
+
+  private async loadEmailData(emailId: string): Promise<void> {
+    try {
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
+
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
+
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
+
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
+    }
+  }
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly isBodyExpanded = this.store.isBodyExpanded;
+
+  public readonly selectedEmail = this.store.currentSelectedEmail;
+
+  public readonly selectedFolderId = this.store.currentSelectedFolderId;
+
+  public closeCompose() {
+    this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
+  }
+
+  public newEmail() {
+    this.openCompose();
+  }
+
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
+  }
+
+  public async onEmail(email: EmailType | null): Promise<void> {
+    const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
+      }
+      this.closeCompose();
+    }
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+    this.mobileView.set('detail');
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    }
+  }
+
+  public onFolder(folder: EmailFolderType): void {
+    this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public async onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
+    if (email.from_email) recipients.add(email.from_email);
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
+    this.mobileView.set('detail');
+  }
+
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    // Existing behaviour: Escape collapses an expanded body first.
+    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
+    // Stay out of the way while composing, typing into a field, or when a
+    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
+    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
+      return;
+    }
+
+    // Shortcuts that work without a selection.
+    switch (ev.key) {
+      case 'c':
+        ev.preventDefault();
+        this.openCompose();
+        return;
+      case 'j':
+        ev.preventDefault();
+        this.selectRelative(1);
+        return;
+      case 'k':
+        ev.preventDefault();
+        this.selectRelative(-1);
+        return;
+    }
+
+    // Everything below acts on the currently selected email.
+    const email = this.selectedEmail();
+    if (!email) return;
+
+    switch (ev.key) {
+      case 'r':
+        ev.preventDefault();
+        this.onReply(email);
+        return;
+      case 'a':
+        ev.preventDefault();
+        void this.onReplyAll(email);
+        return;
+      case 'f':
+        ev.preventDefault();
+        this.onForward(email);
+        return;
+      case 'e':
+        ev.preventDefault();
+        void this.store.updateEmailStatus(email.id, 'closed');
+        return;
+      case 's':
+        ev.preventDefault();
+        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+        return;
+      case 'I': // Shift+I — mark as read
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, true);
+        return;
+      case 'U': // Shift+U — mark as unread
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, false);
+        return;
+      case '#':
+        ev.preventDefault();
+        void this.store.deleteEmail(email.id);
+        return;
+      case 'Enter':
+      case 'o':
+        ev.preventDefault();
+        this.toggleExpanded();
+        return;
+      case 'u':
+        ev.preventDefault();
+        this.store.selectEmail(null);
+        this.mobileView.set('list');
+        return;
+    }
+  }
+
+  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
+  private selectRelative(delta: number): void {
+    const list = this.emails();
+    if (!list.length) return;
+    const current = this.selectedEmail();
+    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
+    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
+    const next = list[nextIdx];
+    if (!next) return;
+    void this.onEmail(next);
+  }
+
+  /** True when the event originates from a field the user is typing into. */
+  private isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return target.getAttribute('role') === 'textbox';
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
@@ -35637,99 +33761,806 @@ export class EmailCreateTaskDialog {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
+
+```typescript
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailsStore } from '../../services/store/emailstore';
+
+@Component({
+  selector: 'pc-email-folder-list',
+  imports: [Swap, Icon, TimeAgoPipe],
+  host: { class: 'block h-full' },
+  templateUrl: 'email-folder-list.html',
+})
+export class EmailFolderList implements OnInit {
+  protected readonly store = inject(EmailsStore);
+
+  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
+
+  public readonly folderSelected = output<EmailFolderType>();
+
+  public readonly folders = this.store.allFolders;
+
+  public readonly foldersCollapsed = signal(false);
+
+  public readonly realFoldersCollapsed = signal(false);
+
+  public readonly newEmail = output<void>();
+
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-100 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full md:w-12 ' +
+      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
+  );
+
+  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
+  protected readonly labelClass = computed(
+    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly countClass = computed(
+    () =>
+      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' lg:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
+  );
+
+  public emitNewEmail() {
+    this.newEmail.emit();
+  }
+
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count ?? 0;
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    try {
+      await this.store.loadAllFoldersWithCounts();
+    } catch (e) {
+      console.error('Failed to load folders with counts', e);
+    }
+  }
+
+  public selectFolder(folder: EmailFolderType): void {
+    this.folderSelected.emit(folder);
+  }
+
+  public toggleFolders(): void {
+    this.foldersCollapsed.update((v) => !v);
+  }
+
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
+  }
+
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
+  }
+
+  protected isSelected(folder: EmailFolderType): boolean {
+    return String(folder.id) === String(this.store.currentSelectedFolderId());
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
+
+```typescript
+import { DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailAssign } from '../email-assign/email-assign';
+import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
+
+@Component({
+  selector: 'pc-email-header',
+  // include swap for expand/collapse control
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
+  host: {
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-header.html',
+})
+export class EmailHeader {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private personsSvc = inject(PersonsService);
+
+  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
+
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
+  protected isClosed = signal(false);
+  protected isFavourite = signal(false);
+
+  protected personTags = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.tags?.map((t: any) => t.name) ?? [];
+  });
+
+  protected personIssues = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.issues?.map((t: any) => t.name) ?? [];
+  });
+
+  protected editingName = signal(false);
+  protected nameDraft = signal({ first_name: '', last_name: '' });
+  private savingName = false;
+
+  private readonly firstNameInput = viewChild<ElementRef<HTMLInputElement>>('firstNameInput');
+  private readonly personDropdownContent = viewChild<ElementRef<HTMLElement>>('personDropdownContent');
+
+  // DaisyUI's dropdown is visible only while something inside it holds focus (`:focus-within`);
+  // losing focus even for one render flips `.dropdown-content` to `display: none`, and a
+  // `display: none` element can't be focused back into view — so the fix is to never let focus
+  // leave the subtree in the first place. We hold focus on the always-present wrapper *before*
+  // toggling which button/input gets rendered, then hand focus off to the fresh element once it
+  // exists.
+  private holdDropdownFocus(): void {
+    this.personDropdownContent()?.nativeElement.focus();
+  }
+
+  protected startEditName(person: { first_name?: string | null; last_name?: string | null }): void {
+    this.holdDropdownFocus();
+    this.nameDraft.set({ first_name: person.first_name ?? '', last_name: person.last_name ?? '' });
+    this.editingName.set(true);
+    setTimeout(() => this.firstNameInput()?.nativeElement.focus());
+  }
+
+  protected cancelEditName(): void {
+    this.holdDropdownFocus();
+    this.editingName.set(false);
+  }
+
+  protected async saveName(personId: string): Promise<void> {
+    if (this.savingName) return;
+    const { first_name, last_name } = this.nameDraft();
+    this.savingName = true;
+    try {
+      await this.personsSvc.update(personId, { first_name: first_name.trim(), last_name: last_name.trim() });
+      this.store.refreshEmailHeader(this.email().id);
+      this.holdDropdownFocus();
+      this.editingName.set(false);
+    } catch (e) {
+      console.error('Failed to update name:', e);
+      this.alertSvc.showError('Failed to update name');
+    } finally {
+      this.savingName = false;
+    }
+  }
+
+  protected async onTagAdded(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
+    } catch (e) {
+      console.error('Failed to attach tag:', e);
+      this.alertSvc.showError('Failed to add tag');
+    }
+  }
+
+  protected async onTagRemoved(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach tag:', e);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
+
+  protected async onIssueAdded(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
+    } catch (e) {
+      console.error('Failed to attach issue:', e);
+      this.alertSvc.showError('Failed to add issue');
+    }
+  }
+
+  protected async onIssueRemoved(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach issue:', e);
+      this.alertSvc.showError('Failed to remove issue');
+    }
+  }
+
+  public readonly forward = output<void>();
+  public readonly reply = output<void>();
+  public readonly replyAll = output<void>();
+
+  public email = input.required<EmailType>();
+
+  public isExpanded = this.store.isBodyExpanded;
+
+  constructor() {
+    // isFavourite and isClosed are settable, so can't use computed
+    effect(() => {
+      const email = this.email();
+
+      this.isFavourite.set(email.is_favourite);
+      this.isClosed.set(email.status === 'closed');
+    });
+  }
+
+  public getFavouriteIcon() {
+    return this.isFavourite() ? 'star-filled' : 'star';
+  }
+
+  protected async deleteEmail() {
+    try {
+      await this.store.deleteEmail(this.email().id);
+    } catch (e) {
+      console.error('Failed to delete email', e);
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected getAllRecipients(): any[] {
+    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
+  }
+
+  protected getBccRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.bcc_list || [];
+  }
+
+  protected getCcRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.cc_list || [];
+  }
+
+  protected getDateSent(): Date | null {
+    const header = this.headerData();
+    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
+  }
+
+  protected getHeaderInfo() {
+    const header = this.headerData();
+    const email = this.email();
+
+    return {
+      subject: email.subject,
+      date: this.getDateSent() || email.updated_at,
+      from: email.from_email,
+      to: email.to_email,
+      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
+      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
+      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
+      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
+      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
+      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
+    };
+  }
+
+  protected getToRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.to_list || [];
+  }
+
+  protected getTrashText() {
+    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
+  }
+
+  protected handleForward() {
+    this.forward.emit();
+  }
+
+  protected handleMarkAsUnread() {
+    void this.store.toggleEmailReadStatus(this.email().id, false);
+    this.store.selectEmail(null);
+  }
+
+  protected handleReply() {
+    this.reply.emit();
+  }
+
+  protected handleReplyAll() {
+    this.replyAll.emit();
+  }
+
+  protected isFolderTrash(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.SPAM;
+  }
+
+  protected async markAsSpam() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to mark email as spam', e);
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+
+  protected async moveToInbox() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to move email to Inbox', e);
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected markAsDoneText() {
+    return this.isClosed() ? 'Reopen' : 'Mark as done';
+  }
+
+  protected restoreFromTrash() {
+    void this.store.restoreFromTrash(this.email().id);
+  }
+
+  protected async toggleClosed() {
+    const email = this.email();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+
+    // Optimistically update UI
+    this.isClosed.set(newStatus === 'closed');
+
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_error) {
+      // Revert UI state on error
+      this.isClosed.set(currentStatus === 'closed');
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected handleCreateTask(): void {
+    void this.createTaskDialog()?.open();
+  }
+
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected async toggleFavourite() {
+    const e = this.email();
+    this.isFavourite.update((value) => !value);
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
 
 ```html
-<aside [class]="asideClass()">
-  <!-- Header and expand / collapse icon -->
-  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
-    <h2 class="text-xs font-semibold text-neutral-content">
-      <span [class]="labelClass()">Filters</span>
-    </h2>
-
-    <pc-swap
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
-      animation="rotate"
-      [checked]="!foldersCollapsed()"
-      (click)="toggleFolders()"
-      [size]="4"
-      class="hover:text-primary invisible lg:visible"
-    ></pc-swap>
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between border-t border-base-300 px-3 border-b-1 min-h-[33px] shrink-0">
+    <span class="text-xs font-semibold text-neutral-content">Sort</span>
+    <div class="dropdown dropdown-end">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
+      >
+        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
+        <pc-icon name="chevron-down" [size]="3"></pc-icon>
+      </label>
+      <ul
+        tabindex="0"
+        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
+      >
+        <li>
+          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
+        </li>
+        <li>
+          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
+        </li>
+      </ul>
+    </div>
   </div>
 
-  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
-    <!-- Virtual Folders (Filters) -->
-    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
+  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+    @for (email of sortedEmails(); track email.id) {
     <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
+      (click)="selectEmail(email)"
+      (contextmenu)="onContextMenu($event, email)"
+      [class.bg-primary/10]="isSelected(email.id)"
+      class="border-b border-base-300 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
     >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
+      <div
+        class="truncate text-xs flex gap-1 items-center"
+        [class.text-base-content/90]="!email.is_read"
+        [class.text-base-content/60]="email.is_read"
+      >
+        @if (!email.is_read) {
+        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
+        } @if (email.from_email || email.to_email) {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
+          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
+          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
+        </span>
+        } @else {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
+        }
+        <span class="flex-none"
+          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
+        >
       </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } }
-
-    <!-- Separator & Collapsible Header -->
-    <li [class]="separatorClass()" role="separator"></li>
-    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
-      <span>Folders</span>
-      <pc-swap
-        swapOffIcon="chevron-right"
-        swapOnIcon="chevron-down"
-        animation="flip"
-        [checked]="!realFoldersCollapsed()"
-        [size]="3"
-        (click)="toggleRealFolders()"
-      ></pc-swap>
-    </li>
-
-    <!-- Real Folders -->
-    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 min-h-11 md:min-h-0 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
+      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
+        @if (email?.subject) {
+        <span class="truncate flex-1">{{ email.subject }}</span>
+        } @else {
+        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
+        } @if (email.has_attachment) {
+        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
+        }
       </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
+        @if (rowStatus(email); as st) {
+        <span
+          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+          [class.bg-warning/15]="st.tone === 'warning'"
+          [class.text-warning]="st.tone === 'warning'"
+          [class.bg-info/15]="st.tone === 'info'"
+          [class.text-info]="st.tone === 'info'"
+          [class.bg-base-300]="st.tone === 'neutral'"
+          [class.text-base-content/70]="st.tone === 'neutral'"
+          >{{ st.label }}</span
+        >
+        }
+      </div>
     </li>
-    } } }
+    } @empty {
+    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
+      <pc-icon name="inbox" [size]="8"></pc-icon>
+      <span>No emails</span>
+    </li>
+    } @if (isLoadingMore()) {
+    <li class="flex justify-center p-3 border-b border-base-200">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+    </li>
+    }
   </ul>
 
-  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
-      <pc-icon name="pencil-square"></pc-icon>
-      <span [class]="buttonLabelClass()">New email</span>
-    </button>
-    <button
-      class="btn btn-outline btn-primary w-full"
-      [disabled]="store.isSyncing()"
-      (click)="store.syncEmails()"
-      title="Sync now"
-    >
-      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
-    </button>
-    <!-- Evidence line: background work narrates itself (§2) -->
-    @if (store.lastSyncedAt(); as syncedAt) {
-    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
-      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
-    </span>
-    }
+  @if (showContextMenu() && contextMenuEmail()) {
+  <div
+    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
+    [style.left.px]="contextMenuPosition().x"
+    [style.top.px]="contextMenuPosition().y"
+  >
+    @for (section of menuSections; track $index; let last = $last) {
+    <div class="px-1.5 py-0.5">
+      @for (item of section.items; track item.label) {
+      <button
+        (click)="item.action()"
+        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
+      >
+        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
+        <span>{{ item.label }}</span>
+      </button>
+      }
+    </div>
+
+    @if (!last) {
+    <div class="border-t border-base-300 my-1"></div>
+    } }
+  </div>
+  }
+</section>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
+
+```html
+@if (collapsed()) {
+<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
+<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 bg-base-200 py-3">
+  <button
+    type="button"
+    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+    [attr.data-tip]="'Expand person context — ' + displayName()"
+    aria-label="Expand person context"
+    (click)="toggle()"
+  >
+    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+  </button>
+  <div
+    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+    [attr.data-tip]="displayName()"
+  >
+    {{ initial() }}
   </div>
 </aside>
+} @else {
+<!-- Expanded: 236px context card -->
+<aside class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto bg-base-200 p-4">
+  <div class="flex items-center justify-between">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
+    <button
+      type="button"
+      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+      data-tip="Collapse person context"
+      aria-label="Collapse person context"
+      (click)="toggle()"
+    >
+      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+    </button>
+  </div>
+
+  <!-- Identity -->
+  <div class="flex flex-col gap-1">
+    <div class="flex items-center gap-2.5">
+      <div
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+      >
+        {{ initial() }}
+      </div>
+      @if (person(); as p) {
+      <a
+        [routerLink]="['/people', p.id]"
+        class="truncate text-[13px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
+      >
+        {{ displayName() }}
+      </a>
+      } @else {
+      <span class="truncate text-[13px] font-semibold text-base-content">{{ displayName() }}</span>
+      }
+    </div>
+    @if (subline()) {
+    <span class="text-xs text-base-content/60">{{ subline() }}</span>
+    }
+  </div>
+
+  @if (person(); as p) {
+  <!-- Contact card -->
+  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
+    @if (p.email) {
+    <div class="flex items-center gap-2 min-w-0">
+      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span class="truncate">{{ p.email }}</span>
+    </div>
+    } @if (email()?.date_sent) {
+    <div class="flex items-center gap-2 text-base-content/60">
+      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
+    </div>
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
+    @if (tags().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of tags(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <!-- Issues of interest -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
+    @if (issues().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of issues(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
+    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+    Open record
+  </a>
+  } @else {
+  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
+  <div
+    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
+  >
+    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
+    <span>This sender isn't matched to a person record yet.</span>
+  </div>
+  @if (email()?.from_email) {
+  <button type="button" class="btn btn-primary btn-sm w-full" [disabled]="addingToContacts()" (click)="addToContacts()">
+    <pc-icon name="user-plus" [size]="4"></pc-icon>
+    {{ addingToContacts() ? 'Adding…' : 'Add to Contacts' }}
+  </button>
+  } }
+</aside>
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
+
+```typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { PersonsService } from '../../../persons/services/persons-service';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+interface RailTag {
+  color?: string | null;
+  name: string;
+}
+
+interface RailPerson {
+  company_name?: string | null;
+  email?: string | null;
+  first_name?: string | null;
+  id: string;
+  issues?: RailTag[];
+  last_name?: string | null;
+  tags?: RailTag[];
+}
+
+/**
+ * Person context rail (§5) — a 236px card giving the inbox a "who am I talking to"
+ * answer. Reuses the person already resolved for the email header; adds no backend.
+ * Collapses to a 48px strip that keeps the avatar initials (identity, never hidden).
+ */
+@Component({
+  selector: 'pc-email-person-rail',
+  imports: [RouterLink, Icon, TagItem, TimeAgoPipe],
+  templateUrl: 'email-person-rail.html',
+})
+export class EmailPersonRail {
+  protected readonly stateStore = inject(EmailStateStore);
+  private readonly store = inject(EmailsStore);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+
+  public readonly email = input<EmailType | null>(null);
+
+  protected readonly collapsed = this.stateStore.personRailCollapsed;
+
+  protected readonly addingToContacts = signal(false);
+
+  protected readonly person = computed<RailPerson | null>(() => {
+    const e = this.email();
+    if (!e) return null;
+    const header = this.store.getEmailHeaderById(e.id)();
+    const p = (header as { person?: RailPerson } | null | undefined)?.person;
+    return p ?? null;
+  });
+
+  /** Falls back to the raw sender when no person record is matched. */
+  protected readonly displayName = computed<string>(() => {
+    const p = this.person();
+    if (p) {
+      const full = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim();
+      if (full) return full;
+      if (p.email) return p.email;
+    }
+    const e = this.email();
+    return e?.from_email ?? 'Unknown sender';
+  });
+
+  protected readonly initial = computed<string>(() => (this.displayName()[0] ?? '?').toUpperCase());
+
+  /** Honest role subline: only what the tags/fields actually say (§0 — no faked data). */
+  protected readonly subline = computed<string | null>(() => {
+    const p = this.person();
+    if (!p) return null;
+    const parts: string[] = [];
+    const tagNames = (p.tags ?? []).map((t) => t.name.toLowerCase());
+    if (tagNames.includes('donor')) parts.push('Donor');
+    else if (tagNames.includes('volunteer')) parts.push('Volunteer');
+    if (p.company_name) parts.push(p.company_name);
+    return parts.length ? parts.join(' · ') : null;
+  });
+
+  protected readonly tags = computed<RailTag[]>(() => this.person()?.tags ?? []);
+  protected readonly issues = computed<RailTag[]>(() => this.person()?.issues ?? []);
+
+  protected toggle(): void {
+    this.stateStore.togglePersonRail();
+  }
+
+  /** Creates a person from the unmatched sender; the rail then re-resolves the match (§5). */
+  protected async addToContacts(): Promise<void> {
+    const e = this.email();
+    if (!e?.from_email || this.addingToContacts()) return;
+
+    this.addingToContacts.set(true);
+    try {
+      await this.personsSvc.add({
+        email: e.from_email,
+        first_name: e.sender_first_name ?? this.guessFirstName(e.from_name),
+        last_name: e.sender_last_name ?? this.guessLastName(e.from_name),
+      });
+      await this.store.refreshEmailHeader(e.id);
+      this.alertSvc.showSuccess(`Added ${e.from_email} to your contacts.`);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error ? err.message : 'Unable to add contact');
+    } finally {
+      this.addingToContacts.set(false);
+    }
+  }
+
+  private guessFirstName(fromName: string | undefined): string | undefined {
+    return fromName?.trim().split(/\s+/)[0];
+  }
+
+  private guessLastName(fromName: string | undefined): string | undefined {
+    const parts = fromName?.trim().split(/\s+/) ?? [];
+    return parts.length > 1 ? parts.slice(1).join(' ') : undefined;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/events/services/events-frontend-service.ts
@@ -36806,6 +35637,139 @@ export class EventViewComponent {
     if (!id) return '';
     const t = this.ticketTypes().find((tt) => tt.id === id);
     return t ? t.name : '';
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/files/services/files.service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
+
+@Service()
+export class FilesService extends AbstractAPIService<'files', any> {
+  protected override readonly endpointName = 'files';
+
+  public add(_row: any) {
+    return Promise.resolve({});
+  }
+
+  public addMany(rows: any[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(true);
+  }
+
+  public async getAll(options?: getAllOptionsType & { entityType?: string; entityId?: string }) {
+    return this.api.files.getAll.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(_id: string) {
+    return Promise.resolve(undefined);
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public async update(_id: string, _data: any) {
+    return Promise.resolve({});
+  }
+
+  public async getUploadUrl(
+    filename: string,
+    mimeType?: string | null,
+  ): Promise<{ uploadUrl: string; storageKey: string }> {
+    return (await this.api.files.getUploadUrl.query({ filename, mimeType })) as {
+      uploadUrl: string;
+      storageKey: string;
+    };
+  }
+
+  public async registerFile(data: {
+    filename: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    storageKey: string;
+    sha256Hex?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+  }): Promise<any> {
+    return await this.api.files.registerFile.mutate(data);
+  }
+
+  public async getUsageSummary(): Promise<{
+    usedBytes: number;
+    quotaBytes: number;
+    planLabel: string;
+    largestFiles: {
+      id: string;
+      filename: string;
+      size_bytes: number | null;
+      entity_type: string | null;
+      entity_id: string | null;
+      attachedToLabel: string | null;
+    }[];
+  }> {
+    return (await this.api.files.getUsageSummary.query()) as any;
+  }
+
+  private async computeSha256(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  public async uploadFileDirectly(file: File, entity?: { entityType: string; entityId: string }): Promise<any> {
+    const { uploadUrl, storageKey } = await this.getUploadUrl(file.name, file.type);
+
+    const sha256Hex = await this.computeSha256(file);
+
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'x-ms-blob-type': 'BlockBlob',
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+    });
+
+    if (!res.ok) {
+      throw new Error(`Upload to storage failed with status ${res.status}`);
+    }
+
+    return await this.registerFile({
+      filename: file.name,
+      mimeType: file.type || null,
+      sizeBytes: file.size,
+      storageKey,
+      sha256Hex,
+      entityType: entity?.entityType || null,
+      entityId: entity?.entityId || null,
+    });
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.resolve({ csv: '', columns: [], fileName: '', rowCount: 0 });
   }
 }
 ```
@@ -38396,158 +37360,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const DATA_ARTICLES: HelpArticle[] = [
-  {
-    id: 'import',
-    category: 'data',
-    title: 'Import people from CSV',
-    summary:
-      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
-    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
-    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
-    blocks: [
-      {
-        kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
-      },
-      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
-      {
-        kind: 'list',
-        items: [
-          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
-          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
-          'Both UTF-8 and Excel-exported CSVs work as-is.',
-        ],
-      },
-      { kind: 'h2', id: 'steps', text: 'The four steps' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Upload',
-            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
-          },
-          {
-            title: 'Map columns',
-            detail:
-              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
-          },
-          {
-            title: 'Review',
-            detail:
-              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
-          },
-          {
-            title: 'Import',
-            detail:
-              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'after', text: 'After the import' },
-      {
-        kind: 'list',
-        items: [
-          'Spot-check a few records against the source file.',
-          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
-          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test with a small file first',
-        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
-      },
-    ],
-  },
-  {
-    id: 'export',
-    category: 'data',
-    title: 'Export your data',
-    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
-    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
-    related: ['import', 'bulk-actions', 'filters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
-      },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
-      {
-        kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Exports leave the safety of the app',
-        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
-      },
-    ],
-  },
-  {
-    id: 'duplicates',
-    category: 'data',
-    title: 'Find and merge duplicates',
-    summary:
-      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
-    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
-    related: ['import', 'bulk-actions', 'households', 'companies'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
-      },
-      { kind: 'h2', id: 'review', text: 'Review and merge' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
-          {
-            title: 'Read the confidence and the why-flagged reason',
-            detail:
-              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
-          },
-          {
-            title: 'Merge into one — or Not duplicates',
-            detail:
-              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
-      },
-      {
-        kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
 
 ```typescript
@@ -38710,152 +37522,91 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/segmentation.ts
+## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
 
 ```typescript
 import type { HelpArticle } from '../help-types';
 
-export const SEGMENTATION_ARTICLES: HelpArticle[] = [
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
   {
-    id: 'tags-issues',
-    category: 'segmentation',
-    title: 'Tags and issues',
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks — list and board',
     summary:
-      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
-    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
-    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
+      'Track the work — assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
     blocks: [
       {
         kind: 'p',
-        text: 'Tags are free-form labels — **volunteer**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful.',
+        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
       },
-      { kind: 'h2', id: 'apply', text: 'Apply tags' },
+      { kind: 'h2', id: 'views', text: 'List or board — one dataset, two views' },
       {
         kind: 'list',
         items: [
-          'On a profile — add or remove tags directly on the record.',
-          'In bulk — select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
-          'On import — tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
-        ],
-      },
-      { kind: 'h2', id: 'use', text: 'Put them to work' },
-      {
-        kind: 'p',
-        text: 'Every grid has a tag filter and an issue filter — check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
-      },
-      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
-      {
-        kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary — how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Rename** — updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
-          '**Merge into another tag/issue** ("Move everyone to…") — folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
-          '**Delete** — the confirmation names how many applications would be affected, so you never delete a label blind.',
-          'The PEOPLE / PEOPLE INTERESTED count on each row is a door — click it to open the People grid pre-filtered to that exact tag or issue.',
+          '[Tasks](/tasks) — the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) — one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          'Every header carries a swap button — Open board / Open list — so you never have to hunt for the sidebar to switch.',
         ],
       },
       {
         kind: 'p',
-        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about — not to describe who someone is, which is what tags are for.',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill — one click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).",
+        ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one — "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
       },
     ],
   },
   {
-    id: 'lists',
-    category: 'segmentation',
-    title: 'Smart and static lists',
-    summary:
-      'Lists are reusable audiences — smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
-    keywords: [
-      'list',
-      'audience',
-      'segment',
-      'static list',
-      'smart list',
-      'dynamic list',
-      'snapshot',
-      'membership',
-      'rule',
-      'query',
-    ],
-    related: ['tags-issues', 'filters', 'newsletters'],
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
     blocks: [
       {
         kind: 'p',
-        text: 'A list is a saved group of people or households you can reuse anywhere — as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
       },
-      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
       {
         kind: 'p',
-        text: 'A smart list is defined by rules in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
       },
-      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
-      {
-        kind: 'p',
-        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot — today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a list' },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Lists](/lists) and click +',
-            detail: 'Name the list something your teammates will recognize in a dropdown.',
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
           },
           {
-            title: 'Pick Smart or Static',
+            title: 'Delete a large file',
             detail:
-              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
-          },
-          {
-            title: 'Choose People or Households',
-            detail: 'A list targets one or the other — pick what you are grouping.',
-          },
-          {
-            title: 'Build the rule',
-            detail:
-              'Compose conditions in the query builder — match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
-          },
-          {
-            title: 'Create it',
-            detail:
-              'The button carries the scale it will act on — “Create smart list — 1,284 now” or “Create static list — snapshot 1,284”.',
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
           },
         ],
-      },
-      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
-      {
-        kind: 'list',
-        items: [
-          '**List** — the name is a door: click it to open People or Households with that list applied as a removable filter chip.',
-          '**Type** — a Smart or Static chip.',
-          '**Of** — People or Households.',
-          '**Definition** — the rule written as a plain sentence.',
-          '**Members** — how many records are in the list right now.',
-          '**Last used in** — the most recent newsletter, form, or turf that used this list.',
-          '**Updated** — when the list last changed.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Deleting a list names what it will affect',
-        text: 'If a list is in use, the delete confirmation names its consumers — the newsletters, forms, and turfs that reference it — so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Lists are how good newsletters start',
-        text: 'A newsletter audience built on a smart list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
       },
     ],
   },
@@ -40293,152 +39044,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
-
-```typescript
-import { Service, inject } from '@angular/core';
-import {
-  AddMarketingEmailType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  MarketingEmailTopLinkType,
-  UpdateMarketingEmailType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-
-@Service()
-export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
-  protected override readonly endpointName = 'newsletters';
-
-  private readonly campaignContext = inject(CampaignContextService);
-
-  public add(row: AddMarketingEmailType) {
-    // A newsletter is created in the context the user is working in (§15);
-    // the backend falls back to the office context when none is known.
-    const campaignId = this.campaignContext.activeCampaignId();
-    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
-  }
-
-  public addMany(_rows: AddMarketingEmailType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.newsletters.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    // Campaigns §15 — the newsletters grid shows the active context's sends.
-    const campaignId = this.campaignContext.activeCampaignId();
-    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
-    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
-    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
-    const count = result?.count != null ? Number(result.count) : rows.length;
-    return { rows, count };
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getById(id: string) {
-    const record = await this.api.newsletters.getById.query(id);
-    return this.normalize(record);
-  }
-
-  public getEngagementStats(id: string) {
-    return this.api.newsletters.getEngagementStats.query(id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateMarketingEmailType) {
-    return this.api.newsletters.update.mutate({ id, data });
-  }
-
-  public send(id: string): Promise<any> {
-    return this.api.newsletters.send.mutate(id);
-  }
-
-  public sendTest(input: {
-    subject: string;
-    html: string;
-    text?: string;
-    to: string;
-    fromName?: string;
-    fromEmail?: string;
-  }): Promise<{ to: string; delivered: number }> {
-    return this.api.newsletters.sendTest.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.newsletters.exportCsv.mutate(input);
-  }
-
-  private normalize(record: any) {
-    if (!record) return record;
-    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const asNumber = (value: unknown) => {
-      if (value === null || value === undefined || value === '') return null;
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-    const asDate = (value: unknown) => {
-      if (!value) return null;
-      if (value instanceof Date) return value;
-      const date = new Date(value as string);
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    return {
-      ...record,
-      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
-      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
-      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
-      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
-      total_recipients: asNumber(record.total_recipients) ?? 0,
-      delivered_count: asNumber(record.delivered_count) ?? 0,
-      bounce_count: asNumber(record.bounce_count) ?? 0,
-      open_rate: asNumber(record.open_rate) ?? 0,
-      click_rate: asNumber(record.click_rate) ?? 0,
-      unique_opens: asNumber(record.unique_opens) ?? 0,
-      unique_clicks: asNumber(record.unique_clicks) ?? 0,
-      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
-      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
-      reply_count: asNumber(record.reply_count) ?? 0,
-      send_date: asDate(record.send_date),
-      last_engagement_at: asDate(record.last_engagement_at),
-      created_at: asDate(record.created_at) ?? new Date(),
-      updated_at: asDate(record.updated_at) ?? new Date(),
-      top_links,
-    };
-  }
-
-  private parseJsonArray<T>(value: unknown): T[] | null {
-    if (!value) return null;
-    if (Array.isArray(value)) return value as T[];
-    try {
-      const parsed = JSON.parse(String(value));
-      return Array.isArray(parsed) ? (parsed as T[]) : null;
-    } catch {
-      return null;
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
 
 ```html
@@ -41059,6 +39664,375 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     </div>
   </main>
 </div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+
+import { MarketingEmailTopLinkType, MarketingEmailType } from '../../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { NewslettersService } from '../services/newsletters-service';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+interface NewsletterAttachment {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+}
+
+interface DetailMetric {
+  help?: string;
+  label: string;
+  value: string;
+}
+
+@Component({
+  selector: 'pc-newsletter-detail',
+  imports: [Icon],
+  templateUrl: './newsletter-detail.html',
+})
+export class NewsletterDetailComponent {
+  readonly id = input.required<string>();
+
+  private readonly service = inject(NewslettersService);
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly attachments = signal<NewsletterAttachment[]>([]);
+  protected readonly isUploadingAttachment = signal(false);
+  /** Attachments can only be managed before a newsletter has gone out. */
+  protected readonly canManageAttachments = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
+  protected readonly stats = signal<{
+    activities: Array<{
+      email: string;
+      event_type: string;
+      timestamp: string | Date;
+      url: string | null;
+      ip: string | null;
+      user_agent: string | null;
+    }>;
+    timeline: Array<{
+      time: string;
+      opens: number;
+      clicks: number;
+    }>;
+  } | null>(null);
+  protected readonly coreMetrics = computed<DetailMetric[]>(() => {
+    const data = this.email();
+    if (!data) return [];
+    return [
+      {
+        label: 'Send date',
+        value: this.formatDate(data.send_date) ?? 'Not scheduled',
+        help: data.last_engagement_at ? `Last engagement ${this.formatDate(data.last_engagement_at)}` : undefined,
+      },
+      {
+        label: 'Created at',
+        value: this.formatDate(data.created_at) ?? '—',
+        help: `Created by user ${data.createdby_id}`,
+      },
+      {
+        label: 'Updated at',
+        value: this.formatDate(data.updated_at) ?? '—',
+        help: `Updated by user ${data.updatedby_id}`,
+      },
+    ];
+  });
+  protected readonly engagementMetrics = computed<DetailMetric[]>(() => {
+    const data = this.email();
+    if (!data) return [];
+    return [
+      {
+        label: 'Open rate',
+        value: this.formatPercent(data.open_rate),
+        help: `${this.formatNumber(data.unique_opens)} unique opens`,
+      },
+      {
+        label: 'Click rate',
+        value: this.formatPercent(data.click_rate),
+        help: `${this.formatNumber(data.unique_clicks)} unique clicks`,
+      },
+      {
+        label: 'Replies',
+        value: this.formatNumber(data.reply_count),
+      },
+      {
+        label: 'Unsubscribes',
+        value: this.formatNumber(data.unsubscribe_count),
+      },
+      {
+        label: 'Spam complaints',
+        value: this.formatNumber(data.spam_complaint_count),
+      },
+    ];
+  });
+  protected readonly error = signal<string | null>(null);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.load(currentId));
+    });
+  }
+  protected readonly topLinks = computed<MarketingEmailTopLinkType[]>(() => {
+    const data = this.email();
+    if (!data?.top_links) return [];
+    return Array.isArray(data.top_links) ? data.top_links : [];
+  });
+
+  protected readonly funnelMetrics = computed(() => {
+    const data = this.email();
+    if (!data) return null;
+    const sent = Number(data.total_recipients ?? 0);
+    const delivered = Number(data.delivered_count ?? 0);
+    const opened = Number(data.unique_opens ?? 0);
+    const clicked = Number(data.unique_clicks ?? 0);
+
+    const delPct = sent > 0 ? (delivered / sent) * 100 : 0;
+    const opPct = delivered > 0 ? (opened / delivered) * 100 : 0;
+    const clPct = opened > 0 ? (clicked / opened) * 100 : 0; // CTOR
+
+    return {
+      sent,
+      delivered,
+      opened,
+      clicked,
+      delPct,
+      opPct,
+      clPct,
+    };
+  });
+
+  protected readonly timelinePoints = computed(() => {
+    const data = this.stats();
+    if (!data || !data.timeline || data.timeline.length === 0) {
+      return { opensPath: '', clicksPath: '', opensArea: '', clicksArea: '', points: [], gridLines: [] };
+    }
+
+    const timeline = data.timeline;
+    const width = 600;
+    const height = 150;
+    const paddingLeft = 50;
+    const paddingRight = 20;
+    const paddingTop = 20;
+    const paddingBottom = 30;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+
+    // Find max value for Y scaling
+    let maxVal = 10;
+    for (const t of timeline) {
+      if (t.opens > maxVal) maxVal = t.opens;
+      if (t.clicks > maxVal) maxVal = t.clicks;
+    }
+    // Round maxVal to nice number
+    maxVal = Math.ceil(maxVal * 1.15);
+
+    const points = timeline.map((t, i) => {
+      const x = paddingLeft + (timeline.length > 1 ? (i / (timeline.length - 1)) * chartWidth : chartWidth / 2);
+      const yOpens = height - paddingBottom - (t.opens / maxVal) * chartHeight;
+      const yClicks = height - paddingBottom - (t.clicks / maxVal) * chartHeight;
+      return {
+        label: this.formatTimeBucket(t.time),
+        opens: t.opens,
+        clicks: t.clicks,
+        x,
+        yOpens,
+        yClicks,
+      };
+    });
+
+    // Generate path strings
+    let opensPath = '';
+    let clicksPath = '';
+    let opensArea = '';
+    let clicksArea = '';
+
+    if (timeline.length > 0) {
+      opensPath =
+        `M ${points[0]!.x} ${points[0]!.yOpens} ` +
+        points
+          .slice(1)
+          .map((p) => `L ${p.x} ${p.yOpens}`)
+          .join(' ');
+      clicksPath =
+        `M ${points[0]!.x} ${points[0]!.yClicks} ` +
+        points
+          .slice(1)
+          .map((p) => `L ${p.x} ${p.yClicks}`)
+          .join(' ');
+
+      const bottomY = height - paddingBottom;
+      opensArea = opensPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
+      clicksArea = clicksPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
+    }
+
+    const gridLines = [
+      { y: height - paddingBottom, label: '0' },
+      { y: height - paddingBottom - chartHeight * 0.25, label: Math.round(maxVal * 0.25).toString() },
+      { y: height - paddingBottom - chartHeight * 0.5, label: Math.round(maxVal * 0.5).toString() },
+      { y: height - paddingBottom - chartHeight * 0.75, label: Math.round(maxVal * 0.75).toString() },
+      { y: height - paddingBottom - chartHeight, label: maxVal.toString() },
+    ];
+
+    return {
+      opensPath,
+      clicksPath,
+      opensArea,
+      clicksArea,
+      points,
+      gridLines,
+    };
+  });
+
+  public audienceLabel(): string {
+    const data = this.email();
+    if (!data) return '—';
+    if (data.target_lists) return data.target_lists;
+    if (data.segments) return data.segments;
+    return '—';
+  }
+
+  public formatBytes(value: number | null | undefined): string {
+    if (!value) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let size = value;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  public goBack() {
+    window.history.back();
+  }
+
+  private async load(id: string) {
+    if (!id) {
+      this.error.set('Newsletter not found.');
+      return;
+    }
+    try {
+      const record = (await this.service.getById(id)) as MarketingEmailType | null;
+      if (!record) {
+        this.error.set('Newsletter not found.');
+        return;
+      }
+      this.email.set(record);
+
+      const statsData = await this.service.getEngagementStats(id);
+      this.stats.set(statsData);
+
+      await this.loadAttachments(id);
+    } catch (err: unknown) {
+      console.error(err);
+      this.error.set('Unable to load newsletter.');
+    }
+  }
+
+  private async loadAttachments(id: string): Promise<void> {
+    try {
+      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
+      this.attachments.set(
+        (rows as Record<string, unknown>[]).map((r) => ({
+          id: String(r['id']),
+          filename: String(r['filename']),
+          size_bytes: r['size_bytes'] as number | null,
+        })),
+      );
+    } catch {
+      // Non-fatal — attachments are supplementary to the newsletter report.
+    }
+  }
+
+  protected async onAttachmentSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    const newsletterId = this.id();
+    if (!file || !newsletterId) return;
+
+    this.isUploadingAttachment.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
+      this.alertSvc.showSuccess(`"${file.name}" attached`);
+      await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to attach file');
+    } finally {
+      this.isUploadingAttachment.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Remove "${attachment.filename}"?`,
+      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(attachment.id);
+      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
+      const newsletterId = this.id();
+      if (newsletterId) await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to remove attachment');
+    }
+  }
+
+  protected formatActivityDate(value: Date | string | null | undefined): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+  }
+
+  private formatTimeBucket(timeStr: string): string {
+    try {
+      const [datePart = '', hourPart = ''] = timeStr.split(' ');
+      const [year = NaN, month = NaN, day = NaN] = datePart.split('-').map(Number);
+      const [hour = NaN] = hourPart.split(':').map(Number);
+      const date = new Date(year, month - 1, day, hour);
+      return new Intl.DateTimeFormat(undefined, { hour: 'numeric', hour12: true }).format(date);
+    } catch {
+      return timeStr;
+    }
+  }
+
+  protected formatNumber(value: number | null | undefined): string {
+    if (value == null) return '--';
+    return new Intl.NumberFormat().format(value);
+  }
+
+  private formatDate(value: Date | string | null | undefined): string | undefined {
+    if (!value) return undefined;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+
+  private formatPercent(value: number | null | undefined): string {
+    if (value == null) return '--';
+    return `${value.toFixed(1)}%`;
+  }
 }
 ```
 
@@ -43878,679 +42852,174 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.html
+
+```html
+<div class="space-y-8">
+  @if (!loaded()) {
+  <div class="flex items-center justify-center py-16">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+  } @else {
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
+    </div>
+
+    <div class="pt-2">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <span class="font-semibold text-base-content">
+          {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
+        </span>
+        @if (usedPct() >= 100) {
+        <span class="text-sm text-error font-medium">Newsletters pause sending attachments at 100%</span>
+        } @else if (usedPct() >= 90) {
+        <span class="text-sm text-warning font-medium">Approaching your storage limit</span>
+        }
+      </div>
+      <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
+        <div class="h-full rounded-full transition-all" [class]="barColorClass()" [style.width.%]="usedPct()"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
+    </div>
+
+    @if (largestFiles().length === 0) {
+    <div class="flex flex-col items-center text-center py-10">
+      <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+      <p class="text-sm text-base-content/60">No files uploaded yet.</p>
+    </div>
+    } @else {
+    <ul class="divide-y divide-base-200">
+      @for (file of largestFiles(); track file.id) {
+      <li class="flex items-center justify-between gap-4 py-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document" class="text-primary/70 shrink-0" [size]="6"></pc-icon>
+          <div class="min-w-0">
+            <p class="font-medium text-base-content truncate">{{ file.filename }}</p>
+            @if (file.attachedToLabel) {
+            <p class="text-xs text-base-content/60 truncate">Attached to {{ file.attachedToLabel }}</p>
+            }
+          </div>
+        </div>
+        <div class="flex items-center gap-4 shrink-0">
+          <span class="text-sm text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
+          <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
+            <pc-icon name="trash" [size]="4"></pc-icon>
+          </button>
+        </div>
+      </li>
+      }
+    </ul>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.ts
 
 ```typescript
-import { DatePipe, NgClass } from '@angular/common';
-import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-import { StorageSettingsComponent } from './storage/storage-settings';
-
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
-
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
+interface LargestFile {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+  attachedToLabel: string | null;
 }
 
 @Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    PasskeySettingsComponent,
-    StorageSettingsComponent,
-    DatePipe,
-    NgClass,
-  ],
-  templateUrl: './settings-page.html',
+  selector: 'pc-storage-settings',
+  imports: [Icon],
+  templateUrl: './storage-settings.html',
 })
-export class SettingsPage implements OnInit {
+export class StorageSettingsComponent implements OnInit {
+  private readonly filesSvc = inject(FilesService);
   private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
 
-  protected readonly currentMode: 'settings' | 'workspace';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
+  protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
+  protected readonly usedBytes = signal(0);
+  protected readonly quotaBytes = signal(0);
+  protected readonly planLabel = signal('');
+  protected readonly largestFiles = signal<LargestFile[]>([]);
+
+  protected readonly usedPct = computed(() => {
+    const quota = this.quotaBytes();
+    if (!quota) return 0;
+    return Math.min(100, Math.round((this.usedBytes() / quota) * 100));
   });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
+
+  protected readonly barColorClass = computed(() => {
+    const pct = this.usedPct();
+    if (pct >= 100) return 'bg-error';
+    if (pct >= 90) return 'bg-warning';
+    return 'bg-primary';
   });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  // The config-driven section currently shown, so the header Save/Cancel act on it.
-  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
-  protected readonly headerSection = computed<SectionState | null>(() => {
-    const id = this.selectedSectionId();
-    return this.visibleSections.find((s) => s.config.id === id) ?? null;
-  });
-  protected readonly senderEmailInput = signal('');
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
 
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-
-  public readonly section = input<string>();
-
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
-
-    // Own the navbar breadcrumb strip; without this the page inherits the previous
-    // page's stale trail (e.g. "Households" from the grid it was reached from).
-    this.breadcrumbs.set({
-      crumbs: [{ label: this.currentMode === 'workspace' ? 'Workspace' : 'Settings' }],
-      positionLabel: null,
-      hasPrev: false,
-      hasNext: false,
-      prevLabel: 'Previous record',
-      nextLabel: 'Next record',
-      onPrev: () => undefined,
-      onNext: () => undefined,
-    });
-    this.destroyRef.onDestroy(() => this.breadcrumbs.clear());
-
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'workspace') {
-          this.selectedSectionId.set('organization');
-        }
-      }
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
+  ngOnInit(): void {
+    void this.load();
   }
 
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'workspace') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-  }
-
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
-  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
-  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
-    { value: 1, label: 'Mon' },
-    { value: 2, label: 'Tue' },
-    { value: 3, label: 'Wed' },
-    { value: 4, label: 'Thu' },
-    { value: 5, label: 'Fri' },
-    { value: 6, label: 'Sat' },
-    { value: 0, label: 'Sun' },
-  ];
-
-  private parseDays(raw: unknown): Set<number> {
-    return new Set(
-      String(raw ?? '')
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !Number.isNaN(n)),
-    );
-  }
-
-  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
-    return this.parseDays(section.payload()[controlName]).has(day);
-  }
-
-  protected toggleDay(section: SectionState, controlName: string, day: number): void {
-    const days = this.parseDays(section.payload()[controlName]);
-    if (days.has(day)) days.delete(day);
-    else days.add(day);
-    const ordered = this.dayChips
-      .map((c) => c.value)
-      .filter((d) => days.has(d))
-      .join(',');
-    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
-    section.form[controlName]().markAsDirty();
-  }
-
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
-  }
-
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
     try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
-      );
+      const summary = await this.filesSvc.getUsageSummary();
+      this.usedBytes.set(summary.usedBytes);
+      this.quotaBytes.set(summary.quotaBytes);
+      this.planLabel.set(this.formatPlanLabel(summary.planLabel));
+      this.largestFiles.set(summary.largestFiles);
+    } catch {
+      this.alerts.showError('Failed to load storage usage');
     } finally {
-      this.recomputingFingerprints.set(false);
+      end();
     }
   }
 
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
+  private formatPlanLabel(plan: string): string {
+    if (!plan) return 'Free trial plan';
+    return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
   }
 
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
+  protected formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return '—';
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
-  protected selectSection(sectionId: string) {
-    void this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
-
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
-
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
-
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
-            }
-            return null;
-          });
-        }
-      }
+  protected async deleteFile(file: LargestFile): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete "${file.filename}"?`,
+      message: 'This permanently removes the file from cloud storage. This cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
     });
+    if (!confirmed) return;
 
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alerts.showSuccess(`"${file.filename}" deleted`);
+      await this.load();
+    } catch {
+      this.alerts.showError('Failed to delete file');
     }
   }
-
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
-      }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'day-toggles':
-        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
-  }
-
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
-      }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
-      }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'day-toggles':
-        return value === null || value === undefined ? '' : String(value);
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
-  }
-
-  private randomHex(len: number): string {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-  }
-
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
-      }
-    }, 1000);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -47035,356 +45504,6 @@ export class Tags implements OnInit {
     }
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
-
-import { AuthService } from '../../../auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../services/tasks-service';
-import { computeTaskSla } from '../services/task-sla';
-
-type ListTab = 'all' | 'mine' | 'unassigned' | 'done';
-type DueBucket = 'overdue' | 'today' | 'upcoming' | 'none';
-
-interface ListTask {
-  id: string;
-  name: string;
-  status: string;
-  priority: string | null;
-  assigned_to: string | null;
-  due_at: string | null;
-  created_at: string | null;
-  details: string | null;
-}
-
-const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
-  overdue: { label: 'Overdue', tone: 'error' },
-  today: { label: 'Today', tone: 'warning' },
-  upcoming: { label: 'Upcoming', tone: 'info' },
-  none: { label: 'No due date', tone: 'neutral' },
-};
-const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
-
-@Component({
-  selector: 'pc-tasks-list',
-  imports: [Icon, CsvImportComponent],
-  templateUrl: './tasks-list.html',
-})
-export class TasksList implements OnInit {
-  private readonly router = inject(Router);
-  private readonly svc = inject(TasksService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly _loading = createLoadingGate();
-
-  protected readonly loading = this._loading.visible;
-  protected readonly loaded = this._loading.loaded;
-  protected readonly tab = signal<ListTab>('all');
-  protected readonly tasks = signal<ListTask[]>([]);
-  protected readonly usersById = signal<Map<string, string>>(new Map());
-  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
-  protected readonly counts = signal<{
-    assignedToMe: number;
-    openTotal: number;
-    slaBreaches: number;
-    unassigned: number;
-  } | null>(null);
-
-  protected readonly importerOpen = signal(false);
-  protected readonly importSummary = signal<CsvImportSummary | null>(null);
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
-
-  /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
-  protected readonly countSentence = computed(() => {
-    const c = this.counts();
-    if (!c) return '';
-    return `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ${c.assignedToMe} assigned to you`;
-  });
-
-  protected readonly tabCounts = computed(() => {
-    const all = this.tasks();
-    const me = this.myId();
-    return {
-      all: all.length,
-      mine: all.filter((t) => t.assigned_to === me).length,
-      unassigned: all.filter((t) => t.assigned_to == null && t.status !== 'done').length,
-      done: all.filter((t) => t.status === 'done').length,
-    };
-  });
-
-  /** Quiet tab row data (design idiom table §4) — typed so `tab.key` narrows to `ListTab`. */
-  protected readonly tabs = computed((): Array<{ count: number; key: ListTab; label: string }> => {
-    const c = this.tabCounts();
-    return [
-      { key: 'all', label: 'All', count: c.all },
-      { key: 'mine', label: 'Mine', count: c.mine },
-      { key: 'unassigned', label: 'Unassigned', count: c.unassigned },
-      { key: 'done', label: 'Done', count: c.done },
-    ];
-  });
-
-  protected readonly filtered = computed(() => {
-    const all = this.tasks();
-    const me = this.myId();
-    const tab = this.tab();
-    switch (tab) {
-      case 'all':
-        return all;
-      case 'mine':
-        return all.filter((t) => t.assigned_to === me);
-      case 'unassigned':
-        return all.filter((t) => t.assigned_to == null && t.status !== 'done');
-      case 'done':
-        return all.filter((t) => t.status === 'done');
-      default: {
-        const _exhaustive: never = tab;
-        return _exhaustive;
-      }
-    }
-  });
-
-  protected readonly groups = computed(() => {
-    const buckets = new Map<DueBucket, ListTask[]>(DUE_BUCKET_ORDER.map((b) => [b, []]));
-    for (const t of this.filtered()) {
-      buckets.get(this.bucketFor(t))?.push(t);
-    }
-    return DUE_BUCKET_ORDER.map((key) => ({ key, meta: DUE_BUCKET_META[key], rows: buckets.get(key) ?? [] })).filter(
-      (g) => g.rows.length > 0,
-    );
-  });
-
-  public ngOnInit(): void {
-    void this.settingsSvc.load();
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [res, users, counts] = await Promise.all([
-        this.svc.getAll({
-          limit: 1000,
-          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details'],
-        }),
-        this.userService.getUsers(),
-        this.svc.getSummaryCounts(),
-      ]);
-      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
-      this.counts.set(counts);
-
-      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
-      this.tasks.set(rows.map((r) => this.toListTask(r)));
-
-      const flashId = (window.history.state as { flashId?: unknown } | undefined)?.flashId;
-      if (typeof flashId === 'string' && flashId) this.flashCard(flashId);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not load tasks. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  private toListTask(r: Record<string, unknown>): ListTask {
-    return {
-      id: String(r['id']),
-      name: String(r['name'] || '(no name)'),
-      status: String(r['status'] ?? 'todo'),
-      priority: (r['priority'] as string | null) ?? null,
-      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
-      due_at: (r['due_at'] as string | null) ?? null,
-      created_at: (r['created_at'] as string | null) ?? null,
-      details: (r['details'] as string | null) ?? null,
-    };
-  }
-
-  private bucketFor(t: ListTask): DueBucket {
-    if (!t.due_at) return 'none';
-    const due = this.dateOnly(t.due_at);
-    const today = this.dateOnly(new Date().toISOString());
-    if (due < today) return 'overdue';
-    if (due === today) return 'today';
-    return 'upcoming';
-  }
-
-  private dateOnly(v: string): string {
-    return v.length > 10 ? v.slice(0, 10) : v;
-  }
-
-  protected setTab(tab: ListTab): void {
-    this.tab.set(tab);
-  }
-
-  protected isFlashed(id: string): boolean {
-    return this.flashedIds().has(id);
-  }
-
-  protected assigneeName(id: string | null): string | null {
-    return id ? (this.usersById().get(id) ?? null) : null;
-  }
-
-  protected assigneeInitial(id: string | null): string {
-    const name = this.assigneeName(id);
-    return name ? name.slice(0, 1).toUpperCase() : '?';
-  }
-
-  protected waitingReason(t: ListTask): string | null {
-    if (t.status !== 'waiting' || !t.details) return null;
-    const oneLine = t.details.trim().split('\n')[0] ?? '';
-    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
-  }
-
-  protected slaPill(t: ListTask) {
-    return computeTaskSla({
-      status: t.status,
-      createdAt: t.created_at ? new Date(t.created_at) : null,
-      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
-      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
-      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
-      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
-    });
-  }
-
-  protected dateLabel(v?: string | null): string {
-    if (!v) return '';
-    return this.dateOnly(v);
-  }
-
-  protected priorityBadgeClass(p?: string | null): string {
-    const v = (p || '').toLowerCase();
-    return v === 'urgent'
-      ? 'badge-error'
-      : v === 'high'
-        ? 'badge-warning'
-        : v === 'medium'
-          ? 'badge-info'
-          : 'badge-neutral';
-  }
-
-  /** Check-circle toggle: complete (-> done) or reopen (-> todo) a task in place. */
-  protected async toggleDone(t: ListTask): Promise<void> {
-    const next = t.status === 'done' ? 'todo' : 'done';
-    this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: next } : x)));
-    try {
-      await this.svc.update(t.id, { status: next } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      this.flashCard(t.id);
-    } catch (err) {
-      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: t.status } : x)));
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
-    }
-  }
-
-  protected async takeTask(t: ListTask): Promise<void> {
-    const me = this.auth.getUser();
-    if (!me?.id) return;
-    try {
-      await this.svc.update(t.id, { assigned_to: me.id } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, assigned_to: me.id } : x)));
-      this.flashCard(t.id);
-      this.alerts.showSuccess(`You're now assigned to "${t.name}"`);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
-    }
-  }
-
-  private flashCard(id: string): void {
-    this.flashedIds.update((s) => new Set([...s, id]));
-    setTimeout(() => {
-      this.flashedIds.update((s) => {
-        const next = new Set(s);
-        next.delete(id);
-        return next;
-      });
-    }, 1200);
-  }
-
-  protected openTask(t: ListTask): void {
-    void this.router.navigate(['tasks', t.id]);
-  }
-
-  protected openBoard(): void {
-    void this.router.navigate(['/tasks/board']);
-  }
-
-  protected newTask(): void {
-    void this.router.navigate(['/tasks/add']);
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected openImportDialog(): void {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.svc.import(rows, skippedReported, fileName || undefined);
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`,
-      });
-      this.importerOpen.set(false);
-      await this.loadOnInit();
-    } catch (err) {
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped: skippedReported,
-        failed: true,
-        message: getUserErrorMessage(err, 'Import failed'),
-      });
-      this.importerOpen.set(false);
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
@@ -52996,330 +51115,853 @@ export class PublicRoute implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
 
-```typescript
-import type { HelpArticle } from '../help-types';
+```html
+<div class="flex text-sm h-full overflow-hidden">
+  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
+  <div [class]="folderPanelClass()">
+    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
+  </div>
 
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
-          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
-          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
+  <!-- Email list panel -->
+  @if (!isBodyExpanded()) {
+  <div [class]="listPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
+      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to folders">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Folders
+      </button>
+    </div>
+    <pc-email-list
+      class="flex-1 min-h-0 block"
+      (emailSelected)="onEmail($event!)"
+      (reply)="onReply($event)"
+      (replyAll)="onReplyAll($event)"
+      (forward)="onForward($event)"
+    ></pc-email-list>
+  </div>
+  }
+
+  <!-- Right pane: compose OR details -->
+  <div [class]="detailPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center mb-2 shrink-0">
+      <button class="btn btn-ghost btn-sm touch-target gap-1" (click)="mobileGoBack()" aria-label="Back to list">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (isComposing()) {
+      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
+        <pc-compose-email
+          #composer
+          class="h-full"
+          [draftId]="draftIdToLoad()"
+          [initial]="composePrefill()"
+          (finished)="closeCompose()"
+        ></pc-compose-email>
+      </div>
+      } @else {
+      <pc-email-details
+        class="h-full"
+        [email]="selectedEmail()"
+        (reply)="onReply($event)"
+        (replyAll)="onReplyAll($event)"
+        (forward)="onForward($event)"
+      ></pc-email-details>
+      }
+    </div>
+  </div>
+
+  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
+  @if (showPersonRail()) {
+  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
+  } @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Keep your existing BODY overlay when expanded -->
+  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
+    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
+      <div class="flex items-center justify-end">
+        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
+          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <div class="h-full bg-base-100 p-3">
+          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
+
+```html
+<section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
+  @if (email()) {
+  <pc-email-header
+    [email]="email()!"
+    (reply)="emitReply()"
+    (replyAll)="emitReplyAll()"
+    (forward)="emitForward()"
+  ></pc-email-header>
+  <main class="flex-1 h-full overflow-hidden px-4 flex flex-col gap-3">
+    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
+    @if (slaPill(); as sla) {
+    <div>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
+        [class.bg-base-200]="sla.tone === 'neutral'"
+        [class.text-base-content]="sla.tone === 'neutral'"
+        [class.bg-warning/15]="sla.tone === 'warning'"
+        [class.text-warning]="sla.tone === 'warning'"
+        [class.bg-error/15]="sla.tone === 'error'"
+        [class.text-error]="sla.tone === 'error'"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        {{ sla.text }}
+      </span>
+    </div>
+    }
+
+    <!-- Body owns the space (§5) -->
+    <pc-email-body class="flex-1 min-h-0 rounded-lg bg-base-100" [email]="email()!"> </pc-email-body>
+
+    @if (!store.isBodyExpanded()) {
+    <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
+    <div class="flex items-center gap-4 border-b border-base-200 text-[12.5px]">
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'comments'"
+        [class.!text-primary]="openPanel() === 'comments'"
+        [class.font-semibold]="openPanel() === 'comments'"
+        (click)="toggleCommentsTab()"
+      >
+        <pc-icon name="chat-bubble-bottom-center-text" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Comments tab@@emailDetails.tab.comments">Comments</ng-container>
+        @if (commentCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ commentCount() }}</span
+        >
+        }
+      </button>
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'activity'"
+        [class.!text-primary]="openPanel() === 'activity'"
+        [class.font-semibold]="openPanel() === 'activity'"
+        (click)="toggleActivityTab()"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Activity tab@@emailDetails.tab.activity">Activity</ng-container>
+        @if (activityCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ activityCount() }}</span
+        >
+        }
+      </button>
+      <span class="flex-1"></span>
+      @if (openPanel()) {
+      <button
+        type="button"
+        class="text-xs text-base-content/50 underline underline-offset-2 hover:text-base-content"
+        (click)="closePanel()"
+        i18n="EmailDetails|Hide open panel@@emailDetails.tab.hide"
+      >
+        Hide
+      </button>
+      }
+    </div>
+
+    @if (openPanel() === 'comments') {
+    <div
+      class="animate-drop max-h-60 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-comments [email]="email()"></pc-email-comments>
+    </div>
+    } @else if (openPanel() === 'activity') {
+    <div
+      class="animate-drop max-h-52 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-activities [email]="email()" [headerless]="true"></pc-email-activities>
+    </div>
+    } }
+  </main>
+
+  } @else if (isLoading()) {
+  <div class="min-h-screen flex items-center justify-center">
+    <span class="loading loading-bars"></span>
+  </div>
+  } @else if (showNoEmailMsg()){
+  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
+    <pc-icon name="exclamation-circle" [size]="16" class="text-base-300"></pc-icon>
+    <span>Please select an email</span>
+  </div>
+  }
+</section>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
+
+```html
+<aside [class]="asideClass()">
+  <!-- Header and expand / collapse icon -->
+  <div class="flex items-center justify-between pl-4">
+    <div class="text-xs text-accent uppercase">
+      <span [class]="labelClass()">Triage</span>
+    </div>
+
+    <pc-swap
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
+      animation="rotate"
+      [checked]="!foldersCollapsed()"
+      (click)="toggleFolders()"
+      [size]="4"
+      class="text-accent hover:text-primary invisible lg:visible"
+    ></pc-swap>
+  </div>
+  <div class="p-2 border-b border-base-300 flex flex-col gap-2 shrink-0">
+    <button class="btn btn-sm btn-primary w-full" (click)="emitNewEmail()" title="New email">
+      <pc-icon name="pencil-square"></pc-icon>
+      <span [class]="buttonLabelClass()">New email</span>
+    </button>
+    <button
+      class="btn btn-sm btn-outline btn-primary w-full"
+      [disabled]="store.isSyncing()"
+      (click)="store.syncEmails()"
+      title="Sync now"
+    >
+      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
+    </button>
+    <!-- Evidence line: background work narrates itself (§2) -->
+    @if (store.lastSyncedAt(); as syncedAt) {
+    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
+      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
+    </span>
+    }
+  </div>
+
+  <ul class="flex-1 text-xs overflow-y-auto email-scrollbar">
+    <!-- Virtual Folders (Filters) -->
+    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-1.5 min-h-11 md:min-h-0 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+      [class.font-semibold]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } }
+
+    <!-- Separator & Collapsible Header -->
+    <li [class]="separatorClass()" role="separator"></li>
+    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()" class="pr-0">
+      <span>Folders</span>
+      <pc-swap
+        swapOffIcon="chevron-right"
+        swapOnIcon="chevron-down"
+        animation="flip"
+        [checked]="!realFoldersCollapsed()"
+        [size]="3"
+        (click)="toggleRealFolders()"
+      ></pc-swap>
+    </li>
+
+    <!-- Real Folders -->
+    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-1.5 min-h-11 md:min-h-0 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } } }
+  </ul>
+</aside>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+
+```html
+<header class="px-4 pb-2">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
+
+    <div class="flex items-center gap-1 text-xs text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
+
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        @if (!isFolderTrash()) {
+
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore"
+          aria-label="Restore"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            #personDropdownContent
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  @if (editingName()) {
+                  <div class="flex items-center gap-1">
+                    <input
+                      #firstNameInput
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="First name"
+                      [value]="nameDraft().first_name"
+                      (input)="nameDraft.set({ first_name: $any($event.target).value, last_name: nameDraft().last_name })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="Last name"
+                      [value]="nameDraft().last_name"
+                      (input)="nameDraft.set({ first_name: nameDraft().first_name, last_name: $any($event.target).value })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Save name"
+                      (click)="saveName(person.id)"
+                    >
+                      <pc-icon name="check-circle" [size]="4" class="text-success"></pc-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Cancel"
+                      (click)="cancelEditName()"
+                    >
+                      <pc-icon name="x-mark" [size]="4" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @else {
+                  <div class="group flex items-center gap-1.5">
+                    <h3 class="font-bold text-sm">
+                      {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name ||
+                      '')).trim() : 'Add a name' }}
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label="Edit name"
+                      (click)="startEditName(person)"
+                    >
+                      <pc-icon name="pencil-square" [size]="3" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="menu-title text-xs border-t border-base-300">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="menu-title text-xs border-t border-base-300">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
@@ -54460,6 +53102,152 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <button type="submit">close</button>
   </form>
 </dialog>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
+
+```typescript
+import { Service, inject } from '@angular/core';
+import {
+  AddMarketingEmailType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  MarketingEmailTopLinkType,
+  UpdateMarketingEmailType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+
+@Service()
+export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
+  protected override readonly endpointName = 'newsletters';
+
+  private readonly campaignContext = inject(CampaignContextService);
+
+  public add(row: AddMarketingEmailType) {
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
+  }
+
+  public addMany(_rows: AddMarketingEmailType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.newsletters.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
+    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
+    const count = result?.count != null ? Number(result.count) : rows.length;
+    return { rows, count };
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getById(id: string) {
+    const record = await this.api.newsletters.getById.query(id);
+    return this.normalize(record);
+  }
+
+  public getEngagementStats(id: string) {
+    return this.api.newsletters.getEngagementStats.query(id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateMarketingEmailType) {
+    return this.api.newsletters.update.mutate({ id, data });
+  }
+
+  public send(id: string): Promise<any> {
+    return this.api.newsletters.send.mutate(id);
+  }
+
+  public sendTest(input: {
+    subject: string;
+    html: string;
+    text?: string;
+    to: string;
+    fromName?: string;
+    fromEmail?: string;
+  }): Promise<{ to: string; delivered: number }> {
+    return this.api.newsletters.sendTest.mutate(input);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.newsletters.exportCsv.mutate(input);
+  }
+
+  private normalize(record: any) {
+    if (!record) return record;
+    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
+    const asNumber = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const asDate = (value: unknown) => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const date = new Date(value as string);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    return {
+      ...record,
+      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
+      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
+      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
+      total_recipients: asNumber(record.total_recipients) ?? 0,
+      delivered_count: asNumber(record.delivered_count) ?? 0,
+      bounce_count: asNumber(record.bounce_count) ?? 0,
+      open_rate: asNumber(record.open_rate) ?? 0,
+      click_rate: asNumber(record.click_rate) ?? 0,
+      unique_opens: asNumber(record.unique_opens) ?? 0,
+      unique_clicks: asNumber(record.unique_clicks) ?? 0,
+      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
+      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
+      reply_count: asNumber(record.reply_count) ?? 0,
+      send_date: asDate(record.send_date),
+      last_engagement_at: asDate(record.last_engagement_at),
+      created_at: asDate(record.created_at) ?? new Date(),
+      updated_at: asDate(record.updated_at) ?? new Date(),
+      top_links,
+    };
+  }
+
+  private parseJsonArray<T>(value: unknown): T[] | null {
+    if (!value) return null;
+    if (Array.isArray(value)) return value as T[];
+    try {
+      const parsed = JSON.parse(String(value));
+      return Array.isArray(parsed) ? (parsed as T[]) : null;
+    } catch {
+      return null;
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
@@ -55804,662 +54592,680 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
+```typescript
+import { DatePipe, NgClass } from '@angular/common';
+import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
 
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        } @if (currentMode === 'settings') {
-        <!-- Passkeys custom section -->
-        <button
-          id="settings-nav-passkeys"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('passkeys')"
-        >
-          <pc-icon
-            name="lock-closed"
-            [class.text-primary]="isSelected('passkeys')"
-            [class.opacity-70]="!isSelected('passkeys')"
-            [size]="5"
-          />
-          Passkeys
-        </button>
-        } @if (currentMode === 'workspace') {
-        <!-- Email Sync custom section -->
-        <button
-          id="settings-nav-email-sync"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('email-sync')"
-        >
-          <pc-icon
-            name="envelope"
-            [class.text-primary]="isSelected('email-sync')"
-            [class.opacity-70]="!isSelected('email-sync')"
-            [size]="5"
-          />
-          Email sync
-        </button>
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
 
-        <!-- Domains custom section -->
-        <button
-          id="settings-nav-domains"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('domains')"
-        >
-          <pc-icon
-            name="globe-americas"
-            [class.text-primary]="isSelected('domains')"
-            [class.opacity-70]="!isSelected('domains')"
-            [size]="5"
-          />
-          Domain verification
-        </button>
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
 
-        <!-- Donations custom section -->
-        <button
-          id="settings-nav-donations"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('donations')"
-        >
-          <pc-icon
-            name="currency-dollar"
-            [class.text-primary]="isSelected('donations')"
-            [class.opacity-70]="!isSelected('donations')"
-            [size]="5"
-          />
-          Donations
-        </button>
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    PasskeySettingsComponent,
+    StorageSettingsComponent,
+    DatePipe,
+    NgClass,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
 
-        <!-- Storage custom section -->
-        <button
-          id="settings-nav-storage"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('storage')"
-        >
-          <pc-icon
-            name="archive-box"
-            [class.text-primary]="isSelected('storage')"
-            [class.opacity-70]="!isSelected('storage')"
-            [size]="5"
-          />
-          Storage
-        </button>
+  protected readonly currentMode: 'settings' | 'workspace';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
+  protected readonly senderEmailInput = signal('');
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
 
-        <!-- Billing custom section -->
-        <button
-          id="settings-nav-billing"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('billing')"
-        >
-          <pc-icon
-            name="credit-card"
-            [class.text-primary]="isSelected('billing')"
-            [class.opacity-70]="!isSelected('billing')"
-            [size]="5"
-          />
-          Billing
-        </button>
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
 
-        <!-- Account custom section -->
-        <button
-          id="settings-nav-account"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
-          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('account')"
-        >
-          <pc-icon
-            name="user-circle"
-            [class.text-primary]="isSelected('account')"
-            [class.opacity-70]="!isSelected('account')"
-            [size]="5"
-          />
-          Account
-        </button>
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Own the navbar breadcrumb strip; without this the page inherits the previous
+    // page's stale trail (e.g. "Households" from the grid it was reached from).
+    this.breadcrumbs.set({
+      crumbs: [{ label: this.currentMode === 'workspace' ? 'Workspace' : 'Settings' }],
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
+    this.destroyRef.onDestroy(() => this.breadcrumbs.clear());
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'workspace') {
+          this.selectedSectionId.set('organization');
         }
-      </nav>
-    </aside>
+      }
+    });
 
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
         }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-[13px] leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets —
-              some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate Credentials
-              </button>
-            </div>
-          </div>
-          }
-
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-sm font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } } @if (field.config.helper) {
-              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request Verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <p class="text-sm text-base-content/50 italic">
-                No verified sender emails yet. Add one above to request verification.
-              </p>
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
-                  <pc-icon name="check-circle" [size]="14"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute Fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-sm text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
-              <table class="table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Email Sync custom section -->
-      @if (currentMode === 'workspace' && isSelected('email-sync')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
-          </p>
-        </header>
-
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-      </section>
+        if (replyToField) {
+          replyToField.options = options;
+        }
       }
-
-      <!-- Domains custom section -->
-      @if (currentMode === 'workspace' && isSelected('domains')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
-          </p>
-        </header>
-        <pc-domains-settings></pc-domains-settings>
-      </section>
-      }
-
-      <!-- Donations custom section -->
-      @if (currentMode === 'workspace' && isSelected('donations')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
-            account.
-          </p>
-        </header>
-        <pc-donations-settings></pc-donations-settings>
-      </section>
-      }
-
-      <!-- Storage custom section -->
-      @if (currentMode === 'workspace' && isSelected('storage')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Storage</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
-        </header>
-        <pc-storage-settings></pc-storage-settings>
-      </section>
-      }
-
-      <!-- Billing custom section -->
-      @if (currentMode === 'workspace' && isSelected('billing')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your subscription plans, view invoice details, and update payment methods.
-          </p>
-        </header>
-        <pc-billing-settings></pc-billing-settings>
-      </section>
-      }
-
-      <!-- Passkeys custom section -->
-      @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
-          </p>
-        </header>
-        <pc-passkey-settings></pc-passkey-settings>
-      </section>
-      }
-
-      <!-- Account custom section -->
-      @if (currentMode === 'workspace' && isSelected('account')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your organization account — pause billing or permanently delete all data.
-          </p>
-        </header>
-        <pc-account-settings></pc-account-settings>
-      </section>
-      }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
+    });
   }
-</div>
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'workspace') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+  }
+
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
+  }
+
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update((p) => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret,
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    void this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private randomHex(len: number): string {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
@@ -56808,165 +55614,384 @@ export class TagsAdmin implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
 
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 class="text-xl font-semibold">Tasks</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
+
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../services/tasks-service';
+import { computeTaskSla } from '../services/task-sla';
+
+type ListTab = 'all' | 'mine' | 'unassigned' | 'done';
+type DueBucket = 'overdue' | 'today' | 'upcoming' | 'none';
+
+interface ListTask {
+  id: string;
+  name: string;
+  status: string;
+  priority: string | null;
+  assigned_to: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  details: string | null;
+}
+
+const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
+  overdue: { label: 'Overdue', tone: 'error' },
+  today: { label: 'Due Today', tone: 'warning' },
+  upcoming: { label: 'Coming Up', tone: 'info' },
+  none: { label: 'No due date', tone: 'neutral' },
+};
+const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
+
+@Component({
+  selector: 'pc-tasks-list',
+  imports: [Icon, CsvImportComponent],
+  templateUrl: './tasks-list.html',
+})
+export class TasksList implements OnInit {
+  private readonly router = inject(Router);
+  private readonly svc = inject(TasksService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly _loading = createLoadingGate();
+
+  protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
+  protected readonly tab = signal<ListTab>('all');
+  protected readonly tasks = signal<ListTask[]>([]);
+  protected readonly usersById = signal<Map<string, string>>(new Map());
+  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly counts = signal<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  } | null>(null);
+
+  protected readonly importerOpen = signal(false);
+  protected readonly importSummary = signal<CsvImportSummary | null>(null);
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
+
+  /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
+  protected readonly countSentence = computed(() => {
+    const c = this.counts();
+    if (!c) return '';
+    return `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ${c.assignedToMe} assigned to you`;
+  });
+
+  protected readonly tabCounts = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    return {
+      all: all.length,
+      mine: all.filter((t) => t.assigned_to === me).length,
+      unassigned: all.filter((t) => t.assigned_to == null && t.status !== 'done').length,
+      done: all.filter((t) => t.status === 'done').length,
+    };
+  });
+
+  /** Quiet tab row data (design idiom table §4) — typed so `tab.key` narrows to `ListTab`. */
+  protected readonly tabs = computed((): Array<{ count: number; key: ListTab; label: string }> => {
+    const c = this.tabCounts();
+    return [
+      { key: 'all', label: 'All', count: c.all },
+      { key: 'mine', label: 'Mine', count: c.mine },
+      { key: 'unassigned', label: 'Unassigned', count: c.unassigned },
+      { key: 'done', label: 'Done', count: c.done },
+    ];
+  });
+
+  protected readonly filtered = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    const tab = this.tab();
+    switch (tab) {
+      case 'all':
+        return all;
+      case 'mine':
+        return all.filter((t) => t.assigned_to === me);
+      case 'unassigned':
+        return all.filter((t) => t.assigned_to == null && t.status !== 'done');
+      case 'done':
+        return all.filter((t) => t.status === 'done');
+      default: {
+        const _exhaustive: never = tab;
+        return _exhaustive;
       }
-    </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import
-      </button>
-      <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openBoard()">
-        <pc-icon name="view-kanban" [size]="4"></pc-icon>
-        Open board
-      </button>
-      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        New task
-      </button>
-    </div>
-  </div>
-
-  <!-- Quiet tab row with counts (design idiom table §4) -->
-  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
-    @for (t of tabs(); track t.key) {
-    <button
-      type="button"
-      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
-      [class.text-primary]="tab() === t.key"
-      [class.font-semibold]="tab() === t.key"
-      [class.border-primary]="tab() === t.key"
-      [class.text-base-content/70]="tab() !== t.key"
-      (click)="setTab(t.key)"
-    >
-      {{ t.label }}
-      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
-    </button>
     }
-  </nav>
+  });
 
-  @if (loaded() && !filtered().length) {
-  <div class="flex flex-col items-center gap-3 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    @switch (tab()) { @case ('all') {
-    <span class="text-base font-medium">No tasks yet</span>
-    } @case ('mine') {
-    <span class="text-base font-medium">Nothing assigned to you yet</span>
-    } @case ('unassigned') {
-    <span class="text-base font-medium">Every open task has an owner</span>
-    } @case ('done') {
-    <span class="text-base font-medium">Nothing completed yet</span>
-    } }
-    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New task
-    </button>
-  </div>
-  } @else {
-  <div class="flex flex-col gap-5">
-    @for (group of groups(); track group.key) {
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2 px-1">
-        <span
-          class="text-xs font-semibold uppercase tracking-[0.06em]"
-          [class.text-error]="group.meta.tone === 'error'"
-          [class.text-warning]="group.meta.tone === 'warning'"
-          [class.text-info]="group.meta.tone === 'info'"
-          [class.text-base-content/50]="group.meta.tone === 'neutral'"
-        >
-          {{ group.meta.label }}
-        </span>
-        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
-      </div>
-
-      <div class="flex flex-col divide-y divide-base-200">
-        @for (t of group.rows; track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-2 px-1" [class.animate-saved-flash]="isFlashed(t.id)">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle shrink-0"
-            [class.text-success]="t.status === 'done'"
-            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
-            (click)="toggleDone(t)"
-          >
-            <pc-icon name="check-circle" [size]="5"></pc-icon>
-          </button>
-
-          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
-            <div
-              class="truncate text-sm font-medium"
-              [class.line-through]="t.status === 'done'"
-              [class.opacity-50]="t.status === 'done'"
-            >
-              {{ t.name }}
-            </div>
-            @if (reason) {
-            <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
-              <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="truncate">{{ reason }}</span>
-            </div>
-            }
-          </div>
-
-          @if (t.priority) {
-          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (pill) {
-          <span
-            class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="pill.tone === 'error'"
-            [class.badge-warning]="pill.tone === 'warning'"
-            [class.badge-ghost]="pill.tone === 'neutral'"
-          >
-            {{ pill.text }}
-          </span>
-          } @if (t.due_at) {
-          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
-            >{{ dateLabel(t.due_at) }}</span
-          >
-          } @if (t.assigned_to) {
-          <span
-            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-            [attr.title]="assignee"
-            >{{ assigneeInitial(t.assigned_to) }}</span
-          >
-          } @else {
-          <button
-            type="button"
-            class="badge badge-outline shrink-0 border-dashed text-xs"
-            title="Take this task — one click assigns it to you"
-            (click)="takeTask(t); $event.stopPropagation()"
-          >
-            Unassigned
-          </button>
-          }
-        </div>
-        }
-      </div>
-    </div>
+  protected readonly groups = computed(() => {
+    const buckets = new Map<DueBucket, ListTask[]>(DUE_BUCKET_ORDER.map((b) => [b, []]));
+    for (const t of this.filtered()) {
+      buckets.get(this.bucketFor(t))?.push(t);
     }
-  </div>
+    return DUE_BUCKET_ORDER.map((key) => ({ key, meta: DUE_BUCKET_META[key], rows: buckets.get(key) ?? [] })).filter(
+      (g) => g.rows.length > 0,
+    );
+  });
+
+  public ngOnInit(): void {
+    void this.settingsSvc.load();
+    void this.loadOnInit();
   }
-</div>
 
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import tasks from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
-/>
+  private async loadOnInit(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [res, users, counts] = await Promise.all([
+        this.svc.getAll({
+          limit: 1000,
+          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details'],
+        }),
+        this.userService.getUsers(),
+        this.svc.getSummaryCounts(),
+      ]);
+      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
+      this.counts.set(counts);
+
+      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
+      this.tasks.set(rows.map((r) => this.toListTask(r)));
+
+      const flashId = (window.history.state as { flashId?: unknown } | undefined)?.flashId;
+      if (typeof flashId === 'string' && flashId) this.flashCard(flashId);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load tasks. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  private toListTask(r: Record<string, unknown>): ListTask {
+    return {
+      id: String(r['id']),
+      name: String(r['name'] || '(no name)'),
+      status: String(r['status'] ?? 'todo'),
+      priority: (r['priority'] as string | null) ?? null,
+      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
+      due_at: (r['due_at'] as string | null) ?? null,
+      created_at: (r['created_at'] as string | null) ?? null,
+      details: (r['details'] as string | null) ?? null,
+    };
+  }
+
+  private bucketFor(t: ListTask): DueBucket {
+    if (!t.due_at) return 'none';
+    const due = this.dateOnly(t.due_at);
+    const today = this.dateOnly(new Date().toISOString());
+    if (due < today) return 'overdue';
+    if (due === today) return 'today';
+    return 'upcoming';
+  }
+
+  private dateOnly(v: string): string {
+    return v.length > 10 ? v.slice(0, 10) : v;
+  }
+
+  protected setTab(tab: ListTab): void {
+    this.tab.set(tab);
+  }
+
+  protected isFlashed(id: string): boolean {
+    return this.flashedIds().has(id);
+  }
+
+  protected assigneeName(id: string | null): string | null {
+    return id ? (this.usersById().get(id) ?? null) : null;
+  }
+
+  protected assigneeInitial(id: string | null): string {
+    const name = this.assigneeName(id);
+    return name ? name.slice(0, 1).toUpperCase() : '?';
+  }
+
+  protected waitingReason(t: ListTask): string | null {
+    if (t.status !== 'waiting' || !t.details) return null;
+    const oneLine = t.details.trim().split('\n')[0] ?? '';
+    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
+  }
+
+  /** Short scan-friendly badge for the list row; the full honest breakdown still lives on the detail page (task-view). */
+  protected slaBadge(t: ListTask): { text: string; tone: 'error' | 'warning' } | null {
+    const pill = computeTaskSla({
+      status: t.status,
+      createdAt: t.created_at ? new Date(t.created_at) : null,
+      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+    if (!pill) return null;
+    if (pill.tone === 'error') return { text: 'SLA breached', tone: 'error' };
+    if (pill.tone === 'warning') return { text: 'Due soon', tone: 'warning' };
+    return null;
+  }
+
+  /** "Due 4h ago" / "Due yesterday" / "Due today, 5:00" / "Due tomorrow" / "Due Thursday" (spec §4). */
+  protected dateLabel(v?: string | null): string {
+    if (!v) return '';
+    const due = new Date(v);
+    const now = new Date();
+    const dueDay = this.dateOnly(v);
+    const today = this.dateOnly(now.toISOString());
+
+    if (dueDay < today) {
+      const hoursAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_HOUR);
+      if (hoursAgo < 24) return `Due ${hoursAgo}h ago`;
+      if (hoursAgo < 48) return 'Due yesterday';
+      const daysAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_DAY);
+      return `Due ${daysAgo}d ago`;
+    }
+
+    if (dueDay === today) {
+      const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `Due today, ${time}`;
+    }
+
+    const daysAhead = Math.round((new Date(dueDay).getTime() - new Date(today).getTime()) / MS_PER_DAY);
+    if (daysAhead === 1) return 'Due tomorrow';
+    if (daysAhead < 7) return `Due ${WEEKDAY_NAMES[due.getDay()]}`;
+    return `Due ${due.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+  }
+
+  protected priorityBadgeClass(p?: string | null): string {
+    const v = (p || '').toLowerCase();
+    return v === 'urgent'
+      ? 'badge-error'
+      : v === 'high'
+        ? 'badge-warning'
+        : v === 'medium'
+          ? 'badge-info'
+          : 'badge-neutral';
+  }
+
+  /** Check-circle toggle: complete (-> done) or reopen (-> todo) a task in place. */
+  protected async toggleDone(t: ListTask): Promise<void> {
+    const next = t.status === 'done' ? 'todo' : 'done';
+    this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: next } : x)));
+    try {
+      await this.svc.update(t.id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.flashCard(t.id);
+    } catch (err) {
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: t.status } : x)));
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
+    }
+  }
+
+  protected async takeTask(t: ListTask): Promise<void> {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    try {
+      await this.svc.update(t.id, { assigned_to: me.id } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, assigned_to: me.id } : x)));
+      this.flashCard(t.id);
+      this.alerts.showSuccess(`You're now assigned to "${t.name}"`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
+    }
+  }
+
+  private flashCard(id: string): void {
+    this.flashedIds.update((s) => new Set([...s, id]));
+    setTimeout(() => {
+      this.flashedIds.update((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }, 1200);
+  }
+
+  protected openTask(t: ListTask): void {
+    void this.router.navigate(['tasks', t.id]);
+  }
+
+  protected openBoard(): void {
+    void this.router.navigate(['/tasks/board']);
+  }
+
+  protected newTask(): void {
+    void this.router.navigate(['/tasks/add']);
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected openImportDialog(): void {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.svc.import(rows, skippedReported, fileName || undefined);
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`,
+      });
+      this.importerOpen.set(false);
+      await this.loadOnInit();
+    } catch (err) {
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped: skippedReported,
+        failed: true,
+        message: getUserErrorMessage(err, 'Import failed'),
+      });
+      this.importerOpen.set(false);
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
@@ -57445,300 +56470,6 @@ export class TagsAdmin implements OnInit {
   </div>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/layout/navbar/navbar.html
-
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden">
-    <button
-      type="button"
-      class="btn btn-ghost btn-square touch-target"
-      (click)="toggleMobile()"
-      [attr.aria-expanded]="isMobileOpen()"
-      aria-controls="pc-sidebar-drawer"
-      [attr.aria-label]="isMobileOpen() ? 'Close navigation menu' : 'Open navigation menu'"
-      i18n-aria-label="@@navbar.menu.toggleAriaLabel"
-    >
-      <pc-swap
-        swapOnIcon="x-mark"
-        swapOffIcon="bars-4"
-        [checked]="isMobileOpen()"
-        animation="rotate"
-        [size]="6"
-        aria-hidden="true"
-      ></pc-swap>
-    </button>
-  </div>
-
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
-    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
-    <pc-breadcrumbs
-      class="hidden min-w-0 flex-1"
-      [class.sm:block]="!searchBarVisible()"
-      [crumbs]="trail.crumbs"
-      [positionLabel]="trail.positionLabel"
-      [hasPrev]="trail.hasPrev"
-      [hasNext]="trail.hasNext"
-      [prevLabel]="trail.prevLabel"
-      [nextLabel]="trail.nextLabel"
-      (prev)="trail.onPrev()"
-      (next)="trail.onNext()"
-    ></pc-breadcrumbs>
-    } }
-
-    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
-    <div
-      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
-      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
-    >
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search people, emails, campaigns"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
-      </label>
-    </div>
-
-    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
-    <span
-      class="tooltip tooltip-bottom"
-      [class.hidden]="searchBarVisible()"
-      data-tip="Search ⌘K · Command palette ⌘⇧K"
-      i18n-data-tip="@@navbar.search.tooltip"
-    >
-      <pc-icon
-        class="hover:text-primary text-base-400 cursor-pointer"
-        (click)="showSearchBar()"
-        name="magnifying-glass"
-      ></pc-icon>
-    </span>
-
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
-
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
-
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
-
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
-
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
-              @if (!notif.read) {
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <span
-            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
-            aria-hidden="true"
-            >{{ userInitials() }}</span
-          >
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a (click)="openSettings()">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/help">
-            <pc-icon name="information-circle"></pc-icon>
-            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
-          </a>
-        </li>
-        <li class="base-neutral px-0 mx-0"></li>
-        <li class="hover:text-primary">
-          <a routerLink="/campaigns">
-            <pc-icon name="square-3-stack-3d"></pc-icon>
-            <ng-container i18n="Navbar|Campaigns admin menu item@@navbar.profile.menu.campaigns"
-              >Campaigns</ng-container
-            >
-          </a>
-        </li>
-        <li class="base-neutral px-0 mx-0"></li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
-  }
-</div>
-
-<!-- Personal Settings popup (§5a) — instant apply -->
-<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
@@ -59272,6 +58003,332 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </dialog>
 ```
 
+## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to PeopleCRM',
+    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
+          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track** — no open items have exceeded their target.',
+          '**Warning** — the number of breached items has reached the warning threshold.',
+          '**Critical** — breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
 
 ```typescript
@@ -59445,538 +58502,6 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
-
-```html
-@if (email()) {
-<div class="flex flex-col gap-6">
-  <div class="flex items-center gap-3">
-    <button class="btn btn-ghost btn-sm" (click)="goBack()">
-      <pc-icon name="arrow-left" [size]="4" class="text-base-content"></pc-icon>
-      Back
-    </button>
-    <div class="divider divider-horizontal"></div>
-    <span class="badge badge-outline capitalize">{{ email()?.status || 'sent' }}</span>
-  </div>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h1 class="text-2xl font-semibold text-base-content">{{ email()?.name || 'Newsletter' }}</h1>
-    @if (email()?.summary) {
-    <p class="mt-1 text-sm text-base-content/70">{{ email()?.summary }}</p>
-    }
-    <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (metric of coreMetrics(); track metric.label) {
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ metric.label }}
-          </div>
-          <div class="stat-value text-lg font-extrabold text-base-content mt-1 sm:text-xl">{{ metric.value }}</div>
-          @if (metric.help) {
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">{{ metric.help }}</div>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold text-base-content">Audience</h2>
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Target lists / segments
-          </div>
-          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ audienceLabel() }}</div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Primary audience selection</div>
-        </div>
-      </div>
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Audience summary
-          </div>
-          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">
-            {{ email()?.audience_description || '—' }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Short description of the send</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Engagement Analytics</h2>
-
-    <!-- Stats Cards + Funnel Grid -->
-    <div class="mt-4 grid gap-6 lg:grid-cols-3">
-      <!-- Stats Cards (2 cols on lg) -->
-      <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2">
-        <!-- Open Rate Radial Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
-            <div class="stat-value text-xl font-extrabold text-success mt-1 tabular-nums">
-              {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(1) : '0.0' }}%
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.unique_opens) }} unique opens
-            </div>
-          </div>
-          <div
-            class="radial-progress text-success font-bold text-xs flex-shrink-0"
-            [style.--value]="email()?.open_rate || 0"
-            [style.--size]="'3.5rem'"
-            [style.--thickness]="'4px'"
-            role="progressbar"
-          >
-            {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(0) : '0' }}%
-          </div>
-        </div>
-
-        <!-- Click Rate Radial Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
-            <div class="stat-value text-xl font-extrabold text-accent mt-1 tabular-nums">
-              {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(1) : '0.0' }}%
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.unique_clicks) }} unique clicks
-            </div>
-          </div>
-          <div
-            class="radial-progress text-accent font-bold text-xs flex-shrink-0"
-            [style.--value]="email()?.click_rate || 0"
-            [style.--size]="'3.5rem'"
-            [style.--thickness]="'4px'"
-            role="progressbar"
-          >
-            {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(0) : '0' }}%
-          </div>
-        </div>
-
-        <!-- Delivered Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
-            <div class="stat-value text-xl font-extrabold text-info mt-1 tabular-nums">
-              {{ formatNumber(email()?.delivered_count) }}
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.total_recipients) }} total recipients
-            </div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info flex-shrink-0">
-            <pc-icon name="envelope" [size]="6"></pc-icon>
-          </div>
-        </div>
-
-        <!-- Bounces Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-            <div class="stat-value text-xl font-extrabold text-warning mt-1 tabular-nums">
-              {{ formatNumber(email()?.bounce_count) }}
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">Undelivered / dropped</div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-          </div>
-        </div>
-
-        <!-- Replies, Unsubscribes, Spam complaints counts -->
-        <div class="sm:col-span-2 grid gap-4 grid-cols-3">
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Replies</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 tabular-nums">
-                {{ formatNumber(email()?.reply_count) }}
-              </div>
-            </div>
-          </div>
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70 tabular-nums">
-                {{ formatNumber(email()?.unsubscribe_count) }}
-              </div>
-            </div>
-          </div>
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-error tabular-nums">
-                {{ formatNumber(email()?.spam_complaint_count) }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Funnel Chart Card -->
-      <div class="flex flex-col gap-3 p-4 border border-base-200 rounded-xl bg-base-100/50 shadow-sm">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Delivery Funnel</h3>
-
-        <!-- Sent -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Sent</span>
-            <span>{{ formatNumber(funnelMetrics()?.sent) }} (100%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-primary h-full rounded-full" style="width: 100%"></div>
-          </div>
-        </div>
-
-        <!-- Delivered -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Delivered</span>
-            <span>{{ formatNumber(funnelMetrics()?.delivered) }} ({{ funnelMetrics()?.delPct?.toFixed(1) }}%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-info h-full rounded-full" [style.width.%]="funnelMetrics()?.delPct"></div>
-          </div>
-        </div>
-
-        <!-- Opened -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Opened</span>
-            <span>{{ formatNumber(funnelMetrics()?.opened) }} ({{ funnelMetrics()?.opPct?.toFixed(1) }}%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-success h-full rounded-full" [style.width.%]="funnelMetrics()?.opPct"></div>
-          </div>
-        </div>
-
-        <!-- Clicked -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Clicked</span>
-            <span
-              >{{ formatNumber(funnelMetrics()?.clicked) }} ({{ funnelMetrics()?.clPct?.toFixed(1) }}% of open)</span
-            >
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-accent h-full rounded-full" [style.width.%]="funnelMetrics()?.clPct"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Timeline & Top Links Row -->
-    <div class="mt-6 grid gap-6 md:grid-cols-3">
-      <!-- Timeline Chart (2 cols on md) -->
-      <div class="md:col-span-2 border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Engagement Timeline</h3>
-          <div class="flex items-center gap-3 text-[10px] font-semibold">
-            <div class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full bg-success"></span>
-              <span class="text-base-content/70">Opens</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full bg-accent"></span>
-              <span class="text-base-content/70">Clicks</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="relative w-full h-[150px]">
-          @if (timelinePoints().points.length > 0) {
-          <svg viewBox="0 0 600 150" width="100%" height="100%" class="overflow-visible">
-            <defs>
-              <linearGradient id="openAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--color-success, #10b981)" stop-opacity="0.25" />
-                <stop offset="100%" stop-color="var(--color-success, #10b981)" stop-opacity="0" />
-              </linearGradient>
-              <linearGradient id="clickAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0.25" />
-                <stop offset="100%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0" />
-              </linearGradient>
-            </defs>
-
-            <!-- Horizontal Grid Lines -->
-            <g stroke="var(--fallback-bc,oklch(var(--bc)/0.05))" stroke-width="1">
-              @for (line of timelinePoints().gridLines; track line.y) {
-              <line
-                x1="50"
-                [attr.y1]="line.y"
-                x2="580"
-                [attr.y2]="line.y"
-                [attr.stroke-dasharray]="line.y === 120 ? 'none' : '3,3'"
-              ></line>
-              <text
-                x="42"
-                [attr.y]="line.y + 3"
-                text-anchor="end"
-                class="text-[9px] fill-base-content/40 font-sans font-medium"
-                stroke="none"
-              >
-                {{ line.label }}
-              </text>
-              }
-            </g>
-
-            <!-- Area Under Line -->
-            <path [attr.d]="timelinePoints().opensArea" fill="url(#openAreaGrad)" stroke="none"></path>
-            <path [attr.d]="timelinePoints().clicksArea" fill="url(#clickAreaGrad)" stroke="none"></path>
-
-            <!-- Line Plots -->
-            <path
-              [attr.d]="timelinePoints().opensPath"
-              fill="none"
-              class="stroke-success"
-              stroke-width="2"
-              stroke-linecap="round"
-            ></path>
-            <path
-              [attr.d]="timelinePoints().clicksPath"
-              fill="none"
-              class="stroke-accent"
-              stroke-width="2"
-              stroke-linecap="round"
-            ></path>
-
-            <!-- Data points (circles) -->
-            @for (pt of timelinePoints().points; track pt.label) {
-            <g>
-              <circle
-                [attr.cx]="pt.x"
-                [attr.cy]="pt.yOpens"
-                r="3"
-                class="fill-success stroke-base-100"
-                stroke-width="1"
-              >
-                <title>{{ pt.label }} - Opens: {{ pt.opens }}</title>
-              </circle>
-              <circle
-                [attr.cx]="pt.x"
-                [attr.cy]="pt.yClicks"
-                r="3"
-                class="fill-accent stroke-base-100"
-                stroke-width="1"
-              >
-                <title>{{ pt.label }} - Clicks: {{ pt.clicks }}</title>
-              </circle>
-              <text
-                [attr.x]="pt.x"
-                y="142"
-                text-anchor="middle"
-                class="text-[8px] fill-base-content/40 font-sans font-semibold"
-              >
-                {{ pt.label }}
-              </text>
-            </g>
-            }
-          </svg>
-          } @else {
-          <div
-            class="flex h-full w-full items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-          >
-            <span class="text-xs font-semibold text-base-content/40">No engagement history yet</span>
-            <span class="text-[10px] text-base-content/30"
-              >History will record hourly opens and clicks since campaign send.</span
-            >
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Top Links (1 col on md) -->
-      <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Top Links Clicked</h3>
-        @if (topLinks().length) {
-        <div class="grid gap-2 overflow-y-auto max-h-[160px]">
-          @for (link of topLinks(); track link.url) {
-          <div class="rounded border border-base-200 bg-base-100 p-2.5 shadow-xs flex flex-col gap-1">
-            <div class="truncate text-[10px] font-semibold text-base-content/80" [title]="link.url">{{ link.url }}</div>
-            <div class="text-xs font-bold text-accent">{{ formatNumber(link.clicks) }} clicks</div>
-          </div>
-          }
-        </div>
-        } @else {
-        <div
-          class="flex h-36 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-        >
-          <span class="text-xs font-semibold text-base-content/40">No links clicked</span>
-        </div>
-        }
-      </div>
-    </div>
-
-    <!-- Activity Log -->
-    <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 mt-6 shadow-sm">
-      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Recent Engagement Activity</h3>
-
-      @if (stats()?.activities?.length) {
-      <div class="overflow-x-auto max-h-80">
-        <table class="table table-xs table-zebra w-full text-left">
-          <thead>
-            <tr class="text-base-content/50 border-b border-base-200">
-              <th class="py-2">Recipient Email</th>
-              <th class="py-2">Action</th>
-              <th class="py-2">Time</th>
-              <th class="py-2">Detail</th>
-              <th class="py-2">IP / User Agent</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (act of stats()?.activities; track act.timestamp) {
-            <tr class="hover">
-              <td class="font-medium text-base-content">{{ act.email }}</td>
-              <td>
-                <span
-                  class="badge badge-sm py-1 capitalize font-semibold"
-                  [class.badge-success]="act.event_type === 'open'"
-                  [class.text-success-content]="act.event_type === 'open'"
-                  [class.badge-accent]="act.event_type === 'click'"
-                  [class.text-accent-content]="act.event_type === 'click'"
-                  [class.badge-warning]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  [class.text-warning-content]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  [class.badge-error]="act.event_type === 'spamreport'"
-                  [class.text-error-content]="act.event_type === 'spamreport'"
-                  [class.badge-neutral]="act.event_type === 'unsubscribe'"
-                  [class.text-neutral-content]="act.event_type === 'unsubscribe'"
-                >
-                  {{ act.event_type }}
-                </span>
-              </td>
-              <td class="text-base-content/70 whitespace-nowrap">{{ formatActivityDate(act.timestamp) }}</td>
-              <td class="max-w-[200px] truncate text-base-content/60" [title]="act.url || ''">
-                {{ act.url ? act.url : '—' }}
-              </td>
-              <td class="max-w-[150px] truncate text-[10px] text-base-content/40" [title]="act.user_agent || ''">
-                @if (act.user_agent) { {{ act.ip || '—' }}
-                <span class="hidden sm:inline">/ {{ act.user_agent }}</span> }
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-      >
-        <pc-icon name="inbox" [size]="5" class="text-base-content/30"></pc-icon>
-        <span class="text-xs font-semibold text-base-content/40">No activity logged yet</span>
-        <span class="text-[10px] text-base-content/30"
-          >Opens, clicks, bounces, and other actions will list here in real time.</span
-        >
-      </div>
-      }
-    </div>
-  </section>
-
-  @if (email()?.html_content || email()?.plain_text_content) {
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Content preview</h2>
-    <div class="mt-4 grid gap-6 lg:grid-cols-2">
-      <div>
-        <h3 class="text-sm font-semibold text-base-content/60">Subject line</h3>
-        <p class="mt-1 text-base">{{ email()?.subject || '—' }}</p>
-
-        <h3 class="mt-4 text-sm font-semibold text-base-content/60">Preview text</h3>
-        <p class="mt-1 text-base">{{ email()?.preview_text || '—' }}</p>
-      </div>
-      <div>
-        <h3 class="text-sm font-semibold text-base-content/60">HTML content</h3>
-        @if (email()?.html_content) {
-        <div class="mt-2 max-h-72 overflow-auto rounded border border-base-200 bg-base-200/20 p-3">
-          <div [innerHTML]="email()?.html_content"></div>
-        </div>
-        } @else {
-        <p class="mt-2 text-sm text-base-content/60">No HTML content stored.</p>
-        }
-      </div>
-    </div>
-    <div class="mt-4">
-      <h3 class="text-sm font-semibold text-base-content/60">Plain text content</h3>
-      <pre class="mt-2 max-h-56 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-sm">
-{{ email()?.plain_text_content || 'No plain text version stored.' }}</pre
-      >
-    </div>
-  </section>
-  } @if (attachments().length > 0 || canManageAttachments()) {
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <div class="flex items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">Attachments</h2>
-      @if (canManageAttachments()) {
-      <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
-      <button
-        class="btn btn-primary btn-sm gap-2"
-        [disabled]="isUploadingAttachment()"
-        (click)="attachmentInput.click()"
-      >
-        @if (isUploadingAttachment()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        Attaching… } @else {
-        <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
-        Attach file }
-      </button>
-      }
-    </div>
-
-    @if (attachments().length === 0) {
-    <p class="mt-3 text-sm text-base-content/60">No files attached to this newsletter.</p>
-    } @else {
-    <ul class="mt-3 divide-y divide-base-200">
-      @for (attachment of attachments(); track attachment.id) {
-      <li class="flex items-center justify-between gap-3 py-2">
-        <div class="min-w-0">
-          <p class="truncate text-sm font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
-          @if (attachment.size_bytes) {
-          <p class="text-xs text-base-content/60">{{ formatBytes(attachment.size_bytes) }}</p>
-          }
-        </div>
-        @if (canManageAttachments()) {
-        <button
-          class="btn btn-sm btn-circle btn-ghost text-error"
-          title="Remove attachment"
-          (click)="removeAttachment(attachment)"
-        >
-          <pc-icon name="trash" [size]="4"></pc-icon>
-        </button>
-        }
-      </li>
-      }
-    </ul>
-    }
-  </section>
-  } @if (error()) {
-  <div class="alert alert-error">
-    <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
-    {{ error() }}
-  </div>
-  }
-</div>
-} @else { @if (!error()) {
-<div class="flex flex-col gap-4">
-  <div class="skeleton h-6 w-32"></div>
-  <div class="skeleton h-32 w-full"></div>
-</div>
-} @else {
-<div class="alert alert-error">
-  <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
-  {{ error() }}
-</div>
-} }
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
@@ -60384,6 +58909,664 @@ export class PersonConnections implements OnInit {
     </form>
   </div>
 </dialog>
+```
+
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
+
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
+  </header>
+
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        } @if (currentMode === 'settings') {
+        <!-- Passkeys custom section -->
+        <button
+          id="settings-nav-passkeys"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('passkeys')"
+        >
+          <pc-icon
+            name="lock-closed"
+            [class.text-primary]="isSelected('passkeys')"
+            [class.opacity-70]="!isSelected('passkeys')"
+            [size]="5"
+          />
+          Passkeys
+        </button>
+        } @if (currentMode === 'workspace') {
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon
+            name="envelope"
+            [class.text-primary]="isSelected('email-sync')"
+            [class.opacity-70]="!isSelected('email-sync')"
+            [size]="5"
+          />
+          Email sync
+        </button>
+
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon
+            name="globe-americas"
+            [class.text-primary]="isSelected('domains')"
+            [class.opacity-70]="!isSelected('domains')"
+            [size]="5"
+          />
+          Domain verification
+        </button>
+
+        <!-- Donations custom section -->
+        <button
+          id="settings-nav-donations"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('donations')"
+        >
+          <pc-icon
+            name="currency-dollar"
+            [class.text-primary]="isSelected('donations')"
+            [class.opacity-70]="!isSelected('donations')"
+            [size]="5"
+          />
+          Donations
+        </button>
+
+        <!-- Storage custom section -->
+        <button
+          id="settings-nav-storage"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('storage')"
+        >
+          <pc-icon
+            name="archive-box"
+            [class.text-primary]="isSelected('storage')"
+            [class.opacity-70]="!isSelected('storage')"
+            [size]="5"
+          />
+          Storage
+        </button>
+
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon
+            name="credit-card"
+            [class.text-primary]="isSelected('billing')"
+            [class.opacity-70]="!isSelected('billing')"
+            [size]="5"
+          />
+          Billing
+        </button>
+
+        <!-- Account custom section -->
+        <button
+          id="settings-nav-account"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('account')"
+        >
+          <pc-icon
+            name="user-circle"
+            [class.text-primary]="isSelected('account')"
+            [class.opacity-70]="!isSelected('account')"
+            [size]="5"
+          />
+          Account
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-[13px] leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets —
+              some may immediately count as breached (or clear) on the dashboard.
+            </p>
+          </div>
+          } @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
+
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-sm font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
+              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request Verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <p class="text-sm text-base-content/50 italic">
+                No verified sender emails yet. Add one above to request verification.
+              </p>
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute Fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-sm text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
+              <table class="table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Email Sync custom section -->
+      @if (currentMode === 'workspace' && isSelected('email-sync')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
+          </p>
+        </header>
+
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+      </section>
+      }
+
+      <!-- Domains custom section -->
+      @if (currentMode === 'workspace' && isSelected('domains')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
+          </p>
+        </header>
+        <pc-domains-settings></pc-domains-settings>
+      </section>
+      }
+
+      <!-- Donations custom section -->
+      @if (currentMode === 'workspace' && isSelected('donations')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
+            account.
+          </p>
+        </header>
+        <pc-donations-settings></pc-donations-settings>
+      </section>
+      }
+
+      <!-- Storage custom section -->
+      @if (currentMode === 'workspace' && isSelected('storage')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Storage</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
+        </header>
+        <pc-storage-settings></pc-storage-settings>
+      </section>
+      }
+
+      <!-- Billing custom section -->
+      @if (currentMode === 'workspace' && isSelected('billing')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your subscription plans, view invoice details, and update payment methods.
+          </p>
+        </header>
+        <pc-billing-settings></pc-billing-settings>
+      </section>
+      }
+
+      <!-- Passkeys custom section -->
+      @if (currentMode === 'settings' && isSelected('passkeys')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
+          </p>
+        </header>
+        <pc-passkey-settings></pc-passkey-settings>
+      </section>
+      }
+
+      <!-- Account custom section -->
+      @if (currentMode === 'workspace' && isSelected('account')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your organization account — pause billing or permanently delete all data.
+          </p>
+        </header>
+        <pc-account-settings></pc-account-settings>
+      </section>
+      }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/summary.html
@@ -60949,6 +60132,457 @@ export class PersonConnections implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Tasks</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 mt-0.5 text-xs tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Quiet tab row with counts (design idiom table §4) -->
+  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
+    @for (t of tabs(); track t.key) {
+    <button
+      type="button"
+      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
+      [class.text-primary]="tab() === t.key"
+      [class.font-semibold]="tab() === t.key"
+      [class.border-primary]="tab() === t.key"
+      [class.text-base-content/70]="tab() !== t.key"
+      (click)="setTab(t.key)"
+    >
+      {{ t.label }}
+      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
+    </button>
+    }
+  </nav>
+
+  @if (loaded() && !filtered().length) {
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    @switch (tab()) { @case ('all') {
+    <span class="text-base font-medium">No tasks yet</span>
+    } @case ('mine') {
+    <span class="text-base font-medium">Nothing assigned to you yet</span>
+    } @case ('unassigned') {
+    <span class="text-base font-medium">Every open task has an owner</span>
+    } @case ('done') {
+    <span class="text-base font-medium">Nothing completed yet</span>
+    } }
+    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New task
+    </button>
+  </div>
+  } @else {
+  <div class="flex flex-col gap-5">
+    @for (group of groups(); track group.key) {
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2 px-1">
+        <span
+          class="text-xs font-semibold uppercase tracking-[0.06em]"
+          [class.text-error]="group.meta.tone === 'error'"
+          [class.text-warning]="group.meta.tone === 'warning'"
+          [class.text-info]="group.meta.tone === 'info'"
+          [class.text-base-content/50]="group.meta.tone === 'neutral'"
+        >
+          {{ group.meta.label }}
+        </span>
+        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+      </div>
+
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle shrink-0"
+            [class.text-success]="t.status === 'done'"
+            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+            (click)="toggleDone(t)"
+          >
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
+          </button>
+
+          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+            <div
+              class="truncate text-xs font-medium"
+              [class.line-through]="t.status === 'done'"
+              [class.opacity-50]="t.status === 'done'"
+            >
+              {{ t.name }}
+            </div>
+            @if (reason) {
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
+            }
+          </div>
+
+          @if (t.priority) {
+          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+          } @if (badge) {
+          <span
+            class="badge badge-xs w-fit shrink-0"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
+          >
+            {{ badge.text }}
+          </span>
+          } @if (t.due_at) {
+          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
+            >{{ dateLabel(t.due_at) }}</span
+          >
+          } @if (t.assigned_to) {
+          <span
+            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            [attr.title]="assignee"
+            >{{ assigneeInitial(t.assigned_to) }}</span
+          >
+          } @else {
+          <button
+            type="button"
+            class="badge badge-outline shrink-0 border-dashed text-xs"
+            title="Take this task — one click assigns it to you"
+            (click)="takeTask(t); $event.stopPropagation()"
+          >
+            Unassigned
+          </button>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+
+<pc-csv-importer
+  [open]="importerOpen()"
+  [title]="'Import tasks from CSV'"
+  [mappableFields]="mappableFields"
+  [autoMapHeader]="autoMapHeader"
+  [summary]="importSummary()"
+  (submit)="onImportSubmit($event)"
+  (close)="importerOpen.set(false); importSummary.set(null)"
+  (closeSummary)="importSummary.set(null)"
+/>
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 border-b border-base-300 shadow-lg relative">
+  <div class="flex-1 sm:hidden">
+    <button
+      type="button"
+      class="btn btn-ghost btn-square touch-target"
+      (click)="toggleMobile()"
+      [attr.aria-expanded]="isMobileOpen()"
+      aria-controls="pc-sidebar-drawer"
+      [attr.aria-label]="isMobileOpen() ? 'Close navigation menu' : 'Open navigation menu'"
+      i18n-aria-label="@@navbar.menu.toggleAriaLabel"
+    >
+      <pc-swap
+        swapOnIcon="x-mark"
+        swapOffIcon="bars-4"
+        [checked]="isMobileOpen()"
+        animation="rotate"
+        [size]="6"
+        aria-hidden="true"
+      ></pc-swap>
+    </button>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
+    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
+    <div
+      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
+      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
+    >
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search people, emails, campaigns"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
+      [class.hidden]="searchBarVisible()"
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
+              @if (!notif.read) {
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <span
+            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
+            aria-hidden="true"
+            >{{ userInitials() }}</span
+          >
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a (click)="openSettings()">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary">
+          <a routerLink="/campaigns">
+            <pc-icon name="square-3-stack-3d"></pc-icon>
+            <ng-container i18n="Navbar|Campaigns admin menu item@@navbar.profile.menu.campaigns"
+              >Campaigns</ng-container
+            >
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
+
+<!-- Personal Settings popup (§5a) — instant apply -->
+<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
+```
+
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
 
 ```typescript
@@ -61315,454 +60949,6 @@ export const SELECTION_COLUMN: ColumnDef = {};
  * primary way into the record and everything else recedes. Apply as a column `cellClass`.
  */
 export const SECONDARY_CELL_CLASS = 'text-base-content/70';
-```
-
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #818789;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e5c963;
-  --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
-   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
-   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
-   just apply on the touch surface). Keep the control's own flex centering. */
-@utility touch-target {
-  min-height: 2.75rem;
-  min-width: 2.75rem;
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
-   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
-   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
-   (layered) suppression can't win against the unlayered rule above. */
-.input :where(input, textarea, select):focus,
-.input :where(input, textarea, select):focus-visible {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
@@ -62616,6 +61802,538 @@ export class HouseholdsGrid implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
+
+```html
+@if (email()) {
+<div class="flex flex-col gap-6">
+  <div class="flex items-center gap-3">
+    <button class="btn btn-ghost btn-sm" (click)="goBack()">
+      <pc-icon name="arrow-left" [size]="4" class="text-base-content"></pc-icon>
+      Back
+    </button>
+    <div class="divider divider-horizontal"></div>
+    <span class="badge badge-outline capitalize">{{ email()?.status || 'sent' }}</span>
+  </div>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h1 class="text-2xl font-semibold text-base-content">{{ email()?.name || 'Newsletter' }}</h1>
+    @if (email()?.summary) {
+    <p class="mt-1 text-sm text-base-content/70">{{ email()?.summary }}</p>
+    }
+    <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (metric of coreMetrics(); track metric.label) {
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            {{ metric.label }}
+          </div>
+          <div class="stat-value text-lg font-extrabold text-base-content mt-1 sm:text-xl">{{ metric.value }}</div>
+          @if (metric.help) {
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">{{ metric.help }}</div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-base-content">Audience</h2>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Target lists / segments
+          </div>
+          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ audienceLabel() }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Primary audience selection</div>
+        </div>
+      </div>
+      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-0">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Audience summary
+          </div>
+          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">
+            {{ email()?.audience_description || '—' }}
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Short description of the send</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Engagement Analytics</h2>
+
+    <!-- Stats Cards + Funnel Grid -->
+    <div class="mt-4 grid gap-6 lg:grid-cols-3">
+      <!-- Stats Cards (2 cols on lg) -->
+      <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2">
+        <!-- Open Rate Radial Card -->
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
+            <div class="stat-value text-xl font-extrabold text-success mt-1 tabular-nums">
+              {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(1) : '0.0' }}%
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.unique_opens) }} unique opens
+            </div>
+          </div>
+          <div
+            class="radial-progress text-success font-bold text-xs flex-shrink-0"
+            [style.--value]="email()?.open_rate || 0"
+            [style.--size]="'3.5rem'"
+            [style.--thickness]="'4px'"
+            role="progressbar"
+          >
+            {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(0) : '0' }}%
+          </div>
+        </div>
+
+        <!-- Click Rate Radial Card -->
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
+            <div class="stat-value text-xl font-extrabold text-accent mt-1 tabular-nums">
+              {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(1) : '0.0' }}%
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.unique_clicks) }} unique clicks
+            </div>
+          </div>
+          <div
+            class="radial-progress text-accent font-bold text-xs flex-shrink-0"
+            [style.--value]="email()?.click_rate || 0"
+            [style.--size]="'3.5rem'"
+            [style.--thickness]="'4px'"
+            role="progressbar"
+          >
+            {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(0) : '0' }}%
+          </div>
+        </div>
+
+        <!-- Delivered Card -->
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
+            <div class="stat-value text-xl font-extrabold text-info mt-1 tabular-nums">
+              {{ formatNumber(email()?.delivered_count) }}
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+              {{ formatNumber(email()?.total_recipients) }} total recipients
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info flex-shrink-0">
+            <pc-icon name="envelope" [size]="6"></pc-icon>
+          </div>
+        </div>
+
+        <!-- Bounces Card -->
+        <div
+          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
+        >
+          <div>
+            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+            <div class="stat-value text-xl font-extrabold text-warning mt-1 tabular-nums">
+              {{ formatNumber(email()?.bounce_count) }}
+            </div>
+            <div class="stat-desc text-[10px] text-base-content/40 mt-1">Undelivered / dropped</div>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+          </div>
+        </div>
+
+        <!-- Replies, Unsubscribes, Spam complaints counts -->
+        <div class="sm:col-span-2 grid gap-4 grid-cols-3">
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Replies</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 tabular-nums">
+                {{ formatNumber(email()?.reply_count) }}
+              </div>
+            </div>
+          </div>
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70 tabular-nums">
+                {{ formatNumber(email()?.unsubscribe_count) }}
+              </div>
+            </div>
+          </div>
+          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
+            <div class="stat p-0">
+              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
+              <div class="stat-value text-sm font-extrabold mt-0.5 text-error tabular-nums">
+                {{ formatNumber(email()?.spam_complaint_count) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Funnel Chart Card -->
+      <div class="flex flex-col gap-3 p-4 border border-base-200 rounded-xl bg-base-100/50 shadow-sm">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Delivery Funnel</h3>
+
+        <!-- Sent -->
+        <div class="flex flex-col gap-1">
+          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
+            <span>Sent</span>
+            <span>{{ formatNumber(funnelMetrics()?.sent) }} (100%)</span>
+          </div>
+          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
+            <div class="bg-primary h-full rounded-full" style="width: 100%"></div>
+          </div>
+        </div>
+
+        <!-- Delivered -->
+        <div class="flex flex-col gap-1">
+          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
+            <span>Delivered</span>
+            <span>{{ formatNumber(funnelMetrics()?.delivered) }} ({{ funnelMetrics()?.delPct?.toFixed(1) }}%)</span>
+          </div>
+          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
+            <div class="bg-info h-full rounded-full" [style.width.%]="funnelMetrics()?.delPct"></div>
+          </div>
+        </div>
+
+        <!-- Opened -->
+        <div class="flex flex-col gap-1">
+          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
+            <span>Opened</span>
+            <span>{{ formatNumber(funnelMetrics()?.opened) }} ({{ funnelMetrics()?.opPct?.toFixed(1) }}%)</span>
+          </div>
+          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
+            <div class="bg-success h-full rounded-full" [style.width.%]="funnelMetrics()?.opPct"></div>
+          </div>
+        </div>
+
+        <!-- Clicked -->
+        <div class="flex flex-col gap-1">
+          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
+            <span>Clicked</span>
+            <span
+              >{{ formatNumber(funnelMetrics()?.clicked) }} ({{ funnelMetrics()?.clPct?.toFixed(1) }}% of open)</span
+            >
+          </div>
+          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
+            <div class="bg-accent h-full rounded-full" [style.width.%]="funnelMetrics()?.clPct"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline & Top Links Row -->
+    <div class="mt-6 grid gap-6 md:grid-cols-3">
+      <!-- Timeline Chart (2 cols on md) -->
+      <div class="md:col-span-2 border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Engagement Timeline</h3>
+          <div class="flex items-center gap-3 text-[10px] font-semibold">
+            <div class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full bg-success"></span>
+              <span class="text-base-content/70">Opens</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full bg-accent"></span>
+              <span class="text-base-content/70">Clicks</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="relative w-full h-[150px]">
+          @if (timelinePoints().points.length > 0) {
+          <svg viewBox="0 0 600 150" width="100%" height="100%" class="overflow-visible">
+            <defs>
+              <linearGradient id="openAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--color-success, #10b981)" stop-opacity="0.25" />
+                <stop offset="100%" stop-color="var(--color-success, #10b981)" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient id="clickAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0.25" />
+                <stop offset="100%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+
+            <!-- Horizontal Grid Lines -->
+            <g stroke="var(--fallback-bc,oklch(var(--bc)/0.05))" stroke-width="1">
+              @for (line of timelinePoints().gridLines; track line.y) {
+              <line
+                x1="50"
+                [attr.y1]="line.y"
+                x2="580"
+                [attr.y2]="line.y"
+                [attr.stroke-dasharray]="line.y === 120 ? 'none' : '3,3'"
+              ></line>
+              <text
+                x="42"
+                [attr.y]="line.y + 3"
+                text-anchor="end"
+                class="text-[9px] fill-base-content/40 font-sans font-medium"
+                stroke="none"
+              >
+                {{ line.label }}
+              </text>
+              }
+            </g>
+
+            <!-- Area Under Line -->
+            <path [attr.d]="timelinePoints().opensArea" fill="url(#openAreaGrad)" stroke="none"></path>
+            <path [attr.d]="timelinePoints().clicksArea" fill="url(#clickAreaGrad)" stroke="none"></path>
+
+            <!-- Line Plots -->
+            <path
+              [attr.d]="timelinePoints().opensPath"
+              fill="none"
+              class="stroke-success"
+              stroke-width="2"
+              stroke-linecap="round"
+            ></path>
+            <path
+              [attr.d]="timelinePoints().clicksPath"
+              fill="none"
+              class="stroke-accent"
+              stroke-width="2"
+              stroke-linecap="round"
+            ></path>
+
+            <!-- Data points (circles) -->
+            @for (pt of timelinePoints().points; track pt.label) {
+            <g>
+              <circle
+                [attr.cx]="pt.x"
+                [attr.cy]="pt.yOpens"
+                r="3"
+                class="fill-success stroke-base-100"
+                stroke-width="1"
+              >
+                <title>{{ pt.label }} - Opens: {{ pt.opens }}</title>
+              </circle>
+              <circle
+                [attr.cx]="pt.x"
+                [attr.cy]="pt.yClicks"
+                r="3"
+                class="fill-accent stroke-base-100"
+                stroke-width="1"
+              >
+                <title>{{ pt.label }} - Clicks: {{ pt.clicks }}</title>
+              </circle>
+              <text
+                [attr.x]="pt.x"
+                y="142"
+                text-anchor="middle"
+                class="text-[8px] fill-base-content/40 font-sans font-semibold"
+              >
+                {{ pt.label }}
+              </text>
+            </g>
+            }
+          </svg>
+          } @else {
+          <div
+            class="flex h-full w-full items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+          >
+            <span class="text-xs font-semibold text-base-content/40">No engagement history yet</span>
+            <span class="text-[10px] text-base-content/30"
+              >History will record hourly opens and clicks since campaign send.</span
+            >
+          </div>
+          }
+        </div>
+      </div>
+
+      <!-- Top Links (1 col on md) -->
+      <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Top Links Clicked</h3>
+        @if (topLinks().length) {
+        <div class="grid gap-2 overflow-y-auto max-h-[160px]">
+          @for (link of topLinks(); track link.url) {
+          <div class="rounded border border-base-200 bg-base-100 p-2.5 shadow-xs flex flex-col gap-1">
+            <div class="truncate text-[10px] font-semibold text-base-content/80" [title]="link.url">{{ link.url }}</div>
+            <div class="text-xs font-bold text-accent">{{ formatNumber(link.clicks) }} clicks</div>
+          </div>
+          }
+        </div>
+        } @else {
+        <div
+          class="flex h-36 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+        >
+          <span class="text-xs font-semibold text-base-content/40">No links clicked</span>
+        </div>
+        }
+      </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 mt-6 shadow-sm">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Recent Engagement Activity</h3>
+
+      @if (stats()?.activities?.length) {
+      <div class="overflow-x-auto max-h-80">
+        <table class="table table-xs table-zebra w-full text-left">
+          <thead>
+            <tr class="text-base-content/50 border-b border-base-200">
+              <th class="py-2">Recipient Email</th>
+              <th class="py-2">Action</th>
+              <th class="py-2">Time</th>
+              <th class="py-2">Detail</th>
+              <th class="py-2">IP / User Agent</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (act of stats()?.activities; track act.timestamp) {
+            <tr class="hover">
+              <td class="font-medium text-base-content">{{ act.email }}</td>
+              <td>
+                <span
+                  class="badge badge-sm py-1 capitalize font-semibold"
+                  [class.badge-success]="act.event_type === 'open'"
+                  [class.text-success-content]="act.event_type === 'open'"
+                  [class.badge-accent]="act.event_type === 'click'"
+                  [class.text-accent-content]="act.event_type === 'click'"
+                  [class.badge-warning]="act.event_type === 'bounce' || act.event_type === 'dropped'"
+                  [class.text-warning-content]="act.event_type === 'bounce' || act.event_type === 'dropped'"
+                  [class.badge-error]="act.event_type === 'spamreport'"
+                  [class.text-error-content]="act.event_type === 'spamreport'"
+                  [class.badge-neutral]="act.event_type === 'unsubscribe'"
+                  [class.text-neutral-content]="act.event_type === 'unsubscribe'"
+                >
+                  {{ act.event_type }}
+                </span>
+              </td>
+              <td class="text-base-content/70 whitespace-nowrap">{{ formatActivityDate(act.timestamp) }}</td>
+              <td class="max-w-[200px] truncate text-base-content/60" [title]="act.url || ''">
+                {{ act.url ? act.url : '—' }}
+              </td>
+              <td class="max-w-[150px] truncate text-[10px] text-base-content/40" [title]="act.user_agent || ''">
+                @if (act.user_agent) { {{ act.ip || '—' }}
+                <span class="hidden sm:inline">/ {{ act.user_agent }}</span> }
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
+      >
+        <pc-icon name="inbox" [size]="5" class="text-base-content/30"></pc-icon>
+        <span class="text-xs font-semibold text-base-content/40">No activity logged yet</span>
+        <span class="text-[10px] text-base-content/30"
+          >Opens, clicks, bounces, and other actions will list here in real time.</span
+        >
+      </div>
+      }
+    </div>
+  </section>
+
+  @if (email()?.html_content || email()?.plain_text_content) {
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <h2 class="text-lg font-semibold">Content preview</h2>
+    <div class="mt-4 grid gap-6 lg:grid-cols-2">
+      <div>
+        <h3 class="text-sm font-semibold text-base-content/60">Subject line</h3>
+        <p class="mt-1 text-base">{{ email()?.subject || '—' }}</p>
+
+        <h3 class="mt-4 text-sm font-semibold text-base-content/60">Preview text</h3>
+        <p class="mt-1 text-base">{{ email()?.preview_text || '—' }}</p>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold text-base-content/60">HTML content</h3>
+        @if (email()?.html_content) {
+        <div class="mt-2 max-h-72 overflow-auto rounded border border-base-200 bg-base-200/20 p-3">
+          <div [innerHTML]="email()?.html_content"></div>
+        </div>
+        } @else {
+        <p class="mt-2 text-sm text-base-content/60">No HTML content stored.</p>
+        }
+      </div>
+    </div>
+    <div class="mt-4">
+      <h3 class="text-sm font-semibold text-base-content/60">Plain text content</h3>
+      <pre class="mt-2 max-h-56 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-sm">
+{{ email()?.plain_text_content || 'No plain text version stored.' }}</pre
+      >
+    </div>
+  </section>
+  } @if (attachments().length > 0 || canManageAttachments()) {
+  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">Attachments</h2>
+      @if (canManageAttachments()) {
+      <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+      <button
+        class="btn btn-primary btn-sm gap-2"
+        [disabled]="isUploadingAttachment()"
+        (click)="attachmentInput.click()"
+      >
+        @if (isUploadingAttachment()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        Attaching… } @else {
+        <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+        Attach file }
+      </button>
+      }
+    </div>
+
+    @if (attachments().length === 0) {
+    <p class="mt-3 text-sm text-base-content/60">No files attached to this newsletter.</p>
+    } @else {
+    <ul class="mt-3 divide-y divide-base-200">
+      @for (attachment of attachments(); track attachment.id) {
+      <li class="flex items-center justify-between gap-3 py-2">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+          @if (attachment.size_bytes) {
+          <p class="text-xs text-base-content/60">{{ formatBytes(attachment.size_bytes) }}</p>
+          }
+        </div>
+        @if (canManageAttachments()) {
+        <button
+          class="btn btn-sm btn-circle btn-ghost text-error"
+          title="Remove attachment"
+          (click)="removeAttachment(attachment)"
+        >
+          <pc-icon name="trash" [size]="4"></pc-icon>
+        </button>
+        }
+      </li>
+      }
+    </ul>
+    }
+  </section>
+  } @if (error()) {
+  <div class="alert alert-error">
+    <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
+    {{ error() }}
+  </div>
+  }
+</div>
+} @else { @if (!error()) {
+<div class="flex flex-col gap-4">
+  <div class="skeleton h-6 w-32"></div>
+  <div class="skeleton h-32 w-full"></div>
+</div>
+} @else {
+<div class="alert alert-error">
+  <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
+  {{ error() }}
+</div>
+} }
+```
+
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
 
 ```typescript
@@ -63316,537 +63034,452 @@ export class GridActionComponent {
 }
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
+## File: apps/frontend/src/styles.css
 
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import {
-  companyRecordIdResolver,
-  householdRecordIdResolver,
-  personRecordIdResolver,
-} from './services/record-slug.resolver';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
 
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
 
-  {
-    path: 'dashboard',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
-  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
 
-  {
-    path: 'people',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-        // Slug-aware: the URL may carry /people/amira-hassan; the component's
-        // `id` input always receives the numeric id (route data wins over params).
-        resolve: { id: personRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: personRecordIdResolver },
-      },
-    ],
-  },
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #818789;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: rgb(226, 226, 226);
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
+  --color-error: #f37373;
+  --color-error-content: #ffffff;
 
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-        resolve: { id: householdRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: householdRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-        data: { shouldReuse: true, key: 'tagsadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
 
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-        data: { shouldReuse: true, key: 'issuesadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
 
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
 
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
 
-  {
-    path: 'automations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
-  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
 
-  {
-    path: 'events',
-    children: [
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
+@plugin "daisyui/theme" {
+  name: 'dark';
 
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
 
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
-        data: { shouldReuse: true, key: 'taskslistroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      // Must precede ':id' — otherwise the wildcard param route would swallow it.
-      {
-        path: 'board',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-        data: { shouldReuse: true, key: 'tasksboardroot' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
-  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
 
-  {
-    path: 'canvassing',
-    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
-  },
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
 
-  {
-    path: 'campaigns',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'new' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
 
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'deliveries',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
-        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
-      },
-      {
-        path: 'plan',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
-      },
-      {
-        path: 'routes',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
-      },
-      {
-        path: 'routes/:id',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot' },
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donations' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
 
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'workspace',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'workspace' },
-      },
-    ],
-  },
-  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
-  {
-    path: 'configuration',
-    redirectTo: '/workspace',
-    pathMatch: 'prefix',
-  },
-  {
-    path: 'billing',
-    redirectTo: '/workspace/billing',
-    pathMatch: 'full',
-  },
-  // Back-compat: Files moved into Workspace settings → Storage.
-  {
-    path: 'files',
-    redirectTo: '/workspace/storage',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports/new',
-    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    // Wave 1E (spec §17): Exports folded into the Import/export History page's
-    // Exports tab — redirect the old standalone route rather than 404 stale links.
-    path: 'exports',
-    redirectTo: '/imports',
-    pathMatch: 'full',
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-        resolve: { id: companyRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: companyRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'activity',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-  // Back-compat: old /activities links redirect to /activity.
-  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
-  {
-    path: 'help',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
-      },
-    ],
-  },
-];
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
+
+/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
+   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
+   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
+   just apply on the touch surface). Keep the control's own flex centering. */
+@utility touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
@@ -65376,6 +65009,539 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </button>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/dashboard.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+        data: { shouldReuse: true, key: 'tagsadminroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
+
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+        data: { shouldReuse: true, key: 'issuesadminroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'automations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
+        data: { shouldReuse: true, key: 'taskslistroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      // Must precede ':id' — otherwise the wildcard param route would swallow it.
+      {
+        path: 'board',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+        data: { shouldReuse: true, key: 'tasksboardroot' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
+  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+
+  {
+    path: 'canvassing',
+    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+  },
+
+  {
+    path: 'campaigns',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'deliveries',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
+        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
+      },
+      {
+        path: 'plan',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
+      },
+      {
+        path: 'routes',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
+      },
+      {
+        path: 'routes/:id',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot' },
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donations' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'workspace',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'workspace' },
+      },
+    ],
+  },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
+  {
+    path: 'billing',
+    redirectTo: '/workspace/billing',
+    pathMatch: 'full',
+  },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports/new',
+    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    // Wave 1E (spec §17): Exports folded into the Import/export History page's
+    // Exports tab — redirect the old standalone route rather than 404 stale links.
+    path: 'exports',
+    redirectTo: '/imports',
+    pathMatch: 'full',
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
+  {
+    path: 'help',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
