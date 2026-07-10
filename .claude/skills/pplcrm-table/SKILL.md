@@ -28,6 +28,10 @@ Defined **globally** in `apps/frontend/src/styles.css` — a `:root` custom-prop
 
 - `--pc-table-header-size` (10.5px) / `--pc-table-header-tracking` (0.07em) → the refined
   micro-caps header eyebrow (§8). Applied via `.pc-table thead th`.
+- `--pc-table-body-size` (0.75rem = `text-xs`) → **the default size of every body cell**,
+  applied via `.pc-table tbody`. DaisyUI's `.table` would otherwise leave bodies at `text-sm`.
+  **Never add `text-sm` to a data cell** — that re-introduces the pre-contract drift. Prose
+  inside a body (a guided empty state) may still opt up with a per-instance `text-sm` utility.
 - `--pc-table-cell-py` (0.375rem) → row density. Applied via `.pc-table :where(th, td)`.
 - `--pc-table-radius` (0.75rem) + `border-base-300` + `bg-base-100` → the `.pc-table-shell`.
 - `.pc-table tbody tr:hover` → a subtle `base-200` row hover.
@@ -44,6 +48,7 @@ lets one contract cover both.
 
 `datagrid.html`'s `<table>` carries `class="table pc-table …"` and its `<th>` no longer sets
 `text-xs uppercase font-medium` (the `.pc-table thead th` rule now provides the micro-caps);
+its `<tbody>` likewise no longer sets `text-xs` (the `.pc-table tbody` body-size rule provides it);
 `datagrid.css` reads `padding-block: var(--pc-table-cell-py)`; the scroller border is
 `border-base-300`. The datagrid keeps its **zebra striping + `hover:bg-base-300`** — a deliberate
 scale adaptation for long data tables that overrides the shared hover from the Tailwind utilities

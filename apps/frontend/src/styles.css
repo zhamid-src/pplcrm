@@ -334,6 +334,7 @@ body {
 :root {
   --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
   --pc-table-header-tracking: 0.07em;
+  --pc-table-body-size: 0.75rem; /* text-xs — the default for ALL table body cells */
   --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
   --pc-table-radius: 0.75rem; /* rounded-xl */
 }
@@ -360,6 +361,12 @@ body {
   }
   .pc-table :where(th, td) {
     padding-block: var(--pc-table-cell-py);
+  }
+  /* Body cells are text-xs by default — DaisyUI's `.table` would otherwise
+     leave them at text-sm. Don't re-add `text-sm` on data cells; prose empty
+     states may still opt up per-instance from the utilities layer. */
+  .pc-table tbody {
+    font-size: var(--pc-table-body-size);
   }
   /* Subtle row hover (design §8: hover is a quiet secondary signal). The
      datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
