@@ -51,6 +51,24 @@ between the header and the toolbar — the People grain tabs (`pc-grain-tabs` in
 `shared/components/grain-tabs/`, switching /people ↔ /households ↔ /companies) project there
 on all three People-grain grids.
 
+## Height contract: the grid scrolls, the pagination footer stays pinned
+
+The grid fills whatever height the page grants (`:host { display:block; height:100%; min-height:0 }`
+in `datagrid.css`); inside, the table scroller is `flex-1 overflow-auto`, column headers are
+sticky (`thead th` pins at `top:0`, z-30 above the z-10/z-20 pinned body cells), and the
+pagination row sits **outside** the scroller so it's always visible at the bottom. On the last
+page an "End of list · N {nouns}" divider renders under the final row so a short page reads as
+complete, not as missing data. Grain/titled grids pad themselves `px-6 pt-6 pb-2` (deliberately
+tight below the pinned footer).
+
+**A standalone grid page must pass viewport height down or the footer un-pins and the whole
+page scrolls.** The routed component needs `host: { class: 'block h-full' }` and its wrapper div
+`h-full min-h-0` (see `persons-grid`/`households-grid`/`companies-grid`). If the grid stacks
+with siblings (header above, footer copy below — see `lists-grid`), keep the wrapper `h-full
+flex-col` and give `<pc-datagrid>` itself `class="min-h-0 flex-1"`. In auto-height parents
+(list-view tabs) `height:100%` resolves to auto and the grid grows naturally with the page; in a
+definite-height box (list-form's `h-96` preview) it fills the box and scrolls internally.
+
 ## Filter entry points: the chip row, not the toolbar
 
 The filter **entry points** live in the **filter-chip row** in `datagrid.html` (rendered when

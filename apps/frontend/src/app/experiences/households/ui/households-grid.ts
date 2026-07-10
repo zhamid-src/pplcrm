@@ -21,8 +21,9 @@ import { HouseholdsService } from '../services/households-service';
 @Component({
   selector: 'pc-households-grid',
   imports: [DataGrid, GrainTabs, CsvImportComponent, FormsModule],
+  host: { class: 'block h-full' },
   template: `
-    <div class="flex flex-col gap-6">
+    <div class="flex h-full min-h-0 flex-col gap-6">
       <pc-datagrid
         #grid
         [showToolbar]="!inline()"

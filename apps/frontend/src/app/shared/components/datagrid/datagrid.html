@@ -1,4 +1,11 @@
-<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle() || grainLayout()">
+<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
+     full 24px below it would just steal height from the grid. -->
+<div
+  class="flex h-full w-full flex-col"
+  [class.px-6]="displayTitle() || grainLayout()"
+  [class.pt-6]="displayTitle() || grainLayout()"
+  [class.pb-2]="displayTitle() || grainLayout()"
+>
   @if (grainLayout()) {
   <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
        (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
@@ -811,6 +818,22 @@
             } } }
           </td>
           } }
+        </tr>
+        } @if (visibleTableRows().length && !canNext()) {
+        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
+             would otherwise read as data that failed to load. -->
+        <tr class="hover:bg-transparent">
+          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
+            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
+              <span class="h-px flex-1 bg-base-300"></span>
+              <span
+                class="whitespace-nowrap tabular-nums"
+                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
+                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
+              >
+              <span class="h-px flex-1 bg-base-300"></span>
+            </div>
+          </td>
         </tr>
         }
       </tbody>
