@@ -19,7 +19,7 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
         items: [
           '**Refresh** — reload the grid without touching your filters.',
           '**Undo / Redo** — step your inline edits backward and forward.',
-          '**Import CSV / Export CSV** — see [Import data from CSV](/help/import) and [Export your data](/help/export).',
+          '**Import CSV / Export CSV** — see [Import from CSV](/help/import) and [Export your data](/help/export).',
           '**Tag, issue, and list filters** — narrow to matching rows; see [Filters and the query builder](/help/filters).',
           '**Advanced filters and the query builder** — per-column conditions or full and/or logic.',
           '**Columns** — choose which columns are visible.',

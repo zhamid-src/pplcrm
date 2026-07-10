@@ -39,10 +39,10 @@ without it the button says just "New" (a UX-guidelines violation, §4b). The sam
 the export menu label and bulk-action messages.
 
 Simple grid: `teams-grid.ts`. Full-featured grid (tag options, custom delete confirm, loading
-gate): `persons-grid.ts`. Its `(importCSV)` handler now just navigates to the CSV import wizard
-(`/imports/new`, spec §17) instead of opening a modal — for the in-grid modal importer pattern
-(`pc-csv-importer` from `libs/uxcommon/components/csv-import`), see `companies-grid.ts`,
-`households-grid.ts`, or `tasks-grid.ts`, which still use it (only people import got the wizard).
+gate): `persons-grid.ts`. Every grid's `(importCSV)` handler navigates to the shared CSV import
+wizard (`/imports/new?type=people|companies|households|tasks`, spec §17) — the old in-grid
+modal importer (`pc-csv-importer`) was deleted; the per-entity mapping heuristics now live in
+`experiences/imports/import-entity-config.ts`.
 
 Two Wave-0 additions: `totalSentence` (string input, e.g. "5,012 people total") replaces the
 header's default "{n} total" wording and composes with the filtered count ("43 match your

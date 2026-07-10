@@ -1,5 +1,4 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
@@ -7,7 +6,6 @@ import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/component
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -20,7 +18,7 @@ import { HouseholdsService } from '../services/households-service';
 
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid, GrainTabs, CsvImportComponent, FormsModule],
+  imports: [DataGrid, GrainTabs],
   host: { class: 'block h-full' },
   template: `
     <div class="flex h-full min-h-0 flex-col gap-6">
@@ -42,7 +40,7 @@ import { HouseholdsService } from '../services/households-service';
         [confirmDeleteOverride]="onConfirmDeleteBind"
         [rowCanSelect]="rowCanSelectFn"
         [totalSentence]="totalSentence()"
-        (importCSV)="openImportDialog()"
+        (importCSV)="openImportWizard()"
         addRoute="add"
         i18n-addRoute
         plusIcon="add-home"
@@ -68,28 +66,6 @@ import { HouseholdsService } from '../services/households-service';
         }
       </pc-datagrid>
     </div>
-
-    <!-- Reusable CSV Importer for Households -->
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Households from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    >
-      <div pc-import-extras class="grid gap-2">
-        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
-        <input
-          class="input input-bordered"
-          placeholder="Comma separated e.g. neighborhood, parish"
-          i18n-placeholder
-          [(ngModel)]="tagsInput"
-        />
-      </div>
-    </pc-csv-importer>
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: HouseholdsService },
@@ -121,57 +97,6 @@ export class HouseholdsGrid implements OnInit {
   public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
 
   public inline = input<boolean>(false);
-
-  protected readonly mappableFields: string[] = [
-    'street_num',
-    'apt',
-    'street1',
-    'street2',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'home_phone',
-    'notes',
-  ];
-
-  protected autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      homephone: 'home_phone',
-      phone: 'home_phone',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
 
   protected col: ColDef[] = [
     {
@@ -267,12 +192,6 @@ export class HouseholdsGrid implements OnInit {
   ];
   public listId = input<string | null>(null);
   public showHeader = input<boolean>(true);
-
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  // Importer state
-  protected importerOpen = signal(false);
-  protected tagsInput = '';
 
   /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
   protected readonly totalSentence = signal<string | null>(null);
@@ -486,20 +405,9 @@ export class HouseholdsGrid implements OnInit {
     }
   }
 
-  protected onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }) {
-    // Backend households import endpoint not implemented yet; show informative summary
-    const diag = 'Households import is not available yet.';
-    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
-    this.importerOpen.set(false);
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    this.importerOpen.set(true);
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
   }
 }
