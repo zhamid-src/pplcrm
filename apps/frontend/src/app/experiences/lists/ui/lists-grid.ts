@@ -41,7 +41,7 @@ function escapeHtml(value: string): string {
       <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content">Lists</h1>
-          <p class="text-sm text-base-content/70 tabular-nums mt-1" data-testid="lists-summary">
+          <p class="text-xs text-base-content/70 tabular-nums mt-1" data-testid="lists-summary">
             {{ summarySentence() }}
           </p>
         </div>

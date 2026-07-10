@@ -361,7 +361,7 @@
         <tr class="bg-base-100 text-sm">
           @if (enableSelection()) {
           <th
-            class="border-r border-base-300 pl-2 selection-col"
+            class="pl-2 selection-col"
             [style.width.px]="selectionStickyWidth()"
             [style.minWidth.px]="selectionStickyWidth()"
             [style.maxWidth.px]="selectionStickyWidth()"
@@ -377,7 +377,7 @@
           } @for (h of leafHeaders(); track h.id) {
           <th
             role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative text-xs uppercase font-medium"
+            class="cursor-grab pl-2 relative text-xs uppercase font-medium"
             [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
@@ -596,7 +596,7 @@
         >
           @if (enableSelection()) {
           <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            class="sticky left-0 z-20 pl-2"
             [style.background]="rowBgForIndex(i)"
             [style.width.px]="selectionStickyWidth()"
             [style.minWidth.px]="selectionStickyWidth()"
@@ -644,7 +644,7 @@
             [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
             [class.overflow-visible]="isTagColumn(col) && isEditing"
             [class]="cellClassFor(col, r.original)"
-            class="min-w-0 px-2 border-r border-base-300 relative"
+            class="min-w-0 px-2 relative"
             [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
