@@ -161,7 +161,6 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `DATA`,
     type: 'subheading',
-    collapsed: true,
     children: [
       {
         // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
