@@ -99,8 +99,26 @@ Inputs: `columns` (required — colspan for skeleton rows), `loading` (default f
 - **Conditional `<ng-content>` is fine** here (Angular 22 control flow) — that's how the body slot
   is hidden during load; see `tool-button.ts` for the same pattern.
 
+## Two ways to consume the contract
+
+1. **The `<pc-table>` component** — for a **standalone** table that owns its bordered shell.
+   Gives you the shell + header slot + skeleton + footer. Use this by default.
+2. **The `.pc-table` class alone** — for a table **embedded in a card/panel** that already
+   supplies the border (e.g. canvassing's turf/coverage/team tables inside `card` sections, the
+   list-view newsletter table). Wrapping those in `<pc-table>` would double the border, so
+   instead put `class="table pc-table"` on the raw `<table>`: the global rules still give it the
+   shared micro-caps header + density, and the card stays the container. Also the right choice
+   for a **non-list comparison matrix** (duplicates-people: fields-as-rows), where the component's
+   header slot doesn't fit — the class binds it to the density token without imposing list chrome.
+
+Rule of thumb: **has its own border → `<pc-table>`; lives inside a bordered card → `.pc-table`
+class.** Either way the header/density/typography come from the one contract.
+
 ## Consumers today
 
-Tags (`experiences/tags/ui/tags-admin.html`), Issues (`…/issues-admin.html`), Donations
-(`experiences/donations/ui/donations-grid.html`) and Pledges (`…/pledges-grid.html`). Read one
-before adding the next — copy the proven structure.
+Component (`<pc-table>`): Tags, Issues, Donations, Pledges, deliveries-requests,
+deliveries-routes, imports/exports (`imports-page.html`, two tables), forms submissions
+(`forms-page.html`), donations tax-tier settings (`settings/donations/donations-settings.html`).
+Class-only (`.pc-table`): canvassing (`canvassing-page.html`, three card-embedded tables),
+list-view newsletters (`lists/ui/list-view.html`), duplicates-people comparison matrix. Read one
+of the matching kind before adding the next — copy the proven structure.

@@ -7,6 +7,7 @@ import type { DataExportRecordType, ImportListItem } from '../../../../../../../
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
@@ -24,7 +25,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective],
+  imports: [FormsModule, Icon, SpinOnClickDirective, Table],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
