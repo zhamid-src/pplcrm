@@ -5,7 +5,6 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Tags } from '@experiences/tags/ui/tags';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
 
 import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
 import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
@@ -16,7 +15,7 @@ import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-
 @Component({
   selector: 'pc-email-header',
   // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, Tags, EmailCreateTaskDialog],
   host: {
     '(document:keydown)': 'handleDocumentKeydown($event)',
   },
