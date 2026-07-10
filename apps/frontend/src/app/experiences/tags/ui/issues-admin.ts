@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -18,7 +19,7 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem, AddIssueDialog],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
@@ -34,7 +35,6 @@ export class IssuesAdmin implements OnInit {
 
   protected readonly rows = signal<TagAdminRow[]>([]);
   protected readonly peopleSharedCount = signal(0);
-  protected readonly skeletonRows = [1, 2, 3, 4, 5];
 
   /** Ranked by PEOPLE INTERESTED, descending — `getAdminList` already returns this order. */
   protected readonly ranked = computed(() => this.rows().map((row, i) => ({ rank: i + 1, row })));
