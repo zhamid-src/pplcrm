@@ -6958,429 +6958,6 @@ export const RecordDonationObj = z.object({
 export type RecordDonationType = z.infer<typeof RecordDonationObj>;
 ```
 
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema } from './core.schema';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
-});
-
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
-});
-
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
-});
-
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
-});
-
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
-});
-```
-
-## File: libs/common/src/lib/models.ts
-
-```typescript
-import type { z } from 'zod';
-
-import type {
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  NewsletterReportObj,
-  NewsletterReportBounceObj,
-  NewsletterReportEngagedObj,
-  NewsletterReportLinkObj,
-  NewsletterReportPreviousSendObj,
-  CreateClickersListResultObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
-
-export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
-
-export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
-
-export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
-
-export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
-
-export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddCampaignType = z.infer<typeof AddCampaignObj>;
-
-export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
-
-export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
-
-export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
-
-export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type AddTurfType = z.infer<typeof AddTurfObj>;
-
-export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
-
-export type CutTurfsType = z.infer<typeof CutTurfsObj>;
-
-export type AssignTurfType = z.infer<typeof AssignTurfObj>;
-
-export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
-
-export type LogKnockType = z.infer<typeof LogKnockObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-```
-
 ## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
 
 ```typescript
@@ -7427,6 +7004,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           (prevRecord)="prevRecord.emit()"
           (nextRecord)="nextRecord.emit()"
         >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
           <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
           <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
           <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
@@ -8082,6 +7660,429 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   return { begin, visible, loaded };
 }
+```
+
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+```
+
+## File: libs/common/src/lib/models.ts
+
+```typescript
+import type { z } from 'zod';
+
+import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
+  EmailDraftObj,
+  PersonsObj,
+  SettingsEntryObj,
+  SettingsObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  ListsObj,
+  UpdateMarketingEmailObj,
+  UpdateListObj,
+  UpdateTaskObj,
+  UpdateTeamObj,
+  TasksObj,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  sortModelItem,
+  InviteAuthUserObj,
+  ProfilePreferencesObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+} from './schema';
+
+export interface INow {
+  now: string;
+}
+
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
+
+export type SortModelType = z.infer<typeof sortModelItem>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
+
+export type AddTaskType = z.infer<typeof AddTaskObj>;
+export type TasksType = z.infer<typeof TasksObj>;
+export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
+export type DataExportRecordType = z.infer<typeof dataExportRecord>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
+
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ```
 
 ## File: libs/common/src/lib/schema.ts
@@ -9729,6 +9730,8 @@ import { FormActions } from '../form-actions/form-actions';
                   >{{ statusChip() }}</span
                 >
               }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
             </div>
             @if (dirtyFieldCount() > 0) {
               <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
