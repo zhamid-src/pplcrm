@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -13,13 +14,14 @@ const UNUSED_DAYS = 90;
 const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
 
 /**
- * §9.1 Tags admin (spec Fig. 10). Bespoke table, not `pc-datagrid` — the sentence, unused-tags
- * callout, and rename/merge/delete idiom don't fit the grid's generic column model. Reuses
- * `TagAdminActions` (rename/merge/delete) so Issues admin (`issues-admin.ts`) can't drift from it.
+ * §9.1 Tags admin (spec Fig. 10). Not `pc-datagrid` — the sentence, unused-tags callout, and
+ * rename/merge/delete idiom don't fit the grid's generic column model — but rendered through the
+ * shared `pc-table` shell so it stays visually identical to the datagrid (see `pplcrm-table`).
+ * Reuses `TagAdminActions` (rename/merge/delete) so Issues admin (`issues-admin.ts`) can't drift.
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink, TagItem, AddTagDialog],
+  imports: [Icon, RouterLink, TagItem, AddTagDialog, Table],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {
@@ -35,7 +37,6 @@ export class TagsAdmin implements OnInit {
 
   protected readonly rows = signal<TagAdminRow[]>([]);
   protected readonly showUnusedOnly = signal(false);
-  protected readonly skeletonRows = [1, 2, 3, 4, 5];
 
   protected readonly unusedRows = computed(() => this.rows().filter((r) => this.isUnused(r)));
 

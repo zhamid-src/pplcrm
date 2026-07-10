@@ -130,8 +130,21 @@ fired (it requires arriving via the grid, by design).
 
 General Vitest conventions → `pplcrm-testing`.
 
+## Shared visual contract with `pc-table`
+
+The grid's **look** (micro-caps header, cell density, shell border/radius) is not its own — it
+comes from the global `.pc-table` / `.pc-table-shell` token contract in `styles.css`, which the
+lighter `pc-table` shell also consumes so bespoke tables (Tags/Issues/Donations) stay identical.
+The grid's `<table>` carries `class="table pc-table …"`, its `<th>` deliberately omits font/size
+utilities (the shared `.pc-table thead th` rule supplies the micro-caps), and `datagrid.css`
+reads `--pc-table-cell-py` for density. The grid keeps its **zebra + `hover:bg-base-300`** as a
+scale adaptation that overrides the shared subtle hover. If you change the grid's table
+typography/density/border, you are changing every table in the app — do it in the token contract,
+not inline. Full details in **`pplcrm-table`**.
+
 ## Non-goals
 
+- **The lighter presentational table for non-grid surfaces, and the shared token contract** → `pplcrm-table`.
 - **Detail-page composition and the pager that consumes the nav context** → `pplcrm-page-layout-ux`.
 - **Design rules the grid already embodies** (filter chips, empty state, saved-flash motion,
   semantic tokens) → `pplcrm-design-principles`; don't restyle the grid against them.

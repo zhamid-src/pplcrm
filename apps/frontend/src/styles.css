@@ -310,6 +310,58 @@ body {
   }
 }
 
+/* ── Shared table visual contract ──────────────────────────────────────────
+   The single source of truth for how EVERY tabular surface looks — the house
+   DataGrid (`pc-datagrid`) and the lighter presentational `pc-table` (uxcommon)
+   both consume these. Change a value here and every table moves together; that
+   is the whole point (design §4 "one idiom per job", §8 typography).
+
+   Why global (not component-scoped): `pc-table` projects each page's bespoke
+   `<tr>`/`<td>` into its own `<tbody>`, and Angular's emulated encapsulation
+   would not let a component stylesheet reach projected rows. Global component
+   classes reach both projected content and the datagrid's own markup.
+
+   Tokens are theme-agnostic sizes; colors resolve through DaisyUI `--color-*`
+   so both themes stay correct for free (design §5). */
+:root {
+  --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
+  --pc-table-header-tracking: 0.07em;
+  --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
+  --pc-table-radius: 0.75rem; /* rounded-xl */
+}
+
+@layer components {
+  /* The bordered, rounded container every table sits inside. */
+  .pc-table-shell {
+    overflow-x: auto;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--pc-table-radius);
+    background-color: var(--color-base-100);
+  }
+
+  /* Applied alongside DaisyUI `.table`. Overrides land in the same @layer as
+     DaisyUI's `.table` rules but at higher specificity, so they win — while
+     Tailwind *utilities* (a later layer) still override per-instance when a
+     page needs to. */
+  .pc-table thead th {
+    font-size: var(--pc-table-header-size);
+    letter-spacing: var(--pc-table-header-tracking);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+  }
+  .pc-table :where(th, td) {
+    padding-block: var(--pc-table-cell-py);
+  }
+  /* Subtle row hover (design §8: hover is a quiet secondary signal). The
+     datagrid opts out via its own zebra + `hover:bg-base-300` utilities, which
+     win from the utilities layer — a deliberate scale adaptation for long
+     data tables, documented in the pplcrm-datagrid skill. */
+  .pc-table tbody tr:hover {
+    background-color: color-mix(in oklch, var(--color-base-200) 60%, transparent);
+  }
+}
+
 /* Hairline border helper — pairs with any border-width utility to paint the
    app-wide line color (design §5). Use as `class="border-b border-line"`. */
 @utility border-line {

@@ -4,7 +4,7 @@ import { CurrencyPipe } from '@angular/common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { Table } from '@uxcommon/components/table/table';
 import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
 import { DonationsService } from '../../../services/api/donations-service';
 import { RecordDonationDialog } from './record-donation-dialog';
@@ -21,7 +21,7 @@ const RECENT_GIFTS_LIMIT = 8;
 
 @Component({
   selector: 'pc-donations-grid',
-  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe, RecordDonationDialog],
+  imports: [RouterLink, RouterLinkActive, Icon, CurrencyPipe, RecordDonationDialog, Table],
   templateUrl: './donations-grid.html',
 })
 export class DonationsGridComponent implements OnInit {

@@ -353,10 +353,10 @@
   }
   <div
     #scroller
-    class="flex-1 overflow-auto border border-neutral rounded relative rounded-xl"
+    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
     (scroll)="onScroll($event)"
   >
-    <table #gridTable class="table w-full">
+    <table #gridTable class="table pc-table w-full">
       <thead>
         <tr class="bg-base-100 text-xs">
           @if (enableSelection()) {
@@ -377,7 +377,7 @@
           } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
           <th
             role="columnheader"
-            class="group cursor-grab pl-2 relative text-xs uppercase font-medium"
+            class="group cursor-grab pl-2 relative"
             [class.pl-4]="hIdx === 0 && !enableSelection()"
             [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"

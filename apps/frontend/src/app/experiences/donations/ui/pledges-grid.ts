@@ -4,13 +4,14 @@ import { TitleCasePipe } from '@angular/common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Table } from '@uxcommon/components/table/table';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-pledges-grid',
-  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective],
+  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective, Table],
   templateUrl: './pledges-grid.html',
 })
 export class PledgesGridComponent implements OnInit {

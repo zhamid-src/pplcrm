@@ -19,6 +19,7 @@ export * from './components/entity-overview/entity-overview';
 export * from './components/address-form-group/address-form-group';
 export * from './components/card/card';
 export * from './components/stat-card/stat-card';
+export * from './components/table/table';
 export * from './components/side-drawer/side-drawer';
 export * from './components/tabs/tabs';
 export * from './components/status-badge/status-badge';

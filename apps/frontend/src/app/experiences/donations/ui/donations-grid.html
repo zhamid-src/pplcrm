@@ -98,72 +98,61 @@
   </div>
 
   <!-- Grid / Table View -->
-  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-    <table class="table w-full">
-      <thead>
-        <tr class="bg-base-200/50">
-          <th>Donor</th>
-          <th class="text-right">Amount</th>
-          <th>Method</th>
-          <th>Date</th>
-          <th>Receipt</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (d of recentGifts(); track d.id) {
-        <tr
-          class="hover:bg-base-200/30 transition-all duration-200"
-          [class.animate-saved-flash]="highlightId() === d.id"
-        >
-          <td>
-            <div class="flex flex-col">
-              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
-                {{ d.person_first_name }} {{ d.person_last_name }}
-              </a>
-              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-            </div>
-          </td>
-          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
-          <td>
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
-              >{{ methodLabel(d.method) }}</span
-            >
-          </td>
-          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-          <td>
-            @if (d.receipt_sent) {
-            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Receipted
-            </span>
-            } @else {
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-            }
-          </td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="5" class="text-center py-16 text-base-content/50">
-            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-            <h3 class="font-semibold text-base-content/70">No donations found</h3>
-            <p class="text-xs text-base-content/50 mt-1 mb-3">
-              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-            </p>
-            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-              <pc-icon name="plus" [size]="4"></pc-icon>
-              Record donation
-            </button>
-          </td>
-        </tr>
+  <pc-table [columns]="5">
+    <ng-container pcTableHead>
+      <th>Donor</th>
+      <th class="text-right">Amount</th>
+      <th>Method</th>
+      <th>Date</th>
+      <th>Receipt</th>
+    </ng-container>
+
+    @for (d of recentGifts(); track d.id) {
+    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
+      <td>
+        <div class="flex flex-col">
+          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
+            {{ d.person_first_name }} {{ d.person_last_name }}
+          </a>
+          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+        </div>
+      </td>
+      <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
+      <td>
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
+      </td>
+      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+      <td>
+        @if (d.receipt_sent) {
+        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+          <pc-icon name="check-circle" [size]="3"></pc-icon>
+          Receipted
+        </span>
+        } @else {
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
         }
-      </tbody>
-    </table>
-    @if (totalGiftCount() > recentGifts().length) {
-    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      </td>
+    </tr>
+    } @empty {
+    <tr>
+      <td colspan="5" class="text-center py-16 text-base-content/50">
+        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+        <h3 class="font-semibold text-base-content/70">No donations found</h3>
+        <p class="text-xs text-base-content/50 mt-1 mb-3">
+          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
+        </p>
+        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Record donation
+        </button>
+      </td>
+    </tr>
+    } @if (totalGiftCount() > recentGifts().length) {
+    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
       Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
     </div>
     }
-  </div>
+  </pc-table>
 </div>
 
 <pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
