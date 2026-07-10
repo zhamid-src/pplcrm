@@ -152,8 +152,7 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
         pathMatch: 'full',
         data: { shouldReuse: true, key: 'newslettersgridroot' },
       },
