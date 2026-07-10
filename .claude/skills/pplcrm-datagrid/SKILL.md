@@ -142,8 +142,9 @@ comes from the global `.pc-table` / `.pc-table-shell` token contract in `styles.
 lighter `pc-table` shell also consumes so bespoke tables (Tags/Issues/Donations) stay identical.
 The grid's `<table>` carries `class="table pc-table …"`, its `<th>` deliberately omits font/size
 utilities (the shared `.pc-table thead th` rule supplies the micro-caps), and `datagrid.css`
-reads `--pc-table-cell-py` for density. The grid keeps its **zebra + `hover:bg-base-300`** as a
-scale adaptation that overrides the shared subtle hover. If you change the grid's table
+reads `--pc-table-cell-py` for density. The grid keeps its **zebra + `hover:bg-base-300/40`** as a
+scale adaptation that overrides the shared subtle hover — base-300 as the hue because a base-200
+tint would vanish on the base-200 zebra stripes, at 40% opacity so hovering is a wash, not a flash. If you change the grid's table
 typography/density/border, you are changing every table in the app — do it in the token contract,
 not inline. Full details in **`pplcrm-table`**.
 
