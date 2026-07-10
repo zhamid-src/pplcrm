@@ -296,10 +296,10 @@
       (keydown.escape)="cancelBulkTag()"
       autofocus
     />
-    <button class="btn btn-primary btn-xs bg-base-100" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
       <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
     </button>
-    <button class="btn btn-outline btn-accent btn-xs bg-base-100" (click)="cancelBulkTag()">
+    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
       <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
     </button>
     } @else {
@@ -368,7 +368,7 @@
           >
             <input
               type="checkbox"
-              class="checkbox checkbox-sm"
+              class="checkbox checkbox-xs"
               [checked]="!allSelected() && tableAllPageSelected()"
               [indeterminate]="!allSelected() && tableSomePageSelected()"
               (change)="onHeaderCheckbox($any($event.target).checked)"

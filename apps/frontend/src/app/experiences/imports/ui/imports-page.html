@@ -5,27 +5,8 @@
     [totalSentence]="tab() === 'imports' ? historySentence() : null"
   ></pc-grid-header>
 
-  <!-- Tabs: Imports N / Exports N -->
-  <div role="tablist" class="tabs tabs-border mb-4">
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'imports'"
-      (click)="switchTab('imports')"
-    >
-      Imports {{ itemCount() }}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'exports'"
-      (click)="switchTab('exports')"
-    >
-      Exports {{ exportCount() }}
-    </button>
-  </div>
+  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
 
   <!-- ============ IMPORTS TAB ============ -->
   @if (tab() === 'imports') {
