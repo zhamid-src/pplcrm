@@ -1,18 +1,6 @@
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Admin</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Users</h1>
-      @if (loaded()) {
-      <p class="mt-1 text-sm tabular-nums text-base-content/60">
-        {{ rows().length }} user{{ rows().length === 1 ? '' : 's' }} · {{ activeCount() }} active@if (invitedCount() >
-        0) {, {{ invitedCount() }} invited}@if (deactivatedCount() > 0) {, {{ deactivatedCount() }} deactivated} · {{
-        adminCount() }} admin{{ adminCount() === 1 ? '' : 's' }} @if (seatUsage(); as usage) { · {{ usage.seatsUsed }}
-        of {{ usage.seatLimit }} seats on the {{ planLabel() }} plan }
-      </p>
-      }
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
     <span
       class="tooltip-left"
       [class.tooltip]="seatsRemaining() === 0"
@@ -27,7 +15,7 @@
         Invite user
       </button>
     </span>
-  </div>
+  </pc-grid-header>
 
   <!-- Table -->
   <pc-table [loading]="loading.visible()" [columns]="6">

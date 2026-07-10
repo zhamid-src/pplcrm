@@ -21,7 +21,7 @@
         (keyup.enter)="saveRename()"
       />
       <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
-      <button type="button" class="btn btn-ghost btn-xs" (click)="renaming.set(false)">Cancel</button>
+      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
       } @else {
       <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
       <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">

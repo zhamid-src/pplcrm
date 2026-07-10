@@ -23,15 +23,19 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
         [disableImport]="true"
         [disableExport]="false"
         [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-newsletter"
-        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: NewslettersService },
-    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'newsletter',
+        entityNounPlural: 'newsletters',
+        exportEntity: 'newsletters',
+        exportFileName: 'newsletters-export.csv',
+      },
+    }),
   ],
 })
 export class NewslettersGridComponent {

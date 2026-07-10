@@ -237,7 +237,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
           { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
           {
             title: 'Give it work',

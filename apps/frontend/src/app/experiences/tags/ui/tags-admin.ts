@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -21,7 +22,7 @@ const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink, TagItem, AddTagDialog, Table],
+  imports: [Icon, RouterLink, TagItem, AddTagDialog, Table, GridHeaderComponent],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {

@@ -5,13 +5,13 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Table } from '@uxcommon/components/table/table';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-pledges-grid',
-  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective, Table],
+  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, Table, GridHeaderComponent],
   templateUrl: './pledges-grid.html',
 })
 export class PledgesGridComponent implements OnInit {
@@ -36,10 +36,6 @@ export class PledgesGridComponent implements OnInit {
     void this.load();
   }
 
-  protected refresh() {
-    void this.load();
-  }
-
   protected async cancelPledge(pledge: any) {
     const name =
       [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') ||
@@ -48,8 +44,8 @@ export class PledgesGridComponent implements OnInit {
     const confirmed = await this.dialogs.confirm({
       title: `Cancel pledge for ${name}?`,
       message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
-      confirmText: 'Cancel Pledge',
-      cancelText: 'Keep Pledge',
+      confirmText: 'Cancel pledge',
+      cancelText: 'Keep pledge',
       variant: 'danger',
     });
     if (!confirmed) return;

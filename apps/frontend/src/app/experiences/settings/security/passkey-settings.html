@@ -1,6 +1,6 @@
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <p class="text-sm text-base-content/60">
+    <p class="text-xs text-base-content/60">
       Passkeys let you sign in securely using your device's biometrics or PIN — no password required.
     </p>
     <button
@@ -24,7 +24,7 @@
   } @else if (passkeys().length === 0) {
   <div class="rounded-xl border border-dashed border-base-300 bg-base-50/50 p-8 text-center">
     <pc-icon name="lock-closed" [size]="10" class="mx-auto text-base-content/20 mb-3"></pc-icon>
-    <p class="text-sm text-base-content/50 font-medium">No passkeys registered</p>
+    <p class="text-xs text-base-content/50 font-medium">No passkeys registered</p>
     <p class="text-xs text-base-content/40 mt-1">Add a passkey to sign in faster and more securely.</p>
   </div>
   } @else {
@@ -47,11 +47,11 @@
             autofocus
           />
           <button type="button" class="btn btn-xs btn-primary" (click)="savePasskeyName(pk)">Save</button>
-          <button type="button" class="btn btn-xs btn-ghost" (click)="cancelEditName(pk)">Cancel</button>
+          <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="cancelEditName(pk)">Cancel</button>
         </div>
         } @else {
         <div class="flex items-center gap-2">
-          <span class="font-medium text-sm truncate">{{ pk.friendly_name || 'Unnamed passkey' }}</span>
+          <span class="font-medium text-xs truncate">{{ pk.friendly_name || 'Unnamed passkey' }}</span>
           <button
             type="button"
             class="btn btn-ghost btn-xs opacity-50 hover:opacity-100"

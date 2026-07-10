@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { CampaignContextService } from '../../../services/campaign-context.service';
@@ -16,7 +17,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
  */
 @Component({
   selector: 'pc-campaigns-page',
-  imports: [RouterLink, Icon, DatePipe],
+  imports: [RouterLink, Icon, DatePipe, GridHeaderComponent],
   templateUrl: './campaigns-page.html',
 })
 export class CampaignsPageComponent implements OnInit {

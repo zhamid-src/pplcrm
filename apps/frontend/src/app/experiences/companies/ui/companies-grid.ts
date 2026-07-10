@@ -54,7 +54,14 @@ import { CompaniesService } from '../services/companies-service';
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'company',
+        entityNounPlural: 'companies',
+        exportEntity: 'companies',
+        exportFileName: 'companies-export.csv',
+      },
+    }),
   ],
 })
 export class CompaniesGrid {

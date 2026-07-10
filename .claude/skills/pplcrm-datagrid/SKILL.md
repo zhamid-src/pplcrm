@@ -33,6 +33,11 @@ input block in `datagrid.ts` for the full list before adding a new input; the fl
 probably exists. `provideDataGridConfig` merges per-grid copy (delete/export dialog text,
 failure messages) and `pageSize` over `DEFAULT_DATA_GRID_CONFIG` (`datagrid.tokens.ts`).
 
+**Always set `entityNoun`/`entityNounPlural` in `provideDataGridConfig`** — the toolbar's
+create button derives its label from it as **"New {noun}"** ("New person", "New household");
+without it the button says just "New" (a UX-guidelines violation, §4b). The same nouns feed
+the export menu label and bulk-action messages.
+
 Simple grid: `teams-grid.ts`. Full-featured grid (tag options, custom delete confirm, loading
 gate): `persons-grid.ts`. Its `(importCSV)` handler now just navigates to the CSV import wizard
 (`/imports/new`, spec §17) instead of opening a modal — for the in-grid modal importer pattern
@@ -63,7 +68,7 @@ as one removable `kind:'column'` chip; it does **not** fork a parallel filter re
 The **desktop toolbar** (`ui/datagrid-toolbar.html`) is now a single rounded/bordered button
 group — Refresh · Undo · Redo · │ · Import/Export · │ · Filter-funnel (`onToggleFilters`, tinted
 via `anyFilterActive()`) · Filter-panel (query builder) · │ · Columns · Archive — with the solid
-`+ Add {noun}` button **outside** the group. The Tags/Issues/Lists icon buttons were removed from
+`+ New {noun}` button **outside** the group, always right-most. The Tags/Issues/Lists icon buttons were removed from
 the desktop toolbar (the mobile toolbar still has its own combined filter dropdown).
 
 The All/Donors/Volunteers segmented control (`narrowTypeOptions`/`showNarrowTypeFilter`) is still

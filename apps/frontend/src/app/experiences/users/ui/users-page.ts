@@ -9,6 +9,7 @@ import { Table } from '@uxcommon/components/table/table';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { UserService } from '@frontend/services/user.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserAdminService } from '../services/useradmin-service';
@@ -49,7 +50,7 @@ const DAY = 24 * HOUR;
 @Component({
   selector: 'pc-users-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog],
+  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog, GridHeaderComponent],
   templateUrl: './users-page.html',
 })
 export class UsersPageComponent implements OnInit {
@@ -95,6 +96,20 @@ export class UsersPageComponent implements OnInit {
   protected readonly planLabel = computed(() => {
     const usage = this.seatUsage();
     return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
+
+  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
+  protected readonly headerSentence = computed(() => {
+    const total = this.rows().length;
+    const parts = [`${total} user${total === 1 ? '' : 's'}`];
+    const statusBits = [`${this.activeCount()} active`];
+    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
+    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
+    parts.push(statusBits.join(', '));
+    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
+    const usage = this.seatUsage();
+    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
+    return parts.join(' · ');
   });
 
   public ngOnInit(): void {

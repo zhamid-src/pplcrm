@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -19,7 +20,7 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {

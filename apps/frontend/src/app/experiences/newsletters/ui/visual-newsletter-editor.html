@@ -37,7 +37,7 @@
         <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Editor:</span>
         <button
           type="button"
-          class="btn btn-xs btn-outline btn-accent"
+          class="btn btn-xs btn-outline btn-secondary"
           [class.btn-active]="editorMode() === 'code'"
           (click)="toggleEditorMode()"
         >
@@ -421,7 +421,7 @@
         <div class="grid grid-cols-2 gap-2">
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('heading')"
           >
             <pc-icon name="document-text" [size]="5" class="text-primary"></pc-icon>
@@ -429,7 +429,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('text')"
           >
             <pc-icon name="document-text" [size]="5" class="text-success"></pc-icon>
@@ -437,7 +437,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('image')"
           >
             <pc-icon name="file-image" [size]="5" class="text-warning"></pc-icon>
@@ -445,7 +445,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('button')"
           >
             <pc-icon name="star-filled" [size]="5" class="text-info"></pc-icon>
@@ -453,7 +453,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('divider')"
           >
             <pc-icon name="bars-3" [size]="5" class="text-neutral-content"></pc-icon>
@@ -461,7 +461,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('spacer')"
           >
             <pc-icon name="arrows-pointing-out" [size]="5"></pc-icon>
@@ -469,7 +469,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('social')"
           >
             <pc-icon name="user-group" [size]="5" class="text-primary"></pc-icon>
@@ -477,7 +477,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('footer')"
           >
             <pc-icon name="home" [size]="5" class="text-secondary"></pc-icon>
@@ -497,8 +497,8 @@
       <div class="space-y-4">
         <div class="flex items-center justify-between border-b border-base-200 pb-2">
           <span class="text-xs uppercase font-bold text-base-content/60">Selected: {{ block.type }}</span>
-          <button type="button" class="btn btn-xs btn-error text-white" (click)="deleteBlock(block.id)">
-            Delete Block
+          <button type="button" class="btn btn-xs btn-outline btn-error" (click)="deleteBlock(block.id)">
+            Delete block
           </button>
         </div>
 
@@ -530,7 +530,7 @@
             <div class="flex flex-wrap gap-1">
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'FirstName', 'content')"
                 title="Click to insert First Name placeholder"
               >
@@ -538,7 +538,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'LastName', 'content')"
                 title="Click to insert Last Name placeholder"
               >
@@ -546,7 +546,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Email', 'content')"
                 title="Click to insert Email placeholder"
               >
@@ -554,7 +554,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Company', 'content')"
                 title="Click to insert Company placeholder"
               >
@@ -562,7 +562,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'JobTitle', 'content')"
                 title="Click to insert Job Title placeholder"
               >
@@ -570,7 +570,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Phone', 'content')"
                 title="Click to insert Phone placeholder"
               >
@@ -717,7 +717,7 @@
             <div class="flex flex-wrap gap-1">
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'FirstName', 'content')"
                 title="Click to insert First Name placeholder"
               >
@@ -725,7 +725,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'LastName', 'content')"
                 title="Click to insert Last Name placeholder"
               >
@@ -733,7 +733,7 @@
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Email', 'content')"
                 title="Click to insert Email placeholder"
               >

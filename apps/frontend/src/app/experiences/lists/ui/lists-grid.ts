@@ -7,6 +7,7 @@ import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { UpdateListType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -32,24 +33,18 @@ function escapeHtml(value: string): string {
 
 @Component({
   selector: 'pc-lists-grid',
-  imports: [DataGrid, Icon],
+  imports: [DataGrid, Icon, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-4 p-6">
-      <!-- Page header: title + grain sentence on the left, primary action on the right —
-           the grid's own in-grid title/toolbar are switched off below so this is the only header,
-           and its p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
-      <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight text-base-content">Lists</h1>
-          <p class="text-xs text-base-content/70 tabular-nums mt-1" data-testid="lists-summary">
-            {{ summarySentence() }}
-          </p>
-        </div>
-        <button type="button" class="btn btn-primary btn-sm rounded-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
+      <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
+           own in-grid title/toolbar are switched off below so this is the only header, and its
+           p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
+      <pc-grid-header title="Lists" [totalSentence]="summarySentence()">
+        <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
           <pc-icon name="plus" [size]="4"></pc-icon>
           <span>New list</span>
         </button>
-      </div>
+      </pc-grid-header>
 
       <pc-datagrid
         #grid
@@ -76,7 +71,14 @@ function escapeHtml(value: string): string {
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'list',
+        entityNounPlural: 'lists',
+        exportEntity: 'lists',
+        exportFileName: 'lists-export.csv',
+      },
+    }),
   ],
 })
 export class ListsGridComponent implements OnInit {

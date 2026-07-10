@@ -1,7 +1,7 @@
 @if (loading()) {
 <div class="flex items-center gap-3 py-8 text-base-content/50">
   <span class="loading loading-spinner loading-md"></span>
-  <span class="text-sm font-medium">Loading account status…</span>
+  <span class="text-xs font-medium">Loading account status…</span>
 </div>
 } @else if (status()) {
 
@@ -11,7 +11,7 @@
   <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Deletion In Progress</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account is being permanently deleted. All data will be removed. You will receive a confirmation email when
       the process is complete.
     </p>
@@ -22,7 +22,7 @@
   <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Suspended</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Please contact support
       to reactivate your account.
     </p>
@@ -33,7 +33,7 @@
   <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Paused</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account has been paused since {{ status()!.paused_at | date : 'mediumDate' }}. Your data is preserved and
       billing is paused. Reactivate below to restore full access.
     </p>
@@ -44,7 +44,7 @@
   <pc-icon name="check-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Active</h4>
-    <p class="text-sm">Your account is active and in good standing.</p>
+    <p class="text-xs">Your account is active and in good standing.</p>
   </div>
 </div>
 }
@@ -52,8 +52,8 @@
 <!-- Pause / Reactivate Section -->
 <div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
   <div class="space-y-1">
-    <h3 class="text-base font-bold text-base-content/90">Pause Account</h3>
-    <p class="text-sm text-base-content/60">
+    <h3 class="text-sm font-bold text-base-content/90">Pause Account</h3>
+    <p class="text-xs text-base-content/60">
       Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
       logging back in.
     </p>
@@ -62,24 +62,24 @@
     @if (status()!.paused_at) {
     <button
       type="button"
-      class="btn btn-success btn-sm"
+      class="btn btn-primary btn-sm"
       (click)="resumeAccount()"
       [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Reactivate Account
+      } Reactivate account
     </button>
     } @else if (!status()!.suspended_at) {
     <button
       type="button"
-      class="btn btn-warning btn-sm btn-outline"
+      class="btn btn-outline btn-warning btn-sm"
       (click)="pauseAccount()"
       [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Pause Account
+      } Pause account
     </button>
     }
   </div>
@@ -88,8 +88,8 @@
 <!-- Danger Zone -->
 <div class="card border border-error/30 bg-error/5 rounded-xl p-6 space-y-4">
   <div class="space-y-1">
-    <h3 class="text-base font-bold text-error">Danger Zone</h3>
-    <p class="text-sm text-base-content/60">
+    <h3 class="text-sm font-bold text-error">Danger Zone</h3>
+    <p class="text-xs text-base-content/60">
       Permanently delete this organization and all its data. This includes all contacts, emails, campaigns, imports,
       exports, and settings. This action cannot be undone.
     </p>
@@ -97,7 +97,7 @@
 
   @if (status()!.deletion_scheduled_at) {
   <div class="space-y-3">
-    <p class="text-sm text-error font-medium">
+    <p class="text-xs text-error font-medium">
       Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
       removed.
     </p>
@@ -109,16 +109,16 @@
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Cancel Deletion
+      } Cancel deletion
     </button>
   </div>
   } @else {
-  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
+  <button type="button" class="btn btn-outline btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
     @if (actionPending()) {
     <span class="loading loading-spinner loading-xs"></span>
     }
     <pc-icon name="trash-forever" [size]="4"></pc-icon>
-    Delete Account Permanently
+    Delete account permanently
   </button>
   }
 </div>

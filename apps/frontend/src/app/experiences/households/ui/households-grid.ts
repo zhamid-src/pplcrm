@@ -92,7 +92,14 @@ import { HouseholdsService } from '../services/households-service';
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
   ],
 })
 export class HouseholdsGrid implements OnInit {

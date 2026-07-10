@@ -14,7 +14,10 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
           {
             title: 'Design in the visual editor',
             detail: 'Write and arrange your content visually — what you see is what subscribers get.',

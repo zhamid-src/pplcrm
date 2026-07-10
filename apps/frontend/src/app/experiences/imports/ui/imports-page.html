@@ -1,37 +1,9 @@
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
-      }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Import / export"
+    [totalSentence]="tab() === 'imports' ? historySentence() : null"
+  ></pc-grid-header>
 
   <!-- Tabs: Imports N / Exports N -->
   <div role="tablist" class="tabs tabs-border mb-4">
@@ -189,7 +161,7 @@
   @if (tab() === 'exports') {
   <div>
     <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="toggleNewExportInfo()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="toggleNewExportInfo()">
         New export
       </button>
     </div>
@@ -358,10 +330,20 @@
     }
 
     <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent"
+        (click)="closeDeleteDialog(deleteDialog)"
+        [disabled]="deleting()"
+      >
         Cancel
       </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-error gap-2"
+        (click)="confirmDelete(deleteDialog)"
+        [disabled]="deleting()"
+      >
         <pc-icon name="trash" [size]="4"></pc-icon>
         Delete
       </button>

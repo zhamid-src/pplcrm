@@ -6,9 +6,9 @@ import { Icon } from '@icons/icon';
 import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -25,7 +25,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective, Table],
+  imports: [FormsModule, Icon, Table, GridHeaderComponent],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
@@ -65,6 +65,11 @@ export class ImportsPage {
     this.items()
       .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
       .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+  protected readonly historySentence = computed(
+    () =>
+      `${this.importsThisYear()} imports this year · ${this.peopleCreatedThisYear()} people created · ` +
+      `${this.duplicatesMergedThisYear()} duplicates merged`,
   );
 
   private pollInterval: ReturnType<typeof setInterval> | undefined;
@@ -206,10 +211,6 @@ export class ImportsPage {
     );
   }
 
-  protected async refresh() {
-    await this.load();
-  }
-
   private async load() {
     if (this.isLoadActive) return;
     this.isLoadActive = true;
@@ -237,10 +238,6 @@ export class ImportsPage {
   }
 
   // --- Exports tab ---
-
-  protected refreshExports(): void {
-    void this.loadExports();
-  }
 
   protected toggleNewExportInfo(): void {
     this.showNewExportInfo.update((v) => !v);

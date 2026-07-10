@@ -17,6 +17,7 @@ import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
@@ -33,7 +34,7 @@ interface TemplateOption {
 @Component({
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table],
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table, GridHeaderComponent],
   templateUrl: './forms-page.html',
 })
 export class FormsPageComponent implements OnInit {

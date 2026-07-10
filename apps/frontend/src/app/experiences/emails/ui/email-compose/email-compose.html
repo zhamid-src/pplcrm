@@ -3,13 +3,13 @@
   <div class="flex justify-between">
     <div class="text-base"></div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
+      <button type="button" class="btn btn-ghost btn-md text-error" title="Delete draft" (click)="delete()">
         <pc-icon name="trash" class="mr-1"></pc-icon>
       </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
+      <button type="button" class="btn btn-ghost btn-md" title="Discard changes" (click)="discard()">
         <pc-icon name="x-circle" class="mr-1"></pc-icon>
       </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
+      <button type="button" class="btn btn-ghost btn-md" title="Save draft" (click)="saveDraft()">
         <pc-icon name="save" class="mr-1"></pc-icon>
       </button>
       <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
