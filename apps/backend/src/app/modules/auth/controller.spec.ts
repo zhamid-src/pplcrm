@@ -4,6 +4,7 @@ import { AuthUsersRepo } from './repositories/authusers.repo';
 import { StorageService } from '../../lib/storage.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { hashToken } from '../../lib/token-hash';
 
 vi.mock('../../lib/hibp', () => ({
   getPwnedCount: vi.fn().mockResolvedValue(0),
@@ -273,8 +274,31 @@ describe('AuthController', () => {
     const renewed = await controller.renewAuthToken(tokens.refresh_token);
     expect(renewed.auth_token).toBeTypeOf('string');
     expect(renewed.refresh_token).toBeTypeOf('string');
-    // Rotation: the old refresh token must no longer renew after it's been used.
+
+    // Rotation reuse grace: replaying the just-rotated refresh token within the grace window
+    // still succeeds (concurrent tabs share one refresh cookie) and mints its own session.
+    const replayed = await controller.renewAuthToken(tokens.refresh_token);
+    expect(replayed.auth_token).toBeTypeOf('string');
+    expect(replayed.refresh_token).not.toBe(renewed.refresh_token);
+
+    // Beyond the grace window a replay is treated as token reuse and rejected. `last_used_at`
+    // holds the rotation timestamp on rotated sessions — backdate it past the window.
+    await db
+      .updateTable('sessions')
+      .set({ last_used_at: new Date(Date.now() - 5 * 60 * 1000) })
+      .where('refresh_token', '=', hashToken(tokens.refresh_token))
+      .where('tenant_id', '=', owner.tenant_id)
+      .execute();
     await expect(controller.renewAuthToken(tokens.refresh_token)).rejects.toThrow(UnauthorizedError);
+
+    // The rotated-away session is invisible to the auth gates regardless of the grace window.
+    const rotatedRow = await db
+      .selectFrom('sessions')
+      .select('status')
+      .where('refresh_token', '=', hashToken(tokens.refresh_token))
+      .where('tenant_id', '=', owner.tenant_id)
+      .executeTakeFirst();
+    expect(rotatedRow?.status).toBe('rotated');
 
     await expect(controller.renewAuthToken('bogus-refresh-token')).rejects.toThrow(UnauthorizedError);
 
