@@ -1,12 +1,7 @@
 <pc-card [title]="label()" [subtitle]="subtitle()">
   <div class="space-y-3">
     <div class="flex gap-2">
-      <input
-        type="text"
-        [value]="url()"
-        readonly
-        class="input input-bordered input-sm flex-1 font-mono text-xs"
-      />
+      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
       <a
         [href]="url()"
         target="_blank"
@@ -15,12 +10,7 @@
       >
         <pc-icon name="arrow-top-right-on-square"></pc-icon>
       </a>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline btn-primary px-3"
-        (click)="copyUrl()"
-        title="Copy link"
-      >
+      <button type="button" class="btn btn-sm btn-outline btn-secondary px-3" (click)="copyUrl()" title="Copy link">
         <pc-icon name="document-duplicate"></pc-icon>
       </button>
     </div>

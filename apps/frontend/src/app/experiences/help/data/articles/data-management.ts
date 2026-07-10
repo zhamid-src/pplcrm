@@ -12,7 +12,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** in the People grid toolbar (under the Import/export icon) — it opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {

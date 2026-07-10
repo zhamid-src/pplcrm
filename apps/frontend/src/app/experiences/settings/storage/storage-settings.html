@@ -6,7 +6,7 @@
   } @else {
   <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
     <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
     </div>
 
     <div class="pt-2">
@@ -15,9 +15,9 @@
           {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
         </span>
         @if (usedPct() >= 100) {
-        <span class="text-sm text-error font-medium">Newsletters pause sending attachments at 100%</span>
+        <span class="text-xs text-error font-medium">Newsletters pause sending attachments at 100%</span>
         } @else if (usedPct() >= 90) {
-        <span class="text-sm text-warning font-medium">Approaching your storage limit</span>
+        <span class="text-xs text-warning font-medium">Approaching your storage limit</span>
         }
       </div>
       <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
@@ -28,13 +28,13 @@
 
   <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
     <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
     </div>
 
     @if (largestFiles().length === 0) {
     <div class="flex flex-col items-center text-center py-10">
       <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <p class="text-sm text-base-content/60">No files uploaded yet.</p>
+      <p class="text-xs text-base-content/60">No files uploaded yet.</p>
     </div>
     } @else {
     <ul class="divide-y divide-base-200">
@@ -50,7 +50,7 @@
           </div>
         </div>
         <div class="flex items-center gap-4 shrink-0">
-          <span class="text-sm text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
+          <span class="text-xs text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
           <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
             <pc-icon name="trash" [size]="4"></pc-icon>
           </button>

@@ -5,16 +5,13 @@
       <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
     </div>
     <div class="flex items-center justify-center gap-2 sm:justify-end">
-      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        New Newsletter
-      </a>
-      <button
-        class="btn btn-sm btn-outline btn-accent gap-1 font-medium capitalize"
-        (click)="collapsed.set(!collapsed())"
-      >
-        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+      <button class="btn btn-sm btn-outline btn-secondary gap-1" (click)="collapsed.set(!collapsed())">
+        {{ collapsed() ? 'Show dashboard' : 'Hide dashboard' }}
       </button>
+      <a class="btn btn-sm btn-primary gap-1" routerLink="add">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        New newsletter
+      </a>
     </div>
   </div>
 

@@ -17,7 +17,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**+ Add** — create a record of this type.',
           '**Refresh** — reload the grid without touching your filters.',
           '**Undo / Redo** — step your inline edits backward and forward.',
           '**Import CSV / Export CSV** — see [Import data from CSV](/help/import) and [Export your data](/help/export).',
@@ -25,6 +24,7 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
           '**Advanced filters and the query builder** — per-column conditions or full and/or logic.',
           '**Columns** — choose which columns are visible.',
           '**Archive** (where offered) — flip between active and archived records.',
+          '**New {record}** ("New person", "New household", …) — the solid button at the far right creates a record of this type.',
         ],
       },
       { kind: 'h2', id: 'open-detail', text: 'Opening records' },

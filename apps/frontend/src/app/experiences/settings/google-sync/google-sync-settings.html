@@ -2,7 +2,7 @@
   @if (isLoading()) {
   <div class="flex items-center gap-3 text-base-content/60">
     <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
+    <span class="text-xs">Loading connection status…</span>
   </div>
   } @else if (status()?.connected) {
   <!-- Connected state -->
@@ -10,7 +10,7 @@
     <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
+      <p class="text-xs text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
       @if (status()?.syncedAt) {
       <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
       }
@@ -22,8 +22,11 @@
     <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with this code:</p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+      <p class="text-xs text-base-content/70 mt-1">
+        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
+        this code:
+      </p>
+      <p class="font-mono text-xs font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
     </div>
   </div>
   }
@@ -37,12 +40,7 @@
       Sync Now }
     </button>
 
-    <button
-      type="button"
-      class="btn btn-ghost"
-      [disabled]="isSyncing()"
-      (click)="forceFullResync()"
-    >
+    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
       <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
       Force Full Re-sync
     </button>
@@ -60,11 +58,11 @@
   </div>
 
   @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  <p class="text-xs text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
   } } @else {
   <!-- Disconnected state -->
   <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
+    <p class="text-xs text-base-content/70">
       Connect your Google Suite account to automatically sync incoming and outgoing emails into your pplcrm inbox.
     </p>
   </div>
@@ -101,7 +99,7 @@
   </button>
 
   @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
+  <p class="text-xs text-error flex items-center gap-1.5">
     <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
     {{ connectError() }}
   </p>

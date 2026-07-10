@@ -11,10 +11,10 @@
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;
-  --color-primary: #0ea5e9;
+  --color-primary: #3498db;
   --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
+  --color-secondary: #22a6b3;
+  --color-secondary-content: #ffffff;
   --color-accent: #818789;
   --color-accent-content: #f0f0f0;
   --color-neutral: #cbd5e1;
@@ -28,7 +28,7 @@
   --color-success-content: #053a34;
   --color-warning: #e3d6a7;
   --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
+  --color-error: #eb4d4b;
   --color-error-content: #ffffff;
 
   /* Hairline border token — one line color app-wide, per theme (design §5). */

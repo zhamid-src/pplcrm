@@ -111,7 +111,18 @@ same way. These are the assigned idioms; do not invent a parallel one:
 
 **Casing and copy:** sentence case everywhere ("Save person", "Add filter") — never ALL CAPS,
 never bare verbs when a noun clarifies ("Save person" beats "Save" beats "SUBMIT"). Buttons
-state exactly what they will do, with numbers when acting on a set.
+state exactly what they will do, with numbers when acting on a set. Create actions are labeled
+**"New {noun}"** ("New person", "New campaign"), never "Add"/"Add person" — the datagrid toolbar
+derives this from `entityNoun`, so every grid config must set it.
+
+**Button roles have one class string each** — main `btn-primary` (right-most, one per surface),
+cancel `btn-outline btn-accent`, secondary `btn-outline btn-secondary`, archive
+`btn-outline btn-warning`, delete `btn-outline btn-error`, icon-only tertiary
+`btn-ghost btn-xs btn-circle`. The full table with sizes, placement, and exceptions is
+**UX-GUIDELINES §4b** — apply it verbatim; any other combination is drift. Button rounding comes
+only from the `--radius-field` token in `styles.css` (both themes) — never a `rounded-*` utility
+on a button. Every list page's header is `pc-grid-header` with actions projected right — never a
+hand-rolled h1 + button row.
 
 ## 5. Color: semantic tokens only
 
@@ -150,12 +161,11 @@ The implementation preference ladder, in order:
    (`td.cell-flash` in `datagrid.css`).
 
 **`btn-outline` always pairs with a color modifier.** `btn-outline` alone renders in
-`base-content` and reads as a disabled/dead button next to real DaisyUI buttons — pair it with
-the semantic color for what the action means (`btn-primary` for the main action, `btn-error`
-for destructive, `btn-warning` for caution, `btn-secondary`/`btn-neutral` for a real secondary
-color). If no semantic color fits the action, default to `btn-accent` rather than leaving it
-bare. A bare `btn-outline`/`btn-outline btn-sm`/etc. with no color class is never correct —
-fix it on sight.
+`base-content` and reads as a disabled/dead button next to real DaisyUI buttons. Which color is
+not a per-callsite choice — it comes from the action's **role** (UX-GUIDELINES §4b):
+`btn-secondary` for secondary actions, `btn-accent` for cancel/dismiss, `btn-error` for
+destructive, `btn-warning` for archive. A bare `btn-outline`/`btn-outline btn-sm`/etc. with no
+color class is never correct — fix it on sight.
 
 This is already the house reality — the frontend has **zero** `@angular/animations` usage and
 no JS animation library; keep it that way. Worked example: `pc-swap`
@@ -200,11 +210,9 @@ name the state change an animation narrates, cut it.
   it moves things out from under the cursor.
 - **One moment of motion per interaction.** A save may flash the cell — it does not also
   bounce the button and slide the toast in from three directions.
-- **Honor `prefers-reduced-motion`.** The source design artifact specifies it and the app CSS
-  does not implement it yet (verified gap, July 2026) — any new animation work should add the
-  global guard in `styles.css` (`@media (prefers-reduced-motion: reduce) { *, ::before,
-::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }`
-  or equivalent) rather than per-component opt-outs.
+- **Honor `prefers-reduced-motion`.** The global guard exists at the bottom of `styles.css`
+  (`@media (prefers-reduced-motion: reduce)` collapsing all animation/transition durations) —
+  new animations are covered automatically; don't add per-component opt-outs.
 - New keyframes, if truly needed, go in the `@layer utilities` block of `styles.css` (app-wide)
   or the component's own CSS file (scoped), use `var(--color-*)` tokens (§5), and get an
   `animate-*` utility name consistent with the existing set.
@@ -217,6 +225,10 @@ name the state change an animation narrates, cut it.
   external font requests; never add a `fonts.googleapis.com` link to `index.html`. (The
   backend's public event/web-form pages still load Roboto from Google Fonts — a separate,
   unmigrated surface as of July 2026.)
+- **Body text is `text-xs` (12px) app-wide** — grids, detail pages, settings, activity logs,
+  dialogs. `text-sm` is the one-notch-up reserved for `pc-detail-item` values and weighted
+  section headings; the Help Center is the deliberate larger exception. The full numeric scale
+  lives in UX-GUIDELINES §8.
 - Headings earn weight (600–700), so **weight is hierarchy** — don't reach for size or color
   first. Monospace is `ui-monospace`/system mono, reserved for IDs, routes, and kbd hints.
 - Kickers/eyebrows are small uppercase tracked labels; record names are the big type.

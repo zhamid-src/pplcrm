@@ -82,7 +82,7 @@
 
       @if (publicUrl()) {
       <pc-card title="Public RSVP Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-secondary" (click)="copyPublicUrl()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
         </button>
         <div class="flex gap-2">
@@ -212,7 +212,7 @@
             <div class="flex justify-between items-center">
               <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
               @if (registrations().length > 0) {
-              <button type="button" class="btn btn-xs btn-outline btn-accent gap-1" (click)="exportCsv()">
+              <button type="button" class="btn btn-xs btn-outline btn-secondary gap-1" (click)="exportCsv()">
                 <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
               </button>
               }

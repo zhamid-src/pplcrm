@@ -119,7 +119,7 @@
         <div class="flex justify-end gap-2 pt-1">
           <button
             type="button"
-            class="btn btn-ghost btn-xs"
+            class="btn btn-outline btn-accent btn-xs"
             (click)="addFilterDd.removeAttribute('open')"
             i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
           >
@@ -299,7 +299,7 @@
     <button class="btn btn-primary btn-xs bg-base-100" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
       <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
     </button>
-    <button class="btn btn-xs bg-base-100" (click)="cancelBulkTag()">
+    <button class="btn btn-outline btn-accent btn-xs bg-base-100" (click)="cancelBulkTag()">
       <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
     </button>
     } @else {
@@ -559,7 +559,7 @@
               >
               <button
                 type="button"
-                class="btn btn-outline btn-accent btn-sm mt-1"
+                class="btn btn-outline btn-secondary btn-sm mt-1"
                 (click)="clearAllFilters()"
                 i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
               >
@@ -583,7 +583,7 @@
               <span
                 class="text-sm opacity-70"
                 i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
+                >Create your first record with the New button above</span
               >
             </div>
           </td>
@@ -953,7 +953,7 @@
       </button>
       <div class="flex gap-2">
         <button
-          class="btn btn-ghost btn-sm"
+          class="btn btn-outline btn-accent btn-sm"
           (click)="showAdvancedFilterBuilder.set(false)"
           i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
         >

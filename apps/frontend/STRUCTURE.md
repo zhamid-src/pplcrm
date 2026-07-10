@@ -788,7 +788,7 @@ export default '';
       </p>
       }
 
-      <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
+      <button type="button" class="btn btn-outline btn-secondary" (click)="auth.signOut()" [disabled]="actionPending()">
         Sign out
       </button>
     </div>
@@ -1373,7 +1373,7 @@ export class ResetPasswordPage {
       </p>
       }
 
-      <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
+      <button type="button" class="btn btn-outline btn-secondary" (click)="auth.signOut()" [disabled]="actionPending()">
         Sign out
       </button>
     </div>
@@ -5392,13 +5392,13 @@ export class EmailComments {
   <div class="flex justify-between">
     <div class="text-base"></div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
+      <button type="button" class="btn btn-ghost btn-md text-error" title="Delete draft" (click)="delete()">
         <pc-icon name="trash" class="mr-1"></pc-icon>
       </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
+      <button type="button" class="btn btn-ghost btn-md" title="Discard changes" (click)="discard()">
         <pc-icon name="x-circle" class="mr-1"></pc-icon>
       </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
+      <button type="button" class="btn btn-ghost btn-md" title="Save draft" (click)="saveDraft()">
         <pc-icon name="save" class="mr-1"></pc-icon>
       </button>
       <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
@@ -7142,7 +7142,7 @@ export class StandardFormsService extends FormsService {
 
       <!-- HTML Embed Snippet Card -->
       <pc-card title="Deploy & Embed">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-secondary" (click)="copySnippet()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
         </button>
 
@@ -7905,7 +7905,7 @@ export class PublicFormComponent implements OnInit {
           </div>
           } @else {
           <pc-card title="HTML Embed Snippet" subtitle="Deploy this donation page on your external website.">
-            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+            <button pc-card-actions class="btn btn-sm btn-outline btn-secondary" (click)="copySnippet()">
               <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
               Copy
             </button>
@@ -7935,7 +7935,7 @@ export class PublicFormComponent implements OnInit {
                   <pc-icon name="arrow-top-right-on-square"></pc-icon>
                 </a>
                 <button
-                  class="btn btn-sm btn-outline btn-primary px-3"
+                  class="btn btn-sm btn-outline btn-secondary px-3"
                   (click)="copyUrl()"
                   title="Copy landing page URL"
                 >
@@ -7994,7 +7994,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** in the People grid toolbar (under the Import/export icon) — it opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
@@ -8151,7 +8151,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**+ Add** — create a record of this type.',
           '**Refresh** — reload the grid without touching your filters.',
           '**Undo / Redo** — step your inline edits backward and forward.',
           '**Import CSV / Export CSV** — see [Import data from CSV](/help/import) and [Export your data](/help/export).',
@@ -8159,6 +8158,7 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
           '**Advanced filters and the query builder** — per-column conditions or full and/or logic.',
           '**Columns** — choose which columns are visible.',
           '**Archive** (where offered) — flip between active and archived records.',
+          '**New {record}** ("New person", "New household", …) — the solid button at the far right creates a record of this type.',
         ],
       },
       { kind: 'h2', id: 'open-detail', text: 'Opening records' },
@@ -12783,15 +12783,19 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
         [disableImport]="true"
         [disableExport]="false"
         [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-newsletter"
-        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: NewslettersService },
-    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'newsletter',
+        entityNounPlural: 'newsletters',
+        exportEntity: 'newsletters',
+        exportFileName: 'newsletters-export.csv',
+      },
+    }),
   ],
 })
 export class NewslettersGridComponent {
@@ -13753,7 +13757,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 <div class="flex h-48 items-center justify-center">
   <div class="flex flex-col items-center gap-3 text-base-content/50">
     <span class="loading loading-spinner loading-md"></span>
-    <p class="text-sm font-medium">Retrieving subscription details…</p>
+    <p class="text-xs font-medium">Retrieving subscription details…</p>
   </div>
 </div>
 } @else {
@@ -13765,7 +13769,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
   >
     <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0" />
     <div>
-      <h3 class="font-semibold text-sm">Sandbox Mode Enabled</h3>
+      <h3 class="font-semibold text-xs">Sandbox Mode Enabled</h3>
       <p class="text-xs opacity-90 mt-0.5">
         Stripe is running in **Mock Mode** for local development. Clicking billing triggers will simulate Stripe
         responses instantly without making live credit card calls.
@@ -13794,15 +13798,15 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         <div>
           <h3 class="text-3xl font-extrabold capitalize text-base-content">{{ details()?.plan }} Plan</h3>
           @if (details()?.hasActiveSubscription && details()?.endsAt) {
-          <p class="text-sm text-base-content/60 mt-1">
+          <p class="text-xs text-base-content/60 mt-1">
             Your subscription will renew automatically on **{{ details()?.endsAt | date:'mediumDate' }}**.
           </p>
           } @else if (details()?.endsAt) {
-          <p class="text-sm text-error/80 mt-1 font-medium">
+          <p class="text-xs text-error/80 mt-1 font-medium">
             Your plan has expired or was canceled. Access ends on {{ details()?.endsAt | date:'mediumDate' }}.
           </p>
           } @else {
-          <p class="text-sm text-base-content/60 mt-1">
+          <p class="text-xs text-base-content/60 mt-1">
             You are currently on the free trial version of PeopleCRM. Upgrade below to unlock all capabilities.
           </p>
           }
@@ -13814,21 +13818,21 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         @if (details()?.stripeCustomerId) {
         <button
           type="button"
-          class="btn btn-secondary btn-sm rounded-lg flex items-center gap-1.5"
+          class="btn btn-outline btn-secondary btn-sm gap-1.5"
           [disabled]="actionPending()"
           (click)="openPortal()"
         >
           <pc-icon name="cog-6-tooth" />
-          Manage Subscription
+          Manage subscription
         </button>
         } @if (details()?.isMockMode && details()?.hasActiveSubscription) {
         <button
           type="button"
-          class="btn btn-outline btn-error btn-sm rounded-lg"
+          class="btn btn-outline btn-error btn-sm"
           [disabled]="actionPending()"
           (click)="cancelMock()"
         >
-          Mock Cancel Subscription
+          Mock cancel subscription
         </button>
         }
       </div>
@@ -13838,7 +13842,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     <div class="card bg-base-100 border border-base-200 rounded-2xl p-6 space-y-4">
       <h4 class="text-xs uppercase font-bold tracking-wider text-base-content/50">Billing Account</h4>
 
-      <div class="space-y-3 text-sm">
+      <div class="space-y-3 text-xs">
         <div>
           <span class="text-base-content/50 block text-xs">Organization Tenant ID</span>
           <span class="font-mono text-base-content/80 font-medium"
@@ -13861,7 +13865,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
   <div class="space-y-6">
     <div>
       <h3 class="text-xl font-bold tracking-tight text-base-content">Upgrade Options</h3>
-      <p class="text-sm text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
+      <p class="text-xs text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
     </div>
 
     <div class="grid gap-6 md:grid-cols-3">
@@ -13887,7 +13891,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 
           <div class="flex items-baseline text-base-content">
             <span class="text-4xl font-extrabold tracking-tight">$49</span>
-            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+            <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
           </div>
 
           <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
@@ -13913,7 +13917,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         <div class="mt-6 pt-4">
           <button
             type="button"
-            class="btn btn-primary w-full rounded-xl"
+            class="btn btn-primary w-full"
             [disabled]="details()?.plan === 'grassroots' || actionPending()"
             (click)="subscribe('grassroots')"
           >
@@ -13950,7 +13954,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 
           <div class="flex items-baseline text-base-content">
             <span class="text-4xl font-extrabold tracking-tight">$199</span>
-            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+            <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
           </div>
 
           <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
@@ -13980,7 +13984,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         <div class="mt-6 pt-4">
           <button
             type="button"
-            class="btn btn-primary w-full rounded-xl"
+            class="btn btn-primary w-full"
             [disabled]="details()?.plan === 'representative' || actionPending()"
             (click)="subscribe('representative')"
           >
@@ -14028,7 +14032,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         <div class="mt-6 pt-4">
           <a
             href="mailto:support@peoplecrm.example.com?subject=Enterprise Inquiry"
-            class="btn btn-outline btn-neutral w-full rounded-xl"
+            class="btn btn-outline btn-secondary w-full"
           >
             Contact Sales
           </a>
@@ -14214,7 +14218,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
         } Add Domain
       </button>
     </form>
-    <p class="text-[13px] text-base-content/50 mt-2">
+    <p class="text-xs text-base-content/50 mt-2">
       Verify your domain ownership by adding DNS records to your registrar. Once verified, you can send newsletters from
       addresses under this domain.
     </p>
@@ -14229,7 +14233,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
     >
       <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
-      <p class="font-medium text-sm">No custom domains configured yet.</p>
+      <p class="font-medium text-xs">No custom domains configured yet.</p>
       <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
     </div>
     } @else {
@@ -14270,7 +14274,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
         @if (expandedDomain() === item.domain) {
         <div class="p-5 bg-base-100 border-t border-base-100 space-y-5 animate-slide-down">
           <div class="space-y-1">
-            <h4 class="text-sm font-bold text-base-content/90">DNS Verification Setup</h4>
+            <h4 class="text-xs font-bold text-base-content/90">DNS Verification Setup</h4>
             <p class="text-xs text-base-content/60">
               Please add the following CNAME and TXT records to your DNS provider (e.g. Cloudflare, GoDaddy, Namecheap)
               to verify domain sending authorization, link branding, and DMARC policy validation.
@@ -14472,7 +14476,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
               @if (verifyingDomain() === item.domain) {
               <span class="loading loading-spinner loading-xs mr-2"></span>
               Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
-              <span class="countdown font-mono text-sm"
+              <span class="countdown font-mono text-xs"
                 ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
               >s } @else {
               <pc-icon name="arrow-path" class="mr-2"></pc-icon>
@@ -14680,7 +14684,7 @@ export class DomainSettingsComponent implements OnInit {
   @if (isLoading()) {
   <div class="flex items-center gap-3 text-base-content/60">
     <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
+    <span class="text-xs">Loading connection status…</span>
   </div>
   } @else if (status()?.connected) {
   <!-- Connected state -->
@@ -14688,7 +14692,7 @@ export class DomainSettingsComponent implements OnInit {
     <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
+      <p class="text-xs text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
       @if (status()?.syncedAt) {
       <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
       }
@@ -14700,11 +14704,11 @@ export class DomainSettingsComponent implements OnInit {
     <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
+      <p class="text-xs text-base-content/70 mt-1">
         Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
         this code:
       </p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+      <p class="font-mono text-xs font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
     </div>
   </div>
   }
@@ -14736,11 +14740,11 @@ export class DomainSettingsComponent implements OnInit {
   </div>
 
   @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  <p class="text-xs text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
   } } @else {
   <!-- Disconnected state -->
   <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
+    <p class="text-xs text-base-content/70">
       Connect your Google Suite account to automatically sync incoming and outgoing emails into your pplcrm inbox.
     </p>
   </div>
@@ -14777,7 +14781,7 @@ export class DomainSettingsComponent implements OnInit {
   </button>
 
   @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
+  <p class="text-xs text-error flex items-center gap-1.5">
     <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
     {{ connectError() }}
   </p>
@@ -14792,7 +14796,7 @@ export class DomainSettingsComponent implements OnInit {
   @if (isLoading()) {
   <div class="flex items-center gap-3 text-base-content/60">
     <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
+    <span class="text-xs">Loading connection status…</span>
   </div>
   } @else if (status()?.connected) {
   <!-- Connected state -->
@@ -14800,7 +14804,7 @@ export class DomainSettingsComponent implements OnInit {
     <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
+      <p class="text-xs text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
       @if (status()?.syncedAt) {
       <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
       }
@@ -14812,11 +14816,11 @@ export class DomainSettingsComponent implements OnInit {
     <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
+      <p class="text-xs text-base-content/70 mt-1">
         Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
         this code:
       </p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+      <p class="font-mono text-xs font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
     </div>
   </div>
   }
@@ -14848,11 +14852,11 @@ export class DomainSettingsComponent implements OnInit {
   </div>
 
   @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  <p class="text-xs text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
   } } @else {
   <!-- Disconnected state -->
   <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
+    <p class="text-xs text-base-content/70">
       Connect your Office 365 account to automatically sync incoming emails into your pplcrm inbox.
     </p>
   </div>
@@ -14878,7 +14882,7 @@ export class DomainSettingsComponent implements OnInit {
   </button>
 
   @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
+  <p class="text-xs text-error flex items-center gap-1.5">
     <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
     {{ connectError() }}
   </p>
@@ -14903,7 +14907,7 @@ export class DomainSettingsComponent implements OnInit {
     <!-- Header: scope stated up front (§5a) -->
     <div class="flex items-start gap-3">
       <div
-        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary select-none"
       >
         {{ initial() }}
       </div>
@@ -14933,7 +14937,7 @@ export class DomainSettingsComponent implements OnInit {
         @for (row of rows; track row.emailKey) {
         <div class="flex items-center gap-2 py-2">
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-medium text-base-content">{{ row.label }}</div>
+            <div class="text-xs font-medium text-base-content">{{ row.label }}</div>
             <div class="text-xs text-base-content/55">{{ row.helper }}</div>
           </div>
           <label class="flex w-10 justify-center">
@@ -14965,7 +14969,7 @@ export class DomainSettingsComponent implements OnInit {
     <div>
       <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Appearance</span>
       <div class="mt-3 flex items-center justify-between">
-        <span class="text-sm font-medium">Theme</span>
+        <span class="text-xs font-medium">Theme</span>
         <div class="join">
           @for (opt of themeOptions; track opt.value) {
           <button
@@ -15190,7 +15194,7 @@ export class PersonalSettingsDialog {
 ```html
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <p class="text-sm text-base-content/60">
+    <p class="text-xs text-base-content/60">
       Passkeys let you sign in securely using your device's biometrics or PIN — no password required.
     </p>
     <button
@@ -15214,7 +15218,7 @@ export class PersonalSettingsDialog {
   } @else if (passkeys().length === 0) {
   <div class="rounded-xl border border-dashed border-base-300 bg-base-50/50 p-8 text-center">
     <pc-icon name="lock-closed" [size]="10" class="mx-auto text-base-content/20 mb-3"></pc-icon>
-    <p class="text-sm text-base-content/50 font-medium">No passkeys registered</p>
+    <p class="text-xs text-base-content/50 font-medium">No passkeys registered</p>
     <p class="text-xs text-base-content/40 mt-1">Add a passkey to sign in faster and more securely.</p>
   </div>
   } @else {
@@ -15237,11 +15241,11 @@ export class PersonalSettingsDialog {
             autofocus
           />
           <button type="button" class="btn btn-xs btn-primary" (click)="savePasskeyName(pk)">Save</button>
-          <button type="button" class="btn btn-xs btn-ghost" (click)="cancelEditName(pk)">Cancel</button>
+          <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="cancelEditName(pk)">Cancel</button>
         </div>
         } @else {
         <div class="flex items-center gap-2">
-          <span class="font-medium text-sm truncate">{{ pk.friendly_name || 'Unnamed passkey' }}</span>
+          <span class="font-medium text-xs truncate">{{ pk.friendly_name || 'Unnamed passkey' }}</span>
           <button
             type="button"
             class="btn btn-ghost btn-xs opacity-50 hover:opacity-100"
@@ -16523,7 +16527,7 @@ export class GettingStartedCard {
               <a
                 [routerLink]="['/inbox']"
                 [queryParams]="{ email: email.id }"
-                class="btn btn-xs btn-outline btn-primary font-bold transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
+                class="btn btn-xs btn-outline btn-secondary"
               >
                 Open Email
               </a>
@@ -16592,12 +16596,7 @@ export class GettingStartedCard {
             </td>
             <td class="text-center text-base-content/50 font-mono text-[10px] align-middle">{{ taskSlaHours() }}h</td>
             <td class="text-right pr-4 align-middle">
-              <a
-                [routerLink]="['/tasks', task.id]"
-                class="btn btn-xs btn-outline btn-primary font-bold transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
-              >
-                Go to Task
-              </a>
+              <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-outline btn-secondary"> Go to Task </a>
             </td>
           </tr>
           }
@@ -18959,361 +18958,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
-  protected override readonly endpointName = 'authusers';
-
-  public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(_rows: InviteAuthUserType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.authusers.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: Record<string, unknown>[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
-  }
-
-  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
-    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
-  }
-
-  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
-    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('User export is not available'));
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.html
-
-```html
-<dialog #dlg class="modal">
-  <div class="modal-box max-w-md">
-    <div class="mb-5 flex items-center justify-between">
-      <h3 class="flex items-center gap-3 text-xl font-bold">
-        <span class="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
-          <pc-icon name="user-plus" [size]="5"></pc-icon>
-        </span>
-        Invite a user
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form class="flex flex-col gap-4" (submit)="submit($event)" novalidate>
-      <pc-input label="Email" type="email" placeholder="name@example.org" [formField]="form.email"></pc-input>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input label="First name" [formField]="form.first_name"></pc-input>
-        <pc-input label="Last name" [formField]="form.last_name"></pc-input>
-      </div>
-
-      <pc-select label="Role" [formField]="form.role">
-        @if (currentUserRole() === 'owner') {
-        <option value="owner">Owner — full control of the workspace</option>
-        }
-        <option value="admin">Admin — manage users and settings</option>
-        <option value="user">Editor — edit records, send, import</option>
-        <option value="viewer">Viewer — read-only access</option>
-      </pc-select>
-
-      <p class="flex items-start gap-1.5 text-xs text-base-content/50">
-        <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
-        <span>
-          The invitation arrives by email with an activation link and takes a seat right away @if (seatUsage(); as
-          usage) { — <span class="tabular-nums">{{ seatsRemaining() }}</span> of
-          <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan}.
-        </span>
-      </p>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="submitting()">Cancel</button>
-        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
-          @if (submitting()) {
-          <span class="loading loading-spinner loading-sm"></span>
-          } @else {
-          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-          } Send invitation
-        </button>
-      </div>
-    </form>
-  </div>
-
-  <form method="dialog" class="modal-backdrop">
-    <button (click)="close()">close</button>
-  </form>
-</dialog>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
-
-```typescript
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  inject,
-  input,
-  output,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { email, form, required } from '@angular/forms/signals';
-
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { UserAdminService } from '../services/useradmin-service';
-
-export interface SeatUsage {
-  plan: string;
-  seatLimit: number;
-  seatsUsed: number;
-}
-
-export const PLAN_LABELS: Record<string, string> = {
-  free: 'Free',
-  grassroots: 'Grassroots',
-  representative: 'Representative',
-};
-
-const DEFAULT_ROLE = 'user';
-
-/**
- * "Invite a user" dialog — the only way to add a staff login. Collects email, first and last
- * name, and a role, narrates seat usage honestly (an invitation holds a seat immediately), and
- * sends the invitation email on submit.
- */
-@Component({
-  selector: 'pc-invite-user-dialog',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PcInput, PcSelect],
-  templateUrl: './invite-user-dialog.html',
-})
-export class InviteUserDialog {
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-
-  public readonly seatUsage = input<SeatUsage | null>(null);
-  public readonly saved = output<void>();
-
-  protected readonly submitting = signal(false);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: DEFAULT_ROLE,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    required(p.last_name);
-  });
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
-  });
-
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
-  });
-
-  public open(): void {
-    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
-    this.form().reset();
-    void this.prefillDefaultRole();
-    this.dlgRef().nativeElement.showModal();
-  }
-
-  public close(): void {
-    this.dlgRef().nativeElement.close();
-  }
-
-  protected async submit(event: Event): Promise<void> {
-    event.preventDefault();
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    this.submitting.set(true);
-    try {
-      const raw = this.payload();
-      await this.users.add({
-        email: raw.email.trim(),
-        first_name: raw.first_name.trim(),
-        last_name: raw.last_name.trim(),
-        role: raw.role || null,
-      });
-      this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
-      this.saved.emit();
-      this.close();
-    } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the invitation';
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  /** Prefill the role with the tenant's configured default invite role (best-effort). */
-  private async prefillDefaultRole(): Promise<void> {
-    try {
-      await this.settings.load();
-      const defaultRole = this.settings.getValue<string>('access.default_role');
-      if (defaultRole) {
-        this.payload.update((p) => ({ ...p, role: defaultRole }));
-      }
-    } catch {
-      // Ignore — keep the built-in default role.
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
-
-```html
-@if (error() && !detail()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading user…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="displayName()"
-    [eyebrow]="'Editing'"
-    [crumbs]="crumbs()"
-    [subtitle]="detail()?.email"
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    btn1Text="Save user"
-    [showDelete]="true"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    deleteText="Delete user"
-    (save)="save($event)"
-    (delete)="deleteUser()"
-  >
-    <button
-      pc-actions-prefix
-      class="btn btn-outline btn-accent btn-sm gap-2"
-      type="button"
-      (click)="triggerPasswordReset()"
-      [disabled]="resettingPassword() || saving()"
-    >
-      <pc-icon name="lock-closed"></pc-icon>
-      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
-    </button>
-  </pc-detail-header>
-
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <pc-card title="Profile">
-    <form class="space-y-4" (submit)="save($event)" novalidate>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-        <pc-select label="Role" [formField]="form.role">
-          @if (currentUserRole() !== 'admin') {
-          <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">Editor</option>
-          <option value="viewer">Viewer</option>
-        </pc-select>
-
-        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-      </div>
-
-      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
-    </form>
-  </pc-card>
-</section>
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
 
 ```typescript
@@ -19556,730 +19200,6 @@ export class UserEditComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-view.html
-
-```html
-<pc-detail-layout
-  [title]="displayName() || 'User'"
-  [eyebrow]="'User'"
-  [crumbs]="crumbs()"
-  [isLoading]="loading()"
-  [error]="error()"
-  [hasRecord]="!initialized() || !!detail()"
-  [showDelete]="true"
-  [deleteText]="'Delete user'"
-  [btn1Text]="'Edit user'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editUser()"
-  (delete)="deleteUser()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (detail()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: User Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-          <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ roleLabel() }}
-        </pc-status-badge>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
-            <span>Verified:</span>
-            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
-              {{ detail()?.verified ? 'Yes' : 'No' }}
-            </pc-status-badge>
-          </pc-detail-row>
-        </div>
-
-        <pc-system-metadata
-          [createdAt]="detail()?.created_at"
-          [updatedAt]="detail()?.updated_at"
-          layout="col"
-          dateFormat="medium"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Metadata & Activity -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Cards Grid -->
-      @if (stats()) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        @for (card of activityCards(); track card.key) {
-        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
-          @if (card.asOf) {
-          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
-          }
-        </pc-stat-card>
-        }
-      </div>
-      }
-
-      <!-- Account Metadata -->
-      <!-- Account Metadata -->
-      <pc-card title="Account Metadata">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="roleLabel()"></pc-detail-item>
-          <pc-detail-item
-            label="Created"
-            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Last updated"
-            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
-          ></pc-detail-item>
-        </div>
-      </pc-card>
-
-      <!-- Activity log track -->
-      <pc-card title="Activity Log">
-        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-
-@Component({
-  selector: 'pc-user-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-    DetailItem,
-    SystemMetadata,
-    PcCard,
-  ],
-  templateUrl: './user-view.html',
-})
-export class UserViewComponent {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('user', this.id);
-
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly avatarUrl = computed(() => {
-    const user = this.detail();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  /** Product name for the stored role value — the working role 'user' is shown as "Editor". */
-  protected readonly roleLabel = computed(() => {
-    const role = this.detail()?.role;
-    if (!role) return '—';
-    return { owner: 'Owner', admin: 'Admin', user: 'Editor', viewer: 'Viewer' }[role] ?? role;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Users', route: '/users' },
-    { label: this.displayName() || 'User' },
-  ]);
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  protected editUser() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    if (String(this.id()) === String(this.currentUserId())) {
-      this.alerts.showError('You cannot delete yourself.');
-      return;
-    }
-    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
-      this.alerts.showError('Admins cannot delete owner accounts.');
-      return;
-    }
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      end();
-    }
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(d);
-    } catch {
-      return date.toString();
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.stats.set(user.stats);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Admin</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Users</h1>
-      @if (loaded()) {
-      <p class="mt-1 text-sm tabular-nums text-base-content/60">
-        {{ rows().length }} user{{ rows().length === 1 ? '' : 's' }} · {{ activeCount() }} active@if (invitedCount() >
-        0) {, {{ invitedCount() }} invited}@if (deactivatedCount() > 0) {, {{ deactivatedCount() }} deactivated} · {{
-        adminCount() }} admin{{ adminCount() === 1 ? '' : 's' }} @if (seatUsage(); as usage) { · {{ usage.seatsUsed }}
-        of {{ usage.seatLimit }} seats on the {{ planLabel() }} plan }
-      </p>
-      }
-    </div>
-    <span
-      class="tooltip-left"
-      [class.tooltip]="seatsRemaining() === 0"
-      [attr.data-tip]="
-        seatsRemaining() === 0
-          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
-          : null
-      "
-    >
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
-        <pc-icon name="user-plus" [size]="4"></pc-icon>
-        Invite user
-      </button>
-    </span>
-  </div>
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="6">
-    <ng-container pcTableHead>
-      <th>User</th>
-      <th>Role</th>
-      <th>Status</th>
-      <th>MFA</th>
-      <th>Last active</th>
-      <th class="w-10"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="6" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
-          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="!!row.deletion_scheduled_at">
-      <td>
-        <div class="flex items-center gap-3">
-          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <a
-                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-                [routerLink]="['/users', row.id]"
-              >
-                {{ displayName(row) }}
-              </a>
-              @if (isSelf(row)) {
-              <span class="text-xs text-base-content/50">(you)</span>
-              }
-            </div>
-            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
-          </div>
-        </div>
-      </td>
-      <td>
-        @if (roleLockReason(row); as reason) {
-        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
-          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
-            <option>{{ roleLabel(row.role) }}</option>
-          </select>
-        </span>
-        } @else {
-        <select
-          class="select select-bordered select-sm w-32"
-          [disabled]="savingIds().has(row.id)"
-          [attr.aria-label]="'Role for ' + displayName(row)"
-          (change)="changeRole(row, $event)"
-        >
-          @for (r of roleOptions(row); track r) {
-          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
-          }
-        </select>
-        }
-      </td>
-      <td>
-        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
-      </td>
-      <td>
-        @if (row.two_factor_enabled) {
-        <span class="tooltip" data-tip="MFA enabled">
-          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
-        </span>
-        } @else {
-        <span class="text-base-content/30">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
-      <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
-          >
-            <li>
-              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
-            </li>
-            <li>
-              <a (click)="sendPasswordReset(row)">
-                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
-              </a>
-            </li>
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-
-    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
-      Users are staff logins — volunteers live in
-      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
-      and don't need an account.
-    </div>
-  </pc-table>
-
-  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { UserService } from '@frontend/services/user.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserAdminService } from '../services/useradmin-service';
-import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
-
-export interface UserRow {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: string | null;
-  last_active_at: string | null;
-  created_at: string | null;
-  avatar_url: string | null;
-}
-
-// The stored role value for the working role is 'user'; the product name for it is "Editor"
-// (see the Users & roles help article and the approved design).
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  user: 'Editor',
-  viewer: 'Viewer',
-};
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/**
- * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
- * inline role select with explained locks, honest status/MFA/last-active columns derived from
- * real session data, and the seat-aware "Invite user" dialog.
- */
-@Component({
-  selector: 'pc-users-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog],
-  templateUrl: './users-page.html',
-})
-export class UsersPageComponent implements OnInit {
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly userService = inject(UserService);
-
-  private readonly inviteDlg = viewChild.required(InviteUserDialog);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly loaded = signal(false);
-  protected readonly rows = signal<UserRow[]>([]);
-  protected readonly seatUsage = signal<SeatUsage | null>(null);
-
-  /** Row that just saved a role change — drives the one-shot saved flash. */
-  protected readonly flashedId = signal<string | null>(null);
-  /** Rows with an in-flight role change; their select is disabled while saving. */
-  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly currentUserId = computed(() => {
-    const id = this.auth.getUser()?.id;
-    return id != null ? String(id) : null;
-  });
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
-
-  protected readonly activeCount = computed(
-    () => this.rows().filter((r) => r.verified && !r.deletion_scheduled_at).length,
-  );
-  protected readonly invitedCount = computed(
-    () => this.rows().filter((r) => !r.verified && !r.deletion_scheduled_at).length,
-  );
-  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => !!r.deletion_scheduled_at).length);
-  protected readonly adminCount = computed(
-    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !r.deletion_scheduled_at).length,
-  );
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
-  });
-
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected openInvite(): void {
-    this.inviteDlg().open();
-  }
-
-  protected onInvited(): void {
-    void this.load();
-  }
-
-  protected displayName(row: UserRow): string {
-    return `${row.first_name} ${row.last_name}`.trim() || row.email;
-  }
-
-  protected avatarUrl(row: UserRow): string | null {
-    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
-  }
-
-  protected isSelf(row: UserRow): boolean {
-    return row.id === this.currentUserId();
-  }
-
-  protected roleLabel(role: string | null): string {
-    return role ? (ROLE_LABELS[role] ?? role) : '—';
-  }
-
-  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
-  protected roleOptions(row: UserRow): string[] {
-    const options =
-      this.currentUserRole() === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
-    if (row.role && !options.includes(row.role)) return [row.role, ...options];
-    return options;
-  }
-
-  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected roleLockReason(row: UserRow): string | null {
-    if (this.isSelf(row)) return "You can't change your own role";
-    if (row.deletion_scheduled_at) return 'Deactivated accounts keep their role';
-    if (this.currentUserRole() === 'admin' && row.role === 'owner') return "Only an owner can change an owner's role";
-    return null;
-  }
-
-  protected status(row: UserRow): { label: string; tone: PcStatusType } {
-    if (row.deletion_scheduled_at) return { label: 'Deactivated', tone: 'ghost' };
-    if (!row.verified) return { label: 'Invited', tone: 'warning' };
-    return { label: 'Active', tone: 'success' };
-  }
-
-  protected lastActiveText(row: UserRow): string {
-    if (!row.verified && !row.deletion_scheduled_at) {
-      return row.created_at ? `Invite sent ${this.shortDate(row.created_at)}` : 'Invite sent';
-    }
-    if (!row.last_active_at) return '—';
-    return this.relativeTime(new Date(row.last_active_at));
-  }
-
-  protected async changeRole(row: UserRow, event: Event): Promise<void> {
-    const select = event.target as HTMLSelectElement;
-    const role = select.value;
-    if (!role || role === row.role) return;
-
-    this.savingIds.update((ids) => new Set(ids).add(row.id));
-    try {
-      await this.users.update(row.id, { role });
-      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
-      this.flashRow(row.id);
-      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
-    } catch (err) {
-      select.value = row.role ?? '';
-      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
-      this.alerts.showError(message);
-    } finally {
-      this.savingIds.update((ids) => {
-        const next = new Set(ids);
-        next.delete(row.id);
-        return next;
-      });
-    }
-  }
-
-  protected async sendPasswordReset(row: UserRow): Promise<void> {
-    try {
-      await this.users.adminTriggerPasswordReset(row.id);
-      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
-    } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
-      this.alerts.showError(message);
-    }
-  }
-
-  private async load(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      const [list, seats] = await Promise.all([
-        this.users.getAll({ startRow: 0, endRow: 500 }),
-        this.users.getSeatUsage(),
-      ]);
-      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
-      this.seatUsage.set(seats);
-      this.loaded.set(true);
-    } catch {
-      this.alerts.showError('Unable to load users — try refreshing the page');
-    } finally {
-      end();
-    }
-  }
-
-  private toRow(raw: Record<string, unknown>): UserRow {
-    return {
-      id: raw['id'] != null ? String(raw['id']) : '',
-      email: typeof raw['email'] === 'string' ? raw['email'] : '',
-      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
-      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
-      role: typeof raw['role'] === 'string' ? raw['role'] : null,
-      verified: raw['verified'] === true,
-      two_factor_enabled: raw['two_factor_enabled'] === true,
-      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
-      last_active_at: this.toIso(raw['last_active_at']),
-      created_at: this.toIso(raw['created_at']),
-      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
-    };
-  }
-
-  private toIso(value: unknown): string | null {
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && value) return value;
-    return null;
-  }
-
-  private flashRow(id: string): void {
-    this.flashedId.set(id);
-    const FLASH_MS = 1300;
-    setTimeout(() => {
-      if (this.flashedId() === id) this.flashedId.set(null);
-    }, FLASH_MS);
-  }
-
-  private relativeTime(date: Date): string {
-    const diff = Date.now() - date.getTime();
-    if (Number.isNaN(diff)) return '—';
-    if (diff < MINUTE) return 'Just now';
-    if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
-    if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
-    if (diff < 2 * DAY) return 'Yesterday';
-    return this.shortDate(date.toISOString());
-  }
-
-  private shortDate(value: string): string {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
 }
 ```
 
@@ -27743,13 +26663,14 @@ import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { PcIconNameType } from '@icons/icons.index';
 import { UserService } from '../../../services/user.service';
 import { IAuthUser } from '../../../../../../../libs/common/src';
 
 @Component({
   selector: 'pc-activity-feed',
-  imports: [DatePipe, RouterLink, Icon],
+  imports: [DatePipe, RouterLink, Icon, GridHeaderComponent],
   templateUrl: './activity-feed.html',
   styles: [
     `
@@ -28842,21 +27763,19 @@ export class CampaignViewComponent {
 
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <!-- Header -->
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Workspace</p>
-      <h1 class="text-xl font-bold tracking-tight" i18n>Campaigns</h1>
-      <p class="text-sm text-base-content/60" i18n>
-        Your office is the permanent workspace; election campaigns come and go around it. Supporter data, email consent,
-        and outreach stay separate per campaign.
-      </p>
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Campaigns"
+    i18n-title
+    description="Your office is the permanent workspace; election campaigns come and go around it. Supporter data, email consent, and outreach stay separate per campaign."
+    i18n-description
+    [totalCount]="loaded() ? campaigns().length : null"
+  >
     <a routerLink="add" class="btn btn-primary btn-sm gap-2 shrink-0">
       <pc-icon name="square-3-stack-3d" [size]="4"></pc-icon>
       <span i18n>New campaign</span>
     </a>
-  </header>
+  </pc-grid-header>
 
   <!-- Loading skeleton (first load only, gated to avoid sub-300ms flicker) -->
   @if (!loaded()) {
@@ -28961,6 +27880,7 @@ import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { CampaignContextService } from '../../../services/campaign-context.service';
@@ -28974,7 +27894,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
  */
 @Component({
   selector: 'pc-campaigns-page',
-  imports: [RouterLink, Icon, DatePipe],
+  imports: [RouterLink, Icon, DatePipe, GridHeaderComponent],
   templateUrl: './campaigns-page.html',
 })
 export class CampaignsPageComponent implements OnInit {
@@ -29857,7 +28777,7 @@ export class DeliveriesRoutesService extends AbstractAPIService<'delivery_routes
         (keyup.enter)="saveRename()"
       />
       <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
-      <button type="button" class="btn btn-ghost btn-xs" (click)="renaming.set(false)">Cancel</button>
+      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
       } @else {
       <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
       <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">
@@ -30450,13 +29370,13 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Table } from '@uxcommon/components/table/table';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 @Component({
   selector: 'pc-pledges-grid',
-  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective, Table],
+  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, Table, GridHeaderComponent],
   templateUrl: './pledges-grid.html',
 })
 export class PledgesGridComponent implements OnInit {
@@ -30481,10 +29401,6 @@ export class PledgesGridComponent implements OnInit {
     void this.load();
   }
 
-  protected refresh() {
-    void this.load();
-  }
-
   protected async cancelPledge(pledge: any) {
     const name =
       [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') ||
@@ -30493,8 +29409,8 @@ export class PledgesGridComponent implements OnInit {
     const confirmed = await this.dialogs.confirm({
       title: `Cancel pledge for ${name}?`,
       message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
-      confirmText: 'Cancel Pledge',
-      cancelText: 'Keep Pledge',
+      confirmText: 'Cancel pledge',
+      cancelText: 'Keep pledge',
       variant: 'danger',
     });
     if (!confirmed) return;
@@ -30697,7 +29613,9 @@ export class PledgesGridComponent implements OnInit {
       </p>
 
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="submitting()">Cancel</button>
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
+          Cancel
+        </button>
         <button type="submit" class="btn btn-primary" [disabled]="submitting()">
           @if (submitting()) {
           <span class="loading loading-spinner loading-sm"></span>
@@ -30936,7 +29854,7 @@ export class RecordDonationDialog {
             <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline btn-accent')
+                          'btn btn-xs flex-1 ' + (group.selectedTargetId === company.id ? 'btn-success' : 'btn-outline btn-secondary')
                         "
                 (click)="selectRole(gIdx, company.id, 'target')"
               >
@@ -30944,7 +29862,7 @@ export class RecordDonationDialog {
               </button>
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline btn-accent')
+                          'btn btn-xs flex-1 ' + (group.selectedSourceId === company.id ? 'btn-error' : 'btn-outline btn-secondary')
                         "
                 (click)="selectRole(gIdx, company.id, 'source')"
               >
@@ -31043,7 +29961,7 @@ export class RecordDonationDialog {
             <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline btn-accent')
+                          'btn btn-xs flex-1 ' + (group.selectedTargetId === hh.id ? 'btn-success' : 'btn-outline btn-secondary')
                         "
                 (click)="selectRole(gIdx, hh.id, 'target')"
               >
@@ -31051,7 +29969,7 @@ export class RecordDonationDialog {
               </button>
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline btn-accent')
+                          'btn btn-xs flex-1 ' + (group.selectedSourceId === hh.id ? 'btn-error' : 'btn-outline btn-secondary')
                         "
                 (click)="selectRole(gIdx, hh.id, 'source')"
               >
@@ -31140,14 +30058,14 @@ export class RecordDonationDialog {
     </div>
     <div class="join">
       <button
-        class="join-item btn btn-outline btn-accent btn-sm gap-1"
+        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
         [disabled]="currentPage() === 1"
         (click)="prev.emit()"
       >
         <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
       </button>
       <button
-        class="join-item btn btn-outline btn-accent btn-sm gap-1"
+        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
         [disabled]="currentPage() >= totalPages()"
         (click)="next.emit()"
       >
@@ -31939,7 +30857,7 @@ export class EmailClient {
       }
 
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()">Cancel</button>
         <button type="submit" class="btn btn-primary" [disabled]="submitting()">
           @if (submitting()) {
           <span class="loading loading-spinner loading-sm"></span>
@@ -33158,7 +32076,7 @@ export class EventFormComponent implements OnInit {
 
       @if (publicUrl()) {
       <pc-card title="Public RSVP Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-secondary" (click)="copyPublicUrl()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
         </button>
         <div class="flex gap-2">
@@ -33288,7 +32206,7 @@ export class EventFormComponent implements OnInit {
             <div class="flex justify-between items-center">
               <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
               @if (registrations().length > 0) {
-              <button type="button" class="btn btn-xs btn-outline btn-accent gap-1" (click)="exportCsv()">
+              <button type="button" class="btn btn-xs btn-outline btn-secondary gap-1" (click)="exportCsv()">
                 <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
               </button>
               }
@@ -36013,7 +34931,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
             >. The footer disclaimer and unsubscribe link are appended automatically from
             <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
           </p>
-          <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="sendTestEmail()">
+          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="sendTestEmail()">
             <pc-icon name="paper-airplane" [size]="4"></pc-icon>
             Send test email
           </button>
@@ -36376,7 +35294,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
               <label class="text-xs font-medium">Send date</label>
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-accent justify-between"
+                class="btn btn-sm btn-outline btn-secondary justify-between"
                 (click)="toggleDatePicker()"
               >
                 <span>{{ scheduledDateDisplay() }}</span>
@@ -36882,7 +35800,7 @@ export class NewsletterDetailComponent {
         <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Editor:</span>
         <button
           type="button"
-          class="btn btn-xs btn-outline btn-accent"
+          class="btn btn-xs btn-outline btn-secondary"
           [class.btn-active]="editorMode() === 'code'"
           (click)="toggleEditorMode()"
         >
@@ -37266,7 +36184,7 @@ export class NewsletterDetailComponent {
         <div class="grid grid-cols-2 gap-2">
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('heading')"
           >
             <pc-icon name="document-text" [size]="5" class="text-primary"></pc-icon>
@@ -37274,7 +36192,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('text')"
           >
             <pc-icon name="document-text" [size]="5" class="text-success"></pc-icon>
@@ -37282,7 +36200,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('image')"
           >
             <pc-icon name="file-image" [size]="5" class="text-warning"></pc-icon>
@@ -37290,7 +36208,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('button')"
           >
             <pc-icon name="star-filled" [size]="5" class="text-info"></pc-icon>
@@ -37298,7 +36216,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('divider')"
           >
             <pc-icon name="bars-3" [size]="5" class="text-neutral-content"></pc-icon>
@@ -37306,7 +36224,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('spacer')"
           >
             <pc-icon name="arrows-pointing-out" [size]="5"></pc-icon>
@@ -37314,7 +36232,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('social')"
           >
             <pc-icon name="user-group" [size]="5" class="text-primary"></pc-icon>
@@ -37322,7 +36240,7 @@ export class NewsletterDetailComponent {
           </button>
           <button
             type="button"
-            class="btn btn-outline btn-accent btn-sm flex justify-start gap-2 h-12"
+            class="btn btn-outline btn-secondary btn-sm flex justify-start gap-2 h-12"
             (click)="addBlock('footer')"
           >
             <pc-icon name="home" [size]="5" class="text-secondary"></pc-icon>
@@ -37342,8 +36260,8 @@ export class NewsletterDetailComponent {
       <div class="space-y-4">
         <div class="flex items-center justify-between border-b border-base-200 pb-2">
           <span class="text-xs uppercase font-bold text-base-content/60">Selected: {{ block.type }}</span>
-          <button type="button" class="btn btn-xs btn-error text-white" (click)="deleteBlock(block.id)">
-            Delete Block
+          <button type="button" class="btn btn-xs btn-outline btn-error" (click)="deleteBlock(block.id)">
+            Delete block
           </button>
         </div>
 
@@ -37375,7 +36293,7 @@ export class NewsletterDetailComponent {
             <div class="flex flex-wrap gap-1">
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'FirstName', 'content')"
                 title="Click to insert First Name placeholder"
               >
@@ -37383,7 +36301,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'LastName', 'content')"
                 title="Click to insert Last Name placeholder"
               >
@@ -37391,7 +36309,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Email', 'content')"
                 title="Click to insert Email placeholder"
               >
@@ -37399,7 +36317,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Company', 'content')"
                 title="Click to insert Company placeholder"
               >
@@ -37407,7 +36325,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'JobTitle', 'content')"
                 title="Click to insert Job Title placeholder"
               >
@@ -37415,7 +36333,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Phone', 'content')"
                 title="Click to insert Phone placeholder"
               >
@@ -37562,7 +36480,7 @@ export class NewsletterDetailComponent {
             <div class="flex flex-wrap gap-1">
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'FirstName', 'content')"
                 title="Click to insert First Name placeholder"
               >
@@ -37570,7 +36488,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'LastName', 'content')"
                 title="Click to insert Last Name placeholder"
               >
@@ -37578,7 +36496,7 @@ export class NewsletterDetailComponent {
               </button>
               <button
                 type="button"
-                class="btn btn-xs btn-outline btn-primary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
+                class="btn btn-xs btn-outline btn-secondary py-0.5 px-1.5 h-auto min-h-0 text-[10px]"
                 (click)="insertVariable(block, 'Email', 'content')"
                 title="Click to insert Email placeholder"
               >
@@ -38601,7 +37519,7 @@ export class PersonCampaignFacts {
 @if (loading()) {
 <div class="flex items-center gap-3 py-8 text-base-content/50">
   <span class="loading loading-spinner loading-md"></span>
-  <span class="text-sm font-medium">Loading account status…</span>
+  <span class="text-xs font-medium">Loading account status…</span>
 </div>
 } @else if (status()) {
 
@@ -38611,7 +37529,7 @@ export class PersonCampaignFacts {
   <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Deletion In Progress</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account is being permanently deleted. All data will be removed. You will receive a confirmation email when
       the process is complete.
     </p>
@@ -38622,7 +37540,7 @@ export class PersonCampaignFacts {
   <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Suspended</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Please contact support
       to reactivate your account.
     </p>
@@ -38633,7 +37551,7 @@ export class PersonCampaignFacts {
   <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Paused</h4>
-    <p class="text-sm">
+    <p class="text-xs">
       Your account has been paused since {{ status()!.paused_at | date : 'mediumDate' }}. Your data is preserved and
       billing is paused. Reactivate below to restore full access.
     </p>
@@ -38644,7 +37562,7 @@ export class PersonCampaignFacts {
   <pc-icon name="check-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Active</h4>
-    <p class="text-sm">Your account is active and in good standing.</p>
+    <p class="text-xs">Your account is active and in good standing.</p>
   </div>
 </div>
 }
@@ -38652,8 +37570,8 @@ export class PersonCampaignFacts {
 <!-- Pause / Reactivate Section -->
 <div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
   <div class="space-y-1">
-    <h3 class="text-base font-bold text-base-content/90">Pause Account</h3>
-    <p class="text-sm text-base-content/60">
+    <h3 class="text-sm font-bold text-base-content/90">Pause Account</h3>
+    <p class="text-xs text-base-content/60">
       Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
       logging back in.
     </p>
@@ -38662,24 +37580,24 @@ export class PersonCampaignFacts {
     @if (status()!.paused_at) {
     <button
       type="button"
-      class="btn btn-success btn-sm"
+      class="btn btn-primary btn-sm"
       (click)="resumeAccount()"
       [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Reactivate Account
+      } Reactivate account
     </button>
     } @else if (!status()!.suspended_at) {
     <button
       type="button"
-      class="btn btn-warning btn-sm btn-outline"
+      class="btn btn-outline btn-warning btn-sm"
       (click)="pauseAccount()"
       [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Pause Account
+      } Pause account
     </button>
     }
   </div>
@@ -38688,8 +37606,8 @@ export class PersonCampaignFacts {
 <!-- Danger Zone -->
 <div class="card border border-error/30 bg-error/5 rounded-xl p-6 space-y-4">
   <div class="space-y-1">
-    <h3 class="text-base font-bold text-error">Danger Zone</h3>
-    <p class="text-sm text-base-content/60">
+    <h3 class="text-sm font-bold text-error">Danger Zone</h3>
+    <p class="text-xs text-base-content/60">
       Permanently delete this organization and all its data. This includes all contacts, emails, campaigns, imports,
       exports, and settings. This action cannot be undone.
     </p>
@@ -38697,7 +37615,7 @@ export class PersonCampaignFacts {
 
   @if (status()!.deletion_scheduled_at) {
   <div class="space-y-3">
-    <p class="text-sm text-error font-medium">
+    <p class="text-xs text-error font-medium">
       Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
       removed.
     </p>
@@ -38709,16 +37627,16 @@ export class PersonCampaignFacts {
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Cancel Deletion
+      } Cancel deletion
     </button>
   </div>
   } @else {
-  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
+  <button type="button" class="btn btn-outline btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
     @if (actionPending()) {
     <span class="loading loading-spinner loading-xs"></span>
     }
     <pc-icon name="trash-forever" [size]="4"></pc-icon>
-    Delete Account Permanently
+    Delete account permanently
   </button>
   }
 </div>
@@ -38767,12 +37685,12 @@ export class PersonCampaignFacts {
     <div class="grid gap-6 md:grid-cols-2 pt-2">
       <!-- Stripe Secret Key -->
       <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <label for="stripe_secret_key" class="text-xs font-semibold text-base-content/90"> Stripe Secret Key </label>
         <input
           id="stripe_secret_key"
           type="password"
           placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
           [value]="stripeSecretKey()"
           (input)="stripeSecretKey.set($any($event.target).value)"
         />
@@ -38784,14 +37702,14 @@ export class PersonCampaignFacts {
 
       <!-- Stripe Webhook Secret -->
       <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
+        <label for="stripe_webhook_secret" class="text-xs font-semibold text-base-content/90">
           Stripe Webhook Signing Secret
         </label>
         <input
           id="stripe_webhook_secret"
           type="password"
           placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
           [value]="stripeWebhookSecret()"
           (input)="stripeWebhookSecret.set($any($event.target).value)"
         />
@@ -38805,7 +37723,7 @@ export class PersonCampaignFacts {
     <!-- Webhook Instructions Info Card -->
     <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
       <div class="space-y-1">
-        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-base-content/90 flex items-center gap-1.5">
           <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
           Webhook Endpoint URL
         </h4>
@@ -38826,7 +37744,7 @@ export class PersonCampaignFacts {
           <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
             {{ webhookUrl() }}
           </div>
-          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
+          <button type="button" class="btn btn-sm btn-outline btn-secondary shrink-0" (click)="copyWebhookUrl()">
             <pc-icon name="document-duplicate" [size]="4"></pc-icon>
             Copy URL
           </button>
@@ -38924,7 +37842,7 @@ export class PersonCampaignFacts {
       <!-- Add period form -->
       @if (showAddPeriod()) {
       <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <h4 class="text-xs font-bold text-base-content/90">New Donation Period</h4>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold">Period Name</label>
           <input
@@ -38972,7 +37890,9 @@ export class PersonCampaignFacts {
           <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
             @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
           </button>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+          <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="showAddPeriod.set(false)">
+            Cancel
+          </button>
         </div>
       </div>
       }
@@ -38982,12 +37902,12 @@ export class PersonCampaignFacts {
         <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
         <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
         <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-semibold">$</span>
           <input
             id="donation_limit"
             type="number"
             min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold"
             [value]="donationLimit()"
             (input)="donationLimit.set($any($event.target).value)"
           />
@@ -39016,7 +37936,7 @@ export class PersonCampaignFacts {
             [checked]="restrictResidency()"
             (change)="restrictResidency.set($any($event.target).checked)"
           />
-          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
+          <span class="text-xs font-semibold text-base-content/90"> Enforce residency restrictions </span>
         </label>
 
         @if (restrictResidency()) {
@@ -39295,7 +38215,7 @@ export class PersonCampaignFacts {
   <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
     <div>
       @if (isSaving()) {
-      <span class="text-sm font-medium text-base-content/60 flex items-center">
+      <span class="text-xs font-medium text-base-content/60 flex items-center">
         <span class="loading loading-spinner loading-xs mr-2"></span>
         Saving donations configuration…
       </span>
@@ -39305,7 +38225,7 @@ export class PersonCampaignFacts {
     <div class="flex items-center gap-3">
       <button
         type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-xs"
         (click)="reset()"
         [disabled]="isSaving()"
       >
@@ -39313,7 +38233,7 @@ export class PersonCampaignFacts {
       </button>
       <button
         type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-sm"
+        class="btn btn-primary min-w-[120px] font-semibold text-xs"
         (click)="save()"
         [disabled]="isSaving()"
       >
@@ -40296,7 +39216,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   } @else {
   <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
     <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
     </div>
 
     <div class="pt-2">
@@ -40305,9 +39225,9 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
           {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
         </span>
         @if (usedPct() >= 100) {
-        <span class="text-sm text-error font-medium">Newsletters pause sending attachments at 100%</span>
+        <span class="text-xs text-error font-medium">Newsletters pause sending attachments at 100%</span>
         } @else if (usedPct() >= 90) {
-        <span class="text-sm text-warning font-medium">Approaching your storage limit</span>
+        <span class="text-xs text-warning font-medium">Approaching your storage limit</span>
         }
       </div>
       <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
@@ -40318,13 +39238,13 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 
   <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
     <div class="border-b border-base-200 pb-3">
-      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
     </div>
 
     @if (largestFiles().length === 0) {
     <div class="flex flex-col items-center text-center py-10">
       <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <p class="text-sm text-base-content/60">No files uploaded yet.</p>
+      <p class="text-xs text-base-content/60">No files uploaded yet.</p>
     </div>
     } @else {
     <ul class="divide-y divide-base-200">
@@ -40340,7 +39260,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
           </div>
         </div>
         <div class="flex items-center gap-4 shrink-0">
-          <span class="text-sm text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
+          <span class="text-xs text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
           <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
             <pc-icon name="trash" [size]="4"></pc-icon>
           </button>
@@ -41368,7 +40288,7 @@ export class ShiftFormComponent implements OnInit {
       <!-- Public Signup Link Card -->
       @if (publicUrl()) {
       <pc-card title="Public Signup Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-secondary" (click)="copySnippet()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
         </button>
 
@@ -42704,7 +41624,7 @@ export class Tags implements OnInit {
                   placeholder="Describe this task..."
                 ></quill-editor>
                 <div class="flex justify-end gap-2 mt-2">
-                  <button (click)="cancelEditingDetails()" class="btn btn-sm btn-ghost">Cancel</button>
+                  <button (click)="cancelEditingDetails()" class="btn btn-outline btn-accent btn-sm">Cancel</button>
                   <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
                 </div>
               </div>
@@ -42944,7 +41864,7 @@ export class Tags implements OnInit {
                 placeholder="URL (e.g. https://...)"
                 [(ngModel)]="attUrl"
               />
-              <button class="btn btn-accent btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
+              <button class="btn btn-primary btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
                 Attach File
               </button>
             </div>
@@ -43042,11 +41962,7 @@ export class Tags implements OnInit {
                   <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
                   }
                 </select>
-                <button
-                  (click)="assignToMe()"
-                  class="btn btn-outline btn-accent btn-sm font-semibold"
-                  title="Assign to me"
-                >
+                <button (click)="assignToMe()" class="btn btn-outline btn-secondary btn-sm" title="Assign to me">
                   Me
                 </button>
               </div>
@@ -43127,7 +42043,7 @@ export class Tags implements OnInit {
       <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
       }
     </div>
-    <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openList()">
+    <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openList()">
       <pc-icon name="queue-list" [size]="4"></pc-icon>
       Open list
     </button>
@@ -43651,20 +42567,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <!-- Header -->
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">Volunteers</p>
-      <h1 class="text-xl font-bold tracking-tight" i18n>Teams</h1>
-      <p class="text-sm text-base-content/60" i18n>
-        Group volunteers under a lead who owns shift questions and escalations.
-      </p>
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Teams"
+    i18n-title
+    description="Group volunteers under a lead who owns shift questions and escalations."
+    i18n-description
+    [totalCount]="loaded() ? teams().length : null"
+  >
     <a routerLink="add" class="btn btn-primary btn-sm gap-2 shrink-0">
       <pc-icon name="add-group" [size]="4"></pc-icon>
-      <span i18n>Add team</span>
+      <span i18n>New team</span>
     </a>
-  </header>
+  </pc-grid-header>
 
   <!-- Loading skeleton (first load only, gated to avoid sub-300ms flicker) -->
   @if (!loaded()) {
@@ -43689,7 +42604,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     </p>
     <a routerLink="add" class="btn btn-primary btn-sm mt-1 gap-2">
       <pc-icon name="add-group" [size]="4"></pc-icon>
-      <span i18n>Add team</span>
+      <span i18n>New team</span>
     </a>
   </div>
   } @else {
@@ -43752,6 +42667,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TeamsService } from '../services/teams-service';
 
@@ -43767,7 +42683,7 @@ interface TeamCard {
 
 @Component({
   selector: 'pc-teams-grid',
-  imports: [RouterLink, Icon],
+  imports: [RouterLink, Icon, GridHeaderComponent],
   templateUrl: './teams-grid.html',
 })
 export class TeamsGridComponent implements OnInit {
@@ -43817,6 +42733,1090 @@ export class TeamsGridComponent implements OnInit {
       volunteerCount: Number(row['volunteer_count'] ?? 0),
       leadName: captain ? captain : null,
     };
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
+
+  public add(row: InviteAuthUserType) {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(_rows: InviteAuthUserType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.authusers.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: Record<string, unknown>[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateAuthUserType) {
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
+  }
+
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
+    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('User export is not available'));
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.html
+
+```html
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-5 flex items-center justify-between">
+      <h3 class="flex items-center gap-3 text-xl font-bold">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+          <pc-icon name="user-plus" [size]="5"></pc-icon>
+        </span>
+        Invite a user
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form class="flex flex-col gap-4" (submit)="submit($event)" novalidate>
+      <pc-input label="Email" type="email" placeholder="name@example.org" [formField]="form.email"></pc-input>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input label="First name" [formField]="form.first_name"></pc-input>
+        <pc-input label="Last name" [formField]="form.last_name"></pc-input>
+      </div>
+
+      <pc-select label="Role" [formField]="form.role">
+        @if (currentUserRole() === 'owner') {
+        <option value="owner">Owner — full control of the workspace</option>
+        }
+        <option value="admin">Admin — manage users and settings</option>
+        <option value="user">Editor — edit records, send, import</option>
+        <option value="viewer">Viewer — read-only access</option>
+      </pc-select>
+
+      <p class="flex items-start gap-1.5 text-xs text-base-content/50">
+        <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
+        <span>
+          The invitation arrives by email with an activation link and takes a seat right away @if (seatUsage(); as
+          usage) { — <span class="tabular-nums">{{ seatsRemaining() }}</span> of
+          <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan}.
+        </span>
+      </p>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+          <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          } Send invitation
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
+  </form>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
+
+```typescript
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
+
+export interface SeatUsage {
+  plan: string;
+  seatLimit: number;
+  seatsUsed: number;
+}
+
+export const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  grassroots: 'Grassroots',
+  representative: 'Representative',
+};
+
+const DEFAULT_ROLE = 'user';
+
+/**
+ * "Invite a user" dialog — the only way to add a staff login. Collects email, first and last
+ * name, and a role, narrates seat usage honestly (an invitation holds a seat immediately), and
+ * sends the invitation email on submit.
+ */
+@Component({
+  selector: 'pc-invite-user-dialog',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, PcInput, PcSelect],
+  templateUrl: './invite-user-dialog.html',
+})
+export class InviteUserDialog {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  public readonly seatUsage = input<SeatUsage | null>(null);
+  public readonly saved = output<void>();
+
+  protected readonly submitting = signal(false);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: DEFAULT_ROLE,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    required(p.last_name);
+  });
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
+
+  public open(): void {
+    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
+    this.form().reset();
+    void this.prefillDefaultRole();
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected async submit(event: Event): Promise<void> {
+    event.preventDefault();
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    this.submitting.set(true);
+    try {
+      const raw = this.payload();
+      await this.users.add({
+        email: raw.email.trim(),
+        first_name: raw.first_name.trim(),
+        last_name: raw.last_name.trim(),
+        role: raw.role || null,
+      });
+      this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
+      this.saved.emit();
+      this.close();
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the invitation';
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  /** Prefill the role with the tenant's configured default invite role (best-effort). */
+  private async prefillDefaultRole(): Promise<void> {
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — keep the built-in default role.
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+
+```html
+@if (error() && !detail()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading user…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="displayName()"
+    [eyebrow]="'Editing'"
+    [crumbs]="crumbs()"
+    [subtitle]="detail()?.email"
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    btn1Text="Save user"
+    [showDelete]="true"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete user"
+    (save)="save($event)"
+    (delete)="deleteUser()"
+  >
+    <button
+      pc-actions-prefix
+      class="btn btn-outline btn-secondary btn-sm gap-2"
+      type="button"
+      (click)="triggerPasswordReset()"
+      [disabled]="resettingPassword() || saving()"
+    >
+      <pc-icon name="lock-closed"></pc-icon>
+      {{ resettingPassword() ? 'Sending link…' : 'Send password reset link' }}
+    </button>
+  </pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <pc-card title="Profile">
+    <form class="space-y-4" (submit)="save($event)" novalidate>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+        <pc-select label="Role" [formField]="form.role">
+          @if (currentUserRole() !== 'admin') {
+          <option value="owner">Owner</option>
+          }
+          <option value="admin">Admin</option>
+          <option value="user">Editor</option>
+          <option value="viewer">Viewer</option>
+        </pc-select>
+
+        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+      </div>
+
+      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
+    </form>
+  </pc-card>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.html
+
+```html
+<pc-detail-layout
+  [title]="displayName() || 'User'"
+  [eyebrow]="'User'"
+  [crumbs]="crumbs()"
+  [isLoading]="loading()"
+  [error]="error()"
+  [hasRecord]="!initialized() || !!detail()"
+  [showDelete]="true"
+  [deleteText]="'Delete user'"
+  [btn1Text]="'Edit user'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editUser()"
+  (delete)="deleteUser()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (detail()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: User Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
+        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
+
+        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
+          <pc-icon name="identification" [size]="4"></pc-icon>
+          {{ roleLabel() }}
+        </pc-status-badge>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
+            <span>Verified:</span>
+            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
+              {{ detail()?.verified ? 'Yes' : 'No' }}
+            </pc-status-badge>
+          </pc-detail-row>
+        </div>
+
+        <pc-system-metadata
+          [createdAt]="detail()?.created_at"
+          [updatedAt]="detail()?.updated_at"
+          layout="col"
+          dateFormat="medium"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Metadata & Activity -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Cards Grid -->
+      @if (stats()) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        @for (card of activityCards(); track card.key) {
+        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+          @if (card.asOf) {
+          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </pc-stat-card>
+        }
+      </div>
+      }
+
+      <!-- Account Metadata -->
+      <!-- Account Metadata -->
+      <pc-card title="Account Metadata">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Role" [value]="roleLabel()"></pc-detail-item>
+          <pc-detail-item
+            label="Created"
+            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Last updated"
+            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+          ></pc-detail-item>
+        </div>
+      </pc-card>
+
+      <!-- Activity log track -->
+      <pc-card title="Activity Log">
+        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </pc-card>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+
+@Component({
+  selector: 'pc-user-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+    DetailItem,
+    SystemMetadata,
+    PcCard,
+  ],
+  templateUrl: './user-view.html',
+})
+export class UserViewComponent {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('user', this.id);
+
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly avatarUrl = computed(() => {
+    const user = this.detail();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  /** Product name for the stored role value — the working role 'user' is shown as "Editor". */
+  protected readonly roleLabel = computed(() => {
+    const role = this.detail()?.role;
+    if (!role) return '—';
+    return { owner: 'Owner', admin: 'Admin', user: 'Editor', viewer: 'Viewer' }[role] ?? role;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
+  ]);
+
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    return [
+      {
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        asOf: null,
+      },
+      {
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        asOf: s.contacts_added.last_created_at,
+      },
+      {
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        asOf: s.files_imported.last_activity_at,
+      },
+      {
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        asOf: s.files_exported.last_activity_at,
+      },
+    ];
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
+  }
+
+  protected editUser() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    if (String(this.id()) === String(this.currentUserId())) {
+      this.alerts.showError('You cannot delete yourself.');
+      return;
+    }
+    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
+      this.alerts.showError('Admins cannot delete owner accounts.');
+      return;
+    }
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      end();
+    }
+  }
+
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(d);
+    } catch {
+      return date.toString();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.stats.set(user.stats);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
+    <span
+      class="tooltip-left"
+      [class.tooltip]="seatsRemaining() === 0"
+      [attr.data-tip]="
+        seatsRemaining() === 0
+          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
+          : null
+      "
+    >
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon>
+        Invite user
+      </button>
+    </span>
+  </pc-grid-header>
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>User</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>MFA</th>
+      <th>Last active</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="!!row.deletion_scheduled_at">
+      <td>
+        <div class="flex items-center gap-3">
+          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <a
+                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+                [routerLink]="['/users', row.id]"
+              >
+                {{ displayName(row) }}
+              </a>
+              @if (isSelf(row)) {
+              <span class="text-xs text-base-content/50">(you)</span>
+              }
+            </div>
+            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
+          </div>
+        </div>
+      </td>
+      <td>
+        @if (roleLockReason(row); as reason) {
+        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
+            <option>{{ roleLabel(row.role) }}</option>
+          </select>
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-32"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Role for ' + displayName(row)"
+          (change)="changeRole(row, $event)"
+        >
+          @for (r of roleOptions(row); track r) {
+          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
+          }
+        </select>
+        }
+      </td>
+      <td>
+        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
+      </td>
+      <td>
+        @if (row.two_factor_enabled) {
+        <span class="tooltip" data-tip="MFA enabled">
+          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
+        </span>
+        } @else {
+        <span class="text-base-content/30">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
+          >
+            <li>
+              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+            </li>
+            <li>
+              <a (click)="sendPasswordReset(row)">
+                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+
+    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
+      Users are staff logins — volunteers live in
+      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
+      and don't need an account.
+    </div>
+  </pc-table>
+
+  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UserService } from '@frontend/services/user.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserAdminService } from '../services/useradmin-service';
+import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+
+export interface UserRow {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: string | null;
+  last_active_at: string | null;
+  created_at: string | null;
+  avatar_url: string | null;
+}
+
+// The stored role value for the working role is 'user'; the product name for it is "Editor"
+// (see the Users & roles help article and the approved design).
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
+ * inline role select with explained locks, honest status/MFA/last-active columns derived from
+ * real session data, and the seat-aware "Invite user" dialog.
+ */
+@Component({
+  selector: 'pc-users-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog, GridHeaderComponent],
+  templateUrl: './users-page.html',
+})
+export class UsersPageComponent implements OnInit {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly loaded = signal(false);
+  protected readonly rows = signal<UserRow[]>([]);
+  protected readonly seatUsage = signal<SeatUsage | null>(null);
+
+  /** Row that just saved a role change — drives the one-shot saved flash. */
+  protected readonly flashedId = signal<string | null>(null);
+  /** Rows with an in-flight role change; their select is disabled while saving. */
+  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly currentUserId = computed(() => {
+    const id = this.auth.getUser()?.id;
+    return id != null ? String(id) : null;
+  });
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly activeCount = computed(
+    () => this.rows().filter((r) => r.verified && !r.deletion_scheduled_at).length,
+  );
+  protected readonly invitedCount = computed(
+    () => this.rows().filter((r) => !r.verified && !r.deletion_scheduled_at).length,
+  );
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => !!r.deletion_scheduled_at).length);
+  protected readonly adminCount = computed(
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !r.deletion_scheduled_at).length,
+  );
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
+
+  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
+  protected readonly headerSentence = computed(() => {
+    const total = this.rows().length;
+    const parts = [`${total} user${total === 1 ? '' : 's'}`];
+    const statusBits = [`${this.activeCount()} active`];
+    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
+    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
+    parts.push(statusBits.join(', '));
+    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
+    const usage = this.seatUsage();
+    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
+    return parts.join(' · ');
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openInvite(): void {
+    this.inviteDlg().open();
+  }
+
+  protected onInvited(): void {
+    void this.load();
+  }
+
+  protected displayName(row: UserRow): string {
+    return `${row.first_name} ${row.last_name}`.trim() || row.email;
+  }
+
+  protected avatarUrl(row: UserRow): string | null {
+    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
+  }
+
+  protected isSelf(row: UserRow): boolean {
+    return row.id === this.currentUserId();
+  }
+
+  protected roleLabel(role: string | null): string {
+    return role ? (ROLE_LABELS[role] ?? role) : '—';
+  }
+
+  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
+  protected roleOptions(row: UserRow): string[] {
+    const options =
+      this.currentUserRole() === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
+    if (row.role && !options.includes(row.role)) return [row.role, ...options];
+    return options;
+  }
+
+  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected roleLockReason(row: UserRow): string | null {
+    if (this.isSelf(row)) return "You can't change your own role";
+    if (row.deletion_scheduled_at) return 'Deactivated accounts keep their role';
+    if (this.currentUserRole() === 'admin' && row.role === 'owner') return "Only an owner can change an owner's role";
+    return null;
+  }
+
+  protected status(row: UserRow): { label: string; tone: PcStatusType } {
+    if (row.deletion_scheduled_at) return { label: 'Deactivated', tone: 'ghost' };
+    if (!row.verified) return { label: 'Invited', tone: 'warning' };
+    return { label: 'Active', tone: 'success' };
+  }
+
+  protected lastActiveText(row: UserRow): string {
+    if (!row.verified && !row.deletion_scheduled_at) {
+      return row.created_at ? `Invite sent ${this.shortDate(row.created_at)}` : 'Invite sent';
+    }
+    if (!row.last_active_at) return '—';
+    return this.relativeTime(new Date(row.last_active_at));
+  }
+
+  protected async changeRole(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const role = select.value;
+    if (!role || role === row.role) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { role });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+    } catch (err) {
+      select.value = row.role ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  protected async sendPasswordReset(row: UserRow): Promise<void> {
+    try {
+      await this.users.adminTriggerPasswordReset(row.id);
+      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
+      this.alerts.showError(message);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, seats] = await Promise.all([
+        this.users.getAll({ startRow: 0, endRow: 500 }),
+        this.users.getSeatUsage(),
+      ]);
+      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
+      this.seatUsage.set(seats);
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Unable to load users — try refreshing the page');
+    } finally {
+      end();
+    }
+  }
+
+  private toRow(raw: Record<string, unknown>): UserRow {
+    return {
+      id: raw['id'] != null ? String(raw['id']) : '',
+      email: typeof raw['email'] === 'string' ? raw['email'] : '',
+      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
+      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
+      role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      verified: raw['verified'] === true,
+      two_factor_enabled: raw['two_factor_enabled'] === true,
+      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      last_active_at: this.toIso(raw['last_active_at']),
+      created_at: this.toIso(raw['created_at']),
+      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
+    };
+  }
+
+  private toIso(value: unknown): string | null {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && value) return value;
+    return null;
+  }
+
+  private flashRow(id: string): void {
+    this.flashedId.set(id);
+    const FLASH_MS = 1300;
+    setTimeout(() => {
+      if (this.flashedId() === id) this.flashedId.set(null);
+    }, FLASH_MS);
+  }
+
+  private relativeTime(date: Date): string {
+    const diff = Date.now() - date.getTime();
+    if (Number.isNaN(diff)) return '—';
+    if (diff < MINUTE) return 'Just now';
+    if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
+    if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
+    if (diff < 2 * DAY) return 'Yesterday';
+    return this.shortDate(date.toISOString());
+  }
+
+  private shortDate(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 }
 ```
@@ -44778,6 +44778,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import type { QueryBuilderGroupNode } from '@common';
 import { WorkflowsService } from '../services/workflows-service';
@@ -44808,7 +44809,7 @@ interface ListRow {
 // toggle, the one-line recipe sentence, RUNS 30D and a LAST RUN that narrates failures inline.
 @Component({
   selector: 'pc-workflows-grid',
-  imports: [RouterModule, Icon],
+  imports: [RouterModule, Icon, GridHeaderComponent],
   templateUrl: './workflows-grid.html',
   providers: [WorkflowsService],
 })
@@ -45565,7 +45566,7 @@ type DeleteCtx = {
       <!-- Apply / Clear buttons pinned at top -->
       <div class="flex gap-2 mb-1">
         <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
-        <button class="btn btn-outline btn-accent btn-sm flex-1" (click)="clear.emit()">Clear</button>
+        <button class="btn btn-outline btn-secondary btn-sm flex-1" (click)="clear.emit()">Clear</button>
       </div>
 
       <div class="divider my-3"></div>
@@ -45618,121 +45619,6 @@ type DeleteCtx = {
     </div>
   </aside>
 </div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  /**
-   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
-   * count-sentence: "matching" only when a filter narrows the set, singular noun
-   * at 1, and just "Export people" before the first load resolves a count.
-   */
-  readonly exportLabel = computed<string>(() => {
-    const count = this.grid.totalCountAll();
-    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
-    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
-    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
-    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
-  });
-
-  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
-   *  grid config carries no specific entity noun. */
-  readonly addLabel = computed(() => {
-    const noun = this.grid.entityNoun;
-    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
-  });
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
@@ -45790,8 +45676,8 @@ export class DataGridToolbarComponent {
     </div>
 
     <div class="flex items-center gap-1.5">
-      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
-      <button type="button" class="btn btn-outline btn-accent btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
+      <button type="button" class="btn btn-outline btn-secondary btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
+      <button type="button" class="btn btn-outline btn-secondary btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
     </div>
   </div>
 
@@ -45907,50 +45793,27 @@ export class DataGridToolbarComponent {
 
 ```html
 <div class="p-6 max-w-4xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
-        <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
-          >User Activity Feed</ng-container
-        >
-      </h1>
-      <p
-        class="text-sm text-base-content/60 mt-1"
-        i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
-      >
-        Real-time audit log of changes made to contacts, emails, tasks, and system settings.
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button
-        class="btn btn-outline btn-accent btn-sm gap-2 text-primary hover:bg-primary/10"
-        (click)="exportFeed()"
-        [disabled]="isLoadingExport() || activities().length === 0"
-        title="Export activity feed as CSV"
-      >
-        @if (isLoadingExport()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } @else {
-        <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-        }
-        <span>Export log</span>
-      </button>
-      <button
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        (click)="refreshFeed()"
-        i18n-title="@@activityFeed.refreshButton.title"
-        title="Refresh the activity feed"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        <ng-container
-          i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label"
-          >Refresh Feed</ng-container
-        >
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Activity feed"
+    i18n-title="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
+    description="Real-time audit log of changes made to contacts, emails, tasks, and system settings."
+    i18n-description="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
+  >
+    <button
+      class="btn btn-outline btn-secondary btn-sm gap-2"
+      (click)="exportFeed()"
+      [disabled]="isLoadingExport() || activities().length === 0"
+      title="Export activity feed as CSV"
+    >
+      @if (isLoadingExport()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      }
+      <span>Export log</span>
+    </button>
+  </pc-grid-header>
 
   <!-- Filters -->
   <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
@@ -46066,7 +45929,7 @@ export class DataGridToolbarComponent {
         No activity logged
       </h2>
       <p
-        class="text-sm text-base-content/50 mt-1"
+        class="text-xs text-base-content/50 mt-1"
         i18n="
                 Activity feed empty state|Description text when no activity has been logged
                 yet@@activityFeed.emptyState.description"
@@ -46131,7 +45994,7 @@ export class DataGridToolbarComponent {
                     >
                     @if (getCustomMessage(act); as msg) {
                     <!-- Honest attribution: backend-authored sentence surfaced verbatim -->
-                    <p class="text-sm font-medium text-base-content">
+                    <p class="text-xs font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
                       @if (getEntityLink(act); as link) { —
                       <a
@@ -46143,7 +46006,7 @@ export class DataGridToolbarComponent {
                       } @else { — <span class="text-base-content/85">{{ msg }}</span> }
                     </p>
                     } @else {
-                    <p class="text-sm font-medium text-base-content">
+                    <p class="text-xs font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
                       {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
                       <a
@@ -46164,7 +46027,7 @@ export class DataGridToolbarComponent {
                     </span>
                     }
                   </div>
-                  <span class="text-[11px] text-base-content/40 whitespace-nowrap"
+                  <span class="text-[10px] text-base-content/40 whitespace-nowrap"
                     >{{ act.created_at | date: 'short' }}</span
                   >
                 </div>
@@ -46180,7 +46043,7 @@ export class DataGridToolbarComponent {
     <!-- Load More Button -->
     @if (hasMore()) {
     <div class="flex justify-center pt-4">
-      <button class="btn btn-outline btn-primary gap-2" [disabled]="isLoading()" (click)="loadMore()">
+      <button class="btn btn-outline btn-secondary gap-2" [disabled]="isLoading()" (click)="loadMore()">
         @if (isLoading()) {
         <span class="loading loading-spinner loading-xs"></span>
         }
@@ -46223,7 +46086,7 @@ export class DataGridToolbarComponent {
         Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
       </p>
     </div>
-    <button type="button" class="btn btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
+    <button type="button" class="btn btn-outline btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
   </div>
   }
 
@@ -46269,7 +46132,7 @@ export class DataGridToolbarComponent {
           <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
         </div>
         } @else {
-        <button type="button" class="btn btn-outline btn-primary btn-sm gap-2" (click)="workInThis()">
+        <button type="button" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="workInThis()">
           <pc-icon name="arrow-path" [size]="4"></pc-icon>
           <span i18n>Work in this campaign</span>
         </button>
@@ -46318,7 +46181,7 @@ export class DataGridToolbarComponent {
           </label>
           <button
             type="button"
-            class="btn btn-outline btn-primary btn-sm mt-1"
+            class="btn btn-outline btn-secondary btn-sm mt-1"
             [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
             (click)="runCarryOver()"
           >
@@ -46848,7 +46711,7 @@ export class CanvassingPage implements OnInit {
               @for (r of responses; track r.key) {
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-accent"
+                class="btn btn-sm btn-outline btn-secondary"
                 (click)="logKnock(door, 'conversation', r.key)"
               >
                 {{ r.label }}
@@ -46965,7 +46828,7 @@ export class CanvassingPage implements OnInit {
     }
 
     <div class="modal-action">
-      <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn btn-outline btn-accent" (click)="cancel()">Cancel</button>
       <button
         type="button"
         class="btn btn-primary"
@@ -48088,6 +47951,7 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Table } from '@uxcommon/components/table/table';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
 import { DonationsService } from '../../../services/api/donations-service';
 import { RecordDonationDialog } from './record-donation-dialog';
@@ -48104,7 +47968,7 @@ const RECENT_GIFTS_LIMIT = 8;
 
 @Component({
   selector: 'pc-donations-grid',
-  imports: [RouterLink, RouterLinkActive, Icon, CurrencyPipe, RecordDonationDialog, Table],
+  imports: [RouterLink, RouterLinkActive, Icon, CurrencyPipe, RecordDonationDialog, Table, GridHeaderComponent],
   templateUrl: './donations-grid.html',
 })
 export class DonationsGridComponent implements OnInit {
@@ -48340,7 +48204,7 @@ export class DonationsGridComponent implements OnInit {
               <button
                 type="button"
                 class="btn btn-xs"
-                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline btn-accent'"
+                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline btn-secondary'"
                 (click)="selectRole(gIdx, left.id, 'target')"
               >
                 Keep primary
@@ -48348,7 +48212,7 @@ export class DonationsGridComponent implements OnInit {
               <button
                 type="button"
                 class="btn btn-xs"
-                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline btn-accent'"
+                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline btn-secondary'"
                 (click)="selectRole(gIdx, left.id, 'source')"
               >
                 Merge away
@@ -48358,7 +48222,7 @@ export class DonationsGridComponent implements OnInit {
               <button
                 type="button"
                 class="btn btn-xs"
-                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline btn-accent'"
+                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline btn-secondary'"
                 (click)="selectRole(gIdx, right.id, 'target')"
               >
                 Keep primary
@@ -48366,7 +48230,7 @@ export class DonationsGridComponent implements OnInit {
               <button
                 type="button"
                 class="btn btn-xs"
-                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline btn-accent'"
+                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline btn-secondary'"
                 (click)="selectRole(gIdx, right.id, 'source')"
               >
                 Merge away
@@ -48440,7 +48304,7 @@ export class DonationsGridComponent implements OnInit {
             <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
               <button
                 [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline btn-accent')
+                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline btn-secondary')
                             "
                 (click)="selectRole(gIdx, person.id, 'target')"
               >
@@ -48448,7 +48312,7 @@ export class DonationsGridComponent implements OnInit {
               </button>
               <button
                 [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline btn-accent')
+                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline btn-secondary')
                             "
                 (click)="selectRole(gIdx, person.id, 'source')"
               >
@@ -48693,7 +48557,7 @@ export class DonationsGridComponent implements OnInit {
       <span [class]="buttonLabelClass()">New email</span>
     </button>
     <button
-      class="btn btn-sm btn-outline btn-primary w-full"
+      class="btn btn-sm btn-outline btn-secondary w-full"
       [disabled]="store.isSyncing()"
       (click)="store.syncEmails()"
       title="Sync now"
@@ -49664,6 +49528,7 @@ import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
@@ -49680,7 +49545,7 @@ interface TemplateOption {
 @Component({
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table],
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table, GridHeaderComponent],
   templateUrl: './forms-page.html',
 })
 export class FormsPageComponent implements OnInit {
@@ -50992,9 +50857,9 @@ import { Icon } from '@icons/icon';
 import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -51011,7 +50876,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective, Table],
+  imports: [FormsModule, Icon, Table, GridHeaderComponent],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
@@ -51051,6 +50916,11 @@ export class ImportsPage {
     this.items()
       .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
       .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+  protected readonly historySentence = computed(
+    () =>
+      `${this.importsThisYear()} imports this year · ${this.peopleCreatedThisYear()} people created · ` +
+      `${this.duplicatesMergedThisYear()} duplicates merged`,
   );
 
   private pollInterval: ReturnType<typeof setInterval> | undefined;
@@ -51192,10 +51062,6 @@ export class ImportsPage {
     );
   }
 
-  protected async refresh() {
-    await this.load();
-  }
-
   private async load() {
     if (this.isLoadActive) return;
     this.isLoadActive = true;
@@ -51223,10 +51089,6 @@ export class ImportsPage {
   }
 
   // --- Exports tab ---
-
-  protected refreshExports(): void {
-    void this.loadExports();
-  }
 
   protected toggleNewExportInfo(): void {
     this.showNewExportInfo.update((v) => !v);
@@ -51329,7 +51191,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
       </div>
       <button
-        class="btn btn-outline btn-accent btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
+        class="btn btn-outline btn-secondary btn-sm gap-2 mr-2"
         [disabled]="refreshing() || loading()"
         (click)="refreshList()"
       >
@@ -51462,10 +51324,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                   </div>
                 </td>
                 <td class="text-center">
-                  <a
-                    [routerLink]="['/newsletters', n.id]"
-                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
-                  >
+                  <a [routerLink]="['/newsletters', n.id]" class="btn btn-outline btn-secondary btn-xs gap-1">
                     <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
                     View Report
                   </a>
@@ -52480,7 +52339,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <pc-icon name="arrow-right-start-on-rectangle" />
         Yes
       </button>
-      <button class="btn">
+      <button class="btn btn-outline btn-accent">
         <pc-icon name="x-circle" />
         Cancel
       </button>
@@ -52833,7 +52692,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
       <!-- Action buttons -->
       <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="cancelCrop()">Cancel</button>
+        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm px-6" (click)="cropAndUpload()">Save Avatar</button>
       </div>
     </div>
@@ -54416,6 +54275,121 @@ export class TasksList implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
+
+  /** Solid-primary create-button label (UX-GUIDELINES "Buttons"), e.g. "New person". Falls back
+   *  to "New" when the grid config carries no specific entity noun. */
+  readonly addLabel = computed(() => {
+    const noun = this.grid.entityNoun;
+    return noun && noun !== 'row' ? `New ${noun}` : 'New';
+  });
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
 
 ```css
@@ -55117,25 +55091,12 @@ export class DeliveriesRequests implements OnInit {
 
 ```html
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
-        Monthly Pledges
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
-    </div>
-    <button
-      class="btn btn-outline btn-accent btn-sm gap-2"
-      pcSpinOnClick
-      [disabled]="_loading.visible()"
-      (click)="refresh()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Refresh
-    </button>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Monthly pledges"
+    description="Recurring monthly donation subscriptions from your supporters."
+    [open]="true"
+  ></pc-grid-header>
 
   <!-- Tabs -->
   <div role="tablist" class="tabs tabs-box mb-6 w-fit">
@@ -55586,7 +55547,10 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
           {
             title: 'Design in the visual editor',
             detail: 'Write and arrange your content visually — what you see is what subscribers get.',
@@ -55746,39 +55710,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
 
 ```html
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
-      }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Import / export"
+    [totalSentence]="tab() === 'imports' ? historySentence() : null"
+  ></pc-grid-header>
 
   <!-- Tabs: Imports N / Exports N -->
   <div role="tablist" class="tabs tabs-border mb-4">
@@ -55936,7 +55872,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
   @if (tab() === 'exports') {
   <div>
     <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="toggleNewExportInfo()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="toggleNewExportInfo()">
         New export
       </button>
     </div>
@@ -56105,10 +56041,20 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     }
 
     <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent"
+        (click)="closeDeleteDialog(deleteDialog)"
+        [disabled]="deleting()"
+      >
         Cancel
       </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-error gap-2"
+        (click)="confirmDelete(deleteDialog)"
+        [disabled]="deleting()"
+      >
         <pc-icon name="trash" [size]="4"></pc-icon>
         Delete
       </button>
@@ -56132,6 +56078,7 @@ import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { UpdateListType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
@@ -56157,24 +56104,18 @@ function escapeHtml(value: string): string {
 
 @Component({
   selector: 'pc-lists-grid',
-  imports: [DataGrid, Icon],
+  imports: [DataGrid, Icon, GridHeaderComponent],
   template: `
     <div class="flex flex-col gap-4 p-6">
-      <!-- Page header: title + grain sentence on the left, primary action on the right —
-           the grid's own in-grid title/toolbar are switched off below so this is the only header,
-           and its p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
-      <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight text-base-content">Lists</h1>
-          <p class="text-xs text-base-content/70 tabular-nums mt-1" data-testid="lists-summary">
-            {{ summarySentence() }}
-          </p>
-        </div>
-        <button type="button" class="btn btn-primary btn-sm rounded-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
+      <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
+           own in-grid title/toolbar are switched off below so this is the only header, and its
+           p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
+      <pc-grid-header title="Lists" [totalSentence]="summarySentence()">
+        <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
           <pc-icon name="plus" [size]="4"></pc-icon>
           <span>New list</span>
         </button>
-      </div>
+      </pc-grid-header>
 
       <pc-datagrid
         #grid
@@ -56201,7 +56142,14 @@ function escapeHtml(value: string): string {
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'list',
+        entityNounPlural: 'lists',
+        exportEntity: 'lists',
+        exportFileName: 'lists-export.csv',
+      },
+    }),
   ],
 })
 export class ListsGridComponent implements OnInit {
@@ -56331,16 +56279,13 @@ export class ListsGridComponent implements OnInit {
       <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
     </div>
     <div class="flex items-center justify-center gap-2 sm:justify-end">
-      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        New Newsletter
-      </a>
-      <button
-        class="btn btn-sm btn-outline btn-accent gap-1 font-medium capitalize"
-        (click)="collapsed.set(!collapsed())"
-      >
-        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+      <button class="btn btn-sm btn-outline btn-secondary gap-1" (click)="collapsed.set(!collapsed())">
+        {{ collapsed() ? 'Show dashboard' : 'Hide dashboard' }}
       </button>
+      <a class="btn btn-sm btn-primary gap-1" routerLink="add">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        New newsletter
+      </a>
     </div>
   </div>
 
@@ -57464,7 +57409,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <div class="flex shrink-0 items-center gap-2">
       <button
         type="button"
-        class="btn btn-ghost btn-sm"
+        class="btn btn-outline btn-accent btn-sm"
         (click)="resetSection(section)"
         [disabled]="!isSectionDirty(section) || isSaving(section)"
       >
@@ -57495,7 +57440,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         @for (section of visibleSections; track trackSection($index, section)) {
         <button
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection(section.config.id)"
         >
@@ -57520,7 +57465,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-passkeys"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('passkeys')"
         >
@@ -57537,7 +57482,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-email-sync"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('email-sync')"
         >
@@ -57554,7 +57499,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-domains"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('domains')"
         >
@@ -57571,7 +57516,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-donations"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('donations')"
         >
@@ -57588,7 +57533,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-storage"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('storage')"
         >
@@ -57605,7 +57550,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-billing"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('billing')"
         >
@@ -57622,7 +57567,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <button
           id="settings-nav-account"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('account')"
         >
@@ -57644,7 +57589,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         @if (section.config.id !== 'notifications') {
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
           <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
         </header>
         }
@@ -57655,7 +57600,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
           <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
           <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
             <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-[13px] leading-relaxed text-base-content/80">
+            <p class="text-xs leading-relaxed text-base-content/80">
               Saving new service levels re-evaluates every currently open email and task against the updated targets —
               some may immediately count as breached (or clear) on the dashboard.
             </p>
@@ -57666,14 +57611,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
+                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
                 <p class="text-xs text-base-content/50">
                   Generate a secure API key and signing secret to verify webhooks from pplcrm.
                 </p>
               </div>
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
                 (click)="generateWebhookCredentials(section)"
               >
                 Generate Credentials
@@ -57686,7 +57631,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
             'notifications') {
             <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
                 {{ field.config.label }}
               </label>
 
@@ -57706,7 +57651,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                   class="toggle toggle-primary toggle-md"
                   [formField]="section.form[field.controlName]"
                 />
-                <span class="text-sm font-normal text-base-content/70">
+                <span class="text-xs font-normal text-base-content/70">
                   {{ field.config.placeholder ?? 'Enabled' }}
                 </span>
               </label>
@@ -57757,14 +57702,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 <input
                   [id]="field.controlName"
                   [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
                   [attr.placeholder]="field.config.placeholder ?? ''"
                   [value]="section.form[field.controlName]().value() || ''"
                   readonly
                 />
                 <button
                   type="button"
-                  class="btn btn-square btn-outline btn-accent hover:btn-primary shrink-0"
+                  class="btn btn-square btn-outline btn-secondary shrink-0"
                   (click)="copyToClipboard(section.form[field.controlName]().value())"
                   title="Copy to clipboard"
                 >
@@ -57780,9 +57725,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 [formField]="section.form[field.controlName]"
               />
               } } } @if (field.config.helper) {
-              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
               } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
                 <pc-icon name="exclamation-circle"></pc-icon>
                 {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
               </p>
@@ -57795,7 +57740,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
           @if (section.config.id === 'communications') {
           <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
             <div class="space-y-1">
-              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
               <p class="text-xs text-base-content/50">
                 Add and verify email addresses to select them as campaign defaults.
               </p>
@@ -57807,7 +57752,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 <input
                   type="email"
                   placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
                   [value]="senderEmailInput()"
                   (input)="senderEmailInput.set($any($event.target).value)"
                 />
@@ -57852,13 +57797,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             <div class="space-y-2">
               <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
               @if (verifiedEmailsList().length === 0) {
-              <p class="text-sm text-base-content/50 italic">
+              <p class="text-xs text-base-content/50 italic">
                 No verified sender emails yet. Add one above to request verification.
               </p>
               } @else {
               <div class="flex flex-wrap gap-2">
                 @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
                   <pc-icon name="check-circle" [size]="14"></pc-icon>
                   {{ email }}
                 </span>
@@ -57873,7 +57818,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
                 <p class="text-xs text-base-content/50">
                   Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
                   changed.
@@ -57886,7 +57831,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               </div>
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
                 (click)="recomputeAddressFingerprints()"
                 [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
               >
@@ -57899,8 +57844,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
           } @if (section.config.id === 'notifications') {
           <div class="space-y-5">
             <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-sm text-base-content/60">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
                 Customize which email and in-app notifications you would like to receive for your own account.
               </p>
             </div>
@@ -57909,16 +57854,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               <table class="table w-full">
                 <thead>
                   <tr class="border-b border-base-200">
-                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                    <th class="text-xs font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (group of getNotificationGroups(section); track group.emailField.controlName) {
                   <tr class="hover:bg-base-200/20">
                     <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      <div class="font-semibold text-xs text-base-content">{{ group.label }}</div>
                       @if (group.helper) {
                       <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
                       }
@@ -57959,7 +57904,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('email-sync')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Email sync</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
           </p>
@@ -58014,7 +57959,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('domains')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Domain verification</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
           </p>
@@ -58027,7 +57972,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('donations')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Donations</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
             account.
@@ -58041,7 +57986,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('storage')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Storage</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Storage</h2>
           <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
         </header>
         <pc-storage-settings></pc-storage-settings>
@@ -58052,7 +57997,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('billing')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Billing</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your subscription plans, view invoice details, and update payment methods.
           </p>
@@ -58065,7 +58010,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'settings' && isSelected('passkeys')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Passkeys</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
           </p>
@@ -58078,7 +58023,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       @if (currentMode === 'workspace' && isSelected('account')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Account</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your organization account — pause billing or permanently delete all data.
           </p>
@@ -58132,7 +58077,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     </div>
 
     <button
-      class="btn btn-outline btn-accent btn-sm shrink-0 gap-2"
+      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
       pcSpinOnClick
       (click)="loadStats(true)"
       [disabled]="isRefreshing()"
@@ -58546,7 +58491,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
         Import
       </button>
-      <button type="button" class="btn btn-outline btn-accent btn-sm gap-1.5" (click)="openBoard()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
         <pc-icon name="view-kanban" [size]="4"></pc-icon>
         Open board
       </button>
@@ -58849,7 +58794,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               />
               <button
                 type="button"
-                class="btn btn-outline btn-primary btn-xs mt-2 gap-1"
+                class="btn btn-outline btn-secondary btn-xs mt-2 gap-1"
                 (click)="openEmailDesigner(i)"
               >
                 <pc-icon name="pencil-square" [size]="4"></pc-icon>
@@ -59110,7 +59055,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       <div
         tabindex="0"
         role="button"
-        class="btn btn-circle btn-outline btn-accent btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
+        class="btn btn-circle btn-outline btn-secondary btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
         title="Add a step"
       >
         <pc-icon name="add-schedule" [size]="4"></pc-icon>
@@ -60023,7 +59968,7 @@ export const SECONDARY_CELL_CLASS = 'text-base-content/70';
         </button>
         }
       </div>
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="exportReport()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
         <pc-icon name="arrow-down-tray" [size]="4" />
         Export CSV
       </button>
@@ -60311,7 +60256,14 @@ import { CompaniesService } from '../services/companies-service';
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'company',
+        entityNounPlural: 'companies',
+        exportEntity: 'companies',
+        exportFileName: 'companies-export.csv',
+      },
+    }),
   ],
 })
 export class CompaniesGrid {
@@ -60518,7 +60470,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
         <button
           type="button"
-          class="btn btn-sm btn-outline btn-accent mt-1 w-fit gap-2"
+          class="btn btn-sm btn-outline btn-secondary mt-1 w-fit gap-2"
           [disabled]="enriching()"
           [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
           (click)="enrichCompany()"
@@ -60605,30 +60557,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 ```html
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
-        Donations
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
-    </div>
-    <div class="flex gap-2 items-center">
-      <button
-        routerLink="/donation-pages/add"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        title="Create a public form that charges cards through Stripe and records every gift here"
-      >
-        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-        New donation form
-      </button>
-      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Record donation
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
+    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      Record donation
+    </button>
+    <button
+      routerLink="/donation-pages/add"
+      class="btn btn-primary btn-sm gap-2"
+      title="Create a public form that charges cards through Stripe and records every gift here"
+    >
+      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+      New donation form
+    </button>
+  </pc-grid-header>
 
   <!-- Tabs -->
   <div role="tablist" class="tabs tabs-box mb-6 w-fit">
@@ -60936,16 +60879,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 } @else if (mode() === 'browse') {
 <!-- ── Browse mode ─────────────────────────────────────────────────────── -->
 <div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 class="text-xl font-semibold">Forms</h2>
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Forms" [totalSentence]="countSentence()">
     <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
       <pc-icon name="add-form" [size]="4"></pc-icon>
       New form
     </button>
-  </div>
+  </pc-grid-header>
 
   @if (forms().length === 0) {
   <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
@@ -61235,7 +61175,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <div class="flex gap-2">
           @if (form.status !== 'archived') {
           <button
-            class="btn btn-outline btn-accent btn-sm gap-1"
+            class="btn btn-outline btn-warning btn-sm gap-1"
             (click)="archiveForm()"
             [disabled]="mutating()"
             type="button"
@@ -61302,7 +61242,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       </label>
 
       <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
+        <button class="btn btn-outline btn-accent" (click)="closeNewForm()" type="button">Cancel</button>
         <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
       </div>
     </form>
@@ -61410,7 +61350,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         greeting.
       </p>
       <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
+        <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
@@ -61516,7 +61456,14 @@ import { HouseholdsService } from '../services/households-service';
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
   ],
 })
 export class HouseholdsGrid implements OnInit {
@@ -63005,7 +62952,7 @@ export class HouseholdsGrid implements OnInit {
       <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
         <button
           type="button"
-          class="btn btn-ghost text-sm font-semibold"
+          class="btn btn-outline btn-accent"
           (click)="closeDonationModal()"
           [disabled]="isCheckingEligibility()"
         >
@@ -63606,6 +63553,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -63623,7 +63571,7 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
@@ -63724,6 +63672,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -63743,7 +63692,7 @@ const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink, TagItem, AddTagDialog, Table],
+  imports: [Icon, RouterLink, TagItem, AddTagDialog, Table, GridHeaderComponent],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {
@@ -63862,17 +63811,13 @@ export class TagsAdmin implements OnInit {
 
 ```html
 <div class="flex flex-col gap-6 p-6">
-  <!-- Header ------------------------------------------------------------------>
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Automations</h1>
-      <p class="mt-1 text-xs text-base-content/60">{{ summarySentence() }}</p>
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Automations" [totalSentence]="summarySentence()">
     <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
       <pc-icon name="add-schedule" [size]="4"></pc-icon>
       New automation
     </button>
-  </div>
+  </pc-grid-header>
 
   @if (isLoading() && !loaded()) {
   <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
@@ -64086,7 +64031,7 @@ export class TagsAdmin implements OnInit {
   <pc-grid-tool-btn
     [touch]="true"
     [enabled]="!!grid.addRoute()"
-    [tip]="'Add'"
+    [tip]="addLabel()"
     [icon]="grid.plusIcon()"
     (action)="onAdd()"
   />
@@ -64134,9 +64079,7 @@ export class TagsAdmin implements OnInit {
          reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg
-             fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6
-             sm:static sm:w-72 sm:rounded-box sm:pb-3"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
       <!-- Grab handle — bottom-sheet affordance, touch only -->
       <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
@@ -64522,18 +64465,13 @@ export class GridActionComponent {
 
 ```html
 <div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Issues</h1>
-      @if (loaded()) {
-      <p class="text-xs text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Issues" [totalSentence]="loaded() ? sentence() : null">
     <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-issue" [size]="4"></pc-icon>
       New issue
     </button>
-  </div>
+  </pc-grid-header>
 
   <pc-table [loading]="loading()" [columns]="6">
     <ng-container pcTableHead>
@@ -64624,7 +64562,7 @@ export class GridActionComponent {
 ```html
 <!-- Split-button: primary action opens the menu of interaction types -->
 <div class="dropdown dropdown-end">
-  <div tabindex="0" role="button" class="btn btn-outline btn-accent btn-sm flex-nowrap gap-1.5 whitespace-nowrap">
+  <div tabindex="0" role="button" class="btn btn-outline btn-secondary btn-sm flex-nowrap gap-1.5 whitespace-nowrap">
     <pc-icon name="plus" [size]="4"></pc-icon>
     <span>{{ label() }}</span>
     <pc-icon name="chevron-down" [size]="4"></pc-icon>
@@ -64687,256 +64625,6 @@ export class GridActionComponent {
   <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link, and it takes a plan seat right away — the dialog tells you how many seats remain. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization** — your name, contact details, and mailing address.',
-          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access** — default role for invitations and the MFA requirement.',
-          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance** — default theme and date format for the workspace.',
-          '**Integrations & API** — webhook keys and connected services.',
-          '**Billing** — your plan and payment details.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces — how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context — the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it — supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in — click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level** — Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection** — each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation — consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign — data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either — archive them instead, so their history and attribution stay intact.',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
@@ -65181,7 +64869,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
           { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
           {
             title: 'Give it work',
@@ -65518,18 +65206,13 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 
 ```html
 <div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
-      @if (loaded()) {
-      <p class="text-xs text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Tags" [totalSentence]="loaded() ? sentence() : null">
     <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-label" [size]="4"></pc-icon>
       New tag
     </button>
-  </div>
+  </pc-grid-header>
 
   @if (loaded() && unusedRows().length > 0) {
   <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
@@ -65542,7 +65225,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     </div>
     <button
       type="button"
-      class="btn btn-outline btn-accent btn-sm shrink-0"
+      class="btn btn-outline btn-secondary btn-sm shrink-0"
       (click)="showUnusedOnly.set(!showUnusedOnly())"
     >
       {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
@@ -65568,7 +65251,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
             {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
           </p>
           @if (showUnusedOnly()) {
-          <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="showUnusedOnly.set(false)">
+          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="showUnusedOnly.set(false)">
             Show all tags
           </button>
           } @else {
@@ -65637,6 +65320,256 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 </div>
 
 <pc-add-tag-dialog (saved)="onTagSaved()" />
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary:
+      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link, and it takes a plan seat right away — the dialog tells you how many seats remain. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
+          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization** — your name, contact details, and mailing address.',
+          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access** — default role for invitations and the MFA requirement.',
+          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance** — default theme and date format for the workspace.',
+          '**Integrations & API** — webhook keys and connected services.',
+          '**Billing** — your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces — how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context — the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it — supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in — click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level** — Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection** — each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation — consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign — data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either — archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
@@ -66165,9 +66098,9 @@ export const dashboardRoutes: Routes = [
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;
-  --color-primary: #0ea5e9;
+  --color-primary: #2980b9;
   --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
+  --color-secondary: #16a085;
   --color-secondary-content: #1f2937;
   --color-accent: #818789;
   --color-accent-content: #f0f0f0;
@@ -66187,6 +66120,11 @@ export const dashboardRoutes: Routes = [
 
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #e7e5e4;
+
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
@@ -66236,6 +66174,9 @@ label.input input:-webkit-autofill:active {
 
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #1a2b45;
+
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
   /* Feedback */
   --color-info: #3ea6ff;
@@ -69882,7 +69823,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         <div class="flex justify-end gap-2 pt-1">
           <button
             type="button"
-            class="btn btn-ghost btn-xs"
+            class="btn btn-outline btn-accent btn-xs"
             (click)="addFilterDd.removeAttribute('open')"
             i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
           >
@@ -70062,7 +70003,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <button class="btn btn-primary btn-xs bg-base-100" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
       <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
     </button>
-    <button class="btn btn-xs bg-base-100" (click)="cancelBulkTag()">
+    <button class="btn btn-outline btn-accent btn-xs bg-base-100" (click)="cancelBulkTag()">
       <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
     </button>
     } @else {
@@ -70322,7 +70263,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               >
               <button
                 type="button"
-                class="btn btn-outline btn-accent btn-sm mt-1"
+                class="btn btn-outline btn-secondary btn-sm mt-1"
                 (click)="clearAllFilters()"
                 i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
               >
@@ -70346,7 +70287,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               <span
                 class="text-sm opacity-70"
                 i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
+                >Create your first record with the New button above</span
               >
             </div>
           </td>
@@ -70716,7 +70657,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       </button>
       <div class="flex gap-2">
         <button
-          class="btn btn-ghost btn-sm"
+          class="btn btn-outline btn-accent btn-sm"
           (click)="showAdvancedFilterBuilder.set(false)"
           i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
         >

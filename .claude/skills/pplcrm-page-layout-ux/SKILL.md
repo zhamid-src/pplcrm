@@ -165,6 +165,14 @@ Every page must answer three orientation questions:
       affordances (e.g. a bookmark star on a record page that doesn't bookmark the record).
 - [ ] Sentence case, one modal idiom (the dialog service), one empty-state pattern
       (icon + plain sentence + action).
+- [ ] **Button vocabulary** (UX-GUIDELINES §4b): main action `btn-primary` right-most and one per
+      surface; cancel `btn-outline btn-accent`; secondary `btn-outline btn-secondary`; archive
+      `btn-outline btn-warning`; delete `btn-outline btn-error`; create labels are "New {noun}".
+      No `rounded-*`/decoration utilities on buttons.
+- [ ] **Body text is `text-xs`** — no `text-sm`/`text-base`/`text-[13px]` body copy
+      (UX-GUIDELINES §8; `text-sm` only for `pc-detail-item` values and weighted section headings).
+- [ ] **List pages use `pc-grid-header`** (title + count sentence + actions projected right) —
+      never a hand-rolled h1 + button row. Datagrid pages get it via the grid itself.
 
 Then run `/verify` and the quality gate (see `pplcrm-quality-gate`).
 

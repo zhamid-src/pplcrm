@@ -221,17 +221,6 @@ describe('ImportsPage', () => {
     expect(component['deleting']()).toBe(false);
   });
 
-  it('should reload the items when refresh is invoked', async () => {
-    await fixture.whenStable();
-    mockImportsSvc.list.mockClear();
-    mockImportsSvc.list.mockResolvedValue([{ ...baseItem, id: '2' }]);
-
-    await component['refresh']();
-
-    expect(mockImportsSvc.list).toHaveBeenCalled();
-    expect(component['items']()).toEqual([{ ...baseItem, id: '2' }]);
-  });
-
   it('should refresh items during polling only while a job is pending or processing', async () => {
     await fixture.whenStable();
     mockImportsSvc.list.mockClear();

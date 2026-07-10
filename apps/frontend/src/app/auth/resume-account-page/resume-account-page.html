@@ -23,12 +23,7 @@
 
     <div class="flex flex-col gap-3 pt-2">
       @if (canResume) {
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="resumeAccount()"
-        [disabled]="actionPending()"
-      >
+      <button type="button" class="btn btn-primary w-full" (click)="resumeAccount()" [disabled]="actionPending()">
         @if (actionPending()) {
         <span class="loading loading-spinner loading-xs"></span>
         } Reactivate Account
@@ -39,7 +34,7 @@
       </p>
       }
 
-      <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
+      <button type="button" class="btn btn-outline btn-secondary" (click)="auth.signOut()" [disabled]="actionPending()">
         Sign out
       </button>
     </div>
