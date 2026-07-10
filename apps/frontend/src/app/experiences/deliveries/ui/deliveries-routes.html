@@ -15,59 +15,56 @@
     </a>
   </div>
 
-  <div class="overflow-x-auto rounded-xl border border-base-300">
-    <table class="table table-sm">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">
-          <th>Name</th>
-          <th>Status</th>
-          <th>Stops</th>
-          <th>Est. time</th>
-          <th>Volunteer</th>
-          <th>Scheduled</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of rows(); track row.id) {
-        <tr class="hover:bg-base-200/40">
-          <td>
-            <a
-              class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-              [routerLink]="['/deliveries/routes', row.id]"
-            >
-              {{ row.name }}
-            </a>
-          </td>
-          <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-          <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
-          <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-          <td class="text-sm">
-            @if (row.volunteer_person_id) {
-            <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
-              >{{ row.volunteer_name || 'Volunteer' }}</a
-            >
-            } @else {
-            <span class="text-base-content/40">Unassigned</span>
-            }
-          </td>
-          <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-            {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
-          </td>
-          <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-            {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
+  <pc-table [loading]="loading.visible()" [columns]="7">
+    <ng-container pcTableHead>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Stops</th>
+      <th>Est. time</th>
+      <th>Volunteer</th>
+      <th>Scheduled</th>
+      <th>Created</th>
+    </ng-container>
 
     @if (loaded() && rows().length === 0) {
-    <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
-      <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-      <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
-      <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-    </div>
-    }
-  </div>
+    <tr>
+      <td colspan="7" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
+          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <a
+          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/deliveries/routes', row.id]"
+        >
+          {{ row.name }}
+        </a>
+      </td>
+      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
+      <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td class="text-sm">
+        @if (row.volunteer_person_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
+          >{{ row.volunteer_name || 'Volunteer' }}</a
+        >
+        } @else {
+        <span class="text-base-content/40">Unassigned</span>
+        }
+      </td>
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
+      </td>
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
 </div>

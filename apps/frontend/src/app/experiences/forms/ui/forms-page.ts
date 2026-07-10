@@ -12,6 +12,7 @@ import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -32,7 +33,7 @@ interface TemplateOption {
 @Component({
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table],
   templateUrl: './forms-page.html',
 })
 export class FormsPageComponent implements OnInit {

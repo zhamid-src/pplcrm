@@ -7,6 +7,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
 import { DeliveriesRequestsService, type DeliveryRequestRow } from '../services/deliveries-requests-service';
@@ -28,7 +29,7 @@ const STATUS_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-requests',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe],
+  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, Table],
   templateUrl: './deliveries-requests.html',
 })
 export class DeliveriesRequests implements OnInit {
