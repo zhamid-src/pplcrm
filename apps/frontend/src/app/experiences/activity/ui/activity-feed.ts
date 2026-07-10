@@ -229,7 +229,7 @@ export class ActivityFeed implements OnInit {
       case 'create':
         return 'Created';
       case 'update':
-        return 'Edited';
+        return 'Updated';
       case 'delete':
         return 'Deleted';
       case 'merge':
