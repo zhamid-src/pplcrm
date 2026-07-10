@@ -72,11 +72,19 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         'authusers.last_name',
         'authusers.role',
         'authusers.verified',
+        'authusers.two_factor_enabled',
+        'authusers.deletion_scheduled_at',
         'authusers.created_at',
         'authusers.updated_at',
         sql<string>`COALESCE(authusers.last_name, profiles.last_name)`.as('effective_last_name'),
         sql<string>`profiles.last_name`.as('profile_last_name'),
         'profiles.avatar_file_id',
+        // Most recent session touch for this user; sessions are tenant-scoped by the join to authusers.
+        sql<Date | null>`(
+          SELECT MAX(GREATEST(s.last_accessed, COALESCE(s.last_used_at, s.last_accessed)))
+          FROM sessions s
+          WHERE s.user_id = authusers.id AND s.tenant_id = authusers.tenant_id
+        )`.as('last_active_at'),
       ])
       .$if(sorts.length > 0, (qb) =>
         sorts.reduce((acc, sort) => {
@@ -114,6 +122,9 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
       last_name: row.effective_last_name ?? row.profile_last_name ?? row.last_name ?? '',
       role: row.role != null ? String(row.role) : null,
       verified: this.toBoolean(row.verified),
+      two_factor_enabled: this.toBoolean(row.two_factor_enabled),
+      deletion_scheduled_at: row.deletion_scheduled_at ?? null,
+      last_active_at: row.last_active_at ?? null,
       created_at: row.created_at ?? null,
       updated_at: row.updated_at ?? null,
       avatar_file_id: row.avatar_file_id ? String(row.avatar_file_id) : null,

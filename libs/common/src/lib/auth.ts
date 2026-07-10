@@ -67,6 +67,8 @@ export interface IAuthUserRecord extends IAuthUser {
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;
+  /** Most recent session activity; null until the user has signed in at least once. */
+  last_active_at?: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
   previous_email?: string | null;

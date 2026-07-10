@@ -358,13 +358,8 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
         data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',

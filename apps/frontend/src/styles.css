@@ -34,6 +34,11 @@
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #e7e5e4;
 
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
   --color-placeholder: #9ca3af;
@@ -82,6 +87,9 @@ label.input input:-webkit-autofill:active {
 
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #1a2b45;
+
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
   /* Feedback */
   --color-info: #3ea6ff;

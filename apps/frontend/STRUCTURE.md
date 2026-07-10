@@ -422,13 +422,14 @@ apps/
             services/
               useradmin-service.ts
             ui/
-              user-add.html
-              user-add.ts
+              invite-user-dialog.html
+              invite-user-dialog.ts
               user-edit.html
               user-edit.ts
               user-view.html
               user-view.ts
-              users-grid.ts
+              users-page.html
+              users-page.ts
           workflows/
             models/
               automations.model.ts
@@ -14672,1184 +14673,6 @@ export class DomainSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
-
-```html
-<div class="space-y-8">
-  <!-- Stripe Connection Section -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-      <h3 class="text-lg font-semibold flex items-center gap-2">
-        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
-        Stripe Integration
-      </h3>
-      <span
-        class="badge badge-sm font-medium"
-        [class.badge-success]="stripeSecretKey().trim()"
-        [class.badge-neutral]="!stripeSecretKey().trim()"
-      >
-        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
-      </span>
-    </div>
-
-    <!-- Security Banner -->
-    <div
-      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
-    >
-      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
-      <div>
-        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
-        <p class="mt-0.5 text-base-content/70">
-          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
-          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
-        </p>
-        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="grid gap-6 md:grid-cols-2 pt-2">
-      <!-- Stripe Secret Key -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
-        <input
-          id="stripe_secret_key"
-          type="password"
-          placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeSecretKey()"
-          (input)="stripeSecretKey.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
-          <code class="font-mono">sk_test_</code>.
-        </p>
-      </div>
-
-      <!-- Stripe Webhook Secret -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
-          Stripe Webhook Signing Secret
-        </label>
-        <input
-          id="stripe_webhook_secret"
-          type="password"
-          placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeWebhookSecret()"
-          (input)="stripeWebhookSecret.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Enables signature verification of incoming Stripe webhook notifications. Starts with
-          <code class="font-mono">whsec_</code>.
-        </p>
-      </div>
-    </div>
-
-    <!-- Webhook Instructions Info Card -->
-    <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
-      <div class="space-y-1">
-        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
-          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
-          Webhook Endpoint URL
-        </h4>
-        <p class="text-xs text-base-content/65 max-w-xl">
-          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
-          completion notifications. For security the token is shown only once, when you generate it.
-        </p>
-      </div>
-
-      @if (webhookToken()) {
-      <!-- Just generated — show the URL once with a copy button -->
-      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
-        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
-          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
-          Copy this URL now — it won't be shown again.
-        </p>
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
-            {{ webhookUrl() }}
-          </div>
-          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-            Copy URL
-          </button>
-        </div>
-      </div>
-      } @else {
-      <!-- No plaintext available (never generated, or generated in a previous session) -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
-          @if (webhookConfigured()) {
-          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
-          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
-          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
-          No webhook token yet. Generate one to get your Stripe webhook URL. }
-        </p>
-        <button
-          type="button"
-          class="btn btn-sm btn-primary shrink-0"
-          [disabled]="isRegeneratingWebhook()"
-          (click)="regenerateWebhookToken()"
-        >
-          <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
-        </button>
-      </div>
-      }
-    </div>
-  </div>
-
-  <!-- Donation Limit & Residency Restrictions Section -->
-  <div class="grid gap-6 md:grid-cols-2">
-    <!-- Donation Periods card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
-      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-        <h3 class="text-lg font-semibold flex items-center gap-2">
-          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
-          Donation Limit Periods
-        </h3>
-        <button
-          type="button"
-          class="btn btn-xs btn-primary"
-          (click)="showAddPeriod.set(true)"
-          [hidden]="showAddPeriod()"
-        >
-          <pc-icon name="plus" [size]="3"></pc-icon>
-          Add Period
-        </button>
-      </div>
-      <p class="text-xs text-base-content/60">
-        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
-        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
-        below applies.
-      </p>
-
-      <!-- Existing periods list -->
-      <div class="space-y-2">
-        @for (period of donationPeriods(); track period.id) {
-        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
-          <div class="space-y-0.5 flex-1 min-w-0">
-            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
-            <div class="text-base-content/60">
-              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
-            </div>
-            <div class="flex items-center gap-2 mt-1">
-              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
-              @if (isPeriodActive(period)) {
-              <span class="badge badge-xs badge-success font-semibold">Active now</span>
-              } @else if (period.is_active) {
-              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
-              } @else {
-              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
-              }
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <input
-              type="checkbox"
-              class="toggle toggle-xs toggle-success"
-              [checked]="period.is_active"
-              (change)="togglePeriodActive(period)"
-              title="Enable/disable period"
-            />
-            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
-              <pc-icon name="trash" [size]="3"></pc-icon>
-            </button>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-xs text-base-content/50 italic py-2 text-center">
-          No periods defined. Using fallback annual limit.
-        </div>
-        }
-      </div>
-
-      <!-- Add period form -->
-      @if (showAddPeriod()) {
-      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Period Name</label>
-          <input
-            type="text"
-            class="input input-sm input-bordered bg-base-200/30"
-            placeholder="e.g. 2024 Municipal Campaign"
-            [value]="newPeriodName()"
-            (input)="newPeriodName.set($any($event.target).value)"
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">Start Date</label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodStartDate()"
-              (input)="newPeriodStartDate.set($any($event.target).value)"
-            />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodEndDate()"
-              (input)="newPeriodEndDate.set($any($event.target).value)"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Limit per Donor ($)</label>
-          <div class="relative max-w-xs">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
-            <input
-              type="number"
-              min="1"
-              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [ngModel]="newPeriodLimit()"
-              (ngModelChange)="newPeriodLimit.set($event)"
-            />
-          </div>
-        </div>
-        <div class="flex items-center gap-2 pt-1">
-          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
-            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
-        </div>
-      </div>
-      }
-
-      <!-- Fallback annual limit (used when no period is active) -->
-      <div class="border-t border-base-200 pt-4 mt-2">
-        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
-        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
-        <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
-          <input
-            id="donation_limit"
-            type="number"
-            min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
-            [value]="donationLimit()"
-            (input)="donationLimit.set($any($event.target).value)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Residency restrictions card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
-        Residency Restrictions
-      </h3>
-      <p class="text-xs text-base-content/60">
-        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
-        state elections.
-      </p>
-
-      <div class="space-y-4">
-        <!-- Toggle Restriction -->
-        <label class="flex items-center gap-3 cursor-pointer py-1">
-          <input
-            id="restrict_residency"
-            type="checkbox"
-            class="toggle toggle-primary toggle-md"
-            [checked]="restrictResidency()"
-            (change)="restrictResidency.set($any($event.target).checked)"
-          />
-          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
-        </label>
-
-        @if (restrictResidency()) {
-        <div class="space-y-4 pt-2 animate-fade-in relative">
-          <!-- Autocomplete Allowed Countries Picker -->
-          <div class="flex flex-col gap-1.5 relative">
-            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
-            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
-              @for (cCode of selectedCountries(); track cCode) {
-              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
-                {{ getCountryName(cCode) }}
-                <button
-                  type="button"
-                  class="text-[10px] hover:text-base-content font-bold"
-                  (click)="removeCountry(cCode)"
-                >
-                  ×
-                </button>
-              </span>
-              }
-              <input
-                type="text"
-                placeholder="Type to search country..."
-                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
-                [value]="countrySearch()"
-                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
-                (focus)="showCountryDropdown.set(true)"
-                (blur)="showCountryDropdown.set(false)"
-              />
-            </div>
-
-            @if (showCountryDropdown() && availableCountriesToSelect().length) {
-            <!-- Use mousedown to prevent input blur before selecting -->
-            <ul
-              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
-            >
-              @for (c of availableCountriesToSelect(); track c.code) {
-              <li>
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
-                  (mousedown)="selectCountry(c); $event.preventDefault()"
-                >
-                  {{ c.name }} ({{ c.code }})
-                </button>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-          <!-- Allowed Province/State Checkboxes for Selected Countries -->
-          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
-          {
-          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
-            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
-              Allowed Provinces & States
-            </label>
-
-            @if (isCanadaSelected()) {
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (p of canadaProvinces; track p.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(p.code)"
-                    (change)="toggleRegion(p.code)"
-                  />
-                  <span>{{ p.name }} ({{ p.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">United States States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of usStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of germanyStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (r of franceRegions; track r.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(r.code)"
-                    (change)="toggleRegion(r.code)"
-                  />
-                  <span>{{ r.name }} ({{ r.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
-            isFranceSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of indiaStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            }
-          </div>
-          }
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Tax Credit Configuration -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-      Tax Credit Tiers
-    </h3>
-    <p class="text-xs text-base-content/60">
-      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
-      inside a calendar year.
-    </p>
-
-    <!-- Table of existing tiers -->
-    <div class="mt-3">
-      <pc-table [columns]="4">
-        <ng-container pcTableHead>
-          <th>Bracket Tier</th>
-          <th>Up to Limit</th>
-          <th>Credit Percentage</th>
-          <th class="text-right w-24">Actions</th>
-        </ng-container>
-        @for (tier of taxCreditTiers(); track $index) {
-        <tr>
-          <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
-          <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
-          <td>
-            <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
-          </td>
-          <td class="text-right">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
-              (click)="removeTier($index)"
-            >
-              Delete
-            </button>
-          </td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="4" class="text-center py-6 text-base-content/50 italic">
-            No tax credit tiers defined yet. Add a tier below to set up credit calculations.
-          </td>
-        </tr>
-        }
-      </pc-table>
-    </div>
-
-    <!-- Progressive bracket summary -->
-    @if (taxCreditTiers().length) {
-    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
-      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
-        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
-        Tax Credit Bracket Summary (Plain Language)
-      </h4>
-      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
-        @for (line of taxCreditSummary(); track $index) {
-        <li>{{ line }}</li>
-        }
-      </ul>
-    </div>
-    }
-
-    <!-- Add new tier form -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
-    >
-      <!-- Tier Limit -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
-          <input
-            id="new_limit"
-            type="number"
-            min="1"
-            placeholder="500"
-            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newLimit()"
-            (ngModelChange)="newLimit.set($event)"
-          />
-        </div>
-      </div>
-
-      <!-- Tier Rate -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
-        <div class="relative">
-          <input
-            id="new_rate"
-            type="number"
-            min="0"
-            max="100"
-            placeholder="75"
-            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newRate()"
-            (ngModelChange)="newRate.set($event)"
-          />
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
-        </div>
-      </div>
-
-      <!-- Add button -->
-      <button
-        type="button"
-        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
-        (click)="addTier()"
-      >
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Add Tier
-      </button>
-    </div>
-  </div>
-
-  <!-- Action buttons footer -->
-  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
-    <div>
-      @if (isSaving()) {
-      <span class="text-sm font-medium text-base-content/60 flex items-center">
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        Saving donations configuration…
-      </span>
-      }
-    </div>
-
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
-        (click)="reset()"
-        [disabled]="isSaving()"
-      >
-        Reset
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-sm"
-        (click)="save()"
-        [disabled]="isSaving()"
-      >
-        @if (isSaving()) {
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Save Changes
-      </button>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
-
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Table } from '@uxcommon/components/table/table';
-import { Icon } from '@icons/icon';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-export interface TaxCreditTier {
-  limit: number;
-  rate: number;
-}
-
-export interface DonationPeriod {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string | null;
-  limit_amount: number;
-  is_active: boolean;
-}
-
-@Component({
-  selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon, Table],
-  templateUrl: './donations-settings.html',
-})
-export class DonationsSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly stripeSecretKey = signal('');
-  protected readonly stripeWebhookSecret = signal('');
-  protected readonly donationLimit = signal(1000);
-  protected readonly restrictResidency = signal(false);
-  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
-  // The webhook token is generated server-side and shown once (SECURITY-REVIEW 2.4). `webhookToken`
-  // only holds the just-generated plaintext; on reload we only know whether one is configured.
-  protected readonly webhookToken = signal('');
-  protected readonly webhookConfigured = signal(false);
-  protected readonly isRegeneratingWebhook = signal(false);
-
-  // Donation periods
-  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
-  protected readonly showAddPeriod = signal(false);
-  protected readonly newPeriodName = signal('');
-  protected readonly newPeriodStartDate = signal('');
-  protected readonly newPeriodEndDate = signal('');
-  protected readonly newPeriodLimit = signal<number>(1000);
-  protected readonly isSavingPeriod = signal(false);
-
-  // New multi-country autocomplete & states checkboxes
-  protected readonly selectedCountries = signal<string[]>([]);
-  protected readonly selectedRegions = signal<string[]>([]);
-
-  protected readonly countrySearch = signal('');
-  protected readonly showCountryDropdown = signal(false);
-
-  protected readonly allCountries = [
-    { code: 'CA', name: 'Canada' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'NZ', name: 'New Zealand' },
-    { code: 'FR', name: 'France' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'IN', name: 'India' },
-    { code: 'IT', name: 'Italy' },
-    { code: 'ES', name: 'Spain' },
-    { code: 'NL', name: 'Netherlands' },
-  ];
-
-  protected readonly canadaProvinces = [
-    { code: 'ON', name: 'Ontario' },
-    { code: 'QC', name: 'Quebec' },
-    { code: 'BC', name: 'British Columbia' },
-    { code: 'AB', name: 'Alberta' },
-    { code: 'MB', name: 'Manitoba' },
-    { code: 'SK', name: 'Saskatchewan' },
-    { code: 'NS', name: 'Nova Scotia' },
-    { code: 'NB', name: 'New Brunswick' },
-    { code: 'NL', name: 'Newfoundland and Labrador' },
-    { code: 'PE', name: 'Prince Edward Island' },
-    { code: 'NT', name: 'Northwest Territories' },
-    { code: 'YT', name: 'Yukon' },
-    { code: 'NU', name: 'Nunavut' },
-  ];
-
-  protected readonly usStates = [
-    { code: 'AL', name: 'Alabama' },
-    { code: 'AK', name: 'Alaska' },
-    { code: 'AZ', name: 'Arizona' },
-    { code: 'AR', name: 'Arkansas' },
-    { code: 'CA', name: 'California' },
-    { code: 'CO', name: 'Colorado' },
-    { code: 'CT', name: 'Connecticut' },
-    { code: 'DE', name: 'Delaware' },
-    { code: 'FL', name: 'Florida' },
-    { code: 'GA', name: 'Georgia' },
-    { code: 'HI', name: 'Hawaii' },
-    { code: 'ID', name: 'Idaho' },
-    { code: 'IL', name: 'Illinois' },
-    { code: 'IN', name: 'Indiana' },
-    { code: 'IA', name: 'Iowa' },
-    { code: 'KS', name: 'Kansas' },
-    { code: 'KY', name: 'Kentucky' },
-    { code: 'LA', name: 'Louisiana' },
-    { code: 'ME', name: 'Maine' },
-    { code: 'MD', name: 'Maryland' },
-    { code: 'MA', name: 'Massachusetts' },
-    { code: 'MI', name: 'Michigan' },
-    { code: 'MN', name: 'Minnesota' },
-    { code: 'MS', name: 'Mississippi' },
-    { code: 'MO', name: 'Missouri' },
-    { code: 'MT', name: 'Montana' },
-    { code: 'NE', name: 'Nebraska' },
-    { code: 'NV', name: 'Nevada' },
-    { code: 'NH', name: 'New Hampshire' },
-    { code: 'NJ', name: 'New Jersey' },
-    { code: 'NM', name: 'New Mexico' },
-    { code: 'NY', name: 'New York' },
-    { code: 'NC', name: 'North Carolina' },
-    { code: 'ND', name: 'North Dakota' },
-    { code: 'OH', name: 'Ohio' },
-    { code: 'OK', name: 'Oklahoma' },
-    { code: 'OR', name: 'Oregon' },
-    { code: 'PA', name: 'Pennsylvania' },
-    { code: 'RI', name: 'Rhode Island' },
-    { code: 'SC', name: 'South Carolina' },
-    { code: 'SD', name: 'South Dakota' },
-    { code: 'TN', name: 'Tennessee' },
-    { code: 'TX', name: 'Texas' },
-    { code: 'UT', name: 'Utah' },
-    { code: 'VT', name: 'Vermont' },
-    { code: 'VA', name: 'Virginia' },
-    { code: 'WA', name: 'Washington' },
-    { code: 'WV', name: 'West Virginia' },
-    { code: 'WI', name: 'Wisconsin' },
-    { code: 'WY', name: 'Wyoming' },
-  ];
-
-  protected readonly germanyStates = [
-    { code: 'DE-BW', name: 'Baden-Württemberg' },
-    { code: 'DE-BY', name: 'Bavaria' },
-    { code: 'DE-BE', name: 'Berlin' },
-    { code: 'DE-BB', name: 'Brandenburg' },
-    { code: 'DE-HB', name: 'Bremen' },
-    { code: 'DE-HH', name: 'Hamburg' },
-    { code: 'DE-HE', name: 'Hesse' },
-    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
-    { code: 'DE-NI', name: 'Lower Saxony' },
-    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
-    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
-    { code: 'DE-SL', name: 'Saarland' },
-    { code: 'DE-SN', name: 'Saxony' },
-    { code: 'DE-ST', name: 'Saxony-Anhalt' },
-    { code: 'DE-SH', name: 'Schleswig-Holstein' },
-    { code: 'DE-TH', name: 'Thuringia' },
-  ];
-
-  protected readonly franceRegions = [
-    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
-    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
-    { code: 'FR-BRE', name: 'Brittany' },
-    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
-    { code: 'FR-COR', name: 'Corsica' },
-    { code: 'FR-GES', name: 'Grand Est' },
-    { code: 'FR-HDF', name: 'Hauts-de-France' },
-    { code: 'FR-IDF', name: 'Île-de-France' },
-    { code: 'FR-NOR', name: 'Normandy' },
-    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
-    { code: 'FR-OCC', name: 'Occitania' },
-    { code: 'FR-PDL', name: 'Pays de la Loire' },
-    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
-  ];
-
-  protected readonly indiaStates = [
-    { code: 'IN-AP', name: 'Andhra Pradesh' },
-    { code: 'IN-AR', name: 'Arunachal Pradesh' },
-    { code: 'IN-AS', name: 'Assam' },
-    { code: 'IN-BR', name: 'Bihar' },
-    { code: 'IN-CG', name: 'Chhattisgarh' },
-    { code: 'IN-GA', name: 'Goa' },
-    { code: 'IN-GJ', name: 'Gujarat' },
-    { code: 'IN-HR', name: 'Haryana' },
-    { code: 'IN-HP', name: 'Himachal Pradesh' },
-    { code: 'IN-JH', name: 'Jharkhand' },
-    { code: 'IN-KA', name: 'Karnataka' },
-    { code: 'IN-KL', name: 'Kerala' },
-    { code: 'IN-MP', name: 'Madhya Pradesh' },
-    { code: 'IN-MH', name: 'Maharashtra' },
-    { code: 'IN-MN', name: 'Manipur' },
-    { code: 'IN-ML', name: 'Meghalaya' },
-    { code: 'IN-MZ', name: 'Mizoram' },
-    { code: 'IN-NL', name: 'Nagaland' },
-    { code: 'IN-OD', name: 'Odisha' },
-    { code: 'IN-PB', name: 'Punjab' },
-    { code: 'IN-RJ', name: 'Rajasthan' },
-    { code: 'IN-SK', name: 'Sikkim' },
-    { code: 'IN-TN', name: 'Tamil Nadu' },
-    { code: 'IN-TG', name: 'Telangana' },
-    { code: 'IN-TR', name: 'Tripura' },
-    { code: 'IN-UP', name: 'Uttar Pradesh' },
-    { code: 'IN-UT', name: 'Uttarakhand' },
-    { code: 'IN-WB', name: 'West Bengal' },
-    { code: 'IN-DL', name: 'Delhi (UT)' },
-    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
-    { code: 'IN-LA', name: 'Ladakh (UT)' },
-    { code: 'IN-PY', name: 'Puducherry (UT)' },
-  ];
-
-  // Tiers editing inputs
-  protected readonly newLimit = signal<number | null>(null);
-  protected readonly newRate = signal<number | null>(null);
-
-  protected readonly isSaving = signal(false);
-
-  protected readonly tenantId = computed(() => {
-    const token = this.tokenSvc.getAuthToken();
-    if (!token) return '';
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]!));
-        return String(payload.tenant_id || '');
-      }
-    } catch (e) {
-      console.error('Failed to parse auth token payload', e);
-    }
-    return '';
-  });
-
-  protected readonly webhookUrl = computed(() => {
-    const token = this.webhookToken();
-    if (!token) return 'Loading Webhook URL...';
-    const base = environment.apiUrl.replace(/\/$/, '');
-    return `${base}/api/donations/webhook?token=${token}`;
-  });
-
-  protected readonly availableCountriesToSelect = computed(() => {
-    const search = this.countrySearch().toLowerCase().trim();
-    const selected = new Set(this.selectedCountries());
-    return this.allCountries.filter(
-      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
-    );
-  });
-
-  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
-  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
-  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
-  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
-  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
-
-  // Plain-language calculation summary
-  protected readonly taxCreditSummary = computed(() => {
-    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
-    if (sorted.length === 0) {
-      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
-    }
-
-    const lines: string[] = [];
-    let previousLimit = 0;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const tier = sorted[i]!;
-      const ratePct = Math.round(tier.rate * 100);
-
-      if (i === 0) {
-        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
-      } else {
-        const range = `$${previousLimit + 1} to $${tier.limit}`;
-        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
-      }
-      previousLimit = tier.limit;
-    }
-
-    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
-    return lines;
-  });
-
-  ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.loadValues();
-    await this.loadPeriods();
-    await this.loadWebhookStatus();
-  }
-
-  private async loadWebhookStatus(): Promise<void> {
-    try {
-      const status = await this.donationsSvc.getWebhookTokenStatus();
-      this.webhookConfigured.set(!!status?.configured);
-    } catch {
-      // non-fatal — leave as "not configured" if the status can't be read
-    }
-  }
-
-  private async loadPeriods() {
-    try {
-      const periods = await this.donationsSvc.getDonationPeriods();
-      this.donationPeriods.set(periods as any);
-    } catch {
-      // non-fatal — periods table may not exist yet if migration hasn't run
-    }
-  }
-
-  protected async addPeriod() {
-    const name = this.newPeriodName().trim();
-    const start = this.newPeriodStartDate().trim();
-    const limit = Number(this.newPeriodLimit());
-
-    if (!name) {
-      this.alerts.showError('Period name is required');
-      return;
-    }
-    if (!start) {
-      this.alerts.showError('Start date is required');
-      return;
-    }
-    if (!limit || limit <= 0) {
-      this.alerts.showError('Limit amount must be greater than 0');
-      return;
-    }
-
-    const endDate = this.newPeriodEndDate().trim() || null;
-    if (endDate && endDate <= start) {
-      this.alerts.showError('End date must be after start date');
-      return;
-    }
-
-    this.isSavingPeriod.set(true);
-    try {
-      await this.donationsSvc.createDonationPeriod({
-        name,
-        start_date: start,
-        end_date: endDate,
-        limit_amount: limit * 100,
-      });
-      this.alerts.showSuccess(`Donation period "${name}" created`);
-      this.newPeriodName.set('');
-      this.newPeriodStartDate.set('');
-      this.newPeriodEndDate.set('');
-      this.newPeriodLimit.set(1000);
-      this.showAddPeriod.set(false);
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
-    } finally {
-      this.isSavingPeriod.set(false);
-    }
-  }
-
-  protected async togglePeriodActive(period: DonationPeriod) {
-    try {
-      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
-    }
-  }
-
-  protected async deletePeriod(period: DonationPeriod) {
-    const confirmed = await this.dialogs.confirm({
-      title: `Delete period "${period.name}"?`,
-      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.donationsSvc.deleteDonationPeriod(period.id);
-      this.alerts.showSuccess('Period deleted');
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
-    }
-  }
-
-  protected formatDate(dateStr: string | null): string {
-    if (!dateStr) return 'No end date';
-    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  protected isPeriodActive(period: DonationPeriod): boolean {
-    const today = new Date().toISOString().slice(0, 10);
-    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
-  }
-
-  private loadValues() {
-    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
-    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
-    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
-
-    // Load countries
-    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
-    const parsedCountries = countriesStr
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
-    this.selectedCountries.set(parsedCountries);
-
-    // Load regions (provinces / states)
-    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
-    const parsedRegions = regionsStr
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-    this.selectedRegions.set(parsedRegions);
-
-    // Load tax tiers
-    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
-    let parsedTiers: TaxCreditTier[] = [];
-    if (typeof tiersRaw === 'string') {
-      try {
-        parsedTiers = JSON.parse(tiersRaw);
-      } catch {
-        parsedTiers = [];
-      }
-    } else if (Array.isArray(tiersRaw)) {
-      parsedTiers = tiersRaw;
-    }
-    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
-
-    // The webhook token is no longer stored in plaintext, so it can't be re-read here — it's
-    // generated server-side and shown once via regenerateWebhookToken(). Clear any stale plaintext.
-    this.webhookToken.set('');
-  }
-
-  protected selectCountry(country: { code: string; name: string }) {
-    this.selectedCountries.update((list) => [...list, country.code]);
-    this.countrySearch.set('');
-    this.showCountryDropdown.set(false);
-  }
-
-  protected removeCountry(code: string) {
-    this.selectedCountries.update((list) => list.filter((c) => c !== code));
-    // Clean up regions for removed countries
-    if (code === 'CA') {
-      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
-      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
-    } else if (code === 'US') {
-      const stateCodes = new Set(this.usStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'DE') {
-      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'FR') {
-      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
-      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
-    } else if (code === 'IN') {
-      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    }
-  }
-
-  protected toggleRegion(code: string) {
-    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
-  }
-
-  protected getCountryName(code: string): string {
-    const found = this.allCountries.find((c) => c.code === code);
-    return found ? found.name : code;
-  }
-
-  protected addTier() {
-    const limit = this.newLimit();
-    const rateInput = this.newRate();
-
-    if (limit === null || limit <= 0) {
-      this.alerts.showError('Limit must be greater than 0');
-      return;
-    }
-    if (rateInput === null || rateInput < 0 || rateInput > 100) {
-      this.alerts.showError('Rate must be between 0% and 100%');
-      return;
-    }
-
-    const rate = rateInput / 100;
-
-    const current = this.taxCreditTiers();
-    if (current.some((t) => t.limit === limit)) {
-      this.alerts.showError('A tier with this limit already exists');
-      return;
-    }
-
-    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
-    this.taxCreditTiers.set(updated);
-
-    this.newLimit.set(null);
-    this.newRate.set(null);
-  }
-
-  protected removeTier(index: number) {
-    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
-    this.taxCreditTiers.set(updated);
-  }
-
-  protected reset() {
-    this.loadValues();
-    this.alerts.showSuccess('Settings reset to saved values');
-  }
-
-  protected async save() {
-    this.isSaving.set(true);
-    try {
-      const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
-        { key: 'donations.limit', value: Number(this.donationLimit()) },
-        { key: 'donations.restrict_residency', value: this.restrictResidency() },
-        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
-        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
-        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
-        // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
-        // shown once by regenerateWebhookToken(), never round-tripped through the client.
-      ];
-
-      await this.settingsSvc.upsert(entries);
-      this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
-      );
-    } finally {
-      this.isSaving.set(false);
-    }
-  }
-
-  protected copyWebhookUrl() {
-    navigator.clipboard
-      .writeText(this.webhookUrl())
-      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
-      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
-  }
-
-  protected async regenerateWebhookToken() {
-    if (this.webhookConfigured()) {
-      const confirmed = await this.dialogs.confirm({
-        title: 'Generate a new webhook token?',
-        message:
-          'This invalidates the current token. Any Stripe webhook still using the old URL will stop working until you paste the new URL into Stripe. The new token is shown only once.',
-        confirmText: 'Generate new token',
-        cancelText: 'Cancel',
-        variant: 'danger',
-      });
-      if (!confirmed) return;
-    }
-
-    this.isRegeneratingWebhook.set(true);
-    try {
-      const { token } = await this.donationsSvc.regenerateWebhookToken();
-      this.webhookToken.set(token);
-      this.webhookConfigured.set(true);
-      this.alerts.showSuccess('Webhook token generated. Copy the URL now — it will not be shown again.');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to generate webhook token');
-    } finally {
-      this.isRegeneratingWebhook.set(false);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
 
 ```html
@@ -20205,121 +19028,206 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
   }
 
+  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
+    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
+  }
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('User export is not available'));
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-add.html
+## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.html
 
 ```html
-<section class="w-full max-w-3xl p-6">
-  <pc-detail-header
-    title="Invite user"
-    [eyebrow]="'New'"
-    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
-    subtitle="Send an invitation to add a new teammate to this tenant."
-    [form]="form"
-    [isLoading]="submitting()"
-    buttonsToShow="two"
-    btn1Text="Send invite"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    (save)="submit($event)"
-  ></pc-detail-header>
-
-  <form class="space-y-4" (submit)="submit($event)" novalidate>
-    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-5 flex items-center justify-between">
+      <h3 class="flex items-center gap-3 text-xl font-bold">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+          <pc-icon name="user-plus" [size]="5"></pc-icon>
+        </span>
+        Invite a user
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
     </div>
 
-    <pc-select label="Role" [formField]="form.role">
-      @if (currentUserRole() !== 'admin') {
-      <option value="owner">Owner</option>
-      }
-      <option value="admin">Admin</option>
-      <option value="user">User</option>
-    </pc-select>
+    <form class="flex flex-col gap-4" (submit)="submit($event)" novalidate>
+      <pc-input label="Email" type="email" placeholder="name@example.org" [formField]="form.email"></pc-input>
 
-    @if (error()) {
-    <p class="text-sm text-danger">{{ error() }}</p>
-    }
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input label="First name" [formField]="form.first_name"></pc-input>
+        <pc-input label="Last name" [formField]="form.last_name"></pc-input>
+      </div>
+
+      <pc-select label="Role" [formField]="form.role">
+        @if (currentUserRole() === 'owner') {
+        <option value="owner">Owner — full control of the workspace</option>
+        }
+        <option value="admin">Admin — manage users and settings</option>
+        <option value="user">Editor — edit records, send, import</option>
+        <option value="viewer">Viewer — read-only access</option>
+      </pc-select>
+
+      <p class="flex items-start gap-1.5 text-xs text-base-content/50">
+        <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
+        <span>
+          The invitation arrives by email with an activation link and takes a seat right away @if (seatUsage(); as
+          usage) { — <span class="tabular-nums">{{ seatsRemaining() }}</span> of
+          <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan}.
+        </span>
+      </p>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="submitting()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+          <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          } Send invitation
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
   </form>
-</section>
+</dialog>
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
+## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
 
 ```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
+
+import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SettingsService } from '../../settings/services/settings-service';
 import { UserAdminService } from '../services/useradmin-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
+export interface SeatUsage {
+  plan: string;
+  seatLimit: number;
+  seatsUsed: number;
+}
+
+export const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  grassroots: 'Grassroots',
+  representative: 'Representative',
+};
+
+const DEFAULT_ROLE = 'user';
+
+/**
+ * "Invite a user" dialog — the only way to add a staff login. Collects email, first and last
+ * name, and a role, narrates seat usage honestly (an invitation holds a seat immediately), and
+ * sends the invitation email on submit.
+ */
 @Component({
-  selector: 'pc-user-add',
-  imports: [PcInput, PcSelect, PcDetailHeader],
-  templateUrl: './user-add.html',
+  selector: 'pc-invite-user-dialog',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, PcInput, PcSelect],
+  templateUrl: './invite-user-dialog.html',
 })
-export class UserAddComponent implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+export class InviteUserDialog {
   private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
   private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
 
-  protected readonly error = signal<string | null>(null);
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
 
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  public readonly seatUsage = input<SeatUsage | null>(null);
+  public readonly saved = output<void>();
+
+  protected readonly submitting = signal(false);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
 
   protected readonly payload = signal({
     email: '',
     first_name: '',
     last_name: '',
-    role: 'user',
+    role: DEFAULT_ROLE,
   });
 
   protected readonly form = form(this.payload, (p) => {
     required(p.email);
     email(p.email);
     required(p.first_name);
+    required(p.last_name);
   });
 
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
 
-  protected readonly submitting = signal(false);
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
 
-  public ngOnInit() {
-    void this.initialize();
+  public open(): void {
+    this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
+    this.form().reset();
+    void this.prefillDefaultRole();
+    this.dlgRef().nativeElement.showModal();
   }
 
-  private async initialize() {
-    const state = window.history.state;
-    if (state && state.cloneData) {
-      const data = state.cloneData;
-      this.payload.set({
-        email: data.email || '',
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || '',
-      });
-      return;
-    }
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
 
-    // Prefill the role with the tenant's configured default invite role (best-effort).
+  protected async submit(event: Event): Promise<void> {
+    event.preventDefault();
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    this.submitting.set(true);
+    try {
+      const raw = this.payload();
+      await this.users.add({
+        email: raw.email.trim(),
+        first_name: raw.first_name.trim(),
+        last_name: raw.last_name.trim(),
+        role: raw.role || null,
+      });
+      this.alerts.showSuccess(`Invitation sent to ${raw.email.trim()}`);
+      this.saved.emit();
+      this.close();
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the invitation';
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  /** Prefill the role with the tenant's configured default invite role (best-effort). */
+  private async prefillDefaultRole(): Promise<void> {
     try {
       await this.settings.load();
       const defaultRole = this.settings.getValue<string>('access.default_role');
@@ -20327,58 +19235,8 @@ export class UserAddComponent implements OnInit {
         this.payload.update((p) => ({ ...p, role: defaultRole }));
       }
     } catch {
-      // Ignore — fall back to the built-in default role.
+      // Ignore — keep the built-in default role.
     }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
-  }
-
-  protected cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected async submit(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      const payload = this.toPayload();
-      await this.users.add(payload);
-      this.users.triggerRefresh();
-      this.alerts.showSuccess('Invitation sent');
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to invite user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private toPayload() {
-    const raw = this.payload();
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
-      role: raw.role?.trim() ? raw.role.trim() : null,
-    };
   }
 }
 ```
@@ -20440,7 +19298,7 @@ export class UserAddComponent implements OnInit {
           <option value="owner">Owner</option>
           }
           <option value="admin">Admin</option>
-          <option value="user">User</option>
+          <option value="user">Editor</option>
           <option value="viewer">Viewer</option>
         </pc-select>
 
@@ -20736,7 +19594,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
         <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
           <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ detail()?.role }}
+          {{ roleLabel() }}
         </pc-status-badge>
 
         <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
@@ -20777,7 +19635,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       <pc-card title="Account Metadata">
         <div class="grid gap-4 sm:grid-cols-2">
           <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
+          <pc-detail-item label="Role" [value]="roleLabel()"></pc-detail-item>
           <pc-detail-item
             label="Created"
             [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
@@ -20873,6 +19731,13 @@ export class UserViewComponent {
   protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
   protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
   protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  /** Product name for the stored role value — the working role 'user' is shown as "Editor". */
+  protected readonly roleLabel = computed(() => {
+    const role = this.detail()?.role;
+    if (!role) return '—';
+    return { owner: 'Owner', admin: 'Admin', user: 'Editor', viewer: 'Viewer' }[role] ?? role;
+  });
 
   protected readonly displayName = computed(() => {
     const user = this.detail();
@@ -21013,6 +19878,408 @@ export class UserViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Admin</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">Users</h1>
+      @if (loaded()) {
+      <p class="mt-1 text-sm tabular-nums text-base-content/60">
+        {{ rows().length }} user{{ rows().length === 1 ? '' : 's' }} · {{ activeCount() }} active@if (invitedCount() >
+        0) {, {{ invitedCount() }} invited}@if (deactivatedCount() > 0) {, {{ deactivatedCount() }} deactivated} · {{
+        adminCount() }} admin{{ adminCount() === 1 ? '' : 's' }} @if (seatUsage(); as usage) { · {{ usage.seatsUsed }}
+        of {{ usage.seatLimit }} seats on the {{ planLabel() }} plan }
+      </p>
+      }
+    </div>
+    <span
+      class="tooltip-left"
+      [class.tooltip]="seatsRemaining() === 0"
+      [attr.data-tip]="
+        seatsRemaining() === 0
+          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
+          : null
+      "
+    >
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon>
+        Invite user
+      </button>
+    </span>
+  </div>
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>User</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>MFA</th>
+      <th>Last active</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="!!row.deletion_scheduled_at">
+      <td>
+        <div class="flex items-center gap-3">
+          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <a
+                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+                [routerLink]="['/users', row.id]"
+              >
+                {{ displayName(row) }}
+              </a>
+              @if (isSelf(row)) {
+              <span class="text-xs text-base-content/50">(you)</span>
+              }
+            </div>
+            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
+          </div>
+        </div>
+      </td>
+      <td>
+        @if (roleLockReason(row); as reason) {
+        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
+            <option>{{ roleLabel(row.role) }}</option>
+          </select>
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-32"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Role for ' + displayName(row)"
+          (change)="changeRole(row, $event)"
+        >
+          @for (r of roleOptions(row); track r) {
+          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
+          }
+        </select>
+        }
+      </td>
+      <td>
+        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
+      </td>
+      <td>
+        @if (row.two_factor_enabled) {
+        <span class="tooltip" data-tip="MFA enabled">
+          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
+        </span>
+        } @else {
+        <span class="text-base-content/30">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
+          >
+            <li>
+              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+            </li>
+            <li>
+              <a (click)="sendPasswordReset(row)">
+                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+
+    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
+      Users are staff logins — volunteers live in
+      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
+      and don't need an account.
+    </div>
+  </pc-table>
+
+  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { UserService } from '@frontend/services/user.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserAdminService } from '../services/useradmin-service';
+import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+
+export interface UserRow {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: string | null;
+  last_active_at: string | null;
+  created_at: string | null;
+  avatar_url: string | null;
+}
+
+// The stored role value for the working role is 'user'; the product name for it is "Editor"
+// (see the Users & roles help article and the approved design).
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
+ * inline role select with explained locks, honest status/MFA/last-active columns derived from
+ * real session data, and the seat-aware "Invite user" dialog.
+ */
+@Component({
+  selector: 'pc-users-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog],
+  templateUrl: './users-page.html',
+})
+export class UsersPageComponent implements OnInit {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly loaded = signal(false);
+  protected readonly rows = signal<UserRow[]>([]);
+  protected readonly seatUsage = signal<SeatUsage | null>(null);
+
+  /** Row that just saved a role change — drives the one-shot saved flash. */
+  protected readonly flashedId = signal<string | null>(null);
+  /** Rows with an in-flight role change; their select is disabled while saving. */
+  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly currentUserId = computed(() => {
+    const id = this.auth.getUser()?.id;
+    return id != null ? String(id) : null;
+  });
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly activeCount = computed(
+    () => this.rows().filter((r) => r.verified && !r.deletion_scheduled_at).length,
+  );
+  protected readonly invitedCount = computed(
+    () => this.rows().filter((r) => !r.verified && !r.deletion_scheduled_at).length,
+  );
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => !!r.deletion_scheduled_at).length);
+  protected readonly adminCount = computed(
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !r.deletion_scheduled_at).length,
+  );
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openInvite(): void {
+    this.inviteDlg().open();
+  }
+
+  protected onInvited(): void {
+    void this.load();
+  }
+
+  protected displayName(row: UserRow): string {
+    return `${row.first_name} ${row.last_name}`.trim() || row.email;
+  }
+
+  protected avatarUrl(row: UserRow): string | null {
+    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
+  }
+
+  protected isSelf(row: UserRow): boolean {
+    return row.id === this.currentUserId();
+  }
+
+  protected roleLabel(role: string | null): string {
+    return role ? (ROLE_LABELS[role] ?? role) : '—';
+  }
+
+  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
+  protected roleOptions(row: UserRow): string[] {
+    const options =
+      this.currentUserRole() === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
+    if (row.role && !options.includes(row.role)) return [row.role, ...options];
+    return options;
+  }
+
+  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected roleLockReason(row: UserRow): string | null {
+    if (this.isSelf(row)) return "You can't change your own role";
+    if (row.deletion_scheduled_at) return 'Deactivated accounts keep their role';
+    if (this.currentUserRole() === 'admin' && row.role === 'owner') return "Only an owner can change an owner's role";
+    return null;
+  }
+
+  protected status(row: UserRow): { label: string; tone: PcStatusType } {
+    if (row.deletion_scheduled_at) return { label: 'Deactivated', tone: 'ghost' };
+    if (!row.verified) return { label: 'Invited', tone: 'warning' };
+    return { label: 'Active', tone: 'success' };
+  }
+
+  protected lastActiveText(row: UserRow): string {
+    if (!row.verified && !row.deletion_scheduled_at) {
+      return row.created_at ? `Invite sent ${this.shortDate(row.created_at)}` : 'Invite sent';
+    }
+    if (!row.last_active_at) return '—';
+    return this.relativeTime(new Date(row.last_active_at));
+  }
+
+  protected async changeRole(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const role = select.value;
+    if (!role || role === row.role) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { role });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+    } catch (err) {
+      select.value = row.role ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  protected async sendPasswordReset(row: UserRow): Promise<void> {
+    try {
+      await this.users.adminTriggerPasswordReset(row.id);
+      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
+      this.alerts.showError(message);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, seats] = await Promise.all([
+        this.users.getAll({ startRow: 0, endRow: 500 }),
+        this.users.getSeatUsage(),
+      ]);
+      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
+      this.seatUsage.set(seats);
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Unable to load users — try refreshing the page');
+    } finally {
+      end();
+    }
+  }
+
+  private toRow(raw: Record<string, unknown>): UserRow {
+    return {
+      id: raw['id'] != null ? String(raw['id']) : '',
+      email: typeof raw['email'] === 'string' ? raw['email'] : '',
+      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
+      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
+      role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      verified: raw['verified'] === true,
+      two_factor_enabled: raw['two_factor_enabled'] === true,
+      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      last_active_at: this.toIso(raw['last_active_at']),
+      created_at: this.toIso(raw['created_at']),
+      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
+    };
+  }
+
+  private toIso(value: unknown): string | null {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && value) return value;
+    return null;
+  }
+
+  private flashRow(id: string): void {
+    this.flashedId.set(id);
+    const FLASH_MS = 1300;
+    setTimeout(() => {
+      if (this.flashedId() === id) this.flashedId.set(null);
+    }, FLASH_MS);
+  }
+
+  private relativeTime(date: Date): string {
+    const diff = Date.now() - date.getTime();
+    if (Number.isNaN(diff)) return '—';
+    if (diff < MINUTE) return 'Just now';
+    if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
+    if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
+    if (diff < 2 * DAY) return 'Yesterday';
+    return this.shortDate(date.toISOString());
+  }
+
+  private shortDate(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
 }
 ```
 
@@ -23743,6 +23010,91 @@ export class KeyboardShortcutsService {
     return items.flatMap((item) => (item.children ? [item, ...this.flatten(item.children)] : [item]));
   }
 }
+```
+
+## File: apps/frontend/src/app/services/record-slug.resolver.ts
+
+```typescript
+import { inject } from '@angular/core';
+import type { ActivatedRouteSnapshot, ResolveFn } from '@angular/router';
+import { RedirectCommand, Router } from '@angular/router';
+import { extractPublicIdFromSlug } from '@common';
+import { CompaniesService } from '@experiences/companies/services/companies-service';
+import { HouseholdsService } from '@experiences/households/services/households-service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+
+/**
+ * Slug-aware `:id` resolvers for the record routes (spec §1: URLs carry record
+ * slugs — never internal IDs).
+ *
+ * Each resolver is registered as `resolve: { id: … }` on the entity's `:id`
+ * routes. With `withComponentInputBinding()`, route *data* wins over path
+ * params (`{ ...queryParams, ...params, ...data }`), so the routed component's
+ * `id` input always receives the **numeric record id**, whatever the URL says.
+ * A numeric param (old /people/123 deep link or an in-app id navigation) passes
+ * straight through — zero extra requests; the view then swaps the address bar
+ * to the slug URL via Location.replaceState. RecordNavigationService is
+ * untouched: grids keep handing off numeric ids and the pager walks them.
+ *
+ * Persons and households/companies differ in how a non-numeric segment is
+ * resolved (see below), because persons use an opaque public_id while
+ * households/companies use a name slug — docs/RECORD-SLUGS.md.
+ */
+
+const NUMERIC_ID = /^\d+$/;
+
+interface SlugLookup {
+  getBySlug(slug: string): Promise<unknown>;
+}
+
+function idOf(record: unknown): string | null {
+  if (record != null && typeof record === 'object' && 'id' in record) {
+    return String((record as { id: unknown }).id);
+  }
+  return null;
+}
+
+/** Households/companies: one tenant-scoped getBySlug lookup by name slug. */
+function recordSlugResolver(
+  serviceType: new (...args: never[]) => SlugLookup,
+  listUrl: string,
+): ResolveFn<string | RedirectCommand> {
+  return async (route: ActivatedRouteSnapshot) => {
+    const param = route.paramMap.get('id') ?? '';
+    if (NUMERIC_ID.test(param)) return param;
+
+    // inject() must run synchronously, before the first await.
+    const service = inject(serviceType);
+    const router = inject(Router);
+
+    const record: unknown = await service.getBySlug(param).catch(() => undefined);
+    return idOf(record) ?? new RedirectCommand(router.parseUrl(listUrl));
+  };
+}
+
+/**
+ * Persons resolve by opaque public_id (spec §1). The URL segment is
+ * `{name}-{xxxx}-{xxxx}`; decode strips the decorative name and hyphens, takes
+ * the last 8 Crockford chars, and resolves tenant-scoped. A bare id or a
+ * hyphen-split id both resolve; an undecodable segment redirects to the grid.
+ */
+export const personRecordIdResolver: ResolveFn<string | RedirectCommand> = async (route: ActivatedRouteSnapshot) => {
+  const param = route.paramMap.get('id') ?? '';
+  if (NUMERIC_ID.test(param)) return param;
+
+  // inject() must run synchronously, before the first await.
+  const service = inject(PersonsService);
+  const router = inject(Router);
+
+  const publicId = extractPublicIdFromSlug(param);
+  if (publicId == null) return new RedirectCommand(router.parseUrl('/people'));
+
+  const record: unknown = await service.getByPublicId(publicId).catch(() => undefined);
+  return idOf(record) ?? new RedirectCommand(router.parseUrl('/people'));
+};
+
+export const householdRecordIdResolver = recordSlugResolver(HouseholdsService, '/households');
+export const companyRecordIdResolver = recordSlugResolver(CompaniesService, '/companies');
 ```
 
 ## File: apps/frontend/src/app/services/shared-dialog.service.ts
@@ -30904,155 +30256,6 @@ export class DeliveriesRouteDetail {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <div class="flex items-center gap-2 text-sm">
-    <a class="link link-hover text-base-content/60" routerLink="/deliveries">Deliveries</a>
-    <span class="text-base-content/30">/</span>
-    <span class="text-base-content/80">Routes</span>
-  </div>
-
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Routes</h1>
-    </div>
-    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
-      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
-    </a>
-  </div>
-
-  <pc-table [loading]="loading.visible()" [columns]="7">
-    <ng-container pcTableHead>
-      <th>Name</th>
-      <th>Status</th>
-      <th>Stops</th>
-      <th>Est. time</th>
-      <th>Volunteer</th>
-      <th>Scheduled</th>
-      <th>Created</th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="7" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
-          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <a
-          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/deliveries/routes', row.id]"
-        >
-          {{ row.name }}
-        </a>
-      </td>
-      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-      <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
-      <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-      <td class="text-sm">
-        @if (row.volunteer_person_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
-          >{{ row.volunteer_name || 'Volunteer' }}</a
-        >
-        } @else {
-        <span class="text-base-content/40">Unassigned</span>
-        }
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { Icon } from '@icons/icon';
-
-import { DeliveriesRoutesService, type DeliveryRouteRow } from '../services/deliveries-routes-service';
-
-const ROUTE_TONE: Record<string, PcStatusType> = {
-  draft: 'neutral',
-  assigned: 'info',
-  in_progress: 'warning',
-  completed: 'success',
-  canceled: 'ghost',
-};
-
-/** Deliveries routes grid (spec §4.3 list). */
-@Component({
-  selector: 'pc-deliveries-routes',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe, Table],
-  templateUrl: './deliveries-routes.html',
-})
-export class DeliveriesRoutes implements OnInit {
-  private readonly svc = inject(DeliveriesRoutesService);
-  private readonly alerts = inject(AlertService);
-  protected readonly loading = createLoadingGate();
-
-  protected readonly rows = signal<DeliveryRouteRow[]>([]);
-  protected readonly loaded = signal(false);
-
-  public ngOnInit(): void {
-    void this.reload();
-  }
-
-  protected tone(status: string): PcStatusType {
-    return ROUTE_TONE[status] ?? 'neutral';
-  }
-
-  protected label(status: string): string {
-    return status === 'in_progress' ? 'in progress' : status;
-  }
-
-  protected stopsLabel(row: DeliveryRouteRow): string {
-    if (row.stops_total === 0) return '0';
-    if (row.stops_delivered > 0 || row.status === 'in_progress' || row.status === 'completed') {
-      return `${row.stops_delivered} of ${row.stops_total} delivered`;
-    }
-    return String(row.stops_total);
-  }
-
-  private async reload(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      const list = await this.svc.getAll();
-      this.rows.set(list.rows);
-      this.loaded.set(true);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not load routes');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/deliveries/ui/public-route.html
 
 ```html
@@ -31870,246 +31073,6 @@ export class RecordDonationDialog {
     </div>
   </div>
   }
-</pc-duplicate-page-shell>
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.html
-
-```html
-<pc-duplicate-page-shell
-  title="People"
-  icon="identification"
-  description="Review and merge duplicate people records to keep your database clean."
-  entityRoute="people"
-  [isLoading]="isLoading()"
-  [isEmpty]="groups().length === 0"
-  [currentPage]="currentPage()"
-  [totalPages]="totalPages()"
-  [totalGroups]="totalGroups()"
-  [sweepSentence]="sweepSentence()"
-  (next)="nextPage()"
-  (prev)="prevPage()"
->
-  @for (group of groups(); track group; let gIdx = $index) { @if (group.items.length === 2) {
-  <!-- Spec §9.3 Fig. 12 pair card: confidence chip, why-flagged sentence, side-by-side
-           field grid with highlighted match rows, result preview, quiet/primary actions. -->
-  @let left = group.items[0]!; @let right = group.items[1]!;
-  <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <span
-          class="badge badge-sm font-semibold"
-          [class]="confidence(group) === 'high' ? 'badge-warning' : 'badge-ghost'"
-        >
-          {{ confidence(group) === 'high' ? 'High confidence' : 'Possible match' }}
-        </span>
-        <span class="text-sm text-base-content/70">{{ whyFlagged(group) }}</span>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="dismissGroup(gIdx)">Not duplicates</button>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm gap-2"
-          [disabled]="!group.selectedTargetId || !group.selectedSourceId"
-          (click)="mergeGroup(gIdx)"
-        >
-          <pc-icon name="merge" [size]="4"></pc-icon> Merge into one
-        </button>
-      </div>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="table pc-table">
-        <thead>
-          <tr>
-            <th class="w-28"></th>
-            <th>
-              <a
-                [routerLink]="['/people', left.id]"
-                class="link link-hover normal-case text-sm font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-              >
-                {{ getItemDisplayName(left) }}
-              </a>
-              <div class="text-[10px] font-normal normal-case text-base-content/40">
-                Added {{ left.created_at | date: 'short' }}
-              </div>
-            </th>
-            <th class="font-semibold normal-case text-sm text-base-content">
-              {{ getItemDisplayName(right) }}
-              <div class="text-[10px] font-normal normal-case text-base-content/40">
-                Added {{ right.created_at | date: 'short' }}
-              </div>
-            </th>
-            <th class="w-20"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr [class]="rowHighlighted(group, 'name') ? 'bg-warning/10' : ''">
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Name</td>
-            <td>{{ getItemDisplayName(left) }}</td>
-            <td>{{ getItemDisplayName(right) }}</td>
-            <td></td>
-          </tr>
-          <tr [class]="rowHighlighted(group, 'email') ? 'bg-warning/10' : ''">
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Email</td>
-            <td>{{ left.email || '—' }}</td>
-            <td>{{ right.email || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Mobile</td>
-            <td>{{ left.mobile || '—' }}</td>
-            <td>{{ right.mobile || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Ward</td>
-            <td>{{ left.ward || '—' }}</td>
-            <td>{{ right.ward || '—' }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td class="text-xs text-base-content/50 uppercase tracking-wide">Tags</td>
-            <td>{{ left.tags.length ? left.tags.join(', ') : '—' }}</td>
-            <td>{{ right.tags.length ? right.tags.join(', ') : '—' }}</td>
-            <td></td>
-          </tr>
-          <tr class="text-xs">
-            <td class="text-base-content/50 uppercase tracking-wide">Keep as</td>
-            <td>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline btn-accent'"
-                (click)="selectRole(gIdx, left.id, 'target')"
-              >
-                Keep primary
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline btn-accent'"
-                (click)="selectRole(gIdx, left.id, 'source')"
-              >
-                Merge away
-              </button>
-            </td>
-            <td>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline btn-accent'"
-                (click)="selectRole(gIdx, right.id, 'target')"
-              >
-                Keep primary
-              </button>
-              <button
-                type="button"
-                class="btn btn-xs"
-                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline btn-accent'"
-                (click)="selectRole(gIdx, right.id, 'source')"
-              >
-                Merge away
-              </button>
-            </td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    @if (group.selectedTargetId && group.selectedSourceId) {
-    <div class="px-6 py-3 border-t border-base-300 bg-base-200/30 text-xs text-base-content/60">
-      <pc-icon name="information-circle" [size]="4" class="inline align-text-bottom mr-1"></pc-icon>
-      {{ resultPreview(group) }}
-    </div>
-    }
-  </div>
-  } @else {
-  <!-- Fallback for a cluster of 3+ records sharing the same signal (e.g. 3 people with the
-           same email) — the side-by-side pair card doesn't generalize past two records, so this
-           keeps the prior N-way "keep/merge" card grid. Documented gap: no confidence chip / why
-           -flagged sentence / field grid here yet. -->
-  <div
-    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
-  >
-    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
-      <div class="flex items-center gap-2">
-        <span class="badge badge-warning badge-sm">Warning</span>
-        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
-        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
-      </div>
-    </div>
-
-    <div class="card-body p-6">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        @for (person of group.items; track person.id) {
-        <div
-          [class]="
-                        'card bg-base-200/40 border transition-all duration-200 ' +
-                        (group.selectedTargetId === person.id
-                          ? 'border-success bg-success/5 shadow'
-                          : group.selectedSourceId === person.id
-                            ? 'border-error bg-error/5 opacity-80'
-                            : 'border-base-300')
-                      "
-        >
-          <div class="card-body p-4 justify-between h-full">
-            <div>
-              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
-                <span>{{ person.first_name }} {{ person.last_name }}</span>
-                <span class="text-xs font-light text-base-content/40">ID: {{ person.id }}</span>
-              </h4>
-              <div class="mt-3 space-y-1.5 text-sm">
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
-                  <span class="truncate">{{ person.email || '—' }}</span>
-                </div>
-                <div class="flex items-center gap-2 text-base-content/70">
-                  <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
-                  <span>{{ person.mobile || '—' }}</span>
-                </div>
-                <div class="text-[11px] text-base-content/40 mt-2">
-                  Created: {{ person.created_at | date: 'short' }}
-                </div>
-              </div>
-            </div>
-            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
-              <button
-                [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline btn-accent')
-                            "
-                (click)="selectRole(gIdx, person.id, 'target')"
-              >
-                Keep (Primary)
-              </button>
-              <button
-                [class]="
-                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline btn-accent')
-                            "
-                (click)="selectRole(gIdx, person.id, 'source')"
-              >
-                Delete (Merge)
-              </button>
-            </div>
-          </div>
-        </div>
-        }
-
-        <pc-merge-summary
-          mergeDescription="The duplicate record will be removed, transferring tags, lists, and empty fields to the primary record."
-          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
-          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
-          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (merge)="mergeGroup(gIdx)"
-        ></pc-merge-summary>
-      </div>
-    </div>
-  </div>
-  } }
 </pc-duplicate-page-shell>
 ```
 
@@ -35495,593 +34458,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
-
-```typescript
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Table } from '@uxcommon/components/table/table';
-import { Icon } from '@icons/icon';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
-import { FormRenderComponent } from './form-render';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
-import { publicPageUrl } from '../../../shared/public-pages';
-
-interface TemplateOption {
-  type: FormType;
-  label: string;
-}
-
-@Component({
-  selector: 'pc-forms-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table],
-  templateUrl: './forms-page.html',
-})
-export class FormsPageComponent implements OnInit {
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly router = inject(Router);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly confirm = inject(ConfirmDialogService);
-  private readonly auth = inject(AuthService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly forms = signal<FormDetail[]>([]);
-  protected readonly selectedId = signal<string | null>(null);
-  protected readonly mode = signal<'browse' | 'edit'>('browse');
-  protected readonly tab = signal<'form' | 'responses'>('form');
-  protected readonly archivedOpen = signal(false);
-  protected readonly mutating = signal(false);
-  protected readonly orgName = signal('Your organization');
-  protected readonly lists = signal<{ id: string; name: string }[]>([]);
-
-  protected readonly submissions = signal<FormSubmissionRow[]>([]);
-  protected readonly submissionsTotal = signal(0);
-  protected readonly submissionsLoading = signal(false);
-
-  // New-form dialog state.
-  protected readonly newFormName = signal('');
-  protected readonly newFormType = signal<FormType>('signup');
-  protected readonly newFormError = signal<string | null>(null);
-  protected readonly creating = signal(false);
-  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
-  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
-  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
-
-  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
-    type,
-    label: this.templateLabel(type),
-  }));
-
-  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
-  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
-  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
-
-  protected readonly totalSubmissions = computed(() =>
-    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
-  );
-
-  protected readonly countSentence = computed(() => {
-    const total = this.forms().length;
-    const subs = this.totalSubmissions();
-    const archived = this.archivedForms().length;
-    const parts = [
-      `${total} ${total === 1 ? 'form' : 'forms'}`,
-      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
-    ];
-    if (archived > 0) parts.push(`${archived} archived`);
-    return parts.join(' · ');
-  });
-
-  protected readonly publicUrl = computed(() => {
-    const form = this.selected();
-    if (!form?.slug) return '';
-    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
-  });
-
-  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
-  private pendingPatch: UpdateFormType = {};
-
-  public ngOnInit(): void {
-    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
-  }
-
-  // ── Loading ────────────────────────────────────────────────────────────
-
-  private async loadForms(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const rows = await this.formsSvc.listForms();
-      this.forms.set(rows);
-      const first = rows[0];
-      if (!this.selectedId() && first) {
-        this.selectedId.set(first.id);
-      }
-    } catch {
-      this.alerts.showError('Could not load your forms. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadOrg(): Promise<void> {
-    try {
-      await this.settings.load();
-      const name = this.settings.getValue<string>('organization.name', '');
-      if (name) this.orgName.set(name);
-    } catch {
-      /* org name is decorative; fall back to the default */
-    }
-  }
-
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAllWithCounts();
-      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
-      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
-    } catch {
-      /* audience list picker degrades gracefully to empty */
-    }
-  }
-
-  // ── Selection / navigation ─────────────────────────────────────────────
-
-  protected select(id: string): void {
-    if (this.selectedId() === id) return;
-    this.selectedId.set(id);
-    this.tab.set('form');
-    this.submissions.set([]);
-    this.submissionsTotal.set(0);
-  }
-
-  protected setTab(tab: 'form' | 'responses'): void {
-    this.tab.set(tab);
-    if (tab === 'responses') void this.loadSubmissions();
-  }
-
-  protected enterEdit(): void {
-    if (!this.selected()) return;
-    this.mode.set('edit');
-    this.tab.set('form');
-  }
-
-  protected exitEdit(): void {
-    this.mode.set('browse');
-  }
-
-  protected toggleArchived(): void {
-    this.archivedOpen.update((v) => !v);
-  }
-
-  // ── Status verbs ───────────────────────────────────────────────────────
-
-  protected async publish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.publish(id),
-      (f) => `Published “${f.name}” — the link now accepts responses.`,
-    );
-  }
-
-  protected async unpublish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.unpublish(id),
-      (f) => `Unpublished “${f.name}” — the public link is paused.`,
-    );
-  }
-
-  protected async archiveForm(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.archive(id),
-      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
-    );
-    this.mode.set('browse');
-  }
-
-  protected async restore(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.restore(id),
-      (f) => `Restored “${f.name}” as a draft.`,
-    );
-  }
-
-  private async runVerb(
-    action: (id: string) => Promise<FormDetail>,
-    message: (f: FormDetail) => string,
-  ): Promise<void> {
-    const id = this.selectedId();
-    if (!id || this.mutating()) return;
-    this.mutating.set(true);
-    try {
-      const updated = await action(id);
-      this.replaceForm(updated);
-      this.alerts.showSuccess(message(updated));
-    } catch {
-      this.alerts.showError('That action didn’t go through. Please try again.');
-    } finally {
-      this.mutating.set(false);
-    }
-  }
-
-  // ── New form dialog ────────────────────────────────────────────────────
-
-  protected openNewForm(): void {
-    this.newFormName.set('');
-    this.newFormType.set('signup');
-    this.newFormError.set(null);
-    this.newFormDialog()?.nativeElement.showModal();
-  }
-
-  protected closeNewForm(): void {
-    this.newFormDialog()?.nativeElement.close();
-  }
-
-  protected goToFundraisingForm(): void {
-    this.closeNewForm();
-    void this.router.navigateByUrl('/donation-pages/add');
-  }
-
-  protected goToEventForm(): void {
-    this.closeNewForm();
-    void this.router.navigateByUrl('/events/pages/add');
-  }
-
-  protected goToShiftForm(): void {
-    this.closeNewForm();
-    void this.router.navigateByUrl('/events/shifts/add');
-  }
-
-  protected async createForm(): Promise<void> {
-    const name = this.newFormName().trim();
-    if (!name) {
-      this.newFormError.set('Give your form a name so you can find it later.');
-      return;
-    }
-    if (this.creating()) return;
-    this.creating.set(true);
-    try {
-      const type = this.newFormType();
-      const created = await this.formsSvc.createForm({ name, type });
-      this.forms.update((list) => [created, ...list]);
-      this.selectedId.set(created.id);
-      this.closeNewForm();
-      this.mode.set('edit');
-      this.tab.set('form');
-      this.alerts.showSuccess(
-        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
-      );
-    } catch {
-      this.newFormError.set('Could not create the form. Please try again.');
-    } finally {
-      this.creating.set(false);
-    }
-  }
-
-  // ── Live editing (debounced patch) ─────────────────────────────────────
-
-  protected editName(value: string): void {
-    this.patch({ name: value });
-  }
-
-  protected editDescription(value: string): void {
-    this.patch({ description: value });
-  }
-
-  protected editRedirect(value: string): void {
-    this.patch({ redirect_url: value });
-  }
-
-  protected editSubmitLabel(value: string): void {
-    this.patch({ submit_label: value });
-  }
-
-  protected toggleConfirmEmail(on: boolean): void {
-    this.patch({ confirm_email_on: on });
-  }
-
-  protected toggleNotifyTeam(on: boolean): void {
-    this.patch({ notify_team_on: on });
-  }
-
-  protected toggleField(key: string, on: boolean): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
-    this.patch({ fields });
-  }
-
-  protected toggleRequired(key: string): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
-    this.patch({ fields });
-  }
-
-  protected addTag(raw: string): void {
-    const form = this.selected();
-    if (!form) return;
-    const tag = raw
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
-    if (!tag) return;
-    if (form.target_tags.includes(tag)) {
-      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
-      return;
-    }
-    this.patch({ target_tags: [...form.target_tags, tag] });
-  }
-
-  protected removeTag(tag: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
-  }
-
-  protected addList(id: string): void {
-    const form = this.selected();
-    if (!form || !id || form.target_lists.includes(id)) return;
-    this.patch({ target_lists: [...form.target_lists, id] });
-  }
-
-  protected removeList(id: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
-  }
-
-  protected listName(id: string): string {
-    return this.lists().find((l) => l.id === id)?.name ?? id;
-  }
-
-  private patch(p: UpdateFormType): void {
-    const form = this.selected();
-    if (!form) return;
-    // Optimistic local update so the preview reflects the change immediately.
-    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
-    Object.assign(this.pendingPatch, p);
-    this.saveDebounced();
-  }
-
-  private async flushPatch(): Promise<void> {
-    const id = this.selectedId();
-    const patch = this.pendingPatch;
-    this.pendingPatch = {};
-    if (!id || Object.keys(patch).length === 0) return;
-    try {
-      const updated = await this.formsSvc.updateLive(id, patch);
-      this.replaceForm(updated);
-    } catch {
-      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
-    }
-  }
-
-  // ── Archive / delete (edit mode) ───────────────────────────────────────
-
-  protected canDelete(form: FormDetail): boolean {
-    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
-  }
-
-  protected async deleteDraft(): Promise<void> {
-    const form = this.selected();
-    if (!form || !this.canDelete(form)) return;
-    const ok = await this.confirm.confirm({
-      title: `Delete “${form.name}”?`,
-      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    try {
-      await this.formsSvc.deleteDraft(form.id);
-      this.forms.update((list) => list.filter((f) => f.id !== form.id));
-      this.selectedId.set(this.forms()[0]?.id ?? null);
-      this.mode.set('browse');
-      this.alerts.showSuccess(`Deleted “${form.name}”.`);
-    } catch {
-      this.alerts.showError('Could not delete the form. Please try again.');
-    }
-  }
-
-  // ── Public link ────────────────────────────────────────────────────────
-
-  protected openPublicLink(): void {
-    const url = this.publicUrl();
-    if (url) window.open(url, '_blank', 'noopener');
-  }
-
-  protected async copyLink(): Promise<void> {
-    const url = this.publicUrl();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Public link copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
-    }
-  }
-
-  // ── Embed dialog ───────────────────────────────────────────────────────
-
-  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
-  protected readonly embedCode = computed(() =>
-    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
-  );
-
-  protected openEmbed(): void {
-    this.embedMode.set('iframe');
-    this.embedDialog()?.nativeElement.showModal();
-  }
-
-  protected closeEmbed(): void {
-    this.embedDialog()?.nativeElement.close();
-  }
-
-  protected async copyEmbed(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(this.embedCode());
-      this.alerts.showSuccess('Embed code copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
-    }
-  }
-
-  private iframeSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
-  }
-
-  private rawHtmlSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
-    const lines: string[] = [`<form action="${action}" method="POST">`];
-    for (const field of form.fields.filter((f) => f.on)) {
-      const req = field.required ? ' required' : '';
-      const star = field.required ? ' *' : '';
-      const label = this.escapeAttr(field.label);
-      if (field.type === 'area') {
-        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
-      } else if (field.type === 'select') {
-        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
-        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
-        lines.push(`  </select></label>`);
-      } else if (field.type === 'checks') {
-        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
-        for (const opt of field.options ?? []) {
-          lines.push(
-            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
-          );
-        }
-        lines.push(`  </fieldset>`);
-      } else {
-        const type = field.key === 'email' ? 'email' : 'text';
-        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
-      }
-    }
-    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
-    lines.push(`</form>`);
-    return lines.join('\n');
-  }
-
-  private escapeAttr(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  // ── Confirmation-email dialog ──────────────────────────────────────────
-
-  protected readonly confirmSubjectDraft = signal('');
-  protected readonly confirmBodyDraft = signal('');
-
-  protected openConfirmEmail(): void {
-    const form = this.selected();
-    if (!form) return;
-    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
-    this.confirmBodyDraft.set(form.confirm_body ?? '');
-    this.confirmEmailDialog()?.nativeElement.showModal();
-  }
-
-  protected closeConfirmEmail(): void {
-    this.confirmEmailDialog()?.nativeElement.close();
-  }
-
-  protected saveConfirmEmail(): void {
-    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
-    this.closeConfirmEmail();
-    this.alerts.showSuccess('Confirmation email updated.');
-  }
-
-  // ── Responses ──────────────────────────────────────────────────────────
-
-  private async loadSubmissions(): Promise<void> {
-    const id = this.selectedId();
-    if (!id) return;
-    this.submissionsLoading.set(true);
-    try {
-      const res = await this.formsSvc.getSubmissions(id);
-      this.submissions.set(res.items);
-      this.submissionsTotal.set(res.total);
-    } catch {
-      this.alerts.showError('Could not load responses. Please try again.');
-    } finally {
-      this.submissionsLoading.set(false);
-    }
-  }
-
-  protected answerSummary(row: FormSubmissionRow): string {
-    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
-    const parts: string[] = [];
-    for (const [key, value] of Object.entries(row.answers)) {
-      if (skip.has(key) || value == null || value === '') continue;
-      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
-      if (parts.length >= 2) break;
-    }
-    return parts.join(' · ');
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────
-
-  protected requiredFieldsPresent(form: FormDetail): boolean {
-    return form.fields.some((f) => f.on && f.required);
-  }
-
-  private replaceForm(updated: FormDetail): void {
-    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private templateLabel(type: FormType): string {
-    const map: Record<FormType, string> = {
-      signup: 'Signup — name, email, availability',
-      pledge: 'Pledge — name, email, amount',
-      rsvp: 'RSVP — name, email, seats',
-      request: 'Request — name, email, address, notes',
-      survey: 'Survey — name, issues, open answer',
-    };
-    return map[type];
-  }
-
-  protected typeChip(type: FormType | null): string {
-    if (!type) return 'Form';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-
-  protected templateSubmitLabel(type: FormType): string {
-    return FORM_TEMPLATES[type].submitLabel;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
 
 ```typescript
@@ -37361,322 +35737,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
-
-```typescript
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { Table } from '@uxcommon/components/table/table';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
-import { ExportsService } from '../../exports/services/exports-service';
-import { ImportsService } from '../services/imports-service';
-
-/**
- * Import/export History page (spec §17). Folds the old standalone Exports
- * Manager page into an "Imports N / Exports N" tabbed view — one history
- * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
- */
-type HistoryTab = 'imports' | 'exports';
-
-@Component({
-  selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective, Table],
-  templateUrl: './imports-page.html',
-})
-export class ImportsPage {
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly imports = inject(ImportsService);
-  private readonly exports = inject(ExportsService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly tab = signal<HistoryTab>('imports');
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  private isLoadActive = false;
-  protected readonly deleting = signal(false);
-  protected readonly items = signal<ImportListItem[]>([]);
-  protected readonly itemCount = computed(() => this.items().length);
-  protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deletePeople = signal(false);
-  protected readonly deleteHouseholds = signal(false);
-  protected readonly deleteCompanies = signal(false);
-  protected readonly deleteTasks = signal(false);
-  protected readonly error = signal<string | null>(null);
-
-  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
-  protected readonly importsThisYear = computed(
-    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly peopleCreatedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.insertedCount, 0),
-  );
-  protected readonly duplicatesMergedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.mergedCount, 0),
-  );
-
-  private pollInterval: ReturnType<typeof setInterval> | undefined;
-
-  // --- Exports tab ---
-  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
-  protected readonly exportCount = computed(() => this.exportJobs().length);
-  protected readonly exportsLoading = createLoadingGate();
-  protected readonly showNewExportInfo = signal(false);
-
-  constructor() {
-    void this.load();
-
-    // Reset checkbox when dialog closes
-    effect(() => {
-      const item = this.pendingDelete();
-      if (!item) {
-        this.deletePeople.set(false);
-        this.deleteHouseholds.set(false);
-        this.deleteCompanies.set(false);
-        this.deleteTasks.set(false);
-      }
-    });
-
-    this.startPolling();
-
-    this.destroyRef.onDestroy(() => {
-      this.imports.abort();
-      this.stopPolling();
-    });
-  }
-
-  protected switchTab(tab: HistoryTab): void {
-    this.tab.set(tab);
-    if (tab === 'exports') {
-      void this.loadExports();
-    }
-  }
-
-  private startPolling() {
-    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
-  }
-
-  private async pollStep(): Promise<void> {
-    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-    if (hasActiveJobs) {
-      try {
-        const list = await this.imports.list();
-        this.items.set(list ?? []);
-      } catch (err) {
-        console.error('Failed to poll imports status:', err);
-      }
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = undefined;
-    }
-  }
-
-  protected formatDate(value: Date | string) {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(value instanceof Date ? value : new Date(value));
-    } catch {
-      return value ? String(value) : '—';
-    }
-  }
-
-  protected formatFileSize(bytes: number | null): string | null {
-    if (bytes == null) return null;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  protected startNewImport(): void {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
-    if (this.deleting()) return;
-    this.pendingDelete.set(item);
-    dialog.showModal();
-  }
-
-  protected closeDeleteDialog(dialog: HTMLDialogElement) {
-    if (!dialog.open) return;
-    dialog.close();
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmDelete(dialog: HTMLDialogElement) {
-    const item = this.pendingDelete();
-    if (!item || this.deleting()) return;
-
-    this.deleting.set(true);
-    try {
-      await this.imports.delete(item.id, {
-        deletePeople: this.deletePeople(),
-        deleteHouseholds: this.deleteHouseholds(),
-        deleteCompanies: this.deleteCompanies(),
-        deleteTasks: this.deleteTasks(),
-      });
-      this.alerts.showSuccess('Import deleted');
-      await this.load();
-      this.closeDeleteDialog(dialog);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to delete import';
-      this.alerts.showError(message);
-    } finally {
-      this.deleting.set(false);
-    }
-  }
-
-  protected downloadSource(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
-  }
-
-  protected downloadSkipped(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(
-      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
-      token,
-      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
-    );
-  }
-
-  protected async refresh() {
-    await this.load();
-  }
-
-  private async load() {
-    if (this.isLoadActive) return;
-    this.isLoadActive = true;
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const list = await this.imports.list();
-      this.items.set(list ?? []);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load imports';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.isLoadActive = false;
-      end();
-    }
-  }
-
-  // --- Exports tab ---
-
-  protected refreshExports(): void {
-    void this.loadExports();
-  }
-
-  protected toggleNewExportInfo(): void {
-    this.showNewExportInfo.update((v) => !v);
-  }
-
-  protected goToPeopleGrid(): void {
-    void this.router.navigate(['/people']);
-  }
-
-  protected formatExportDate(dateStr: string) {
-    return this.formatDate(dateStr);
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadExportJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alerts.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alerts.showError('Export is not ready yet.');
-      return;
-    }
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alerts.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteExportJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete export',
-      message: `Delete "${job.file_name}"? This removes the file from the server — it cannot be undone.`,
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.exports.delete(job.id);
-      this.alerts.showSuccess('Export deleted successfully.');
-      await this.loadExports();
-    } catch {
-      this.alerts.showError('Failed to delete export. Please try again.');
-    }
-  }
-
-  private async loadExports() {
-    const end = this.exportsLoading.begin();
-    try {
-      const list = await this.exports.list();
-      this.exportJobs.set(list ?? []);
-    } catch {
-      this.alerts.showError('Failed to load exports. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
 
 ```typescript
@@ -37786,196 +35846,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.exportCsv.mutate(input);
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
-  <!-- Top Navigation & Title -->
-  <!-- Top Navigation & Title -->
-  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
-    <div class="flex items-center gap-3">
-      <div>
-        <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
-            {{ listData()?.name }}
-          </h1>
-          @if (listData()?.is_dynamic) {
-          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
-          } @else {
-          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
-          }
-        </div>
-        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
-      </div>
-    </div>
-
-    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
-    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
-      @if (listData()?.is_dynamic) {
-      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
-        <div>Last Refreshed</div>
-        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
-      </div>
-      <button
-        class="btn btn-outline btn-accent btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
-        [disabled]="refreshing() || loading()"
-        (click)="refreshList()"
-      >
-        @if (refreshing()) {
-        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
-        Refreshing... } @else {
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh Now }
-      </button>
-      }
-      <pc-form-actions
-        [isLoading]="loading()"
-        [btn1Text]="'Edit List'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete List'"
-        (deleteClicked)="deleteList()"
-        (btn1Clicked)="editList()"
-      ></pc-form-actions>
-    </div>
-  </div>
-
-  <!-- Loading State -->
-  @if (loading()) {
-  <div class="flex flex-1 flex-col items-center justify-center py-20">
-    <progress class="progress progress-primary w-56"></progress>
-    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
-  </div>
-  } @else {
-  <!-- KPI Stats Cards -->
-  <!-- KPI Stats Cards -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-    <pc-stat-card
-      [title]="'List Size'"
-      [value]="memberCount()"
-      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
-      [icon]="'users'"
-      [iconBgClass]="'bg-primary/10'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Newsletters Sent'"
-      [value]="stats()?.totalNewsletters || 0"
-      [description]="'Campaign dispatches'"
-      [icon]="'megaphone'"
-      [iconBgClass]="'bg-secondary/10'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Open Rate'"
-      [value]="formatPercent(stats()?.openRate)"
-      [icon]="'envelope'"
-      [iconBgClass]="'bg-accent/10'"
-      [iconColorClass]="'text-accent'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Click Rate'"
-      [value]="formatPercent(stats()?.clickRate)"
-      [icon]="'chart-pie'"
-      [iconBgClass]="'bg-info/10'"
-      [iconColorClass]="'text-info'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-  </div>
-
-  <!-- Tabs Panel -->
-  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
-    <pc-tab-panel id="members" [activeTab]="activeTab()">
-      @if (isPeople()) {
-      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
-      } @else {
-      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
-      }
-    </pc-tab-panel>
-
-    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
-          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
-          <div class="p-12 text-center text-base-content/50">
-            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-            <p class="font-medium text-base">No campaign emails sent to this list</p>
-            <p class="text-xs mt-1">
-              Sent newsletters targeting this list will appear here with engagement statistics.
-            </p>
-          </div>
-          } @else {
-          <table class="table pc-table w-full">
-            <thead>
-              <tr>
-                <th>Newsletter Name</th>
-                <th>Subject</th>
-                <th>Send Date</th>
-                <th class="text-right">Recipients</th>
-                <th class="text-right">Open Rate</th>
-                <th class="text-right">Click Rate</th>
-                <th class="text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (n of stats().newsletters; track n.id) {
-              <tr class="hover:bg-base-200/40 transition-colors">
-                <td class="font-bold text-base-content">{{ n.name }}</td>
-                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
-                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
-                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-center">
-                  <a
-                    [routerLink]="['/newsletters', n.id]"
-                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
-                  >
-                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
-                    View Report
-                  </a>
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-          }
-        </div>
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-  } @if (listData() && listData()?.id) {
-  <div class="mt-8 border-t border-base-250 pt-6">
-    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
@@ -39994,6 +37864,210 @@ export class NewsletterDetailComponent {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+
+```typescript
+import { Service, inject } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
+
+  private readonly campaignContext = inject(CampaignContextService);
+
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
+  }
+
+  public addMany(rows: UpdatePersonsType[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.persons.count.query();
+  }
+
+  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
+  public countWithCompany(): Promise<number> {
+    return this.api.persons.countWithCompany.query();
+  }
+
+  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
+  public getByPublicId(publicId: string) {
+    return this.api.persons.getByPublicId.query(publicId);
+  }
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+    }
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
+  }
+
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
+    }
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
+  }
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  }
+
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithAddress(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    // Stamp the active context so campaign-scoped columns (support level,
+    // voting status — §15) resolve against the campaign the user is working in.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    return this.api.persons.getAllWithAddress.query(scoped, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
+    if (!id) {
+      return [];
+    }
+
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
+      };
+    });
+  }
+
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public import(
+    input: {
+      rows: RouterInputs['persons']['import']['rows'];
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      source_csv?: string;
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    options?: { skipErrorHandler?: boolean },
+  ): Promise<RouterOutputs['persons']['import']> {
+    // Wizard shows its own error state — opt out of the global error toast when asked.
+    return this.api.persons.import.mutate(
+      {
+        rows: input.rows,
+        tags: input.tags ?? [],
+        skipped: input.skipped ?? 0,
+        file_name: input.file_name ?? undefined,
+        duplicate_decision: input.duplicate_decision ?? 'skip',
+        list_name: input.list_name,
+        source_csv: input.source_csv,
+        client_skip_reasons: input.client_skip_reasons,
+      },
+      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
+    );
+  }
+
+  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
+  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
+    return this.api.persons.checkDuplicateEmails.query({ emails });
+  }
+
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
+
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
+    return this.api.persons.update.mutate({ id: id, data }, options);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.persons.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
+    return this.api.persons.getPotentialDuplicates.query(options);
+  }
+
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
+    return this.api.persons.getDuplicateCounts.query();
+  }
+
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
+  }
+}
+
+export type DATA_TYPE = 'persons' | 'households';
+```
+
 ## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
 
 ```typescript
@@ -40648,6 +38722,1184 @@ export class PersonCampaignFacts {
   </button>
   }
 </div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
+
+```html
+<div class="space-y-8">
+  <!-- Stripe Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Stripe Integration
+      </h3>
+      <span
+        class="badge badge-sm font-medium"
+        [class.badge-success]="stripeSecretKey().trim()"
+        [class.badge-neutral]="!stripeSecretKey().trim()"
+      >
+        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
+      </span>
+    </div>
+
+    <!-- Security Banner -->
+    <div
+      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
+      <div>
+        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
+        <p class="mt-0.5 text-base-content/70">
+          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
+          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
+        </p>
+        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Stripe Secret Key -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <input
+          id="stripe_secret_key"
+          type="password"
+          placeholder="sk_live_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeSecretKey()"
+          (input)="stripeSecretKey.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
+          <code class="font-mono">sk_test_</code>.
+        </p>
+      </div>
+
+      <!-- Stripe Webhook Secret -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
+          Stripe Webhook Signing Secret
+        </label>
+        <input
+          id="stripe_webhook_secret"
+          type="password"
+          placeholder="whsec_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeWebhookSecret()"
+          (input)="stripeWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Stripe webhook notifications. Starts with
+          <code class="font-mono">whsec_</code>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Webhook Instructions Info Card -->
+    <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
+      <div class="space-y-1">
+        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
+          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
+          Webhook Endpoint URL
+        </h4>
+        <p class="text-xs text-base-content/65 max-w-xl">
+          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
+          completion notifications. For security the token is shown only once, when you generate it.
+        </p>
+      </div>
+
+      @if (webhookToken()) {
+      <!-- Just generated — show the URL once with a copy button -->
+      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          Copy this URL now — it won't be shown again.
+        </p>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
+            {{ webhookUrl() }}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+            Copy URL
+          </button>
+        </div>
+      </div>
+      } @else {
+      <!-- No plaintext available (never generated, or generated in a previous session) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
+          @if (webhookConfigured()) {
+          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
+          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
+          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
+          No webhook token yet. Generate one to get your Stripe webhook URL. }
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary shrink-0"
+          [disabled]="isRegeneratingWebhook()"
+          (click)="regenerateWebhookToken()"
+        >
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- Donation Limit & Residency Restrictions Section -->
+  <div class="grid gap-6 md:grid-cols-2">
+    <!-- Donation Periods card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
+      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+        <h3 class="text-lg font-semibold flex items-center gap-2">
+          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
+          Donation Limit Periods
+        </h3>
+        <button
+          type="button"
+          class="btn btn-xs btn-primary"
+          (click)="showAddPeriod.set(true)"
+          [hidden]="showAddPeriod()"
+        >
+          <pc-icon name="plus" [size]="3"></pc-icon>
+          Add Period
+        </button>
+      </div>
+      <p class="text-xs text-base-content/60">
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
+        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
+        below applies.
+      </p>
+
+      <!-- Existing periods list -->
+      <div class="space-y-2">
+        @for (period of donationPeriods(); track period.id) {
+        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
+          <div class="space-y-0.5 flex-1 min-w-0">
+            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
+            <div class="text-base-content/60">
+              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
+              @if (isPeriodActive(period)) {
+              <span class="badge badge-xs badge-success font-semibold">Active now</span>
+              } @else if (period.is_active) {
+              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
+              } @else {
+              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
+              }
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <input
+              type="checkbox"
+              class="toggle toggle-xs toggle-success"
+              [checked]="period.is_active"
+              (change)="togglePeriodActive(period)"
+              title="Enable/disable period"
+            />
+            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
+              <pc-icon name="trash" [size]="3"></pc-icon>
+            </button>
+          </div>
+        </div>
+        } @empty {
+        <div class="text-xs text-base-content/50 italic py-2 text-center">
+          No periods defined. Using fallback annual limit.
+        </div>
+        }
+      </div>
+
+      <!-- Add period form -->
+      @if (showAddPeriod()) {
+      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
+        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Period Name</label>
+          <input
+            type="text"
+            class="input input-sm input-bordered bg-base-200/30"
+            placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()"
+            (input)="newPeriodName.set($any($event.target).value)"
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">Start Date</label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()"
+              (input)="newPeriodStartDate.set($any($event.target).value)"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()"
+              (input)="newPeriodEndDate.set($any($event.target).value)"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Limit per Donor ($)</label>
+          <div class="relative max-w-xs">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
+            <input
+              type="number"
+              min="1"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              [ngModel]="newPeriodLimit()"
+              (ngModelChange)="newPeriodLimit.set($event)"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+        </div>
+      </div>
+      }
+
+      <!-- Fallback annual limit (used when no period is active) -->
+      <div class="border-t border-base-200 pt-4 mt-2">
+        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
+        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
+        <div class="relative max-w-xs">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <input
+            id="donation_limit"
+            type="number"
+            min="1"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            [value]="donationLimit()"
+            (input)="donationLimit.set($any($event.target).value)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Residency restrictions card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
+        Residency Restrictions
+      </h3>
+      <p class="text-xs text-base-content/60">
+        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
+        state elections.
+      </p>
+
+      <div class="space-y-4">
+        <!-- Toggle Restriction -->
+        <label class="flex items-center gap-3 cursor-pointer py-1">
+          <input
+            id="restrict_residency"
+            type="checkbox"
+            class="toggle toggle-primary toggle-md"
+            [checked]="restrictResidency()"
+            (change)="restrictResidency.set($any($event.target).checked)"
+          />
+          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
+        </label>
+
+        @if (restrictResidency()) {
+        <div class="space-y-4 pt-2 animate-fade-in relative">
+          <!-- Autocomplete Allowed Countries Picker -->
+          <div class="flex flex-col gap-1.5 relative">
+            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
+            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
+              @for (cCode of selectedCountries(); track cCode) {
+              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
+                {{ getCountryName(cCode) }}
+                <button
+                  type="button"
+                  class="text-[10px] hover:text-base-content font-bold"
+                  (click)="removeCountry(cCode)"
+                >
+                  ×
+                </button>
+              </span>
+              }
+              <input
+                type="text"
+                placeholder="Type to search country..."
+                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
+                [value]="countrySearch()"
+                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
+                (focus)="showCountryDropdown.set(true)"
+                (blur)="showCountryDropdown.set(false)"
+              />
+            </div>
+
+            @if (showCountryDropdown() && availableCountriesToSelect().length) {
+            <!-- Use mousedown to prevent input blur before selecting -->
+            <ul
+              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
+            >
+              @for (c of availableCountriesToSelect(); track c.code) {
+              <li>
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
+                  (mousedown)="selectCountry(c); $event.preventDefault()"
+                >
+                  {{ c.name }} ({{ c.code }})
+                </button>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+          <!-- Allowed Province/State Checkboxes for Selected Countries -->
+          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
+          {
+          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
+            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
+              Allowed Provinces & States
+            </label>
+
+            @if (isCanadaSelected()) {
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (p of canadaProvinces; track p.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(p.code)"
+                    (change)="toggleRegion(p.code)"
+                  />
+                  <span>{{ p.name }} ({{ p.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">United States States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of usStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of germanyStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (r of franceRegions; track r.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(r.code)"
+                    (change)="toggleRegion(r.code)"
+                  />
+                  <span>{{ r.name }} ({{ r.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
+            isFranceSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of indiaStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Credit Configuration -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+      Tax Credit Tiers
+    </h3>
+    <p class="text-xs text-base-content/60">
+      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
+      inside a calendar year.
+    </p>
+
+    <!-- Table of existing tiers -->
+    <div class="mt-3">
+      <pc-table [columns]="4">
+        <ng-container pcTableHead>
+          <th>Bracket Tier</th>
+          <th>Up to Limit</th>
+          <th>Credit Percentage</th>
+          <th class="text-right w-24">Actions</th>
+        </ng-container>
+        @for (tier of taxCreditTiers(); track $index) {
+        <tr>
+          <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
+          <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
+          <td>
+            <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
+          </td>
+          <td class="text-right">
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
+              (click)="removeTier($index)"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="4" class="text-center py-6 text-base-content/50 italic">
+            No tax credit tiers defined yet. Add a tier below to set up credit calculations.
+          </td>
+        </tr>
+        }
+      </pc-table>
+    </div>
+
+    <!-- Progressive bracket summary -->
+    @if (taxCreditTiers().length) {
+    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
+      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
+        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
+        Tax Credit Bracket Summary (Plain Language)
+      </h4>
+      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
+        @for (line of taxCreditSummary(); track $index) {
+        <li>{{ line }}</li>
+        }
+      </ul>
+    </div>
+    }
+
+    <!-- Add new tier form -->
+    <div
+      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
+    >
+      <!-- Tier Limit -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
+          <input
+            id="new_limit"
+            type="number"
+            min="1"
+            placeholder="500"
+            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newLimit()"
+            (ngModelChange)="newLimit.set($event)"
+          />
+        </div>
+      </div>
+
+      <!-- Tier Rate -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
+        <div class="relative">
+          <input
+            id="new_rate"
+            type="number"
+            min="0"
+            max="100"
+            placeholder="75"
+            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newRate()"
+            (ngModelChange)="newRate.set($event)"
+          />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
+        </div>
+      </div>
+
+      <!-- Add button -->
+      <button
+        type="button"
+        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
+        (click)="addTier()"
+      >
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Add Tier
+      </button>
+    </div>
+  </div>
+
+  <!-- Action buttons footer -->
+  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
+    <div>
+      @if (isSaving()) {
+      <span class="text-sm font-medium text-base-content/60 flex items-center">
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        Saving donations configuration…
+      </span>
+      }
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
+        (click)="reset()"
+        [disabled]="isSaving()"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[120px] font-semibold text-sm"
+        (click)="save()"
+        [disabled]="isSaving()"
+      >
+        @if (isSaving()) {
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        } Save Changes
+      </button>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
+
+```typescript
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
+import { Icon } from '@icons/icon';
+import { TokenService } from '../../../services/api/token-service';
+import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+export interface TaxCreditTier {
+  limit: number;
+  rate: number;
+}
+
+export interface DonationPeriod {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  limit_amount: number;
+  is_active: boolean;
+}
+
+@Component({
+  selector: 'pc-donations-settings',
+  imports: [FormsModule, Icon, Table],
+  templateUrl: './donations-settings.html',
+})
+export class DonationsSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly stripeSecretKey = signal('');
+  protected readonly stripeWebhookSecret = signal('');
+  protected readonly donationLimit = signal(1000);
+  protected readonly restrictResidency = signal(false);
+  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
+  // The webhook token is generated server-side and shown once (SECURITY-REVIEW 2.4). `webhookToken`
+  // only holds the just-generated plaintext; on reload we only know whether one is configured.
+  protected readonly webhookToken = signal('');
+  protected readonly webhookConfigured = signal(false);
+  protected readonly isRegeneratingWebhook = signal(false);
+
+  // Donation periods
+  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
+  protected readonly showAddPeriod = signal(false);
+  protected readonly newPeriodName = signal('');
+  protected readonly newPeriodStartDate = signal('');
+  protected readonly newPeriodEndDate = signal('');
+  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly isSavingPeriod = signal(false);
+
+  // New multi-country autocomplete & states checkboxes
+  protected readonly selectedCountries = signal<string[]>([]);
+  protected readonly selectedRegions = signal<string[]>([]);
+
+  protected readonly countrySearch = signal('');
+  protected readonly showCountryDropdown = signal(false);
+
+  protected readonly allCountries = [
+    { code: 'CA', name: 'Canada' },
+    { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'NZ', name: 'New Zealand' },
+    { code: 'FR', name: 'France' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'IN', name: 'India' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'NL', name: 'Netherlands' },
+  ];
+
+  protected readonly canadaProvinces = [
+    { code: 'ON', name: 'Ontario' },
+    { code: 'QC', name: 'Quebec' },
+    { code: 'BC', name: 'British Columbia' },
+    { code: 'AB', name: 'Alberta' },
+    { code: 'MB', name: 'Manitoba' },
+    { code: 'SK', name: 'Saskatchewan' },
+    { code: 'NS', name: 'Nova Scotia' },
+    { code: 'NB', name: 'New Brunswick' },
+    { code: 'NL', name: 'Newfoundland and Labrador' },
+    { code: 'PE', name: 'Prince Edward Island' },
+    { code: 'NT', name: 'Northwest Territories' },
+    { code: 'YT', name: 'Yukon' },
+    { code: 'NU', name: 'Nunavut' },
+  ];
+
+  protected readonly usStates = [
+    { code: 'AL', name: 'Alabama' },
+    { code: 'AK', name: 'Alaska' },
+    { code: 'AZ', name: 'Arizona' },
+    { code: 'AR', name: 'Arkansas' },
+    { code: 'CA', name: 'California' },
+    { code: 'CO', name: 'Colorado' },
+    { code: 'CT', name: 'Connecticut' },
+    { code: 'DE', name: 'Delaware' },
+    { code: 'FL', name: 'Florida' },
+    { code: 'GA', name: 'Georgia' },
+    { code: 'HI', name: 'Hawaii' },
+    { code: 'ID', name: 'Idaho' },
+    { code: 'IL', name: 'Illinois' },
+    { code: 'IN', name: 'Indiana' },
+    { code: 'IA', name: 'Iowa' },
+    { code: 'KS', name: 'Kansas' },
+    { code: 'KY', name: 'Kentucky' },
+    { code: 'LA', name: 'Louisiana' },
+    { code: 'ME', name: 'Maine' },
+    { code: 'MD', name: 'Maryland' },
+    { code: 'MA', name: 'Massachusetts' },
+    { code: 'MI', name: 'Michigan' },
+    { code: 'MN', name: 'Minnesota' },
+    { code: 'MS', name: 'Mississippi' },
+    { code: 'MO', name: 'Missouri' },
+    { code: 'MT', name: 'Montana' },
+    { code: 'NE', name: 'Nebraska' },
+    { code: 'NV', name: 'Nevada' },
+    { code: 'NH', name: 'New Hampshire' },
+    { code: 'NJ', name: 'New Jersey' },
+    { code: 'NM', name: 'New Mexico' },
+    { code: 'NY', name: 'New York' },
+    { code: 'NC', name: 'North Carolina' },
+    { code: 'ND', name: 'North Dakota' },
+    { code: 'OH', name: 'Ohio' },
+    { code: 'OK', name: 'Oklahoma' },
+    { code: 'OR', name: 'Oregon' },
+    { code: 'PA', name: 'Pennsylvania' },
+    { code: 'RI', name: 'Rhode Island' },
+    { code: 'SC', name: 'South Carolina' },
+    { code: 'SD', name: 'South Dakota' },
+    { code: 'TN', name: 'Tennessee' },
+    { code: 'TX', name: 'Texas' },
+    { code: 'UT', name: 'Utah' },
+    { code: 'VT', name: 'Vermont' },
+    { code: 'VA', name: 'Virginia' },
+    { code: 'WA', name: 'Washington' },
+    { code: 'WV', name: 'West Virginia' },
+    { code: 'WI', name: 'Wisconsin' },
+    { code: 'WY', name: 'Wyoming' },
+  ];
+
+  protected readonly germanyStates = [
+    { code: 'DE-BW', name: 'Baden-Württemberg' },
+    { code: 'DE-BY', name: 'Bavaria' },
+    { code: 'DE-BE', name: 'Berlin' },
+    { code: 'DE-BB', name: 'Brandenburg' },
+    { code: 'DE-HB', name: 'Bremen' },
+    { code: 'DE-HH', name: 'Hamburg' },
+    { code: 'DE-HE', name: 'Hesse' },
+    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
+    { code: 'DE-NI', name: 'Lower Saxony' },
+    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
+    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
+    { code: 'DE-SL', name: 'Saarland' },
+    { code: 'DE-SN', name: 'Saxony' },
+    { code: 'DE-ST', name: 'Saxony-Anhalt' },
+    { code: 'DE-SH', name: 'Schleswig-Holstein' },
+    { code: 'DE-TH', name: 'Thuringia' },
+  ];
+
+  protected readonly franceRegions = [
+    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
+    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
+    { code: 'FR-BRE', name: 'Brittany' },
+    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
+    { code: 'FR-COR', name: 'Corsica' },
+    { code: 'FR-GES', name: 'Grand Est' },
+    { code: 'FR-HDF', name: 'Hauts-de-France' },
+    { code: 'FR-IDF', name: 'Île-de-France' },
+    { code: 'FR-NOR', name: 'Normandy' },
+    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
+    { code: 'FR-OCC', name: 'Occitania' },
+    { code: 'FR-PDL', name: 'Pays de la Loire' },
+    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
+  ];
+
+  protected readonly indiaStates = [
+    { code: 'IN-AP', name: 'Andhra Pradesh' },
+    { code: 'IN-AR', name: 'Arunachal Pradesh' },
+    { code: 'IN-AS', name: 'Assam' },
+    { code: 'IN-BR', name: 'Bihar' },
+    { code: 'IN-CG', name: 'Chhattisgarh' },
+    { code: 'IN-GA', name: 'Goa' },
+    { code: 'IN-GJ', name: 'Gujarat' },
+    { code: 'IN-HR', name: 'Haryana' },
+    { code: 'IN-HP', name: 'Himachal Pradesh' },
+    { code: 'IN-JH', name: 'Jharkhand' },
+    { code: 'IN-KA', name: 'Karnataka' },
+    { code: 'IN-KL', name: 'Kerala' },
+    { code: 'IN-MP', name: 'Madhya Pradesh' },
+    { code: 'IN-MH', name: 'Maharashtra' },
+    { code: 'IN-MN', name: 'Manipur' },
+    { code: 'IN-ML', name: 'Meghalaya' },
+    { code: 'IN-MZ', name: 'Mizoram' },
+    { code: 'IN-NL', name: 'Nagaland' },
+    { code: 'IN-OD', name: 'Odisha' },
+    { code: 'IN-PB', name: 'Punjab' },
+    { code: 'IN-RJ', name: 'Rajasthan' },
+    { code: 'IN-SK', name: 'Sikkim' },
+    { code: 'IN-TN', name: 'Tamil Nadu' },
+    { code: 'IN-TG', name: 'Telangana' },
+    { code: 'IN-TR', name: 'Tripura' },
+    { code: 'IN-UP', name: 'Uttar Pradesh' },
+    { code: 'IN-UT', name: 'Uttarakhand' },
+    { code: 'IN-WB', name: 'West Bengal' },
+    { code: 'IN-DL', name: 'Delhi (UT)' },
+    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
+    { code: 'IN-LA', name: 'Ladakh (UT)' },
+    { code: 'IN-PY', name: 'Puducherry (UT)' },
+  ];
+
+  // Tiers editing inputs
+  protected readonly newLimit = signal<number | null>(null);
+  protected readonly newRate = signal<number | null>(null);
+
+  protected readonly isSaving = signal(false);
+
+  protected readonly tenantId = computed(() => {
+    const token = this.tokenSvc.getAuthToken();
+    if (!token) return '';
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]!));
+        return String(payload.tenant_id || '');
+      }
+    } catch (e) {
+      console.error('Failed to parse auth token payload', e);
+    }
+    return '';
+  });
+
+  protected readonly webhookUrl = computed(() => {
+    const token = this.webhookToken();
+    if (!token) return 'Loading Webhook URL...';
+    const base = environment.apiUrl.replace(/\/$/, '');
+    return `${base}/api/donations/webhook?token=${token}`;
+  });
+
+  protected readonly availableCountriesToSelect = computed(() => {
+    const search = this.countrySearch().toLowerCase().trim();
+    const selected = new Set(this.selectedCountries());
+    return this.allCountries.filter(
+      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
+    );
+  });
+
+  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
+  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
+  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
+  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
+  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
+
+  // Plain-language calculation summary
+  protected readonly taxCreditSummary = computed(() => {
+    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
+    if (sorted.length === 0) {
+      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
+    }
+
+    const lines: string[] = [];
+    let previousLimit = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const tier = sorted[i]!;
+      const ratePct = Math.round(tier.rate * 100);
+
+      if (i === 0) {
+        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
+      } else {
+        const range = `$${previousLimit + 1} to $${tier.limit}`;
+        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
+      }
+      previousLimit = tier.limit;
+    }
+
+    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
+    return lines;
+  });
+
+  ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.loadValues();
+    await this.loadPeriods();
+    await this.loadWebhookStatus();
+  }
+
+  private async loadWebhookStatus(): Promise<void> {
+    try {
+      const status = await this.donationsSvc.getWebhookTokenStatus();
+      this.webhookConfigured.set(!!status?.configured);
+    } catch {
+      // non-fatal — leave as "not configured" if the status can't be read
+    }
+  }
+
+  private async loadPeriods() {
+    try {
+      const periods = await this.donationsSvc.getDonationPeriods();
+      this.donationPeriods.set(periods as any);
+    } catch {
+      // non-fatal — periods table may not exist yet if migration hasn't run
+    }
+  }
+
+  protected async addPeriod() {
+    const name = this.newPeriodName().trim();
+    const start = this.newPeriodStartDate().trim();
+    const limit = Number(this.newPeriodLimit());
+
+    if (!name) {
+      this.alerts.showError('Period name is required');
+      return;
+    }
+    if (!start) {
+      this.alerts.showError('Start date is required');
+      return;
+    }
+    if (!limit || limit <= 0) {
+      this.alerts.showError('Limit amount must be greater than 0');
+      return;
+    }
+
+    const endDate = this.newPeriodEndDate().trim() || null;
+    if (endDate && endDate <= start) {
+      this.alerts.showError('End date must be after start date');
+      return;
+    }
+
+    this.isSavingPeriod.set(true);
+    try {
+      await this.donationsSvc.createDonationPeriod({
+        name,
+        start_date: start,
+        end_date: endDate,
+        limit_amount: limit * 100,
+      });
+      this.alerts.showSuccess(`Donation period "${name}" created`);
+      this.newPeriodName.set('');
+      this.newPeriodStartDate.set('');
+      this.newPeriodEndDate.set('');
+      this.newPeriodLimit.set(1000);
+      this.showAddPeriod.set(false);
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
+    } finally {
+      this.isSavingPeriod.set(false);
+    }
+  }
+
+  protected async togglePeriodActive(period: DonationPeriod) {
+    try {
+      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
+    }
+  }
+
+  protected async deletePeriod(period: DonationPeriod) {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete period "${period.name}"?`,
+      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.donationsSvc.deleteDonationPeriod(period.id);
+      this.alerts.showSuccess('Period deleted');
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
+    }
+  }
+
+  protected formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'No end date';
+    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  protected isPeriodActive(period: DonationPeriod): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
+  }
+
+  private loadValues() {
+    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
+    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
+    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+
+    // Load countries
+    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
+    const parsedCountries = countriesStr
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    this.selectedCountries.set(parsedCountries);
+
+    // Load regions (provinces / states)
+    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
+    const parsedRegions = regionsStr
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    this.selectedRegions.set(parsedRegions);
+
+    // Load tax tiers
+    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
+    let parsedTiers: TaxCreditTier[] = [];
+    if (typeof tiersRaw === 'string') {
+      try {
+        parsedTiers = JSON.parse(tiersRaw);
+      } catch {
+        parsedTiers = [];
+      }
+    } else if (Array.isArray(tiersRaw)) {
+      parsedTiers = tiersRaw;
+    }
+    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
+
+    // The webhook token is no longer stored in plaintext, so it can't be re-read here — it's
+    // generated server-side and shown once via regenerateWebhookToken(). Clear any stale plaintext.
+    this.webhookToken.set('');
+  }
+
+  protected selectCountry(country: { code: string; name: string }) {
+    this.selectedCountries.update((list) => [...list, country.code]);
+    this.countrySearch.set('');
+    this.showCountryDropdown.set(false);
+  }
+
+  protected removeCountry(code: string) {
+    this.selectedCountries.update((list) => list.filter((c) => c !== code));
+    // Clean up regions for removed countries
+    if (code === 'CA') {
+      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
+      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
+    } else if (code === 'US') {
+      const stateCodes = new Set(this.usStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'DE') {
+      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'FR') {
+      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
+      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
+    } else if (code === 'IN') {
+      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    }
+  }
+
+  protected toggleRegion(code: string) {
+    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
+  }
+
+  protected getCountryName(code: string): string {
+    const found = this.allCountries.find((c) => c.code === code);
+    return found ? found.name : code;
+  }
+
+  protected addTier() {
+    const limit = this.newLimit();
+    const rateInput = this.newRate();
+
+    if (limit === null || limit <= 0) {
+      this.alerts.showError('Limit must be greater than 0');
+      return;
+    }
+    if (rateInput === null || rateInput < 0 || rateInput > 100) {
+      this.alerts.showError('Rate must be between 0% and 100%');
+      return;
+    }
+
+    const rate = rateInput / 100;
+
+    const current = this.taxCreditTiers();
+    if (current.some((t) => t.limit === limit)) {
+      this.alerts.showError('A tier with this limit already exists');
+      return;
+    }
+
+    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
+    this.taxCreditTiers.set(updated);
+
+    this.newLimit.set(null);
+    this.newRate.set(null);
+  }
+
+  protected removeTier(index: number) {
+    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
+    this.taxCreditTiers.set(updated);
+  }
+
+  protected reset() {
+    this.loadValues();
+    this.alerts.showSuccess('Settings reset to saved values');
+  }
+
+  protected async save() {
+    this.isSaving.set(true);
+    try {
+      const entries = [
+        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
+        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.limit', value: Number(this.donationLimit()) },
+        { key: 'donations.restrict_residency', value: this.restrictResidency() },
+        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
+        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
+        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
+        // shown once by regenerateWebhookToken(), never round-tripped through the client.
+      ];
+
+      await this.settingsSvc.upsert(entries);
+      this.alerts.showSuccess('Donations configuration saved successfully');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  protected copyWebhookUrl() {
+    navigator.clipboard
+      .writeText(this.webhookUrl())
+      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
+      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
+  }
+
+  protected async regenerateWebhookToken() {
+    if (this.webhookConfigured()) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Generate a new webhook token?',
+        message:
+          'This invalidates the current token. Any Stripe webhook still using the old URL will stop working until you paste the new URL into Stripe. The new token is shown only once.',
+        confirmText: 'Generate new token',
+        cancelText: 'Cancel',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+    }
+
+    this.isRegeneratingWebhook.set(true);
+    try {
+      const { token } = await this.donationsSvc.regenerateWebhookToken();
+      this.webhookToken.set(token);
+      this.webhookConfigured.set(true);
+      this.alerts.showSuccess('Webhook token generated. Copy the URL now — it will not be shown again.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to generate webhook token');
+    } finally {
+      this.isRegeneratingWebhook.set(false);
+    }
+  }
 }
 ```
 
@@ -44569,226 +43821,6 @@ export class TeamsGridComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { escapeHtml } from '../../../../../../../libs/common/src';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-users-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Users"
-        i18n-title
-        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-users"
-        i18n-plusIcon
-        [isCellEditableOverride]="isCellEditableBind"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: UserAdminService },
-    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
-  ],
-})
-export class UsersGridComponent {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col: ColDef[] = [
-    {
-      field: 'email',
-      headerName: 'Email',
-      editable: true,
-      cellRenderer: (p: CellParams) => {
-        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
-        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
-        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
-        const emailVal = String(p.value ?? '');
-
-        let avatarHtml = '';
-        if (avatarUrl) {
-          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
-          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
-        } else {
-          const PALETTES = [
-            'bg-indigo-500/20 text-indigo-700',
-            'bg-teal-500/20 text-teal-700',
-            'bg-purple-500/20 text-purple-700',
-            'bg-rose-500/20 text-rose-700',
-            'bg-amber-500/20 text-amber-700',
-            'bg-emerald-500/20 text-emerald-700',
-            'bg-blue-500/20 text-blue-700',
-            'bg-orange-500/20 text-orange-700',
-            'bg-pink-500/20 text-pink-700',
-            'bg-cyan-500/20 text-cyan-700',
-          ];
-          let sum = 0;
-          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-          const colorClass = PALETTES[sum % PALETTES.length];
-          const parts = name.split(/\s+/);
-          const first = parts[0];
-          const last = parts[parts.length - 1];
-          const initials =
-            parts.length >= 2 && first && last
-              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
-              : name.charAt(0).toUpperCase();
-          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${escapeHtml(initials)}</span>
-          </div>`;
-        }
-
-        return `<div class="flex items-center gap-2 py-0.5 h-full">
-          ${avatarHtml}
-          <span>${escapeHtml(emailVal)}</span>
-        </div>`;
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    {
-      field: 'role',
-      headerName: 'Role',
-      editable: true,
-      cellEditorParams: () => {
-        const currentUserRole = this.auth.getUser()?.role;
-        const values = [];
-        if (currentUserRole !== 'admin') {
-          values.push({ value: 'owner', label: 'Owner' });
-        }
-        values.push({ value: 'admin', label: 'Admin' });
-        values.push({ value: 'user', label: 'User' });
-        values.push({ value: 'viewer', label: 'Viewer' });
-        return { values };
-      },
-      valueFormatter: (p: CellParams) => {
-        const val = p.value ?? p.data?.['role'];
-        if (val === 'owner') return 'Owner';
-        if (val === 'admin') return 'Admin';
-        if (val === 'user') return 'User';
-        if (val === 'viewer') return 'Viewer';
-        return (val as string | undefined) || '';
-      },
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: false,
-      valueGetter: (p: CellParams) => this.statusOf(p.data).label,
-      cellRenderer: (p: CellParams) => {
-        const status = this.statusOf(p.data);
-        // Deactivated reads as inert (neutral, dimmed); Invited is in-progress (warning); Active is good (success).
-        return `<span class="badge badge-sm badge-outline font-semibold ${status.badgeClass}">${escapeHtml(status.label)}</span>`;
-      },
-    },
-    {
-      field: 'two_factor_enabled',
-      headerName: 'MFA',
-      editable: false,
-      valueGetter: (p: CellParams) => (this.coerceBoolean(p.data?.['two_factor_enabled']) ? 'Enabled' : 'Off'),
-      cellRenderer: (p: CellParams) => {
-        const on = this.coerceBoolean(p.data?.['two_factor_enabled']);
-        return on
-          ? `<span class="inline-flex items-center gap-1 text-success font-medium">Enabled</span>`
-          : `<span class="text-base-content/50">Off</span>`;
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
-    },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
-    },
-  ];
-
-  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
-    if (!col.editable) return false;
-
-    const currentUser = this.auth.getUser();
-    const currentUserRole = currentUser?.role;
-
-    // Self-lock (§18): you can't change your own role — no accidental self-demotion or lockout.
-    // (Deactivation lives in the ⋯ menu, also guarded there.)
-    if (currentUser?.id != null && String(row['id']) === String(currentUser.id) && col.field === 'role') {
-      return false;
-    }
-
-    if (currentUserRole === 'admin') {
-      if (row['role'] === 'owner') {
-        if (col.field === 'role' || col.field === 'verified') {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  // Derive an honest account status from the fields the list already returns — no schema change.
-  private statusOf(data: GridRow | undefined): { label: string; badgeClass: string } {
-    if (data?.['deletion_scheduled_at']) {
-      return { label: 'Deactivated', badgeClass: 'text-base-content/45 border-base-content/25' };
-    }
-    if (!this.coerceBoolean(data?.['verified'])) {
-      return { label: 'Invited', badgeClass: 'badge-warning text-warning' };
-    }
-    return { label: 'Active', badgeClass: 'badge-success text-success' };
-  }
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['yes', 'true', '1'].includes(normalized)) return true;
-      if (['no', 'false', '0'].includes(normalized)) return false;
-    }
-    return false;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/workflows/models/automations.model.ts
 
 ```typescript
@@ -46332,91 +45364,6 @@ function isStoredRecordNavContext(value: unknown): value is StoredRecordNavConte
     typeof candidate['total'] === 'number'
   );
 }
-```
-
-## File: apps/frontend/src/app/services/record-slug.resolver.ts
-
-```typescript
-import { inject } from '@angular/core';
-import type { ActivatedRouteSnapshot, ResolveFn } from '@angular/router';
-import { RedirectCommand, Router } from '@angular/router';
-import { extractPublicIdFromSlug } from '@common';
-import { CompaniesService } from '@experiences/companies/services/companies-service';
-import { HouseholdsService } from '@experiences/households/services/households-service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-/**
- * Slug-aware `:id` resolvers for the record routes (spec §1: URLs carry record
- * slugs — never internal IDs).
- *
- * Each resolver is registered as `resolve: { id: … }` on the entity's `:id`
- * routes. With `withComponentInputBinding()`, route *data* wins over path
- * params (`{ ...queryParams, ...params, ...data }`), so the routed component's
- * `id` input always receives the **numeric record id**, whatever the URL says.
- * A numeric param (old /people/123 deep link or an in-app id navigation) passes
- * straight through — zero extra requests; the view then swaps the address bar
- * to the slug URL via Location.replaceState. RecordNavigationService is
- * untouched: grids keep handing off numeric ids and the pager walks them.
- *
- * Persons and households/companies differ in how a non-numeric segment is
- * resolved (see below), because persons use an opaque public_id while
- * households/companies use a name slug — docs/RECORD-SLUGS.md.
- */
-
-const NUMERIC_ID = /^\d+$/;
-
-interface SlugLookup {
-  getBySlug(slug: string): Promise<unknown>;
-}
-
-function idOf(record: unknown): string | null {
-  if (record != null && typeof record === 'object' && 'id' in record) {
-    return String((record as { id: unknown }).id);
-  }
-  return null;
-}
-
-/** Households/companies: one tenant-scoped getBySlug lookup by name slug. */
-function recordSlugResolver(
-  serviceType: new (...args: never[]) => SlugLookup,
-  listUrl: string,
-): ResolveFn<string | RedirectCommand> {
-  return async (route: ActivatedRouteSnapshot) => {
-    const param = route.paramMap.get('id') ?? '';
-    if (NUMERIC_ID.test(param)) return param;
-
-    // inject() must run synchronously, before the first await.
-    const service = inject(serviceType);
-    const router = inject(Router);
-
-    const record: unknown = await service.getBySlug(param).catch(() => undefined);
-    return idOf(record) ?? new RedirectCommand(router.parseUrl(listUrl));
-  };
-}
-
-/**
- * Persons resolve by opaque public_id (spec §1). The URL segment is
- * `{name}-{xxxx}-{xxxx}`; decode strips the decorative name and hyphens, takes
- * the last 8 Crockford chars, and resolves tenant-scoped. A bare id or a
- * hyphen-split id both resolve; an undecodable segment redirects to the grid.
- */
-export const personRecordIdResolver: ResolveFn<string | RedirectCommand> = async (route: ActivatedRouteSnapshot) => {
-  const param = route.paramMap.get('id') ?? '';
-  if (NUMERIC_ID.test(param)) return param;
-
-  // inject() must run synchronously, before the first await.
-  const service = inject(PersonsService);
-  const router = inject(Router);
-
-  const publicId = extractPublicIdFromSlug(param);
-  if (publicId == null) return new RedirectCommand(router.parseUrl('/people'));
-
-  const record: unknown = await service.getByPublicId(publicId).catch(() => undefined);
-  return idOf(record) ?? new RedirectCommand(router.parseUrl('/people'));
-};
-
-export const householdRecordIdResolver = recordSlugResolver(HouseholdsService, '/households');
-export const companyRecordIdResolver = recordSlugResolver(CompaniesService, '/companies');
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
@@ -48783,149 +47730,71 @@ export class DeliveriesPlan implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
 
 ```html
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
+  <div class="flex items-center gap-2 text-sm">
+    <a class="link link-hover text-base-content/60" routerLink="/deliveries">Deliveries</a>
+    <span class="text-base-content/30">/</span>
+    <span class="text-base-content/80">Routes</span>
+  </div>
+
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
       <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Delivery requests</h1>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">Routes</h1>
     </div>
-    <div class="flex items-center gap-2">
-      <span
-        class="tooltip-left"
-        [class.tooltip]="readyCount() === 0"
-        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
-      >
-        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
-          <pc-icon name="map-pin" [size]="4"></pc-icon>
-          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-        </button>
-      </span>
-    </div>
+    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
+      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
+    </a>
   </div>
 
-  <!-- Tabs with live counts -->
-  <div role="tablist" class="tabs tabs-bordered w-fit">
-    @for (tab of tabs; track tab.key) {
-    <button
-      type="button"
-      role="tab"
-      class="tab gap-1.5"
-      [class.tab-active]="activeTab() === tab.key"
-      (click)="setTab(tab.key)"
-    >
-      {{ tab.label }}
-      <span class="text-xs font-semibold tabular-nums text-base-content/50">{{ countFor(tab.key) }}</span>
-    </button>
-    }
-  </div>
-
-  <!-- Bulk selection bar -->
-  @if (selectedCount() > 0) {
-  <div
-    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
-  >
-    <span class="text-sm text-base-content/70">
-      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
-      of {{ rows().length }} rows on this page selected
-    </span>
-    @if (newInView() > selectedCount()) {
-    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
-      Select all {{ newInView() }} new
-    </button>
-    }
-    <div class="ml-auto flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
-        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
-        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  }
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="8">
+  <pc-table [loading]="loading.visible()" [columns]="7">
     <ng-container pcTableHead>
-      <th class="w-8"></th>
-      <th>Requested by</th>
-      <th>Address</th>
+      <th>Name</th>
       <th>Status</th>
-      <th>Readiness</th>
-      <th>Source</th>
-      <th>Route</th>
-      <th>Requested</th>
+      <th>Stops</th>
+      <th>Est. time</th>
+      <th>Volunteer</th>
+      <th>Scheduled</th>
+      <th>Created</th>
     </ng-container>
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="8" class="px-6 py-14 text-center">
+      <td colspan="7" class="px-6 py-14 text-center">
         <div class="flex flex-col items-center gap-3">
           <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
-          @if (readyCount() > 0) {
-          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-          </button>
-          } @else {
-          <p class="max-w-sm text-xs text-base-content/45">
-            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
-          </p>
-          }
+          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
+          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
         </div>
       </td>
     </tr>
     } @else { @for (row of rows(); track row.id) {
     <tr>
       <td>
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
-          [checked]="isSelected(row.id)"
-          (change)="toggle(row.id)"
-          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
-        />
-      </td>
-      <td>
-        @if (row.person_id) {
         <a
-          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/people', row.person_id]"
+          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/deliveries/routes', row.id]"
         >
-          {{ row.person_name || 'Unnamed person' }}
+          {{ row.name }}
         </a>
+      </td>
+      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
+      <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td class="text-sm">
+        @if (row.volunteer_person_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
+          >{{ row.volunteer_name || 'Volunteer' }}</a
+        >
         } @else {
-        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        <span class="text-base-content/40">Unassigned</span>
         }
       </td>
-      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
-      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
-      <td>
-        <div class="flex items-center gap-2">
-          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
-          @if (row.geocoding_status === 'failed') {
-          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
-            Edit household
-          </a>
-          }
-        </div>
-      </td>
-      <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
-      <td>
-        @if (row.route_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
-          {{ row.route_name || 'Route' }}
-        </a>
-        } @else {
-        <span class="text-base-content/40">—</span>
-        }
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
       </td>
       <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
         {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
@@ -48936,151 +47805,73 @@ export class DeliveriesPlan implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.ts
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.ts
 
 ```typescript
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
-import { DeliveriesRequestsService, type DeliveryRequestRow } from '../services/deliveries-requests-service';
+import { DeliveriesRoutesService, type DeliveryRouteRow } from '../services/deliveries-routes-service';
 
-type Tab = 'open' | 'new' | 'approved' | 'delivered' | 'declined';
-
-const STATUS_TONE: Record<string, PcStatusType> = {
-  new: 'neutral',
-  approved: 'info',
-  delivered: 'success',
-  declined: 'ghost',
+const ROUTE_TONE: Record<string, PcStatusType> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_progress: 'warning',
+  completed: 'success',
+  canceled: 'ghost',
 };
 
-/**
- * Deliveries requests grid (spec §4.1). Status tabs with live counts, readiness narration via the
- * shared geocode chip, bulk approve/decline, and the "Plan routes · N ready" primary — disabled
- * when nothing is approved-and-located, since there would be nothing to route.
- */
+/** Deliveries routes grid (spec §4.3 list). */
 @Component({
-  selector: 'pc-deliveries-requests',
+  selector: 'pc-deliveries-routes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, Table],
-  templateUrl: './deliveries-requests.html',
+  imports: [RouterLink, StatusBadge, Icon, DatePipe, Table],
+  templateUrl: './deliveries-routes.html',
 })
-export class DeliveriesRequests implements OnInit {
-  private readonly svc = inject(DeliveriesRequestsService);
+export class DeliveriesRoutes implements OnInit {
+  private readonly svc = inject(DeliveriesRoutesService);
   private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
   protected readonly loading = createLoadingGate();
 
-  protected readonly rows = signal<DeliveryRequestRow[]>([]);
-  protected readonly counts = signal<Record<string, number>>({});
-  protected readonly readyCount = signal(0);
-  protected readonly activeTab = signal<Tab>('open');
-  protected readonly selected = signal<Set<string>>(new Set());
+  protected readonly rows = signal<DeliveryRouteRow[]>([]);
   protected readonly loaded = signal(false);
-
-  protected readonly selectedCount = computed(() => this.selected().size);
-  protected readonly newInView = computed(() => this.rows().filter((r) => r.status === 'new').length);
-
-  protected readonly tabs: Array<{ key: Tab; label: string }> = [
-    { key: 'open', label: 'Open' },
-    { key: 'new', label: 'New' },
-    { key: 'approved', label: 'Approved' },
-    { key: 'delivered', label: 'Delivered' },
-    { key: 'declined', label: 'Declined' },
-  ];
 
   public ngOnInit(): void {
     void this.reload();
   }
 
-  protected statusTone(status: string): PcStatusType {
-    return STATUS_TONE[status] ?? 'neutral';
+  protected tone(status: string): PcStatusType {
+    return ROUTE_TONE[status] ?? 'neutral';
   }
 
-  protected countFor(tab: Tab): number {
-    return this.counts()[tab] ?? 0;
+  protected label(status: string): string {
+    return status === 'in_progress' ? 'in progress' : status;
   }
 
-  protected async setTab(tab: Tab): Promise<void> {
-    if (this.activeTab() === tab) return;
-    this.activeTab.set(tab);
-    this.selected.set(new Set());
-    await this.reload();
-  }
-
-  protected isSelected(id: string): boolean {
-    return this.selected().has(id);
-  }
-
-  protected toggle(id: string): void {
-    const next = new Set(this.selected());
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    this.selected.set(next);
-  }
-
-  protected selectAllNew(): void {
-    const next = new Set(this.selected());
-    for (const r of this.rows()) if (r.status === 'new') next.add(r.id);
-    this.selected.set(next);
-  }
-
-  protected clearSelection(): void {
-    this.selected.set(new Set());
-  }
-
-  protected planRoutes(): void {
-    void this.router.navigate(['/deliveries/plan']);
-  }
-
-  protected async approveSelected(): Promise<void> {
-    await this.applyStatus('approved');
-  }
-
-  protected async declineSelected(): Promise<void> {
-    await this.applyStatus('declined');
-  }
-
-  private async applyStatus(status: 'approved' | 'declined'): Promise<void> {
-    const ids = Array.from(this.selected());
-    if (ids.length === 0) return;
-    const end = this.loading.begin();
-    try {
-      await this.svc.setStatus(ids, status);
-      this.alerts.showSuccess(
-        `${status === 'approved' ? 'Approved' : 'Declined'} ${ids.length} request${ids.length === 1 ? '' : 's'}`,
-      );
-      this.selected.set(new Set());
-      await this.reload();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the requests');
-    } finally {
-      end();
+  protected stopsLabel(row: DeliveryRouteRow): string {
+    if (row.stops_total === 0) return '0';
+    if (row.stops_delivered > 0 || row.status === 'in_progress' || row.status === 'completed') {
+      return `${row.stops_delivered} of ${row.stops_total} delivered`;
     }
+    return String(row.stops_total);
   }
 
   private async reload(): Promise<void> {
     const end = this.loading.begin();
     try {
-      const [list, counts, ready] = await Promise.all([
-        this.svc.getAll({ filterModel: { status: { value: this.activeTab() } } }),
-        this.svc.getStatusCounts(),
-        this.svc.getReadyCount(),
-      ]);
+      const list = await this.svc.getAll();
       this.rows.set(list.rows);
-      this.counts.set(counts);
-      this.readyCount.set(ready);
       this.loaded.set(true);
     } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not load requests');
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not load routes');
     } finally {
       end();
     }
@@ -49440,6 +48231,246 @@ export class DonationsGridComponent implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.html
+
+```html
+<pc-duplicate-page-shell
+  title="People"
+  icon="identification"
+  description="Review and merge duplicate people records to keep your database clean."
+  entityRoute="people"
+  [isLoading]="isLoading()"
+  [isEmpty]="groups().length === 0"
+  [currentPage]="currentPage()"
+  [totalPages]="totalPages()"
+  [totalGroups]="totalGroups()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
+>
+  @for (group of groups(); track group; let gIdx = $index) { @if (group.items.length === 2) {
+  <!-- Spec §9.3 Fig. 12 pair card: confidence chip, why-flagged sentence, side-by-side
+           field grid with highlighted match rows, result preview, quiet/primary actions. -->
+  @let left = group.items[0]!; @let right = group.items[1]!;
+  <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span
+          class="badge badge-sm font-semibold"
+          [class]="confidence(group) === 'high' ? 'badge-warning' : 'badge-ghost'"
+        >
+          {{ confidence(group) === 'high' ? 'High confidence' : 'Possible match' }}
+        </span>
+        <span class="text-sm text-base-content/70">{{ whyFlagged(group) }}</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="dismissGroup(gIdx)">Not duplicates</button>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm gap-2"
+          [disabled]="!group.selectedTargetId || !group.selectedSourceId"
+          (click)="mergeGroup(gIdx)"
+        >
+          <pc-icon name="merge" [size]="4"></pc-icon> Merge into one
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table pc-table">
+        <thead>
+          <tr>
+            <th class="w-28"></th>
+            <th>
+              <a
+                [routerLink]="['/people', left.id]"
+                class="link link-hover normal-case text-sm font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+              >
+                {{ getItemDisplayName(left) }}
+              </a>
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ left.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="font-semibold normal-case text-sm text-base-content">
+              {{ getItemDisplayName(right) }}
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ right.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="w-20"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr [class]="rowHighlighted(group, 'name') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Name</td>
+            <td>{{ getItemDisplayName(left) }}</td>
+            <td>{{ getItemDisplayName(right) }}</td>
+            <td></td>
+          </tr>
+          <tr [class]="rowHighlighted(group, 'email') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Email</td>
+            <td>{{ left.email || '—' }}</td>
+            <td>{{ right.email || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Mobile</td>
+            <td>{{ left.mobile || '—' }}</td>
+            <td>{{ right.mobile || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Ward</td>
+            <td>{{ left.ward || '—' }}</td>
+            <td>{{ right.ward || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Tags</td>
+            <td>{{ left.tags.length ? left.tags.join(', ') : '—' }}</td>
+            <td>{{ right.tags.length ? right.tags.join(', ') : '—' }}</td>
+            <td></td>
+          </tr>
+          <tr class="text-xs">
+            <td class="text-base-content/50 uppercase tracking-wide">Keep as</td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, left.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, left.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, right.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline btn-accent'"
+                (click)="selectRole(gIdx, right.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    @if (group.selectedTargetId && group.selectedSourceId) {
+    <div class="px-6 py-3 border-t border-base-300 bg-base-200/30 text-xs text-base-content/60">
+      <pc-icon name="information-circle" [size]="4" class="inline align-text-bottom mr-1"></pc-icon>
+      {{ resultPreview(group) }}
+    </div>
+    }
+  </div>
+  } @else {
+  <!-- Fallback for a cluster of 3+ records sharing the same signal (e.g. 3 people with the
+           same email) — the side-by-side pair card doesn't generalize past two records, so this
+           keeps the prior N-way "keep/merge" card grid. Documented gap: no confidence chip / why
+           -flagged sentence / field grid here yet. -->
+  <div
+    class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
+  >
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="badge badge-warning badge-sm">Warning</span>
+        <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
+    </div>
+
+    <div class="card-body p-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        @for (person of group.items; track person.id) {
+        <div
+          [class]="
+                        'card bg-base-200/40 border transition-all duration-200 ' +
+                        (group.selectedTargetId === person.id
+                          ? 'border-success bg-success/5 shadow'
+                          : group.selectedSourceId === person.id
+                            ? 'border-error bg-error/5 opacity-80'
+                            : 'border-base-300')
+                      "
+        >
+          <div class="card-body p-4 justify-between h-full">
+            <div>
+              <h4 class="font-bold text-lg text-base-content flex justify-between items-center">
+                <span>{{ person.first_name }} {{ person.last_name }}</span>
+                <span class="text-xs font-light text-base-content/40">ID: {{ person.id }}</span>
+              </h4>
+              <div class="mt-3 space-y-1.5 text-sm">
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="envelope" [size]="4" class="opacity-50"></pc-icon>
+                  <span class="truncate">{{ person.email || '—' }}</span>
+                </div>
+                <div class="flex items-center gap-2 text-base-content/70">
+                  <pc-icon name="identification" [size]="4" class="opacity-50"></pc-icon>
+                  <span>{{ person.mobile || '—' }}</span>
+                </div>
+                <div class="text-[11px] text-base-content/40 mt-2">
+                  Created: {{ person.created_at | date: 'short' }}
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
+              <button
+                [class]="
+                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline btn-accent')
+                            "
+                (click)="selectRole(gIdx, person.id, 'target')"
+              >
+                Keep (Primary)
+              </button>
+              <button
+                [class]="
+                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline btn-accent')
+                            "
+                (click)="selectRole(gIdx, person.id, 'source')"
+              >
+                Delete (Merge)
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+
+        <pc-merge-summary
+          mergeDescription="The duplicate record will be removed, transferring tags, lists, and empty fields to the primary record."
+          [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
+          [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
+          [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
+          (merge)="mergeGroup(gIdx)"
+        ></pc-merge-summary>
+      </div>
+    </div>
+  </div>
+  } }
+</pc-duplicate-page-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
@@ -50611,6 +49642,593 @@ export class EmailHeader {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
+
+```typescript
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
+import { Icon } from '@icons/icon';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
+import { FormRenderComponent } from './form-render';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+import { publicPageUrl } from '../../../shared/public-pages';
+
+interface TemplateOption {
+  type: FormType;
+  label: string;
+}
+
+@Component({
+  selector: 'pc-forms-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table],
+  templateUrl: './forms-page.html',
+})
+export class FormsPageComponent implements OnInit {
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly confirm = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly forms = signal<FormDetail[]>([]);
+  protected readonly selectedId = signal<string | null>(null);
+  protected readonly mode = signal<'browse' | 'edit'>('browse');
+  protected readonly tab = signal<'form' | 'responses'>('form');
+  protected readonly archivedOpen = signal(false);
+  protected readonly mutating = signal(false);
+  protected readonly orgName = signal('Your organization');
+  protected readonly lists = signal<{ id: string; name: string }[]>([]);
+
+  protected readonly submissions = signal<FormSubmissionRow[]>([]);
+  protected readonly submissionsTotal = signal(0);
+  protected readonly submissionsLoading = signal(false);
+
+  // New-form dialog state.
+  protected readonly newFormName = signal('');
+  protected readonly newFormType = signal<FormType>('signup');
+  protected readonly newFormError = signal<string | null>(null);
+  protected readonly creating = signal(false);
+  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
+  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
+  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
+
+  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
+    type,
+    label: this.templateLabel(type),
+  }));
+
+  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
+  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
+  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
+
+  protected readonly totalSubmissions = computed(() =>
+    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
+  );
+
+  protected readonly countSentence = computed(() => {
+    const total = this.forms().length;
+    const subs = this.totalSubmissions();
+    const archived = this.archivedForms().length;
+    const parts = [
+      `${total} ${total === 1 ? 'form' : 'forms'}`,
+      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
+    ];
+    if (archived > 0) parts.push(`${archived} archived`);
+    return parts.join(' · ');
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const form = this.selected();
+    if (!form?.slug) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
+  });
+
+  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
+  private pendingPatch: UpdateFormType = {};
+
+  public ngOnInit(): void {
+    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────
+
+  private async loadForms(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const rows = await this.formsSvc.listForms();
+      this.forms.set(rows);
+      const first = rows[0];
+      if (!this.selectedId() && first) {
+        this.selectedId.set(first.id);
+      }
+    } catch {
+      this.alerts.showError('Could not load your forms. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadOrg(): Promise<void> {
+    try {
+      await this.settings.load();
+      const name = this.settings.getValue<string>('organization.name', '');
+      if (name) this.orgName.set(name);
+    } catch {
+      /* org name is decorative; fall back to the default */
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAllWithCounts();
+      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
+      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
+    } catch {
+      /* audience list picker degrades gracefully to empty */
+    }
+  }
+
+  // ── Selection / navigation ─────────────────────────────────────────────
+
+  protected select(id: string): void {
+    if (this.selectedId() === id) return;
+    this.selectedId.set(id);
+    this.tab.set('form');
+    this.submissions.set([]);
+    this.submissionsTotal.set(0);
+  }
+
+  protected setTab(tab: 'form' | 'responses'): void {
+    this.tab.set(tab);
+    if (tab === 'responses') void this.loadSubmissions();
+  }
+
+  protected enterEdit(): void {
+    if (!this.selected()) return;
+    this.mode.set('edit');
+    this.tab.set('form');
+  }
+
+  protected exitEdit(): void {
+    this.mode.set('browse');
+  }
+
+  protected toggleArchived(): void {
+    this.archivedOpen.update((v) => !v);
+  }
+
+  // ── Status verbs ───────────────────────────────────────────────────────
+
+  protected async publish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.publish(id),
+      (f) => `Published “${f.name}” — the link now accepts responses.`,
+    );
+  }
+
+  protected async unpublish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.unpublish(id),
+      (f) => `Unpublished “${f.name}” — the public link is paused.`,
+    );
+  }
+
+  protected async archiveForm(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.archive(id),
+      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
+    );
+    this.mode.set('browse');
+  }
+
+  protected async restore(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.restore(id),
+      (f) => `Restored “${f.name}” as a draft.`,
+    );
+  }
+
+  private async runVerb(
+    action: (id: string) => Promise<FormDetail>,
+    message: (f: FormDetail) => string,
+  ): Promise<void> {
+    const id = this.selectedId();
+    if (!id || this.mutating()) return;
+    this.mutating.set(true);
+    try {
+      const updated = await action(id);
+      this.replaceForm(updated);
+      this.alerts.showSuccess(message(updated));
+    } catch {
+      this.alerts.showError('That action didn’t go through. Please try again.');
+    } finally {
+      this.mutating.set(false);
+    }
+  }
+
+  // ── New form dialog ────────────────────────────────────────────────────
+
+  protected openNewForm(): void {
+    this.newFormName.set('');
+    this.newFormType.set('signup');
+    this.newFormError.set(null);
+    this.newFormDialog()?.nativeElement.showModal();
+  }
+
+  protected closeNewForm(): void {
+    this.newFormDialog()?.nativeElement.close();
+  }
+
+  protected goToFundraisingForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/donation-pages/add');
+  }
+
+  protected goToEventForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/events/pages/add');
+  }
+
+  protected goToShiftForm(): void {
+    this.closeNewForm();
+    void this.router.navigateByUrl('/events/shifts/add');
+  }
+
+  protected async createForm(): Promise<void> {
+    const name = this.newFormName().trim();
+    if (!name) {
+      this.newFormError.set('Give your form a name so you can find it later.');
+      return;
+    }
+    if (this.creating()) return;
+    this.creating.set(true);
+    try {
+      const type = this.newFormType();
+      const created = await this.formsSvc.createForm({ name, type });
+      this.forms.update((list) => [created, ...list]);
+      this.selectedId.set(created.id);
+      this.closeNewForm();
+      this.mode.set('edit');
+      this.tab.set('form');
+      this.alerts.showSuccess(
+        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
+      );
+    } catch {
+      this.newFormError.set('Could not create the form. Please try again.');
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  // ── Live editing (debounced patch) ─────────────────────────────────────
+
+  protected editName(value: string): void {
+    this.patch({ name: value });
+  }
+
+  protected editDescription(value: string): void {
+    this.patch({ description: value });
+  }
+
+  protected editRedirect(value: string): void {
+    this.patch({ redirect_url: value });
+  }
+
+  protected editSubmitLabel(value: string): void {
+    this.patch({ submit_label: value });
+  }
+
+  protected toggleConfirmEmail(on: boolean): void {
+    this.patch({ confirm_email_on: on });
+  }
+
+  protected toggleNotifyTeam(on: boolean): void {
+    this.patch({ notify_team_on: on });
+  }
+
+  protected toggleField(key: string, on: boolean): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
+    this.patch({ fields });
+  }
+
+  protected toggleRequired(key: string): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
+    this.patch({ fields });
+  }
+
+  protected addTag(raw: string): void {
+    const form = this.selected();
+    if (!form) return;
+    const tag = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    if (!tag) return;
+    if (form.target_tags.includes(tag)) {
+      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
+      return;
+    }
+    this.patch({ target_tags: [...form.target_tags, tag] });
+  }
+
+  protected removeTag(tag: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
+  }
+
+  protected addList(id: string): void {
+    const form = this.selected();
+    if (!form || !id || form.target_lists.includes(id)) return;
+    this.patch({ target_lists: [...form.target_lists, id] });
+  }
+
+  protected removeList(id: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
+  }
+
+  protected listName(id: string): string {
+    return this.lists().find((l) => l.id === id)?.name ?? id;
+  }
+
+  private patch(p: UpdateFormType): void {
+    const form = this.selected();
+    if (!form) return;
+    // Optimistic local update so the preview reflects the change immediately.
+    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
+    Object.assign(this.pendingPatch, p);
+    this.saveDebounced();
+  }
+
+  private async flushPatch(): Promise<void> {
+    const id = this.selectedId();
+    const patch = this.pendingPatch;
+    this.pendingPatch = {};
+    if (!id || Object.keys(patch).length === 0) return;
+    try {
+      const updated = await this.formsSvc.updateLive(id, patch);
+      this.replaceForm(updated);
+    } catch {
+      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
+    }
+  }
+
+  // ── Archive / delete (edit mode) ───────────────────────────────────────
+
+  protected canDelete(form: FormDetail): boolean {
+    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
+  }
+
+  protected async deleteDraft(): Promise<void> {
+    const form = this.selected();
+    if (!form || !this.canDelete(form)) return;
+    const ok = await this.confirm.confirm({
+      title: `Delete “${form.name}”?`,
+      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.formsSvc.deleteDraft(form.id);
+      this.forms.update((list) => list.filter((f) => f.id !== form.id));
+      this.selectedId.set(this.forms()[0]?.id ?? null);
+      this.mode.set('browse');
+      this.alerts.showSuccess(`Deleted “${form.name}”.`);
+    } catch {
+      this.alerts.showError('Could not delete the form. Please try again.');
+    }
+  }
+
+  // ── Public link ────────────────────────────────────────────────────────
+
+  protected openPublicLink(): void {
+    const url = this.publicUrl();
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  protected async copyLink(): Promise<void> {
+    const url = this.publicUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Public link copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
+    }
+  }
+
+  // ── Embed dialog ───────────────────────────────────────────────────────
+
+  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
+  protected readonly embedCode = computed(() =>
+    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
+  );
+
+  protected openEmbed(): void {
+    this.embedMode.set('iframe');
+    this.embedDialog()?.nativeElement.showModal();
+  }
+
+  protected closeEmbed(): void {
+    this.embedDialog()?.nativeElement.close();
+  }
+
+  protected async copyEmbed(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.embedCode());
+      this.alerts.showSuccess('Embed code copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
+    }
+  }
+
+  private iframeSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
+  }
+
+  private rawHtmlSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
+    const lines: string[] = [`<form action="${action}" method="POST">`];
+    for (const field of form.fields.filter((f) => f.on)) {
+      const req = field.required ? ' required' : '';
+      const star = field.required ? ' *' : '';
+      const label = this.escapeAttr(field.label);
+      if (field.type === 'area') {
+        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
+      } else if (field.type === 'select') {
+        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
+        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
+        lines.push(`  </select></label>`);
+      } else if (field.type === 'checks') {
+        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
+        for (const opt of field.options ?? []) {
+          lines.push(
+            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
+          );
+        }
+        lines.push(`  </fieldset>`);
+      } else {
+        const type = field.key === 'email' ? 'email' : 'text';
+        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
+      }
+    }
+    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
+    lines.push(`</form>`);
+    return lines.join('\n');
+  }
+
+  private escapeAttr(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Confirmation-email dialog ──────────────────────────────────────────
+
+  protected readonly confirmSubjectDraft = signal('');
+  protected readonly confirmBodyDraft = signal('');
+
+  protected openConfirmEmail(): void {
+    const form = this.selected();
+    if (!form) return;
+    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
+    this.confirmBodyDraft.set(form.confirm_body ?? '');
+    this.confirmEmailDialog()?.nativeElement.showModal();
+  }
+
+  protected closeConfirmEmail(): void {
+    this.confirmEmailDialog()?.nativeElement.close();
+  }
+
+  protected saveConfirmEmail(): void {
+    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
+    this.closeConfirmEmail();
+    this.alerts.showSuccess('Confirmation email updated.');
+  }
+
+  // ── Responses ──────────────────────────────────────────────────────────
+
+  private async loadSubmissions(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.submissionsLoading.set(true);
+    try {
+      const res = await this.formsSvc.getSubmissions(id);
+      this.submissions.set(res.items);
+      this.submissionsTotal.set(res.total);
+    } catch {
+      this.alerts.showError('Could not load responses. Please try again.');
+    } finally {
+      this.submissionsLoading.set(false);
+    }
+  }
+
+  protected answerSummary(row: FormSubmissionRow): string {
+    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(row.answers)) {
+      if (skip.has(key) || value == null || value === '') continue;
+      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
+      if (parts.length >= 2) break;
+    }
+    return parts.join(' · ');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  protected requiredFieldsPresent(form: FormDetail): boolean {
+    return form.fields.some((f) => f.on && f.required);
+  }
+
+  private replaceForm(updated: FormDetail): void {
+    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
+  }
+
+  private templateLabel(type: FormType): string {
+    const map: Record<FormType, string> = {
+      signup: 'Signup — name, email, availability',
+      pledge: 'Pledge — name, email, amount',
+      rsvp: 'RSVP — name, email, seats',
+      request: 'Request — name, email, address, notes',
+      survey: 'Survey — name, issues, open answer',
+    };
+    return map[type];
+  }
+
+  protected typeChip(type: FormType | null): string {
+    if (!type) return 'Form';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
+  protected templateSubmitLabel(type: FormType): string {
+    return FORM_TEMPLATES[type].submitLabel;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
 
 ```typescript
@@ -51363,382 +50981,510 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
 
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
+```typescript
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { Table } from '@uxcommon/components/table/table';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { environment } from '../../../../environments/environment';
+import { ExportsService } from '../../exports/services/exports-service';
+import { ImportsService } from '../services/imports-service';
+
+/**
+ * Import/export History page (spec §17). Folds the old standalone Exports
+ * Manager page into an "Imports N / Exports N" tabbed view — one history
+ * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
+ */
+type HistoryTab = 'imports' | 'exports';
+
+@Component({
+  selector: 'pc-imports-page',
+  imports: [FormsModule, Icon, SpinOnClickDirective, Table],
+  templateUrl: './imports-page.html',
+})
+export class ImportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly imports = inject(ImportsService);
+  private readonly exports = inject(ExportsService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly tab = signal<HistoryTab>('imports');
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  private isLoadActive = false;
+  protected readonly deleting = signal(false);
+  protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
+  protected readonly pendingDelete = signal<ImportListItem | null>(null);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
+  protected readonly importsThisYear = computed(
+    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly peopleCreatedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.insertedCount, 0),
+  );
+  protected readonly duplicatesMergedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+
+  private pollInterval: ReturnType<typeof setInterval> | undefined;
+
+  // --- Exports tab ---
+  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
+  protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsLoading = createLoadingGate();
+  protected readonly showNewExportInfo = signal(false);
+
+  constructor() {
+    void this.load();
+
+    // Reset checkbox when dialog closes
+    effect(() => {
+      const item = this.pendingDelete();
+      if (!item) {
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
       }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
+    });
 
-  <!-- Tabs: Imports N / Exports N -->
-  <div role="tablist" class="tabs tabs-border mb-4">
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'imports'"
-      (click)="switchTab('imports')"
-    >
-      Imports {{ itemCount() }}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'exports'"
-      (click)="switchTab('exports')"
-    >
-      Exports {{ exportCount() }}
-    </button>
-  </div>
+    this.startPolling();
 
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <pc-table [columns]="6">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Outcome</th>
-        <th>Tags applied</th>
-        <th class="text-right">Actions</th>
-      </ng-container>
-
-      @for (item of items(); track item.id) {
-      <tr>
-        <td>
-          <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
-          <div class="text-xs text-base-content/60">
-            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-          </div>
-        </td>
-        <td>
-          <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-        </td>
-        <td>
-          @if (item.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-sm text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (item.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Pending</span>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <div class="text-sm text-base-content">
-            <div>{{ item.insertedCount }} imported</div>
-            @if (item.mergedCount > 0) {
-            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-            } @if (item.skippedCount > 0) {
-            <div class="text-xs text-base-content/60 flex items-center gap-1">
-              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                download reasons
-              </button>
-              }
-            </div>
-            } @if (item.errorCount > 0) {
-            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-            }
-          </div>
-          } @case ('failed') {
-          <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
-            Failed
-          </span>
-          } }
-        </td>
-        <td>
-          @if (item.tagsApplied.length > 0) {
-          <div class="flex flex-wrap gap-1">
-            @for (tag of item.tagsApplied; track tag) {
-            <span class="badge badge-outline text-xs">{{ tag }}</span>
-            }
-          </div>
-          } @else {
-          <span class="text-sm text-base-content/40">—</span>
-          }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (item.canDownloadSource) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download original file"
-              (click)="downloadSource(item)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              (click)="openDeleteDialog(item, deleteDialog)"
-              [disabled]="deleting()"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="6" class="text-center py-12 text-base-content/50">
-          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
-          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import CSV
-          </button>
-        </td>
-      </tr>
-      }
-    </pc-table>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
-    </p>
-  </div>
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
   }
 
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="toggleNewExportInfo()">
-        New export
-      </button>
-    </div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
-    </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
+  protected switchTab(tab: HistoryTab): void {
+    this.tab.set(tab);
+    if (tab === 'exports') {
+      void this.loadExports();
     }
+  }
 
-    <pc-table [columns]="5">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Contents</th>
-        <th class="text-right">Download</th>
-      </ng-container>
+  private startPolling() {
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
 
-      @for (job of exportJobs(); track job.id) {
-      <tr>
-        <td>
-          <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
-        </td>
-        <td>
-          <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-        </td>
-        <td>
-          @if (job.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
+      }
+    }
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = undefined;
+    }
+  }
+
+  protected formatDate(value: Date | string) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value instanceof Date ? value : new Date(value));
+    } catch {
+      return value ? String(value) : '—';
+    }
+  }
+
+  protected formatFileSize(bytes: number | null): string | null {
+    if (bytes == null) return null;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  protected startNewImport(): void {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
+    if (this.deleting()) return;
+    this.pendingDelete.set(item);
+    dialog.showModal();
+  }
+
+  protected closeDeleteDialog(dialog: HTMLDialogElement) {
+    if (!dialog.open) return;
+    dialog.close();
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(dialog: HTMLDialogElement) {
+    const item = this.pendingDelete();
+    if (!item || this.deleting()) return;
+
+    this.deleting.set(true);
+    try {
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
+      this.alerts.showSuccess('Import deleted');
+      await this.load();
+      this.closeDeleteDialog(dialog);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
+      this.alerts.showError(message);
+    } finally {
+      this.deleting.set(false);
+    }
+  }
+
+  protected downloadSource(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
+  }
+
+  protected downloadSkipped(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(
+      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
+      token,
+      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
+    );
+  }
+
+  protected async refresh() {
+    await this.load();
+  }
+
+  private async load() {
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const list = await this.imports.list();
+      this.items.set(list ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.isLoadActive = false;
+      end();
+    }
+  }
+
+  // --- Exports tab ---
+
+  protected refreshExports(): void {
+    void this.loadExports();
+  }
+
+  protected toggleNewExportInfo(): void {
+    this.showNewExportInfo.update((v) => !v);
+  }
+
+  protected goToPeopleGrid(): void {
+    void this.router.navigate(['/people']);
+  }
+
+  protected formatExportDate(dateStr: string) {
+    return this.formatDate(dateStr);
+  }
+
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
+  }
+
+  protected async downloadExportJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alerts.showError('This export has expired (30+ days old).');
+      return;
+    }
+    if (job.status !== 'completed') {
+      this.alerts.showError('Export is not ready yet.');
+      return;
+    }
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alerts.showError('Failed to download export');
+    }
+  }
+
+  protected async deleteExportJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete export',
+      message: `Delete "${job.file_name}"? This removes the file from the server — it cannot be undone.`,
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.exports.delete(job.id);
+      this.alerts.showSuccess('Export deleted successfully.');
+      await this.loadExports();
+    } catch {
+      this.alerts.showError('Failed to delete export. Please try again.');
+    }
+  }
+
+  private async loadExports() {
+    const end = this.exportsLoading.begin();
+    try {
+      const list = await this.exports.list();
+      this.exportJobs.set(list ?? []);
+    } catch {
+      this.alerts.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
+  <!-- Top Navigation & Title -->
+  <!-- Top Navigation & Title -->
+  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
+    <div class="flex items-center gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
+            {{ listData()?.name }}
+          </h1>
+          @if (listData()?.is_dynamic) {
+          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
+          } @else {
+          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
+          }
+        </div>
+        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
+      </div>
+    </div>
+
+    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
+    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
+      @if (listData()?.is_dynamic) {
+      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
+        <div>Last Refreshed</div>
+        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
+      </div>
+      <button
+        class="btn btn-outline btn-accent btn-sm gap-2 shadow-md hover:btn-primary transition-all duration-200 mr-2"
+        [disabled]="refreshing() || loading()"
+        (click)="refreshList()"
+      >
+        @if (refreshing()) {
+        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
+        Refreshing... } @else {
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh Now }
+      </button>
+      }
+      <pc-form-actions
+        [isLoading]="loading()"
+        [btn1Text]="'Edit List'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        (btn1Clicked)="editList()"
+      ></pc-form-actions>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (loading()) {
+  <div class="flex flex-1 flex-col items-center justify-center py-20">
+    <progress class="progress progress-primary w-56"></progress>
+    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
+  </div>
+  } @else {
+  <!-- KPI Stats Cards -->
+  <!-- KPI Stats Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    <pc-stat-card
+      [title]="'List Size'"
+      [value]="memberCount()"
+      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
+      [icon]="'users'"
+      [iconBgClass]="'bg-primary/10'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Newsletters Sent'"
+      [value]="stats()?.totalNewsletters || 0"
+      [description]="'Campaign dispatches'"
+      [icon]="'megaphone'"
+      [iconBgClass]="'bg-secondary/10'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Open Rate'"
+      [value]="formatPercent(stats()?.openRate)"
+      [icon]="'envelope'"
+      [iconBgClass]="'bg-accent/10'"
+      [iconColorClass]="'text-accent'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Click Rate'"
+      [value]="formatPercent(stats()?.clickRate)"
+      [icon]="'chart-pie'"
+      [iconBgClass]="'bg-info/10'"
+      [iconColorClass]="'text-info'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+  </div>
+
+  <!-- Tabs Panel -->
+  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="members" [activeTab]="activeTab()">
+      @if (isPeople()) {
+      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
+      } @else {
+      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
+      }
+    </pc-tab-panel>
+
+    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
+          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
+          <div class="p-12 text-center text-base-content/50">
+            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+            <p class="font-medium text-base">No campaign emails sent to this list</p>
+            <p class="text-xs mt-1">
+              Sent newsletters targeting this list will appear here with engagement statistics.
+            </p>
           </div>
           } @else {
-          <span class="text-sm text-base-content/40">—</span>
+          <table class="table pc-table w-full">
+            <thead>
+              <tr>
+                <th>Newsletter Name</th>
+                <th>Subject</th>
+                <th>Send Date</th>
+                <th class="text-right">Recipients</th>
+                <th class="text-right">Open Rate</th>
+                <th class="text-right">Click Rate</th>
+                <th class="text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (n of stats().newsletters; track n.id) {
+              <tr class="hover:bg-base-200/40 transition-colors">
+                <td class="font-bold text-base-content">{{ n.name }}</td>
+                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
+                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
+                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-center">
+                  <a
+                    [routerLink]="['/newsletters', n.id]"
+                    class="btn btn-outline btn-primary btn-xs font-semibold gap-1 hover:scale-105 transition-transform"
+                  >
+                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
+                    View Report
+                  </a>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
           }
-        </td>
-        <td>
-          @switch (job.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Queued</span>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-          } @default {
-          <span class="badge badge-error text-xs">Failed</span>
-          } }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (job.status === 'completed') { @if (isExpired(job)) {
-            <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-            } @else if (job.downloadable) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download CSV"
-              (click)="downloadExportJob(job)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            } @else {
-            <span
-              class="text-xs text-base-content/40 italic mr-2"
-              title="Downloaded directly to your device — not stored on the server"
-            >
-              Downloaded
-            </span>
-            } }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              title="Delete export"
-              (click)="deleteExportJob(job)"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="5" class="text-center py-12 text-base-content/50">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1">
-            Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
-          </p>
-        </td>
-      </tr>
-      }
-    </pc-table>
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+  } @if (listData() && listData()?.id) {
+  <div class="mt-8 border-t border-base-250 pt-6">
+    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
   </div>
   }
 </div>
-
-<dialog #deleteDialog class="modal">
-  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
-    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
-    @if (pendingDelete(); as item) {
-    <p class="text-sm text-base-content/70 mt-2">
-      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-      records created by this import:
-    </p>
-
-    <div class="space-y-3 mt-4">
-      @if (item.contactCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deletePeople()"
-          (change)="deletePeople.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-      </label>
-      } @if (item.householdCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteHouseholds()"
-          (change)="deleteHouseholds.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-      </label>
-      } @if (item.companyCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteCompanies()"
-          (change)="deleteCompanies.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-      </label>
-      } @if (item.taskCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteTasks()"
-          (change)="deleteTasks.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-      </label>
-      }
-    </div>
-    }
-
-    <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
-        Cancel
-      </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
-        <pc-icon name="trash" [size]="4"></pc-icon>
-        Delete
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
-    <button type="submit">close</button>
-  </form>
-</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
@@ -51885,210 +51631,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
-
-```typescript
-import { Service, inject } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PERSONINHOUSEHOLDTYPE,
-  UpdatePersonsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
-
-@Service()
-export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
-  protected override readonly endpointName = 'persons';
-
-  private readonly campaignContext = inject(CampaignContextService);
-
-  public add(row: UpdatePersonsType, options?: any) {
-    return this.api.persons.add.mutate(row, options);
-  }
-
-  public addMany(rows: UpdatePersonsType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.persons.count.query();
-  }
-
-  /** People linked to any company — powers the "{n} people in {m} companies" grain sentence. */
-  public countWithCompany(): Promise<number> {
-    return this.api.persons.countWithCompany.query();
-  }
-
-  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
-  public getByPublicId(publicId: string) {
-    return this.api.persons.getByPublicId.query(publicId);
-  }
-  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
-    }
-    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
-  }
-
-  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
-    }
-    return await this.api.persons.deleteMany.mutate(ids, opts as any);
-  }
-  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
-    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
-  }
-
-  public detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<RouterOutputs['persons']['detachTag']> {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getAllWithAddress(options?: getAllOptionsType) {
-    // Stamp the active context so campaign-scoped columns (support level,
-    // voting status — §15) resolve against the campaign the user is working in.
-    const campaignId = this.campaignContext.activeCampaignId();
-    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
-    return this.api.persons.getAllWithAddress.query(scoped, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  public getByCompanyId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByCompanyId.query({ id: id, options });
-  }
-
-  public countByCompanyId(id: string): Promise<number> {
-    return this.api.persons.countByCompanyId.query({ id });
-  }
-
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
-    if (!id) {
-      return [];
-    }
-
-    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
-    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
-    const requestOptions = {
-      ...options,
-      columns: mergedColumns,
-    };
-
-    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
-
-    return peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
-      };
-    });
-  }
-
-  public getActivity(id: string) {
-    return this.api.persons.getActivity.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.persons.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public import(
-    input: {
-      rows: RouterInputs['persons']['import']['rows'];
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-      duplicate_decision?: 'merge' | 'skip' | 'import_new';
-      list_name?: string;
-      source_csv?: string;
-      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
-    },
-    options?: { skipErrorHandler?: boolean },
-  ): Promise<RouterOutputs['persons']['import']> {
-    // Wizard shows its own error state — opt out of the global error toast when asked.
-    return this.api.persons.import.mutate(
-      {
-        rows: input.rows,
-        tags: input.tags ?? [],
-        skipped: input.skipped ?? 0,
-        file_name: input.file_name ?? undefined,
-        duplicate_decision: input.duplicate_decision ?? 'skip',
-        list_name: input.list_name,
-        source_csv: input.source_csv,
-        client_skip_reasons: input.client_skip_reasons,
-      },
-      options?.skipErrorHandler ? { context: { skipErrorHandler: true } } : undefined,
-    );
-  }
-
-  /** Email-identity duplicate check for the CSV import wizard's Review step (spec §17). */
-  public checkDuplicateEmails(emails: string[]): Promise<RouterOutputs['persons']['checkDuplicateEmails']> {
-    return this.api.persons.checkDuplicateEmails.query({ emails });
-  }
-
-  public async removeHousehold(id: string) {
-    return this.api.persons.removeHousehold.mutate(id);
-  }
-
-  public async update(id: string, data: UpdatePersonsType, options?: any) {
-    return this.api.persons.update.mutate({ id: id, data }, options);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.persons.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['persons']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
-    return this.api.persons.getPotentialDuplicates.query(options);
-  }
-
-  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
-    return this.api.persons.getDuplicateCounts.query();
-  }
-
-  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
-    return this.api.persons.mergePersons.mutate({ target_id, source_id });
-  }
-}
-
-export type DATA_TYPE = 'persons' | 'households';
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
@@ -55033,429 +54575,6 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
-
-```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
-      @if (headline()) {
-      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
-      } @else {
-      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
-      }
-    </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-bordered mb-4">
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
-      Turfs &amp; assignments
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
-      Field report
-    </button>
-  </div>
-
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
-            }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
-      }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
-
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table pc-table">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
-      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
-      the person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
-        }
-      </div>
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
-      </button>
-    </div>
-
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
-
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
-          >
-            Street map
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
-          >
-            By ward
-          </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table pc-table">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
-        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Strong {{ r.responseMix.strong_support }}</span>
-        <span>Lean {{ r.responseMix.lean_support }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Opposed {{ r.responseMix.opposed }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
-
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
-          </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
-        </div>
-        }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
-
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table pc-table">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
-
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
-
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
-    </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
 
 ```typescript
@@ -55689,6 +54808,311 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">Delivery requests</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- Tabs with live counts -->
+  <div role="tablist" class="tabs tabs-bordered w-fit">
+    @for (tab of tabs; track tab.key) {
+    <button
+      type="button"
+      role="tab"
+      class="tab gap-1.5"
+      [class.tab-active]="activeTab() === tab.key"
+      (click)="setTab(tab.key)"
+    >
+      {{ tab.label }}
+      <span class="text-xs font-semibold tabular-nums text-base-content/50">{{ countFor(tab.key) }}</span>
+    </button>
+    }
+  </div>
+
+  <!-- Bulk selection bar -->
+  @if (selectedCount() > 0) {
+  <div
+    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
+  >
+    <span class="text-sm text-base-content/70">
+      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
+      of {{ rows().length }} rows on this page selected
+    </span>
+    @if (newInView() > selectedCount()) {
+    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
+      Select all {{ newInView() }} new
+    </button>
+    }
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
+        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
+        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th class="w-8"></th>
+      <th>Requested by</th>
+      <th>Address</th>
+      <th>Status</th>
+      <th>Readiness</th>
+      <th>Source</th>
+      <th>Route</th>
+      <th>Requested</th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
+          @if (readyCount() > 0) {
+          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+          </button>
+          } @else {
+          <p class="max-w-sm text-xs text-base-content/45">
+            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
+          </p>
+          }
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+          [checked]="isSelected(row.id)"
+          (change)="toggle(row.id)"
+          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+        />
+      </td>
+      <td>
+        @if (row.person_id) {
+        <a
+          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/people', row.person_id]"
+        >
+          {{ row.person_name || 'Unnamed person' }}
+        </a>
+        } @else {
+        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        }
+      </td>
+      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+          @if (row.geocoding_status === 'failed') {
+          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
+            Edit household
+          </a>
+          }
+        </div>
+      </td>
+      <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td>
+        @if (row.route_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+          {{ row.route_name || 'Route' }}
+        </a>
+        } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { Icon } from '@icons/icon';
+
+import { DeliveriesRequestsService, type DeliveryRequestRow } from '../services/deliveries-requests-service';
+
+type Tab = 'open' | 'new' | 'approved' | 'delivered' | 'declined';
+
+const STATUS_TONE: Record<string, PcStatusType> = {
+  new: 'neutral',
+  approved: 'info',
+  delivered: 'success',
+  declined: 'ghost',
+};
+
+/**
+ * Deliveries requests grid (spec §4.1). Status tabs with live counts, readiness narration via the
+ * shared geocode chip, bulk approve/decline, and the "Plan routes · N ready" primary — disabled
+ * when nothing is approved-and-located, since there would be nothing to route.
+ */
+@Component({
+  selector: 'pc-deliveries-requests',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, Table],
+  templateUrl: './deliveries-requests.html',
+})
+export class DeliveriesRequests implements OnInit {
+  private readonly svc = inject(DeliveriesRequestsService);
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  protected readonly loading = createLoadingGate();
+
+  protected readonly rows = signal<DeliveryRequestRow[]>([]);
+  protected readonly counts = signal<Record<string, number>>({});
+  protected readonly readyCount = signal(0);
+  protected readonly activeTab = signal<Tab>('open');
+  protected readonly selected = signal<Set<string>>(new Set());
+  protected readonly loaded = signal(false);
+
+  protected readonly selectedCount = computed(() => this.selected().size);
+  protected readonly newInView = computed(() => this.rows().filter((r) => r.status === 'new').length);
+
+  protected readonly tabs: Array<{ key: Tab; label: string }> = [
+    { key: 'open', label: 'Open' },
+    { key: 'new', label: 'New' },
+    { key: 'approved', label: 'Approved' },
+    { key: 'delivered', label: 'Delivered' },
+    { key: 'declined', label: 'Declined' },
+  ];
+
+  public ngOnInit(): void {
+    void this.reload();
+  }
+
+  protected statusTone(status: string): PcStatusType {
+    return STATUS_TONE[status] ?? 'neutral';
+  }
+
+  protected countFor(tab: Tab): number {
+    return this.counts()[tab] ?? 0;
+  }
+
+  protected async setTab(tab: Tab): Promise<void> {
+    if (this.activeTab() === tab) return;
+    this.activeTab.set(tab);
+    this.selected.set(new Set());
+    await this.reload();
+  }
+
+  protected isSelected(id: string): boolean {
+    return this.selected().has(id);
+  }
+
+  protected toggle(id: string): void {
+    const next = new Set(this.selected());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.selected.set(next);
+  }
+
+  protected selectAllNew(): void {
+    const next = new Set(this.selected());
+    for (const r of this.rows()) if (r.status === 'new') next.add(r.id);
+    this.selected.set(next);
+  }
+
+  protected clearSelection(): void {
+    this.selected.set(new Set());
+  }
+
+  protected planRoutes(): void {
+    void this.router.navigate(['/deliveries/plan']);
+  }
+
+  protected async approveSelected(): Promise<void> {
+    await this.applyStatus('approved');
+  }
+
+  protected async declineSelected(): Promise<void> {
+    await this.applyStatus('declined');
+  }
+
+  private async applyStatus(status: 'approved' | 'declined'): Promise<void> {
+    const ids = Array.from(this.selected());
+    if (ids.length === 0) return;
+    const end = this.loading.begin();
+    try {
+      await this.svc.setStatus(ids, status);
+      this.alerts.showSuccess(
+        `${status === 'approved' ? 'Approved' : 'Declined'} ${ids.length} request${ids.length === 1 ? '' : 's'}`,
+      );
+      this.selected.set(new Set());
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the requests');
+    } finally {
+      end();
+    }
+  }
+
+  private async reload(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, counts, ready] = await Promise.all([
+        this.svc.getAll({ filterModel: { status: { value: this.activeTab() } } }),
+        this.svc.getStatusCounts(),
+        this.svc.getReadyCount(),
+      ]);
+      this.rows.set(list.rows);
+      this.counts.set(counts);
+      this.readyCount.set(ready);
+      this.loaded.set(true);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not load requests');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
 
 ```html
@@ -55815,661 +55239,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </pc-table>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
-
-```html
-<!-- Preview panel (shared by browse + edit) ---------------------------------->
-<ng-template #previewPanel let-showEdit="showEdit">
-  @if (selected(); as form) {
-  <div class="rounded-2xl border border-base-300 bg-base-100">
-    <!-- Actions row -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
-      <div class="join">
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'form'"
-          [class.text-neutral-500]="tab() !== 'form'"
-          (click)="setTab('form')"
-          type="button"
-        >
-          Form
-        </button>
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'responses'"
-          [class.text-neutral-500]="tab() !== 'responses'"
-          (click)="setTab('responses')"
-          type="button"
-        >
-          Responses
-          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
-        </button>
-      </div>
-
-      <div class="flex items-center gap-2">
-        @if (showEdit) {
-        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
-          <pc-icon name="pencil-square" [size]="4"></pc-icon>
-          Edit form
-        </button>
-        } @switch (form.status) { @case ('draft') {
-        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
-          Publish
-        </button>
-        } @case ('published') {
-        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
-          Unpublish
-        </button>
-        } @case ('archived') {
-        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
-          Restore
-        </button>
-        } }
-      </div>
-    </div>
-
-    <!-- Public link row -->
-    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
-      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openPublicLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
-          type="button"
-          aria-label="Open public page"
-        >
-          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="copyLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
-          type="button"
-          aria-label="Copy public link"
-        >
-          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openEmbed()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
-          type="button"
-          aria-label="Embed form"
-        >
-          <pc-icon name="file-code" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-
-    <!-- State banner -->
-    @if (form.status === 'draft') {
-    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
-      Draft — only your team can see this preview. Publish to accept responses.
-    </div>
-    } @else if (form.status === 'archived') {
-    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
-      Archived — the public link shows a closed notice. Restore to edit or publish again.
-    </div>
-    }
-
-    <!-- Tab content -->
-    @if (tab() === 'form') {
-    <div class="bg-base-200/40 p-8">
-      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
-    </div>
-    } @else {
-    <div class="p-4">
-      @if (submissionsLoading()) {
-      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
-      } @else if (submissions().length > 0) {
-      <pc-table [columns]="3">
-        <ng-container pcTableHead>
-          <th>Person</th>
-          <th>Submitted</th>
-          <th>Answers</th>
-        </ng-container>
-        @for (row of submissions(); track row.id) {
-        <tr>
-          <td>
-            <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
-              {{ row.person_name || 'View person' }}
-            </a>
-          </td>
-          <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
-          <td class="text-base-content/70">{{ answerSummary(row) }}</td>
-        </tr>
-        }
-      </pc-table>
-      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
-        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
-      </div>
-      <p class="mt-2 px-1 text-xs text-base-content/50">
-        Each response created or updated a person, applied the form’s tags and joined its lists.
-      </p>
-      } @else {
-      <div class="flex flex-col items-center gap-2 py-12 text-center">
-        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
-        @switch (form.status) { @case ('draft') {
-        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
-        } @case ('published') {
-        <p class="text-sm text-base-content/60">
-          Share the link to start collecting responses — each one becomes a person.
-        </p>
-        } @case ('archived') {
-        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
-        } }
-      </div>
-      }
-    </div>
-    }
-  </div>
-  }
-</ng-template>
-
-<!-- Page ---------------------------------------------------------------------->
-@if (loading() && forms().length === 0) {
-<div class="flex flex-col gap-4 p-4">
-  <div class="skeleton h-10 w-48"></div>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-    <div class="flex flex-col gap-3">
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-    </div>
-    <div class="skeleton h-96 w-full"></div>
-  </div>
-</div>
-} @else if (mode() === 'browse') {
-<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h2 class="text-xl font-semibold">Forms</h2>
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
-    </div>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
-  </div>
-
-  @if (forms().length === 0) {
-  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    <span class="text-base font-medium">No forms yet — create one to start collecting signups, RSVPs and more.</span>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
-  </div>
-  } @else {
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-    <!-- Left rail -->
-    <div class="flex flex-col gap-1 divide-y divide-base-200">
-      @for (form of activeForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
-        [class.border-primary]="form.id === selectedId()"
-        [class.bg-primary/10]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
-            >{{ form.name }}</span
-          >
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span
-            class="badge badge-xs shrink-0"
-            [class.badge-success]="form.status === 'published'"
-            [class.badge-ghost]="form.status !== 'published'"
-          >
-            {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </span>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
-          form.updated_at | date: 'MMM d' }}
-        </span>
-      </button>
-      }
-
-      <button
-        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
-        (click)="toggleArchived()"
-        type="button"
-      >
-        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
-        Archived ({{ archivedForms().length }})
-      </button>
-      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
-        [class.text-primary]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium">{{ form.name }}</span>
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
-        </span>
-      </button>
-      } } @if (archivedOpen() && archivedForms().length === 0) {
-      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
-      }
-
-      <p class="mt-2 px-1 text-xs text-base-content/40">
-        Responses land in People with the form’s tag applied — no copy-paste step.
-      </p>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
-  </div>
-  }
-</div>
-} @else if (selected(); as form) {
-<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <button
-        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
-        (click)="exitEdit()"
-        type="button"
-      >
-        <pc-icon name="arrow-left" [size]="3"></pc-icon>
-        All forms
-      </button>
-      <div class="flex items-center gap-2">
-        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
-        <span class="badge badge-info badge-xs">Editing</span>
-      </div>
-      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
-    </div>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
-      <pc-icon name="check-circle" [size]="4"></pc-icon>
-      Done editing
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
-    <!-- Settings column -->
-    <div class="flex flex-col gap-6">
-      <!-- FORM -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Form name</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.name"
-            (input)="editName($any($event.target).value)"
-          />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Public description</span>
-          <textarea
-            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
-            (input)="editDescription($any($event.target).value)"
-          >
-{{ form.description }}</textarea
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.redirect_url ?? ''"
-            (input)="editRedirect($any($event.target).value)"
-            placeholder="https://…"
-          />
-          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Submit button label</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.submit_label ?? ''"
-            (input)="editSubmitLabel($any($event.target).value)"
-          />
-        </label>
-      </section>
-
-      <!-- AFTER SUBMIT -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.send_confirmation"
-            (change)="toggleConfirmEmail($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Confirmation email</span>
-            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
-            @if (form.send_confirmation) {
-            <button
-              class="mt-1 self-start text-xs text-primary hover:underline"
-              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
-              type="button"
-            >
-              Edit the confirmation email
-            </button>
-            }
-          </span>
-        </label>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.notify_team_on"
-            (change)="toggleNotifyTeam($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Notify the team</span>
-            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
-          </span>
-        </label>
-      </section>
-
-      <!-- FIELDS -->
-      <section class="flex flex-col gap-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
-        @for (field of form.fields; track field.key) {
-        <div class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            [checked]="field.on"
-            [disabled]="field.key === 'email'"
-            (change)="toggleField(field.key, $any($event.target).checked)"
-          />
-          <span
-            class="flex-1 text-sm text-base-content"
-            [class.text-base-content]="field.on"
-            [class.text-base-content/40]="!field.on"
-          >
-            {{ field.label }}
-          </span>
-          <button
-            class="badge badge-sm"
-            [class.badge-primary]="field.required"
-            [class.badge-ghost]="!field.required"
-            (click)="toggleRequired(field.key)"
-            type="button"
-          >
-            {{ field.required ? 'Required' : 'Optional' }}
-          </button>
-        </div>
-        }
-        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
-      </section>
-
-      <!-- AUDIENCE -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
-          <select
-            class="select select-bordered select-sm w-full"
-            (change)="addList($any($event.target).value); $any($event.target).value = ''"
-          >
-            <option value="">Choose a list…</option>
-            @for (list of lists(); track list.id) {
-            <option [value]="list.id">{{ list.name }}</option>
-            }
-          </select>
-        </label>
-        @if (form.target_lists.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (id of form.target_lists; track id) {
-          <span class="badge badge-outline gap-1">
-            {{ listName(id) }}
-            <button (click)="removeList(id)" type="button" aria-label="Remove list">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            placeholder="Add a tag, press Enter"
-            #tagInput
-            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
-          />
-        </label>
-        @if (form.target_tags.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (tag of form.target_tags; track tag) {
-          <span class="badge badge-primary badge-outline gap-1">
-            {{ tag }}
-            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-        <p class="text-xs text-base-content/50">
-          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
-          applied automatically.
-        </p>
-      </section>
-
-      <!-- ARCHIVE -->
-      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
-        @if (canDelete(form)) {
-        <p class="text-xs text-base-content/60">
-          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
-        </p>
-        } @else {
-        <p class="text-xs text-base-content/60">
-          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
-        </p>
-        }
-        <div class="flex gap-2">
-          @if (form.status !== 'archived') {
-          <button
-            class="btn btn-outline btn-accent btn-sm gap-1"
-            (click)="archiveForm()"
-            [disabled]="mutating()"
-            type="button"
-          >
-            <pc-icon name="archive-box" [size]="4"></pc-icon>
-            Archive form
-          </button>
-          } @if (canDelete(form)) {
-          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
-            <pc-icon name="trash-forever" [size]="4"></pc-icon>
-            Delete draft
-          </button>
-          }
-        </div>
-      </section>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
-  </div>
-</div>
-}
-
-<!-- New form dialog ----------------------------------------------------------->
-<dialog #newFormDialog class="modal">
-  <div class="modal-box max-w-md">
-    <div class="mb-4 flex items-center gap-2">
-      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
-      </div>
-      <h3 class="text-lg font-semibold text-base-content">New form</h3>
-    </div>
-
-    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Form name</span>
-        <input
-          class="input input-bordered w-full"
-          [class.input-error]="!!newFormError()"
-          [value]="newFormName()"
-          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
-          placeholder="June phone bank signup"
-          autofocus
-        />
-        @if (newFormError()) {
-        <span class="text-xs text-error">{{ newFormError() }}</span>
-        }
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Start from</span>
-        <select
-          class="select select-bordered w-full"
-          [value]="newFormType()"
-          (change)="newFormType.set($any($event.target).value)"
-        >
-          @for (opt of templateOptions; track opt.type) {
-          <option [value]="opt.type">{{ opt.label }}</option>
-          }
-        </select>
-        <span class="text-xs text-base-content/50"
-          >Starts as a draft with the template’s fields — publish when it’s ready.</span
-        >
-      </label>
-
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
-        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
-      </div>
-    </form>
-
-    <div class="divider my-1 text-xs text-base-content/40">or</div>
-
-    <div class="flex flex-col gap-2">
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToFundraisingForm()" type="button">
-        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-        Create a fundraising form
-      </button>
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToEventForm()" type="button">
-        <pc-icon name="ticket" [size]="4"></pc-icon>
-        Create an event page
-      </button>
-      <button class="btn btn-ghost btn-block gap-2" (click)="goToShiftForm()" type="button">
-        <pc-icon name="add-schedule" [size]="4"></pc-icon>
-        Create a volunteer shift
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<!-- Embed dialog -------------------------------------------------------------->
-<dialog #embedDialog class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
-        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
-        Embed this form
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="join mb-3">
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'iframe'"
-        (click)="embedMode.set('iframe')"
-        type="button"
-      >
-        Embed (iframe)
-      </button>
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'html'"
-        (click)="embedMode.set('html')"
-        type="button"
-      >
-        Raw HTML form
-      </button>
-    </div>
-
-    <p class="mb-2 text-xs text-base-content/60">
-      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
-      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
-    </p>
-
-    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
-{{ embedCode() }}</pre
-    >
-
-    <div class="mt-4 flex justify-end">
-      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy code
-      </button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<!-- Confirmation-email dialog ------------------------------------------------->
-<dialog #confirmEmailDialog class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Subject</span>
-        <input
-          class="input input-bordered w-full"
-          [value]="confirmSubjectDraft()"
-          (input)="confirmSubjectDraft.set($any($event.target).value)"
-        />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Body</span>
-        <textarea
-          class="textarea textarea-bordered min-h-[140px] w-full"
-          [value]="confirmBodyDraft()"
-          (input)="confirmBodyDraft.set($any($event.target).value)"
-        ></textarea>
-      </label>
-      <p class="text-xs text-base-content/50">
-        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
-        greeting.
-      </p>
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
-        <button class="btn btn-primary" type="submit">Save</button>
-      </div>
-    </form>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
@@ -56971,6 +55740,384 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
+        Import / export
+      </h1>
+      @if (tab() === 'imports') {
+      <p class="text-sm text-base-content/60 mt-1">
+        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
+        duplicatesMergedThisYear() }} duplicates merged
+      </p>
+      }
+    </div>
+    <div class="flex gap-2 items-center">
+      @if (tab() === 'imports') {
+      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import CSV
+      </button>
+      }
+      <button
+        type="button"
+        class="btn btn-outline btn-accent btn-sm gap-2"
+        pcSpinOnClick
+        (click)="tab() === 'imports' ? refresh() : refreshExports()"
+        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs: Imports N / Exports N -->
+  <div role="tablist" class="tabs tabs-border mb-4">
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'imports'"
+      (click)="switchTab('imports')"
+    >
+      Imports {{ itemCount() }}
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      [class.tab-active]="tab() === 'exports'"
+      (click)="switchTab('exports')"
+    >
+      Exports {{ exportCount() }}
+    </button>
+  </div>
+
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <pc-table [columns]="6">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Outcome</th>
+        <th>Tags applied</th>
+        <th class="text-right">Actions</th>
+      </ng-container>
+
+      @for (item of items(); track item.id) {
+      <tr>
+        <td>
+          <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
+          <div class="text-xs text-base-content/60">
+            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+          </div>
+        </td>
+        <td>
+          <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+        </td>
+        <td>
+          @if (item.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-sm text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (item.status) { @case ('pending') {
+          <span class="badge badge-ghost text-xs">Pending</span>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <div class="text-sm text-base-content">
+            <div>{{ item.insertedCount }} imported</div>
+            @if (item.mergedCount > 0) {
+            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+            } @if (item.skippedCount > 0) {
+            <div class="text-xs text-base-content/60 flex items-center gap-1">
+              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                download reasons
+              </button>
+              }
+            </div>
+            } @if (item.errorCount > 0) {
+            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+            }
+          </div>
+          } @case ('failed') {
+          <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+            Failed
+          </span>
+          } }
+        </td>
+        <td>
+          @if (item.tagsApplied.length > 0) {
+          <div class="flex flex-wrap gap-1">
+            @for (tag of item.tagsApplied; track tag) {
+            <span class="badge badge-outline text-xs">{{ tag }}</span>
+            }
+          </div>
+          } @else {
+          <span class="text-sm text-base-content/40">—</span>
+          }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (item.canDownloadSource) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download original file"
+              (click)="downloadSource(item)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              (click)="openDeleteDialog(item, deleteDialog)"
+              [disabled]="deleting()"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="6" class="text-center py-12 text-base-content/50">
+          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
+          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import CSV
+          </button>
+        </td>
+      </tr>
+      }
+    </pc-table>
+
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
+  </div>
+  }
+
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    <div class="flex justify-end mb-3">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="toggleNewExportInfo()">
+        New export
+      </button>
+    </div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
+
+    <pc-table [columns]="5">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Contents</th>
+        <th class="text-right">Download</th>
+      </ng-container>
+
+      @for (job of exportJobs(); track job.id) {
+      <tr>
+        <td>
+          <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
+        </td>
+        <td>
+          <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+        </td>
+        <td>
+          @if (job.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-sm text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (job.status) { @case ('pending') {
+          <span class="badge badge-ghost text-xs">Queued</span>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          } @default {
+          <span class="badge badge-error text-xs">Failed</span>
+          } }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (job.status === 'completed') { @if (isExpired(job)) {
+            <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
+            } @else if (job.downloadable) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download CSV"
+              (click)="downloadExportJob(job)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            } @else {
+            <span
+              class="text-xs text-base-content/40 italic mr-2"
+              title="Downloaded directly to your device — not stored on the server"
+            >
+              Downloaded
+            </span>
+            } }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              title="Delete export"
+              (click)="deleteExportJob(job)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="5" class="text-center py-12 text-base-content/50">
+          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
+          </p>
+        </td>
+      </tr>
+      }
+    </pc-table>
+  </div>
+  }
+</div>
+
+<dialog #deleteDialog class="modal">
+  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
+    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
+    @if (pendingDelete(); as item) {
+    <p class="text-sm text-base-content/70 mt-2">
+      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+      records created by this import:
+    </p>
+
+    <div class="space-y-3 mt-4">
+      @if (item.contactCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deletePeople()"
+          (change)="deletePeople.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+      </label>
+      } @if (item.householdCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteHouseholds()"
+          (change)="deleteHouseholds.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+      </label>
+      } @if (item.companyCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteCompanies()"
+          (change)="deleteCompanies.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+      </label>
+      } @if (item.taskCount > 0) {
+      <label
+        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      >
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary checkbox-sm"
+          [checked]="deleteTasks()"
+          (change)="deleteTasks.set($any($event.target).checked)"
+        />
+        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+      </label>
+      }
+    </div>
+    }
+
+    <div class="modal-action flex gap-2">
+      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+        Cancel
+      </button>
+      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+        <pc-icon name="trash" [size]="4"></pc-icon>
+        Delete
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
+    <button type="submit">close</button>
+  </form>
+</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
@@ -60682,6 +59829,429 @@ export const SELECTION_COLUMN: ColumnDef = {};
 export const SECONDARY_CELL_CLASS = 'text-base-content/70';
 ```
 
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+
+```html
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
+      @if (headline()) {
+      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+      <pc-icon name="map-pin" [size]="4" />
+      Cut new turfs
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-bordered mb-4">
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
+      Turfs &amp; assignments
+    </button>
+    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
+      Field report
+    </button>
+  </div>
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table pc-table">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span class="text-sm">{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
+      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
+      the person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table pc-table">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
+        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Strong {{ r.responseMix.strong_support }}</span>
+        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table pc-table">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
 
 ```typescript
@@ -61192,6 +60762,661 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 
 <pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
+
+```html
+<!-- Preview panel (shared by browse + edit) ---------------------------------->
+<ng-template #previewPanel let-showEdit="showEdit">
+  @if (selected(); as form) {
+  <div class="rounded-2xl border border-base-300 bg-base-100">
+    <!-- Actions row -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
+      <div class="join">
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'form'"
+          [class.text-neutral-500]="tab() !== 'form'"
+          (click)="setTab('form')"
+          type="button"
+        >
+          Form
+        </button>
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'responses'"
+          [class.text-neutral-500]="tab() !== 'responses'"
+          (click)="setTab('responses')"
+          type="button"
+        >
+          Responses
+          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        @if (showEdit) {
+        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          Edit form
+        </button>
+        } @switch (form.status) { @case ('draft') {
+        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
+          Publish
+        </button>
+        } @case ('published') {
+        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+          Unpublish
+        </button>
+        } @case ('archived') {
+        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
+          Restore
+        </button>
+        } }
+      </div>
+    </div>
+
+    <!-- Public link row -->
+    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openPublicLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
+          type="button"
+          aria-label="Open public page"
+        >
+          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="copyLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
+          type="button"
+          aria-label="Copy public link"
+        >
+          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openEmbed()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
+          type="button"
+          aria-label="Embed form"
+        >
+          <pc-icon name="file-code" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- State banner -->
+    @if (form.status === 'draft') {
+    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
+      Draft — only your team can see this preview. Publish to accept responses.
+    </div>
+    } @else if (form.status === 'archived') {
+    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
+      Archived — the public link shows a closed notice. Restore to edit or publish again.
+    </div>
+    }
+
+    <!-- Tab content -->
+    @if (tab() === 'form') {
+    <div class="bg-base-200/40 p-8">
+      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
+    </div>
+    } @else {
+    <div class="p-4">
+      @if (submissionsLoading()) {
+      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      } @else if (submissions().length > 0) {
+      <pc-table [columns]="3">
+        <ng-container pcTableHead>
+          <th>Person</th>
+          <th>Submitted</th>
+          <th>Answers</th>
+        </ng-container>
+        @for (row of submissions(); track row.id) {
+        <tr>
+          <td>
+            <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
+              {{ row.person_name || 'View person' }}
+            </a>
+          </td>
+          <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
+          <td class="text-base-content/70">{{ answerSummary(row) }}</td>
+        </tr>
+        }
+      </pc-table>
+      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
+        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
+      </div>
+      <p class="mt-2 px-1 text-xs text-base-content/50">
+        Each response created or updated a person, applied the form’s tags and joined its lists.
+      </p>
+      } @else {
+      <div class="flex flex-col items-center gap-2 py-12 text-center">
+        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
+        @switch (form.status) { @case ('draft') {
+        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
+        } @case ('published') {
+        <p class="text-sm text-base-content/60">
+          Share the link to start collecting responses — each one becomes a person.
+        </p>
+        } @case ('archived') {
+        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
+        } }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</ng-template>
+
+<!-- Page ---------------------------------------------------------------------->
+@if (loading() && forms().length === 0) {
+<div class="flex flex-col gap-4 p-4">
+  <div class="skeleton h-10 w-48"></div>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <div class="flex flex-col gap-3">
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+    </div>
+    <div class="skeleton h-96 w-full"></div>
+  </div>
+</div>
+} @else if (mode() === 'browse') {
+<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Forms</h2>
+      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+
+  @if (forms().length === 0) {
+  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    <span class="text-base font-medium">No forms yet — create one to start collecting signups, RSVPs and more.</span>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+    <!-- Left rail -->
+    <div class="flex flex-col gap-1 divide-y divide-base-200">
+      @for (form of activeForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
+        [class.border-primary]="form.id === selectedId()"
+        [class.bg-primary/10]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
+            >{{ form.name }}</span
+          >
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span
+            class="badge badge-xs shrink-0"
+            [class.badge-success]="form.status === 'published'"
+            [class.badge-ghost]="form.status !== 'published'"
+          >
+            {{ form.status === 'published' ? 'Published' : 'Draft' }}
+          </span>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
+          form.updated_at | date: 'MMM d' }}
+        </span>
+      </button>
+      }
+
+      <button
+        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
+        (click)="toggleArchived()"
+        type="button"
+      >
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
+        Archived ({{ archivedForms().length }})
+      </button>
+      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.text-primary]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium">{{ form.name }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+        </span>
+      </button>
+      } } @if (archivedOpen() && archivedForms().length === 0) {
+      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
+      }
+
+      <p class="mt-2 px-1 text-xs text-base-content/40">
+        Responses land in People with the form’s tag applied — no copy-paste step.
+      </p>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
+  </div>
+  }
+</div>
+} @else if (selected(); as form) {
+<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <button
+        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
+        (click)="exitEdit()"
+        type="button"
+      >
+        <pc-icon name="arrow-left" [size]="3"></pc-icon>
+        All forms
+      </button>
+      <div class="flex items-center gap-2">
+        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
+        <span class="badge badge-info badge-xs">Editing</span>
+      </div>
+      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
+      Done editing
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+    <!-- Settings column -->
+    <div class="flex flex-col gap-6">
+      <!-- FORM -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Form name</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.name"
+            (input)="editName($any($event.target).value)"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Public description</span>
+          <textarea
+            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
+            (input)="editDescription($any($event.target).value)"
+          >
+{{ form.description }}</textarea
+          >
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.redirect_url ?? ''"
+            (input)="editRedirect($any($event.target).value)"
+            placeholder="https://…"
+          />
+          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Submit button label</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.submit_label ?? ''"
+            (input)="editSubmitLabel($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <!-- AFTER SUBMIT -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.send_confirmation"
+            (change)="toggleConfirmEmail($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Confirmation email</span>
+            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
+            @if (form.send_confirmation) {
+            <button
+              class="mt-1 self-start text-xs text-primary hover:underline"
+              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
+              type="button"
+            >
+              Edit the confirmation email
+            </button>
+            }
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.notify_team_on"
+            (change)="toggleNotifyTeam($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Notify the team</span>
+            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
+          </span>
+        </label>
+      </section>
+
+      <!-- FIELDS -->
+      <section class="flex flex-col gap-2">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        @for (field of form.fields; track field.key) {
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            [checked]="field.on"
+            [disabled]="field.key === 'email'"
+            (change)="toggleField(field.key, $any($event.target).checked)"
+          />
+          <span
+            class="flex-1 text-sm text-base-content"
+            [class.text-base-content]="field.on"
+            [class.text-base-content/40]="!field.on"
+          >
+            {{ field.label }}
+          </span>
+          <button
+            class="badge badge-sm"
+            [class.badge-primary]="field.required"
+            [class.badge-ghost]="!field.required"
+            (click)="toggleRequired(field.key)"
+            type="button"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+        </div>
+        }
+        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+      </section>
+
+      <!-- AUDIENCE -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
+          <select
+            class="select select-bordered select-sm w-full"
+            (change)="addList($any($event.target).value); $any($event.target).value = ''"
+          >
+            <option value="">Choose a list…</option>
+            @for (list of lists(); track list.id) {
+            <option [value]="list.id">{{ list.name }}</option>
+            }
+          </select>
+        </label>
+        @if (form.target_lists.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (id of form.target_lists; track id) {
+          <span class="badge badge-outline gap-1">
+            {{ listName(id) }}
+            <button (click)="removeList(id)" type="button" aria-label="Remove list">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            placeholder="Add a tag, press Enter"
+            #tagInput
+            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
+          />
+        </label>
+        @if (form.target_tags.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (tag of form.target_tags; track tag) {
+          <span class="badge badge-primary badge-outline gap-1">
+            {{ tag }}
+            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+        <p class="text-xs text-base-content/50">
+          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
+          applied automatically.
+        </p>
+      </section>
+
+      <!-- ARCHIVE -->
+      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        @if (canDelete(form)) {
+        <p class="text-xs text-base-content/60">
+          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
+        </p>
+        } @else {
+        <p class="text-xs text-base-content/60">
+          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
+        </p>
+        }
+        <div class="flex gap-2">
+          @if (form.status !== 'archived') {
+          <button
+            class="btn btn-outline btn-accent btn-sm gap-1"
+            (click)="archiveForm()"
+            [disabled]="mutating()"
+            type="button"
+          >
+            <pc-icon name="archive-box" [size]="4"></pc-icon>
+            Archive form
+          </button>
+          } @if (canDelete(form)) {
+          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
+            <pc-icon name="trash-forever" [size]="4"></pc-icon>
+            Delete draft
+          </button>
+          }
+        </div>
+      </section>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
+  </div>
+</div>
+}
+
+<!-- New form dialog ----------------------------------------------------------->
+<dialog #newFormDialog class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      </div>
+      <h3 class="text-lg font-semibold text-base-content">New form</h3>
+    </div>
+
+    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Form name</span>
+        <input
+          class="input input-bordered w-full"
+          [class.input-error]="!!newFormError()"
+          [value]="newFormName()"
+          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
+          placeholder="June phone bank signup"
+          autofocus
+        />
+        @if (newFormError()) {
+        <span class="text-xs text-error">{{ newFormError() }}</span>
+        }
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Start from</span>
+        <select
+          class="select select-bordered w-full"
+          [value]="newFormType()"
+          (change)="newFormType.set($any($event.target).value)"
+        >
+          @for (opt of templateOptions; track opt.type) {
+          <option [value]="opt.type">{{ opt.label }}</option>
+          }
+        </select>
+        <span class="text-xs text-base-content/50"
+          >Starts as a draft with the template’s fields — publish when it’s ready.</span
+        >
+      </label>
+
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
+        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
+      </div>
+    </form>
+
+    <div class="divider my-1 text-xs text-base-content/40">or</div>
+
+    <div class="flex flex-col gap-2">
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToFundraisingForm()" type="button">
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        Create a fundraising form
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToEventForm()" type="button">
+        <pc-icon name="ticket" [size]="4"></pc-icon>
+        Create an event page
+      </button>
+      <button class="btn btn-ghost btn-block gap-2" (click)="goToShiftForm()" type="button">
+        <pc-icon name="add-schedule" [size]="4"></pc-icon>
+        Create a volunteer shift
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Embed dialog -------------------------------------------------------------->
+<dialog #embedDialog class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
+        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
+        Embed this form
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="join mb-3">
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'iframe'"
+        (click)="embedMode.set('iframe')"
+        type="button"
+      >
+        Embed (iframe)
+      </button>
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'html'"
+        (click)="embedMode.set('html')"
+        type="button"
+      >
+        Raw HTML form
+      </button>
+    </div>
+
+    <p class="mb-2 text-xs text-base-content/60">
+      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
+      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    </p>
+
+    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+    >
+
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        Copy code
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Confirmation-email dialog ------------------------------------------------->
+<dialog #confirmEmailDialog class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Subject</span>
+        <input
+          class="input input-bordered w-full"
+          [value]="confirmSubjectDraft()"
+          (input)="confirmSubjectDraft.set($any($event.target).value)"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Body</span>
+        <textarea
+          class="textarea textarea-bordered min-h-[140px] w-full"
+          [value]="confirmBodyDraft()"
+          (input)="confirmBodyDraft.set($any($event.target).value)"
+        ></textarea>
+      </label>
+      <p class="text-xs text-base-content/50">
+        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
+        greeting.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
@@ -64520,15 +64745,21 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link, and it takes a plan seat right away — the dialog tells you how many seats remain. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
       {
         kind: 'list',
         items: [
           '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
           '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
           '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
         ],
       },
       {
@@ -65771,13 +66002,8 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
         data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
