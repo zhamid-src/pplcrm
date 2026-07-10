@@ -392,6 +392,7 @@
                 {{ h.column.columnDef.header || h.column.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              @if (showColumnMenus()) {
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
                 <label
                   tabindex="0"
@@ -523,6 +524,7 @@
                   </li>
                 </ul>
               </div>
+              }
               <span
                 class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
                 title="Resize column"

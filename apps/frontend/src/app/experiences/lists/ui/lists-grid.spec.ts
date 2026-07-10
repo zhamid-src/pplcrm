@@ -65,9 +65,8 @@ describe('ListsGridComponent', () => {
   it('should create and initialize columns', () => {
     expect(component).toBeTruthy();
     expect(component['col']).toBeDefined();
-    // §8 table: List · Description · Type · Of · Definition · Members ·
-    // Last used in · Refresh · Last refreshed · Updated · Created by.
-    expect(component['col'].length).toBe(11);
+    // Spec table: List · Type · Of · Definition · Members · Last used in · Updated.
+    expect(component['col'].length).toBe(7);
   });
 
   it('renders the Type chip as Smart / Static', () => {
