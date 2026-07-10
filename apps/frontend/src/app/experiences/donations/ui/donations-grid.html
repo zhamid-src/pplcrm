@@ -10,19 +10,8 @@
     </div>
     <div class="flex gap-2 items-center">
       <button
-        id="donations-refresh-btn"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        title="Refresh donations log"
-        pcSpinOnClick
-        [disabled]="_loading.visible()"
-        (click)="refresh()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-      <button
         routerLink="/donation-pages/add"
-        class="btn btn-ghost btn-sm gap-2"
+        class="btn btn-outline btn-accent btn-sm gap-2"
         title="Create a public form that charges cards through Stripe and records every gift here"
       >
         <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
