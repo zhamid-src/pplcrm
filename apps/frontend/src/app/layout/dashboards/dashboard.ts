@@ -10,6 +10,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 import { CommandPalette } from '../command-palette/command-palette';
 import { KeyboardShortcutsHelp } from '../keyboard-shortcuts/keyboard-shortcuts-help';
 import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
+import { BreadcrumbDefaultsService } from '../../services/breadcrumb-defaults.service';
 
 @Component({
   selector: 'pc-dashboard',
@@ -26,6 +27,11 @@ export class Dashboard {
 
   protected readonly userSignal = this.auth.getUserSignal();
   protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
+
+  constructor() {
+    // Route-driven default breadcrumbs for every page the shell hosts.
+    inject(BreadcrumbDefaultsService).start();
+  }
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();

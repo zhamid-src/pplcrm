@@ -6,6 +6,7 @@ import { Icon } from '@icons/icon';
 import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -37,6 +38,7 @@ export class ImportsPage {
   private readonly tokenSvc = inject(TokenService);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
 
   protected readonly tab = signal<HistoryTab>('imports');
 
@@ -83,11 +85,26 @@ export class ImportsPage {
   // --- Exports tab ---
   protected readonly exportJobs = signal<DataExportRecordType[]>([]);
   protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsThisYear = computed(
+    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly exportsSentence = computed(
+    () =>
+      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
+      `files stay downloadable for 30 days · every export lands in the Activity log`,
+  );
   protected readonly exportsLoading = createLoadingGate();
   protected readonly showNewExportInfo = signal(false);
 
   constructor() {
     void this.load();
+
+    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
+    // (overrides the route's static default; effects flush after NavigationEnd,
+    // so this wins).
+    effect(() => {
+      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
+    });
 
     // Reset checkbox when dialog closes
     effect(() => {

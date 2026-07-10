@@ -75,10 +75,27 @@ entity key. Grep `injectRecordNavigation` for the current list of detail views u
 
 ## Breadcrumbs
 
-Build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention (see the `crumbs`
-computed in `company-view.ts`, `person-view.ts`, `team-view.ts`): first crumb is the list
-page with a `route`; **last crumb is the record name with NO `route`** (it renders as the current
-page). The record name also becomes the layout `title` — the crumb and the
+**Two layers.** (1) Every route in `dashboard.routes.ts` declares `data: { breadcrumb: '…' }`
+(a label, or a pre-built `PcBreadcrumb[]` for flat routes that conceptually nest, e.g.
+`/imports/new`). `BreadcrumbDefaultsService`
+(`apps/frontend/src/app/services/breadcrumb-defaults.service.ts`, started by the Dashboard
+shell) publishes that default trail to the navbar on every NavigationEnd — so the strip is
+never empty and never stale (route-reuse pages are detached, not destroyed, so per-page
+clear-on-destroy could not be trusted). (2) Pages that know more override it after: detail
+views via `pc-detail-header`'s effect, tab pages (Import/export) or record pages without the
+detail shell via `BreadcrumbsService.setCrumbs()` in an effect. Effects flush after
+NavigationEnd, so the page's richer trail always wins. **No page needs to `clear()` anymore.**
+
+**The first crumb doubles as the visible page title** — `pc-breadcrumbs` renders it
+`text-sm font-semibold text-base-content`. List pages therefore do NOT render a visible
+in-body title: `pc-grid-header`'s `title` is an `sr-only` h1 (kept for accessibility), and
+bespoke pages (tasks, canvassing, deliveries) use `<h1 class="sr-only">` the same way.
+Don't reintroduce a visible in-body page title, and don't hand-roll an in-page crumb row.
+
+For detail views, build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention
+(see the `crumbs` computed in `company-view.ts`, `person-view.ts`, `team-view.ts`): first crumb
+is the list page with a `route`; **last crumb is the record name with NO `route`** (it renders
+as the current page). The record name also becomes the layout `title` — the crumb and the
 `<h1>` say the same thing.
 
 ```ts

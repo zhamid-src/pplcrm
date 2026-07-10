@@ -1,15 +1,7 @@
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <div class="flex items-center gap-2 text-sm">
-    <a class="link link-hover text-base-content/60" routerLink="/deliveries">Deliveries</a>
-    <span class="text-base-content/30">/</span>
-    <span class="text-base-content/80">Routes</span>
-  </div>
-
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Routes</h1>
-    </div>
+  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
+  <div class="flex flex-wrap items-end justify-end gap-3">
+    <h1 class="sr-only">Routes</h1>
     <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
       <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
     </a>
