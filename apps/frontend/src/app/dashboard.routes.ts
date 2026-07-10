@@ -390,14 +390,13 @@ export const dashboardRoutes: Routes = [
         data: { shouldReuse: true, key: 'usersgridroot' },
       },
       {
+        // View and edit merged into one page (approved 2026-07-10 design) — the
+        // unsaved-changes guard now protects the view, and old edit links redirect.
         path: ':id',
         loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
         canDeactivate: [unsavedChangesGuard],
       },
+      { path: ':id/edit', redirectTo: ':id' },
     ],
   },
   {

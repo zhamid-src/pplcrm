@@ -614,11 +614,12 @@ describe('AuthController Integration', () => {
     // Rule: Admin cannot trigger password reset for owner
     await expect(controller.adminTriggerPasswordReset(authAdmin, owner.id)).rejects.toThrow(ForbiddenError);
 
-    // Rule: Owner leaving -> oldest remaining user becomes owner
-    // Since Owner leaves (demotes themselves to admin), and we have two other users:
-    // Admin (invited first, created earlier) and User (invited second, created later).
-    // Admin should become Owner, and Owner should become Admin.
-    await controller.updateUser(authOwner, owner.id, { role: 'admin' });
+    // Rule: nobody — not even the owner — can change their OWN role (server-side lockout guard).
+    await expect(controller.updateUser(authOwner, owner.id, { role: 'admin' })).rejects.toThrow(ForbiddenError);
+
+    // Owner handover: promote the admin to co-owner, then the new owner demotes the original.
+    await controller.updateUser(authOwner, admin.id, { role: 'owner' });
+    await controller.updateUser({ ...authAdmin, role: 'owner' }, owner.id, { role: 'admin' });
 
     const ownerAfterLeave = await db
       .selectFrom('authusers')
@@ -632,7 +633,7 @@ describe('AuthController Integration', () => {
       .executeTakeFirstOrThrow();
 
     expect(ownerAfterLeave.role).toBe('admin');
-    expect(adminAfterLeave.role).toBe('owner'); // Oldest user got promoted to owner!
+    expect(adminAfterLeave.role).toBe('owner');
 
     await cleanup(db, owner.id, owner.tenant_id);
   });

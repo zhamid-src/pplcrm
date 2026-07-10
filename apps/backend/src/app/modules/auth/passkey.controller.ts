@@ -14,7 +14,7 @@ import { randomBytes } from 'crypto';
 
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
 import { env } from '../../../env';
-import { BadRequestError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
 import { BaseRepository } from '../../lib/base.repo';
 import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
 import { createTokens } from './auth-tokens';
@@ -182,11 +182,24 @@ export class PasskeyController {
     // Fetch the user
     const user = await this.db
       .selectFrom('authusers')
-      .select(['id', 'email', 'first_name', 'last_name', 'tenant_id', 'role', 'verified', 'deletion_scheduled_at'])
+      .select([
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'tenant_id',
+        'role',
+        'verified',
+        'deletion_scheduled_at',
+        'deactivated_at',
+      ])
       .where('id', '=', passkey.user_id)
       .executeTakeFirst();
 
     if (!user) throw new UnauthorizedError();
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
+    }
     if (!user.verified) throw new UnauthorizedError('Email not verified.');
 
     const tenantId = String(user.tenant_id);

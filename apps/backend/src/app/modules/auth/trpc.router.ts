@@ -161,6 +161,24 @@ function adminTriggerPasswordReset() {
     .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
 }
 
+function deactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminDeactivateUser(ctx.auth, input.id));
+}
+
+function reactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminReactivateUser(ctx.auth, input.id));
+}
+
+function resendInvite() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminResendInvite(ctx.auth, input.id));
+}
+
 function invite() {
   return adminOrOwnerProcedure
     .input(InviteAuthUserObj)
@@ -308,6 +326,9 @@ export const AuthRouter = router({
   pauseTenant: pauseTenant(),
   resumeTenant: resumeTenant(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  deactivateUser: deactivateUser(),
+  reactivateUser: reactivateUser(),
+  resendInvite: resendInvite(),
   uploadAvatar: uploadAvatar(),
   deleteAvatar: deleteAvatar(),
   passkeyRegistrationOptions: passkeyRegistrationOptions(),

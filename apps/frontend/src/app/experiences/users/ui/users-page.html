@@ -39,7 +39,7 @@
       </td>
     </tr>
     } @else { @for (row of rows(); track row.id) {
-    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="!!row.deletion_scheduled_at">
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="isDeactivated(row)">
       <td>
         <div class="flex items-center gap-3">
           <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
@@ -91,7 +91,7 @@
         <span class="text-base-content/30">—</span>
         }
       </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
       <td>
         <div class="dropdown dropdown-end dropdown-bottom">
           <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">

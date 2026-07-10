@@ -79,8 +79,8 @@
             <h1 class="text-3xl font-bold tracking-tight">{{ displayName() }}</h1>
             <div class="flex items-center gap-1.5">
               @if (detail()?.role) {
-              <span class="badge badge-primary badge-outline font-medium capitalize text-xs px-2.5 py-1.5">
-                {{ detail()?.role }}
+              <span class="badge badge-primary badge-outline font-medium text-xs px-2.5 py-1.5">
+                {{ roleLabel() }}
               </span>
               } @if (detail()?.verified) {
               <span class="badge badge-success gap-1 text-xs font-semibold px-2.5 py-1.5">
@@ -100,7 +100,7 @@
       <div class="flex items-center gap-3">
         <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
         <div>
-          <h3 i18n class="font-bold text-warning-content">Verification Pending</h3>
+          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
           <div i18n class="text-xs text-warning-content/80">
             A verification link was sent to your new email. You will not be able to make changes until verified.
           </div>
@@ -111,7 +111,7 @@
         class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
         (click)="cancelEmailChange()"
       >
-        Undo Change
+        Undo change
       </button>
     </div>
     } @if (error()) {
@@ -126,7 +126,7 @@
       <!-- Edit Profile Card (takes 2 cols on lg) -->
       <div class="lg:col-span-2 space-y-6 rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
         <header class="border-b border-base-200 pb-5">
-          <h2 class="text-xl font-semibold tracking-tight">Your profile</h2>
+          <h2 class="text-lg font-semibold tracking-tight">Your profile</h2>
           <p class="text-sm text-base-content/60 mt-0.5">Your name appears on tasks, notes and the Activity log.</p>
         </header>
 
@@ -170,21 +170,22 @@
             </p>
             <div class="flex items-center gap-3">
               <button
-                class="btn btn-ghost hover:bg-base-200"
+                class="btn btn-outline btn-accent btn-sm"
                 type="button"
                 (click)="resetForm()"
                 [disabled]="saving() || !form().dirty()"
               >
                 Reset
               </button>
+              <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
               <button
-                class="btn btn-primary min-w-[120px]"
+                class="btn btn-primary btn-sm"
                 type="submit"
-                [disabled]="saving() || loading() || form().invalid() || !form().dirty() || isViewer()"
+                [disabled]="saving() || loading() || !form().dirty() || isViewer()"
               >
                 @if (saving()) {
                 <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Save
+                } Save profile
               </button>
             </div>
           </div>
@@ -195,13 +196,13 @@
       <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8 flex flex-col justify-between">
         <div>
           <header class="border-b border-base-200 pb-5 mb-6">
-            <h2 class="text-xl font-semibold tracking-tight">Account Metadata</h2>
+            <h2 class="text-lg font-semibold tracking-tight">Account metadata</h2>
             <p class="text-sm text-base-content/60 mt-0.5">System identifier details and timestamps.</p>
           </header>
 
           <div class="space-y-5">
             <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-            <pc-detail-item label="Assigned Role" [value]="detail()?.role"></pc-detail-item>
+            <pc-detail-item label="Assigned role" [value]="roleLabel()"></pc-detail-item>
             <pc-detail-item
               label="Member Since"
               [value]="detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : null"
@@ -224,7 +225,7 @@
     <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
       <header class="border-b border-base-200 pb-5">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-xl font-semibold tracking-tight">Email notifications</h2>
+          <h2 class="text-lg font-semibold tracking-tight">Email notifications</h2>
           <span class="text-xs font-medium text-base-content/50">Changes apply immediately.</span>
         </div>
         <p class="text-sm text-base-content/60 mt-0.5">Choose which emails pplcrm sends you.</p>
@@ -265,27 +266,17 @@
       </div>
     </div>
 
-    <!-- Statistics Section -->
+    <!-- Statistics Section — pc-stat-card, the one stat idiom (same as the user page) -->
     @if (stats()) {
     <div class="space-y-5">
-      <h2 class="text-xl font-bold tracking-tight">Your Activity & Impact</h2>
-      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <h2 class="text-lg font-bold tracking-tight">Your activity &amp; impact</h2>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         @for (card of activityCards(); track card.key) {
-        <div class="card bg-base-100 border border-base-200/60 shadow-sm hover:shadow-md transition-all duration-300">
-          <div class="card-body p-6 flex flex-row items-center gap-4">
-            <div class="p-3 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-              <pc-icon [name]="card.icon" [size]="6"></pc-icon>
-            </div>
-            <div class="flex-1 space-y-0.5">
-              <p class="text-xs font-medium text-base-content/50 uppercase tracking-wide">{{ card.title }}</p>
-              <h3 class="text-2xl font-bold text-base-content/95 tabular-nums">{{ card.value }}</h3>
-              <p class="text-xs text-base-content/60">{{ card.subtitle }}</p>
-              @if (card.asOf) {
-              <span class="text-[10px] text-base-content/40 block mt-0.5">As of {{ formatAsOf(card.asOf) }}</span>
-              }
-            </div>
-          </div>
-        </div>
+        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+          @if (card.asOf) {
+          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </pc-stat-card>
         }
       </div>
     </div>
@@ -299,7 +290,7 @@
     <div
       class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
     >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop Profile Picture</h3>
+      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
 
       <!-- Drag & Crop Container -->
       <div
@@ -340,7 +331,7 @@
       <!-- Action buttons -->
       <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
         <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm px-6" (click)="cropAndUpload()">Save Avatar</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
       </div>
     </div>
   </dialog>

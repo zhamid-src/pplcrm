@@ -53,10 +53,15 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page — everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role — it applies immediately, and locked roles say why — and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
       { kind: 'h2', id: 'invite', text: 'Inviting someone' },
       {
         kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, send the person a password reset from the row’s **⋯** menu to issue a fresh link. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
       },
       { kind: 'h2', id: 'roles', text: 'The roles' },
       {
@@ -81,7 +86,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access — deactivated accounts keep their role.',
       },
     ],
   },
