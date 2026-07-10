@@ -3,7 +3,12 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, disabled, FormField } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
-import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
@@ -11,10 +16,11 @@ import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem, StatCard],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {
@@ -104,6 +110,9 @@ export class ProfilePage implements OnInit {
 
   protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
 
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
   // Narrate unsaved identity edits (§2 disclosure).
   protected readonly dirtyFieldCount = computed(() => {
     const f = this.form;
@@ -143,7 +152,6 @@ export class ProfilePage implements OnInit {
         title: 'Emails Assigned',
         value: s.emails_assigned.total,
         subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        icon: 'envelope' as const,
         asOf: null,
       },
       {
@@ -151,7 +159,6 @@ export class ProfilePage implements OnInit {
         title: 'Contacts Added',
         value: s.contacts_added.total,
         subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        icon: 'users' as const,
         asOf: s.contacts_added.last_created_at,
       },
       {
@@ -159,7 +166,6 @@ export class ProfilePage implements OnInit {
         title: 'Files Imported',
         value: s.files_imported.count,
         subtitle: `${s.files_imported.total_rows} people imported`,
-        icon: 'arrow-down-tray' as const,
         asOf: s.files_imported.last_activity_at,
       },
       {
@@ -167,7 +173,6 @@ export class ProfilePage implements OnInit {
         title: 'Files Exported',
         value: s.files_exported.count,
         subtitle: `${s.files_exported.total_rows} rows exported`,
-        icon: 'arrow-up-tray' as const,
         asOf: s.files_exported.last_activity_at,
       },
     ];

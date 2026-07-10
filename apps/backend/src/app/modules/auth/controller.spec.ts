@@ -439,4 +439,125 @@ describe('AuthController', () => {
 
     await cleanup(db, owner.id, owner.tenant_id);
   });
+
+  it('should block changing your own role, for every caller role', async () => {
+    const owner = await signUpOwner(controller, db);
+    const admin = await controller.inviteUser(authFor(owner), {
+      email: `admin-${rand()}@example.com`,
+      first_name: 'Admin',
+      role: 'admin',
+    });
+    const adminAuth = {
+      tenant_id: String(owner.tenant_id),
+      user_id: String(admin.id),
+      session_id: 's',
+      role: 'admin',
+    };
+
+    await expect(controller.updateUser(authFor(owner), owner.id, { role: 'admin' })).rejects.toThrow(ForbiddenError);
+    await expect(controller.updateUser(adminAuth, admin.id, { role: 'viewer' })).rejects.toThrow(ForbiddenError);
+
+    // Sending the unchanged role is not a role change and stays allowed.
+    const unchanged = await controller.updateUser(authFor(owner), owner.id, { role: 'owner', first_name: 'Owner' });
+    expect(unchanged.role).toBe('owner');
+
+    // Another admin/owner can still change the role.
+    const updated = await controller.updateUser(authFor(owner), admin.id, { role: 'user' });
+    expect(updated.role).toBe('user');
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
+
+  it('should deactivate and reactivate a user, blocking sign-in while deactivated', async () => {
+    const owner = await signUpOwner(controller, db);
+    const member = await controller.inviteUser(authFor(owner), {
+      email: `member-${rand()}@example.com`,
+      first_name: 'Member',
+      role: 'user',
+    });
+    const admin = await controller.inviteUser(authFor(owner), {
+      email: `admin-${rand()}@example.com`,
+      first_name: 'Admin',
+      role: 'admin',
+    });
+    const adminAuth = {
+      tenant_id: String(owner.tenant_id),
+      user_id: String(admin.id),
+      session_id: 's',
+      role: 'admin',
+    };
+
+    // Give the member a known password + verified so sign-in behavior is observable.
+    const { hashPassword } = await import('../../lib/password-hash');
+    const memberPassword = 'MemberPassword123!';
+    await db
+      .updateTable('authusers')
+      .set({ password: await hashPassword(memberPassword), verified: true })
+      .where('id', '=', member.id)
+      .execute();
+    const signedIn = await controller.signIn({ email: member.email, password: memberPassword });
+    expect('auth_token' in signedIn).toBe(true);
+
+    // Guards
+    await expect(controller.adminDeactivateUser(authFor(owner), owner.id)).rejects.toThrow(BadRequestError);
+    await expect(controller.adminDeactivateUser(adminAuth, owner.id)).rejects.toThrow(ForbiddenError);
+    await expect(controller.adminDeactivateUser(authFor(owner), rand())).rejects.toThrow(NotFoundError);
+
+    const result = await controller.adminDeactivateUser(authFor(owner), member.id);
+    expect(result.success).toBe(true);
+
+    const row = await db.selectFrom('authusers').selectAll().where('id', '=', member.id).executeTakeFirst();
+    expect(row.deactivated_at).not.toBeNull();
+
+    // Sessions are revoked and sign-in is blocked (it must NOT auto-restore like scheduled deletion does).
+    const sessions = await db.selectFrom('sessions').selectAll().where('user_id', '=', member.id).execute();
+    expect(sessions.length).toBe(0);
+    await expect(controller.signIn({ email: member.email, password: memberPassword })).rejects.toThrow(ForbiddenError);
+
+    // Deactivated accounts keep their role; double-deactivation is rejected.
+    await expect(controller.updateUser(authFor(owner), member.id, { role: 'admin' })).rejects.toThrow(BadRequestError);
+    await expect(controller.adminDeactivateUser(authFor(owner), member.id)).rejects.toThrow(BadRequestError);
+
+    // Reactivation restores access.
+    await expect(controller.adminReactivateUser(authFor(owner), member.id)).resolves.toMatchObject({ success: true });
+    await expect(controller.adminReactivateUser(authFor(owner), member.id)).rejects.toThrow(BadRequestError);
+    const restored = await controller.signIn({ email: member.email, password: memberPassword });
+    expect('auth_token' in restored).toBe(true);
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
+
+  it('should resend an invitation only to unverified, active users', async () => {
+    const owner = await signUpOwner(controller, db);
+    const invited = await controller.inviteUser(authFor(owner), {
+      email: `invited-${rand()}@example.com`,
+      first_name: 'Invited',
+      role: 'user',
+    });
+
+    const before = await db.selectFrom('authusers').selectAll().where('id', '=', invited.id).executeTakeFirst();
+    const result = await controller.adminResendInvite(authFor(owner), invited.id);
+    expect(result.success).toBe(true);
+
+    // A fresh temp password and activation code were issued, and the email was queued in the outbox.
+    const after = await db.selectFrom('authusers').selectAll().where('id', '=', invited.id).executeTakeFirst();
+    expect(after.password).not.toBe(before.password);
+    expect(after.password_reset_code).not.toBeNull();
+    const jobs = await db
+      .selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', String(owner.tenant_id))
+      .execute();
+    expect(JSON.stringify(jobs)).toContain(invited.email);
+
+    // Preconditions: already-activated and missing users are rejected.
+    await expect(controller.adminResendInvite(authFor(owner), owner.id)).rejects.toThrow(BadRequestError);
+    await expect(controller.adminResendInvite(authFor(owner), rand())).rejects.toThrow(NotFoundError);
+
+    // Deactivated users must be reactivated first.
+    await controller.adminDeactivateUser(authFor(owner), invited.id);
+    await expect(controller.adminResendInvite(authFor(owner), invited.id)).rejects.toThrow(BadRequestError);
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
 });

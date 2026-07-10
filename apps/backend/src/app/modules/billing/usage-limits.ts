@@ -62,6 +62,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
     .select(db.fn.countAll().as('cnt'))
     .where('tenant_id', '=', tenantId)
     .where('deletion_scheduled_at', 'is', null)
+    .where('deactivated_at', 'is', null)
     .executeTakeFirst();
   const currentSeats = Number(seatsCountRow?.cnt || 0);
 
@@ -230,6 +231,7 @@ async function sendLimitEmail(
         ]),
       )
       .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
       .execute();
     adminsCache.push(...(admins as any));
   }

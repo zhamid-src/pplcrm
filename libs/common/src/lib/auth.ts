@@ -67,6 +67,8 @@ export interface IAuthUserRecord extends IAuthUser {
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
+  deactivated_at?: Date | null;
   /** Most recent session activity; null until the user has signed in at least once. */
   last_active_at?: Date | null;
   created_at: Date | null;
@@ -106,6 +108,21 @@ export interface IToken {
  * backend error formatter and the frontend so the copy never drifts.
  */
 export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
+
+/**
+ * Product names for the stored role values — the working role 'user' is shown as
+ * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
+ */
+export const AUTH_ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+export function authRoleLabel(role: string | null | undefined): string {
+  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
+}
 
 export type signInInputType = z.infer<typeof signInInputObj>;
 

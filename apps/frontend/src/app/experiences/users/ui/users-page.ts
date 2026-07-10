@@ -12,7 +12,15 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { UserService } from '@frontend/services/user.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { authRoleLabel } from '../../../../../../../libs/common/src';
 import { UserAdminService } from '../services/useradmin-service';
+import {
+  userIsDeactivated,
+  userLastActiveLabel,
+  userRoleLockReason,
+  userRoleOptions,
+  userStatus,
+} from '../user-status';
 import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
 
 export interface UserRow {
@@ -24,23 +32,11 @@ export interface UserRow {
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: string | null;
+  deactivated_at: string | null;
   last_active_at: string | null;
   created_at: string | null;
   avatar_url: string | null;
 }
-
-// The stored role value for the working role is 'user'; the product name for it is "Editor"
-// (see the Users & roles help article and the approved design).
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  user: 'Editor',
-  viewer: 'Viewer',
-};
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 
 /**
  * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
@@ -78,14 +74,14 @@ export class UsersPageComponent implements OnInit {
   protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
 
   protected readonly activeCount = computed(
-    () => this.rows().filter((r) => r.verified && !r.deletion_scheduled_at).length,
+    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
   );
   protected readonly invitedCount = computed(
-    () => this.rows().filter((r) => !r.verified && !r.deletion_scheduled_at).length,
+    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
   );
-  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => !!r.deletion_scheduled_at).length);
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
   protected readonly adminCount = computed(
-    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !r.deletion_scheduled_at).length,
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
   );
 
   protected readonly seatsRemaining = computed(() => {
@@ -137,37 +133,34 @@ export class UsersPageComponent implements OnInit {
   }
 
   protected roleLabel(role: string | null): string {
-    return role ? (ROLE_LABELS[role] ?? role) : '—';
+    return authRoleLabel(role);
   }
 
   /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
   protected roleOptions(row: UserRow): string[] {
-    const options =
-      this.currentUserRole() === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
-    if (row.role && !options.includes(row.role)) return [row.role, ...options];
-    return options;
+    return userRoleOptions(this.currentUserRole(), row.role);
   }
 
   /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
   protected roleLockReason(row: UserRow): string | null {
-    if (this.isSelf(row)) return "You can't change your own role";
-    if (row.deletion_scheduled_at) return 'Deactivated accounts keep their role';
-    if (this.currentUserRole() === 'admin' && row.role === 'owner') return "Only an owner can change an owner's role";
-    return null;
+    return userRoleLockReason({
+      isSelf: this.isSelf(row),
+      callerRole: this.currentUserRole(),
+      targetRole: row.role,
+      deactivated: userIsDeactivated(row),
+    });
+  }
+
+  protected isDeactivated(row: UserRow): boolean {
+    return userIsDeactivated(row);
   }
 
   protected status(row: UserRow): { label: string; tone: PcStatusType } {
-    if (row.deletion_scheduled_at) return { label: 'Deactivated', tone: 'ghost' };
-    if (!row.verified) return { label: 'Invited', tone: 'warning' };
-    return { label: 'Active', tone: 'success' };
+    return userStatus(row);
   }
 
   protected lastActiveText(row: UserRow): string {
-    if (!row.verified && !row.deletion_scheduled_at) {
-      return row.created_at ? `Invite sent ${this.shortDate(row.created_at)}` : 'Invite sent';
-    }
-    if (!row.last_active_at) return '—';
-    return this.relativeTime(new Date(row.last_active_at));
+    return userLastActiveLabel(row);
   }
 
   protected async changeRole(row: UserRow, event: Event): Promise<void> {
@@ -231,6 +224,7 @@ export class UsersPageComponent implements OnInit {
       verified: raw['verified'] === true,
       two_factor_enabled: raw['two_factor_enabled'] === true,
       deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      deactivated_at: this.toIso(raw['deactivated_at']),
       last_active_at: this.toIso(raw['last_active_at']),
       created_at: this.toIso(raw['created_at']),
       avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
@@ -249,21 +243,5 @@ export class UsersPageComponent implements OnInit {
     setTimeout(() => {
       if (this.flashedId() === id) this.flashedId.set(null);
     }, FLASH_MS);
-  }
-
-  private relativeTime(date: Date): string {
-    const diff = Date.now() - date.getTime();
-    if (Number.isNaN(diff)) return '—';
-    if (diff < MINUTE) return 'Just now';
-    if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
-    if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
-    if (diff < 2 * DAY) return 'Yesterday';
-    return this.shortDate(date.toISOString());
-  }
-
-  private shortDate(value: string): string {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 }

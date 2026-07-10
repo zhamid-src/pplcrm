@@ -64,6 +64,21 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
   }
 
+  /** Admin deactivation — blocks sign-in and revokes sessions until reactivated. */
+  public deactivate(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.deactivateUser.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  /** Clears admin deactivation (and any self-scheduled deletion). */
+  public reactivate(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.reactivateUser.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  /** Re-sends the invitation email with a fresh temp password + activation code. */
+  public resendInvite(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.resendInvite.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
   public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
     return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
   }

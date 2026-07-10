@@ -201,6 +201,8 @@ interface AuthUsers extends RecordType {
   two_factor_expires_at: Timestamp | null;
   two_factor_attempts: Generated<number>;
   deletion_scheduled_at: Timestamp | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. NULL = active. */
+  deactivated_at: Timestamp | null;
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
