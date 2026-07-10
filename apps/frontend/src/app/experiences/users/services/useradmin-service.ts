@@ -64,6 +64,10 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
     return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
   }
 
+  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
+    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
+  }
+
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('User export is not available'));
   }

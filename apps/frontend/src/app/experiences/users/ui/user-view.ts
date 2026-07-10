@@ -68,6 +68,13 @@ export class UserViewComponent {
   protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
   protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
 
+  /** Product name for the stored role value — the working role 'user' is shown as "Editor". */
+  protected readonly roleLabel = computed(() => {
+    const role = this.detail()?.role;
+    if (!role) return '—';
+    return { owner: 'Owner', admin: 'Admin', user: 'Editor', viewer: 'Viewer' }[role] ?? role;
+  });
+
   protected readonly displayName = computed(() => {
     const user = this.detail();
     if (!user) return '';

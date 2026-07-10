@@ -30,7 +30,7 @@
 
         <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
           <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ detail()?.role }}
+          {{ roleLabel() }}
         </pc-status-badge>
 
         <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
@@ -71,7 +71,7 @@
       <pc-card title="Account Metadata">
         <div class="grid gap-4 sm:grid-cols-2">
           <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
+          <pc-detail-item label="Role" [value]="roleLabel()"></pc-detail-item>
           <pc-detail-item
             label="Created"
             [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"

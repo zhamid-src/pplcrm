@@ -38,6 +38,7 @@ import type { QueryParams } from '../../lib/base.repo';
 import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
 import { parseProfilePreferences } from '../../lib/profile-preferences';
+import { getPlanLimits } from '../billing/usage-limits';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
@@ -502,6 +503,31 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       suspended_at: tenant.suspended_at ?? null,
       paused_at: tenant.paused_at ?? null,
     };
+  }
+
+  /** Seat usage for the invite/users UI: plan name, seat limit, and seats consumed (invited counts too). */
+  public async getSeatUsage(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    const plan = (tenant.subscription_plan as string | null) || 'free';
+    const limits = getPlanLimits(plan);
+
+    // Matches the billing usage check: every non-deactivated login (including pending invites) holds a seat.
+    const seatRow = await db
+      .selectFrom('authusers')
+      .select((eb) => eb.fn.countAll().as('cnt'))
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('deletion_scheduled_at', 'is', null)
+      .executeTakeFirst();
+
+    return { plan, seatLimit: limits.seats, seatsUsed: Number(seatRow?.cnt ?? 0) };
   }
 
   public async getUserById(auth: IAuthKeyPayload, id: string) {
@@ -1906,6 +1932,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       email_verified: this.coerceBoolean(record['verified']),
       two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
       deletion_scheduled_at: this.coerceDate(record['deletion_scheduled_at']),
+      last_active_at: this.coerceDate(record['last_active_at']),
       created_at: this.coerceDate(record['created_at']),
       updated_at: this.coerceDate(record['updated_at']),
       previous_email: (record['previous_email'] as string | null | undefined) ?? null,

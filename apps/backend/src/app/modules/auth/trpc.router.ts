@@ -109,6 +109,10 @@ function getTenantAccountStatus() {
   return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
 }
 
+function getSeatUsage() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getSeatUsage(ctx.auth));
+}
+
 function cancelTenantDeletionByToken() {
   return publicProcedure
     .input(z.object({ tenantId: z.string(), token: z.string() }))
@@ -297,6 +301,7 @@ export const AuthRouter = router({
   cancelAccountDeletion: cancelAccountDeletion(),
   cancelEmailChange: cancelEmailChange(),
   getTenantAccountStatus: getTenantAccountStatus(),
+  getSeatUsage: getSeatUsage(),
   scheduleTenantDeletion: scheduleTenantDeletion(),
   cancelTenantDeletion: cancelTenantDeletion(),
   cancelTenantDeletionByToken: cancelTenantDeletionByToken(),

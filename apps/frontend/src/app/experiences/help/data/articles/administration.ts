@@ -51,15 +51,21 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link, and it takes a plan seat right away — the dialog tells you how many seats remain. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
       {
         kind: 'list',
         items: [
           '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
           '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
           '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
         ],
       },
       {
