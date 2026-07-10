@@ -590,7 +590,7 @@
         </tr>
         } @for (r of visibleTableRows(); let i = $index; track r.id) {
         <tr
-          class="group hover:bg-base-300"
+          class="group hover:bg-base-300/40"
           [class.cursor-pointer]="rowNavigatesToDetail()"
           (mouseover)="onCellMouseOver(r.original)"
           [attr.data-row-id]="toId(r.original)"
