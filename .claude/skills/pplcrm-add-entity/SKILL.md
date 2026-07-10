@@ -124,6 +124,12 @@ Real example: the `people` and `tags` blocks in `dashboard.routes.ts`. (Top-leve
 `app.routes.ts` only lazy-loads the dashboard shell and auth pages — experiences live in
 `dashboard.routes.ts`.)
 
+**Every route needs `data: { breadcrumb: '…' }`** — the parent block gets the entity name
+(`'People'`), the `add` child gets `'New person'`. `BreadcrumbDefaultsService`
+(`apps/frontend/src/app/services/breadcrumb-defaults.service.ts`) publishes these to the navbar
+on every NavigationEnd so the strip is never empty or stale; the `:id`/`:id/edit` children need
+no label because the detail view/form overrides the default with the record name (step 10).
+
 If the entity's URLs should carry record slugs instead of numeric ids (spec §1 — households
 and companies use name slugs; **persons use an opaque `public_id`** instead), follow the
 checklist in `docs/RECORD-SLUGS.md` (migration + `slugExists`/`getOneBySlug` repo methods +

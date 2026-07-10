@@ -88,7 +88,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
       {
         kind: 'p',
-        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
+        text: 'Every page shows a breadcrumb trail in the top bar — the bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
       },
       {
         kind: 'p',

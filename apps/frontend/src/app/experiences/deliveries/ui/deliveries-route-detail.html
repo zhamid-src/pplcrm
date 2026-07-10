@@ -1,13 +1,6 @@
 @if (detail(); as d) {
 <div class="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4">
-  <!-- Breadcrumbs -->
-  <div class="flex items-center gap-2 text-sm">
-    <a class="link link-hover text-base-content/60" routerLink="/deliveries">Deliveries</a>
-    <span class="text-base-content/30">/</span>
-    <a class="link link-hover text-base-content/60" routerLink="/deliveries/routes">Routes</a>
-    <span class="text-base-content/30">/</span>
-    <span class="max-w-[260px] truncate text-base-content/80">{{ d.name }}</span>
-  </div>
+  <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
 
   <!-- Header card -->
   <div class="flex flex-col gap-3 rounded-xl border border-base-300 bg-base-100 p-5">

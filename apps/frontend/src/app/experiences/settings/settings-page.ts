@@ -1,10 +1,9 @@
 import { DatePipe, NgClass } from '@angular/common';
-import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
 import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
 import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AuthService } from '../../auth/auth-service';
@@ -54,8 +53,6 @@ interface SectionState {
 export class SettingsPage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
@@ -108,19 +105,8 @@ export class SettingsPage implements OnInit {
     this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
 
-    // Own the navbar breadcrumb strip; without this the page inherits the previous
-    // page's stale trail (e.g. "Households" from the grid it was reached from).
-    this.breadcrumbs.set({
-      crumbs: [{ label: this.currentMode === 'workspace' ? 'Workspace' : 'Settings' }],
-      positionLabel: null,
-      hasPrev: false,
-      hasNext: false,
-      prevLabel: 'Previous record',
-      nextLabel: 'Next record',
-      onPrev: () => undefined,
-      onNext: () => undefined,
-    });
-    this.destroyRef.onDestroy(() => this.breadcrumbs.clear());
+    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
+    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
 
     effect(() => {
       const s = this.section();

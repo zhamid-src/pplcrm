@@ -60,6 +60,17 @@ describe('Breadcrumbs', () => {
     expect(firstSpan.nativeElement.textContent.trim()).toBe('People');
   });
 
+  it('renders the first crumb prominently (page-title style) and later crumbs muted', () => {
+    setCrumbs([{ label: 'People', route: '/people' }, { label: 'Jane Doe' }]);
+
+    const anchor = fixture.debugElement.query(By.css('a'));
+    expect(anchor.nativeElement.className).toContain('font-semibold');
+    expect(anchor.nativeElement.className).toContain('text-sm');
+
+    const lastSpan = fixture.debugElement.query(By.css('span[aria-current]'));
+    expect(lastSpan.nativeElement.className).not.toContain('font-semibold');
+  });
+
   it('renders a separator between crumbs but not after the last one', () => {
     setCrumbs([{ label: 'A' }, { label: 'B' }, { label: 'C' }]);
 
