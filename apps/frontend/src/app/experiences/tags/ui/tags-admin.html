@@ -6,10 +6,10 @@
       <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-label" [size]="4"></pc-icon>
       New tag
-    </a>
+    </button>
   </div>
 
   @if (loaded() && unusedRows().length > 0) {
@@ -60,7 +60,7 @@
                 Show all tags
               </button>
               } @else {
-              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
+              <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New tag</button>
               }
             </div>
           </td>
@@ -125,3 +125,5 @@
     Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
   </p>
 </div>
+
+<pc-add-tag-dialog (saved)="onTagSaved()" />
