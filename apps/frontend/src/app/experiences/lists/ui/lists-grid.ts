@@ -135,7 +135,7 @@ export class ListsGridComponent implements OnInit {
       headerName: 'List',
       cellRenderer: (p: CellParams) => {
         const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
-        return `<span class="link link-hover text-primary font-medium">${escapeHtml(name)}</span>`;
+        return `<span class="cursor-pointer text-xs font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary">${escapeHtml(name)}</span>`;
       },
       onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
     },
