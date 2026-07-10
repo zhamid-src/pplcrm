@@ -38,6 +38,7 @@ import { HouseholdsService } from '../services/households-service';
         [disableView]="false"
         [disableImport]="false"
         [confirmDeleteOverride]="onConfirmDeleteBind"
+        (rowsDeleted)="onRowsDeleted()"
         [rowCanSelect]="rowCanSelectFn"
         [totalSentence]="totalSentence()"
         (importCSV)="openImportWizard()"
@@ -90,6 +91,7 @@ export class HouseholdsGrid implements OnInit {
   private readonly householdsService = inject(HouseholdsService);
 
   private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
 
   private tagOptionValues: string[] = [];
   private issueOptionValues: string[] = [];
@@ -215,6 +217,13 @@ export class HouseholdsGrid implements OnInit {
     await this.loadIssueOptions();
     void this.loadGrainSentence();
     if (!this.inline()) void this.loadUnhoused();
+  }
+
+  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+    this.grainTabs()?.reloadCounts();
   }
 
   private async loadUnhoused(): Promise<void> {

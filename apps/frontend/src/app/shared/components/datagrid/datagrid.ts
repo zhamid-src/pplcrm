@@ -622,6 +622,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // viewport handled by controller
 
   public readonly importCSV = output<string>();
+  /** Fires after a delete flow completes and the grid has refreshed, so pages can re-query header counts. */
+  public readonly rowsDeleted = output<void>();
   public readonly showArchiveIcon = input<boolean>(false);
   public readonly archiveIcon = input<PcIconNameType>('archive-box');
   public readonly archiveTip = input<string>('See archived tasks');
@@ -1496,6 +1498,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       if (handled !== false) {
         this.clearAllSelection();
         await this.refresh();
+        this.rowsDeleted.emit();
         return true;
       }
     }
@@ -1512,6 +1515,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
     await this.refresh();
+    this.rowsDeleted.emit();
     return true;
   }
   public doConfirmDelete() {

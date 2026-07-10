@@ -3,7 +3,7 @@ import type { ConfirmDialogService } from '@frontend/services/shared-dialog.serv
 import type { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { loadingGate } from '@uxcommon/loading-gate';
 
-import { DataGridConfig } from '../datagrid.tokens';
+import { DataGridConfig, deleteConfirmMessageFor, deleteSuccessMessageFor } from '../datagrid.tokens';
 import type { GridRow } from '../types';
 
 @Injectable({ providedIn: 'root' })
@@ -12,13 +12,10 @@ export class DataGridActionsService {
     const { messages } = ctx.config;
 
     const selectedCount = ctx.getSelectedRows()?.length ?? 0;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : ctx.config.messages.deleteConfirmMessage;
 
     const ok = await ctx.dialogs.confirm({
       title: messages.deleteConfirmTitle,
-      message: dynamicMessage,
+      message: deleteConfirmMessageFor(messages, selectedCount),
       variant: messages.deleteConfirmVariant,
       icon: messages.deleteConfirmIcon,
       confirmText: messages.deleteConfirmText,
@@ -63,7 +60,7 @@ export class DataGridActionsService {
         ctx.alertSvc.showError(messages.deleteFailed);
         return;
       }
-      ctx.alertSvc.showSuccess(messages.deleteSuccess);
+      ctx.alertSvc.showSuccess(deleteSuccessMessageFor(messages, ids.length));
     } finally {
       end();
     }
