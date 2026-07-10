@@ -234,7 +234,7 @@ async function sendLimitEmail(
     adminsCache.push(...(admins as any));
   }
 
-  const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
+  const billingPageUrl = `${env.appUrl}/workspace/billing`;
   const planNameUpper = planName.toUpperCase();
   const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
   const prefix = pct === 100 ? 'reached' : 'approaching';
