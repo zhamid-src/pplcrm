@@ -18,6 +18,7 @@
     <pc-form-actions
       [isLoading]="isLoading()"
       [signalForm]="form"
+      [saveAlwaysEnabled]="true"
       (btn1Clicked)="save($event)"
       [buttonsToShow]="'two'"
       [btn1Text]="'Save automation'"
@@ -260,6 +261,7 @@
                     [checked]="payload().status === 'active'"
                     (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
                   />
+
                   <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
                 </label>
                 <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
