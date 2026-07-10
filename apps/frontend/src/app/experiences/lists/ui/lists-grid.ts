@@ -34,8 +34,9 @@ function escapeHtml(value: string): string {
 @Component({
   selector: 'pc-lists-grid',
   imports: [DataGrid, Icon, GridHeaderComponent],
+  host: { class: 'block h-full' },
   template: `
-    <div class="flex flex-col gap-4 p-6">
+    <div class="flex h-full min-h-0 flex-col gap-4 p-6">
       <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
            own in-grid title/toolbar are switched off below so this is the only header, and its
            p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
@@ -48,6 +49,7 @@ function escapeHtml(value: string): string {
 
       <pc-datagrid
         #grid
+        class="min-h-0 flex-1"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"

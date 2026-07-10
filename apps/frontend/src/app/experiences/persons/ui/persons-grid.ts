@@ -31,6 +31,7 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
   selector: 'pc-persons-grid',
   imports: [DataGrid, GrainTabs, Icon],
   templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
     provideDataGridConfig({
