@@ -26968,65 +26968,6 @@ export class SingleselectFilterComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
-
-```css
-/* lock layout + neutralize cell padding/borders */
-:host table {
-  table-layout: fixed;
-}
-
-:host table :where(th, td) {
-  box-sizing: border-box;
-  vertical-align: middle;
-  padding-block: 0.375rem;
-}
-
-:host table tbody td {
-  vertical-align: top;
-  white-space: normal !important;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-:host table tbody td > * {
-  min-width: 0;
-}
-
-/* keep scrollbars from shifting header/body widths */
-.flex-1.overflow-auto {
-  scrollbar-gutter: stable both-edges;
-}
-
-/* ── Row saved flash ─────────────────────────────────────────────── */
-@keyframes row-saved-flash {
-  0% {
-    background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-  }
-  60% {
-    background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-:host td.cell-flash {
-  animation: row-saved-flash 1.2s ease-out forwards;
-}
-
-/* ── Pencil cursor for inline-editable cells ──────────────────────── */
-/* SVG: HeroIcons solid pencil. White stroke ensures visibility on dark backgrounds.
-   Hotspot (1 13) places the interaction point at the pencil tip (bottom-left). */
-:host .cursor-pencil,
-:host .cursor-pencil * {
-  cursor:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z' fill='%231e293b' stroke='white' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E")
-      1 13,
-    default !important;
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
 
 ```typescript
@@ -33865,327 +33806,6 @@ export class EmailFolderList implements OnInit {
 
   protected isSelected(folder: EmailFolderType): boolean {
     return String(folder.id) === String(this.store.currentSelectedFolderId());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
-
-```typescript
-import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { Tags } from '@experiences/tags/ui/tags';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailAssign } from '../email-assign/email-assign';
-import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
-
-@Component({
-  selector: 'pc-email-header',
-  // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
-  host: {
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-header.html',
-})
-export class EmailHeader {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private personsSvc = inject(PersonsService);
-
-  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
-
-  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
-  protected isClosed = signal(false);
-  protected isFavourite = signal(false);
-
-  protected personTags = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.tags?.map((t: any) => t.name) ?? [];
-  });
-
-  protected personIssues = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.issues?.map((t: any) => t.name) ?? [];
-  });
-
-  protected editingName = signal(false);
-  protected nameDraft = signal({ first_name: '', last_name: '' });
-  private savingName = false;
-
-  private readonly firstNameInput = viewChild<ElementRef<HTMLInputElement>>('firstNameInput');
-  private readonly personDropdownContent = viewChild<ElementRef<HTMLElement>>('personDropdownContent');
-
-  // DaisyUI's dropdown is visible only while something inside it holds focus (`:focus-within`);
-  // losing focus even for one render flips `.dropdown-content` to `display: none`, and a
-  // `display: none` element can't be focused back into view — so the fix is to never let focus
-  // leave the subtree in the first place. We hold focus on the always-present wrapper *before*
-  // toggling which button/input gets rendered, then hand focus off to the fresh element once it
-  // exists.
-  private holdDropdownFocus(): void {
-    this.personDropdownContent()?.nativeElement.focus();
-  }
-
-  protected startEditName(person: { first_name?: string | null; last_name?: string | null }): void {
-    this.holdDropdownFocus();
-    this.nameDraft.set({ first_name: person.first_name ?? '', last_name: person.last_name ?? '' });
-    this.editingName.set(true);
-    setTimeout(() => this.firstNameInput()?.nativeElement.focus());
-  }
-
-  protected cancelEditName(): void {
-    this.holdDropdownFocus();
-    this.editingName.set(false);
-  }
-
-  protected async saveName(personId: string): Promise<void> {
-    if (this.savingName) return;
-    const { first_name, last_name } = this.nameDraft();
-    this.savingName = true;
-    try {
-      await this.personsSvc.update(personId, { first_name: first_name.trim(), last_name: last_name.trim() });
-      this.store.refreshEmailHeader(this.email().id);
-      this.holdDropdownFocus();
-      this.editingName.set(false);
-    } catch (e) {
-      console.error('Failed to update name:', e);
-      this.alertSvc.showError('Failed to update name');
-    } finally {
-      this.savingName = false;
-    }
-  }
-
-  protected async onTagAdded(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
-    } catch (e) {
-      console.error('Failed to attach tag:', e);
-      this.alertSvc.showError('Failed to add tag');
-    }
-  }
-
-  protected async onTagRemoved(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach tag:', e);
-      this.alertSvc.showError('Failed to remove tag');
-    }
-  }
-
-  protected async onIssueAdded(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
-    } catch (e) {
-      console.error('Failed to attach issue:', e);
-      this.alertSvc.showError('Failed to add issue');
-    }
-  }
-
-  protected async onIssueRemoved(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach issue:', e);
-      this.alertSvc.showError('Failed to remove issue');
-    }
-  }
-
-  public readonly forward = output<void>();
-  public readonly reply = output<void>();
-  public readonly replyAll = output<void>();
-
-  public email = input.required<EmailType>();
-
-  public isExpanded = this.store.isBodyExpanded;
-
-  constructor() {
-    // isFavourite and isClosed are settable, so can't use computed
-    effect(() => {
-      const email = this.email();
-
-      this.isFavourite.set(email.is_favourite);
-      this.isClosed.set(email.status === 'closed');
-    });
-  }
-
-  public getFavouriteIcon() {
-    return this.isFavourite() ? 'star-filled' : 'star';
-  }
-
-  protected async deleteEmail() {
-    try {
-      await this.store.deleteEmail(this.email().id);
-    } catch (e) {
-      console.error('Failed to delete email', e);
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected getAllRecipients(): any[] {
-    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
-  }
-
-  protected getBccRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.bcc_list || [];
-  }
-
-  protected getCcRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.cc_list || [];
-  }
-
-  protected getDateSent(): Date | null {
-    const header = this.headerData();
-    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
-  }
-
-  protected getHeaderInfo() {
-    const header = this.headerData();
-    const email = this.email();
-
-    return {
-      subject: email.subject,
-      date: this.getDateSent() || email.updated_at,
-      from: email.from_email,
-      to: email.to_email,
-      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
-      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
-      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
-      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
-      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
-      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
-    };
-  }
-
-  protected getToRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.to_list || [];
-  }
-
-  protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && this.isExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.stopPropagation();
-      ev.preventDefault();
-    }
-  }
-
-  protected handleForward() {
-    this.forward.emit();
-  }
-
-  protected handleMarkAsUnread() {
-    void this.store.toggleEmailReadStatus(this.email().id, false);
-    this.store.selectEmail(null);
-  }
-
-  protected handleReply() {
-    this.reply.emit();
-  }
-
-  protected handleReplyAll() {
-    this.replyAll.emit();
-  }
-
-  protected isFolderTrash(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.SPAM;
-  }
-
-  protected async markAsSpam() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to mark email as spam', e);
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-
-  protected async moveToInbox() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to move email to Inbox', e);
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected markAsDoneText() {
-    return this.isClosed() ? 'Reopen' : 'Mark as done';
-  }
-
-  protected restoreFromTrash() {
-    void this.store.restoreFromTrash(this.email().id);
-  }
-
-  protected async toggleClosed() {
-    const email = this.email();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-
-    // Optimistically update UI
-    this.isClosed.set(newStatus === 'closed');
-
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_error) {
-      // Revert UI state on error
-      this.isClosed.set(currentStatus === 'closed');
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected handleCreateTask(): void {
-    void this.createTaskDialog()?.open();
-  }
-
-  protected toggleExpand(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected async toggleFavourite() {
-    const e = this.email();
-    this.isFavourite.update((value) => !value);
-    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }
 ```
@@ -41591,6 +41211,7 @@ export class PersonCampaignFacts {
 
 ```typescript
 import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
@@ -41612,15 +41233,29 @@ import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { PersonCampaignFacts } from './person-campaign-facts';
 
 @Component({
   selector: 'pc-person-form',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcCard],
+  imports: [
+    PcInput,
+    PcSelect,
+    PcTextarea,
+    Tags,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    SideDrawer,
+    PcCard,
+    DatePipe,
+    PersonCampaignFacts,
+  ],
   templateUrl: './person-form.html',
 })
 export class PersonForm implements OnInit {
@@ -41657,6 +41292,38 @@ export class PersonForm implements OnInit {
     return this.getFormattedAddress(hh);
   });
 
+  /** Overview rail (§6): everyone else sharing this person's household. */
+  protected readonly householdMembersResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getPeopleCount(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly companyName = computed(() => {
+    const id = this.person()?.company_id;
+    if (!id) return null;
+    return this.companies().find((c) => c.id === id)?.name ?? null;
+  });
+
+  protected readonly preferredContactLabel = computed(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return 'No preference';
+    }
+  });
+
   protected readonly isPlaceholderHousehold = computed(() => {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
@@ -41682,7 +41349,7 @@ export class PersonForm implements OnInit {
     source: () => this.form.email().value(),
     computation: () => null as string | null,
   });
-  protected readonly person = signal<Persons | null>(null);
+  protected readonly person = signal<Selectable<Persons> | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly companies = signal<any[]>([]);
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
@@ -42207,7 +41874,7 @@ export class PersonForm implements OnInit {
 
     const end = this._loading.begin();
     try {
-      this.person.set((await this.personsSvc.getById(id)) as Persons);
+      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
 
       await this.updateTags();
       await this.loadVolunteerInfo();
@@ -48293,6 +47960,65 @@ type DeleteCtx = {
 </div>
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
+
+```css
+/* lock layout + neutralize cell padding/borders */
+:host table {
+  table-layout: fixed;
+}
+
+:host table :where(th, td) {
+  box-sizing: border-box;
+  vertical-align: middle;
+  padding-block: 0.375rem;
+}
+
+:host table tbody td {
+  vertical-align: top;
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+:host table tbody td > * {
+  min-width: 0;
+}
+
+/* keep scrollbars from shifting header/body widths */
+.flex-1.overflow-auto {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* ── Row saved flash ─────────────────────────────────────────────── */
+@keyframes row-saved-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+  }
+  60% {
+    background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+:host td.cell-flash {
+  animation: row-saved-flash 1.2s ease-out forwards;
+}
+
+/* ── Pencil cursor for inline-editable cells ──────────────────────── */
+/* SVG: HeroIcons solid pencil. White stroke ensures visibility on dark backgrounds.
+   Hotspot (1 13) places the interaction point at the pencil tip (bottom-left). */
+:host .cursor-pencil,
+:host .cursor-pencil * {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z' fill='%231e293b' stroke='white' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E")
+      1 13,
+    default !important;
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
 
 ```html
@@ -51964,6 +51690,326 @@ export class PublicRoute implements OnInit {
 <pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
+
+```typescript
+import { DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailAssign } from '../email-assign/email-assign';
+import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
+
+@Component({
+  selector: 'pc-email-header',
+  // include swap for expand/collapse control
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, Tags, EmailCreateTaskDialog],
+  host: {
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-header.html',
+})
+export class EmailHeader {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private personsSvc = inject(PersonsService);
+
+  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
+
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
+  protected isClosed = signal(false);
+  protected isFavourite = signal(false);
+
+  protected personTags = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.tags?.map((t: any) => t.name) ?? [];
+  });
+
+  protected personIssues = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.issues?.map((t: any) => t.name) ?? [];
+  });
+
+  protected editingName = signal(false);
+  protected nameDraft = signal({ first_name: '', last_name: '' });
+  private savingName = false;
+
+  private readonly firstNameInput = viewChild<ElementRef<HTMLInputElement>>('firstNameInput');
+  private readonly personDropdownContent = viewChild<ElementRef<HTMLElement>>('personDropdownContent');
+
+  // DaisyUI's dropdown is visible only while something inside it holds focus (`:focus-within`);
+  // losing focus even for one render flips `.dropdown-content` to `display: none`, and a
+  // `display: none` element can't be focused back into view — so the fix is to never let focus
+  // leave the subtree in the first place. We hold focus on the always-present wrapper *before*
+  // toggling which button/input gets rendered, then hand focus off to the fresh element once it
+  // exists.
+  private holdDropdownFocus(): void {
+    this.personDropdownContent()?.nativeElement.focus();
+  }
+
+  protected startEditName(person: { first_name?: string | null; last_name?: string | null }): void {
+    this.holdDropdownFocus();
+    this.nameDraft.set({ first_name: person.first_name ?? '', last_name: person.last_name ?? '' });
+    this.editingName.set(true);
+    setTimeout(() => this.firstNameInput()?.nativeElement.focus());
+  }
+
+  protected cancelEditName(): void {
+    this.holdDropdownFocus();
+    this.editingName.set(false);
+  }
+
+  protected async saveName(personId: string): Promise<void> {
+    if (this.savingName) return;
+    const { first_name, last_name } = this.nameDraft();
+    this.savingName = true;
+    try {
+      await this.personsSvc.update(personId, { first_name: first_name.trim(), last_name: last_name.trim() });
+      this.store.refreshEmailHeader(this.email().id);
+      this.holdDropdownFocus();
+      this.editingName.set(false);
+    } catch (e) {
+      console.error('Failed to update name:', e);
+      this.alertSvc.showError('Failed to update name');
+    } finally {
+      this.savingName = false;
+    }
+  }
+
+  protected async onTagAdded(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
+    } catch (e) {
+      console.error('Failed to attach tag:', e);
+      this.alertSvc.showError('Failed to add tag');
+    }
+  }
+
+  protected async onTagRemoved(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach tag:', e);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
+
+  protected async onIssueAdded(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
+    } catch (e) {
+      console.error('Failed to attach issue:', e);
+      this.alertSvc.showError('Failed to add issue');
+    }
+  }
+
+  protected async onIssueRemoved(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach issue:', e);
+      this.alertSvc.showError('Failed to remove issue');
+    }
+  }
+
+  public readonly forward = output<void>();
+  public readonly reply = output<void>();
+  public readonly replyAll = output<void>();
+
+  public email = input.required<EmailType>();
+
+  public isExpanded = this.store.isBodyExpanded;
+
+  constructor() {
+    // isFavourite and isClosed are settable, so can't use computed
+    effect(() => {
+      const email = this.email();
+
+      this.isFavourite.set(email.is_favourite);
+      this.isClosed.set(email.status === 'closed');
+    });
+  }
+
+  public getFavouriteIcon() {
+    return this.isFavourite() ? 'star-filled' : 'star';
+  }
+
+  protected async deleteEmail() {
+    try {
+      await this.store.deleteEmail(this.email().id);
+    } catch (e) {
+      console.error('Failed to delete email', e);
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected getAllRecipients(): any[] {
+    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
+  }
+
+  protected getBccRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.bcc_list || [];
+  }
+
+  protected getCcRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.cc_list || [];
+  }
+
+  protected getDateSent(): Date | null {
+    const header = this.headerData();
+    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
+  }
+
+  protected getHeaderInfo() {
+    const header = this.headerData();
+    const email = this.email();
+
+    return {
+      subject: email.subject,
+      date: this.getDateSent() || email.updated_at,
+      from: email.from_email,
+      to: email.to_email,
+      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
+      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
+      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
+      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
+      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
+      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
+    };
+  }
+
+  protected getToRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.to_list || [];
+  }
+
+  protected getTrashText() {
+    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
+  }
+
+  protected handleForward() {
+    this.forward.emit();
+  }
+
+  protected handleMarkAsUnread() {
+    void this.store.toggleEmailReadStatus(this.email().id, false);
+    this.store.selectEmail(null);
+  }
+
+  protected handleReply() {
+    this.reply.emit();
+  }
+
+  protected handleReplyAll() {
+    this.replyAll.emit();
+  }
+
+  protected isFolderTrash(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.SPAM;
+  }
+
+  protected async markAsSpam() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to mark email as spam', e);
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+
+  protected async moveToInbox() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to move email to Inbox', e);
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected markAsDoneText() {
+    return this.isClosed() ? 'Reopen' : 'Mark as done';
+  }
+
+  protected restoreFromTrash() {
+    void this.store.restoreFromTrash(this.email().id);
+  }
+
+  protected async toggleClosed() {
+    const email = this.email();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+
+    // Optimistically update UI
+    this.isClosed.set(newStatus === 'closed');
+
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_error) {
+      // Revert UI state on error
+      this.isClosed.set(currentStatus === 'closed');
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected handleCreateTask(): void {
+    void this.createTaskDialog()?.open();
+  }
+
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected async toggleFavourite() {
+    const e = this.email();
+    this.isFavourite.update((value) => !value);
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
 
 ```typescript
@@ -53459,7 +53505,7 @@ export type DATA_TYPE = 'persons' | 'households';
 ```html
 <!-- Template for person edit/add view -->
 <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-3xl">
+  <div class="w-full max-w-7xl">
     <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
@@ -53479,198 +53525,251 @@ export type DATA_TYPE = 'persons' | 'households';
 
     <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
 
-    <form (submit)="save()" novalidate class="mt-6">
-      <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
-        <!-- Tags & issues — standalone card, first section -->
-        <pc-card>
-          <!-- Tags -->
-          <div class="flex flex-col gap-1.5">
-            <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-            <pc-tags
-              [tags]="tags()"
-              type="tag"
-              [enableAutoComplete]="true"
-              placeholder="Type and press Enter to add"
-              (tagAdded)="tagAdded($event)"
-              (tagRemoved)="tagRemoved($event)"
-            ></pc-tags>
-            @if (tagSuggestions().length) {
-            <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-base-content/50">Suggestions:</span>
-              @for (s of tagSuggestions(); track s) {
-              <button
-                type="button"
-                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                (click)="addTagSuggestion(s)"
-              >
-                {{ s }}
-              </button>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Issues of interest -->
-          <div class="flex flex-col gap-1.5">
-            <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-            <pc-tags
-              [tags]="issues()"
-              type="issue"
-              [enableAutoComplete]="true"
-              placeholder="What does this person care about? Enter to add"
-              (tagAdded)="issueAdded($event)"
-              (tagRemoved)="issueRemoved($event)"
-            ></pc-tags>
-            @if (issueSuggestions().length) {
-            <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              <span class="text-base-content/50">Suggestions:</span>
-              @for (s of issueSuggestions(); track s) {
-              <button
-                type="button"
-                class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                (click)="addIssueSuggestion(s)"
-              >
-                {{ s }}
-              </button>
-              }
-            </div>
-            }
-          </div>
-        </pc-card>
-
-        <pc-card>
-          @if (!person()?.id) {
-          <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
-          }
-
-          <!-- Name -->
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
-            <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
-          </div>
-
-          <!-- Emails -->
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <pc-input
-              label="Primary email"
-              type="email"
-              placeholder="name@example.com"
-              [formField]="form.email"
-              [hasError]="!!emailError()"
-            ></pc-input>
-            <pc-input label="Secondary email" type="email" placeholder="Optional" [formField]="form.email2"></pc-input>
-          </div>
-          @if (emailError()) {
-          <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
-            <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-            {{ emailError() }}
-          </div>
-          }
-
-          <!-- Phones -->
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
-            <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
-          </div>
-
-          <!-- Company & Preferred contact -->
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
-              @for (c of companies(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-              }
-            </pc-select>
-            <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
-              <option value="email">Email</option>
-              <option value="mobile">Mobile phone</option>
-              <option value="home_phone">Home phone</option>
-            </pc-select>
-          </div>
-
-          <!-- Address & Household Assignment -->
-          <div class="flex flex-col gap-1.5">
-            <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
-            @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
-              <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-              <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
-              <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
-                Edit on household
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
-                data-tip="Change household"
-                (click)="openAssignDrawer()"
-              >
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
-                data-tip="Remove address"
-                (click)="removeAddress()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
-            </div>
-            } @else {
-            <div
-              class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
-            >
-              <div class="flex items-center gap-2">
-                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="italic text-base-content/50">No address assigned</span>
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+          <!-- Tags & issues — standalone card, first section -->
+          <pc-card>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
               </div>
-              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign household
-              </button>
+              }
+            </div>
+
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+          </pc-card>
+
+          <pc-card>
+            @if (!person()?.id) {
+            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+            }
+
+            <!-- Name -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Primary email"
+                type="email"
+                placeholder="name@example.com"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                label="Secondary email"
+                type="email"
+                placeholder="Optional"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
             </div>
             }
-            <p class="pl-1 text-xs text-base-content/50">
-              Addresses belong to households, so everyone at the same address stays in sync.
-            </p>
-          </div>
 
-          <!-- Internal notes -->
-          <pc-textarea
-            label="Internal notes"
-            placeholder="Anything the team should know about this person…"
-            [formField]="form.notes"
-            [rows]="3"
-          ></pc-textarea>
+            <!-- Phones -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+            </div>
 
-          <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
-          <details class="group border-t border-base-200 pt-3">
-            <summary
-              class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-            >
-              <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-              More details
-            </summary>
-            <div class="mt-4 flex flex-col gap-4">
-              <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
-
-              <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
-                @for (u of users(); track u.id) {
-                <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
                 }
               </pc-select>
-
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
-                <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
-              </div>
-              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
-                <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
-              </div>
+              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
             </div>
-          </details>
+
+            <!-- Address & Household Assignment -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+              @if (householdId() && !isPlaceholderHousehold()) {
+              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                  Edit on household
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                  data-tip="Change household"
+                  (click)="openAssignDrawer()"
+                >
+                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                  data-tip="Remove address"
+                  (click)="removeAddress()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div
+                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                  <span class="italic text-base-content/50">No address assigned</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Assign household
+                </button>
+              </div>
+              }
+              <p class="pl-1 text-xs text-base-content/50">
+                Addresses belong to households, so everyone at the same address stays in sync.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Anything the team should know about this person…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+
+            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+            <details class="group border-t border-base-200 pt-3">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                More details
+              </summary>
+              <div class="mt-4 flex flex-col gap-4">
+                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                  @for (u of users(); track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </pc-select>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+                </div>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+                </div>
+              </div>
+            </details>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (person()?.id && person(); as p) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People in home</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">
+                {{ householdMembersResource.value() ?? '—' }}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Company</dt>
+              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Contact owner</dt>
+              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Preferred contact</dt>
+              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            People in home counts everyone sharing this person's address — edit it from the household record.
+          </p>
         </pc-card>
-      </fieldset>
-    </form>
+
+        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
+        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        }
+      </div>
+    </div>
 
     <!-- Back to the person record -->
     @if (person()?.id) {
@@ -63034,460 +63133,12 @@ export class GridActionComponent {
 }
 ```
 
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #818789;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: rgb(226, 226, 226);
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e5c963;
-  --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
-   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
-   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
-   just apply on the touch surface). Keep the control's own flex centering. */
-@utility touch-target {
-  min-height: 2.75rem;
-  min-width: 2.75rem;
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
-   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
-   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
-   (layered) suppression can't win against the unlayered rule above. */
-.input :where(input, textarea, select):focus,
-.input :where(input, textarea, select):focus-visible {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
 
 ```html
 <!-- Split-button: primary action opens the menu of interaction types -->
 <div class="dropdown dropdown-end">
-  <div tabindex="0" role="button" class="btn btn-outline btn-accent btn-xs flex-nowrap gap-1.5 whitespace-nowrap">
+  <div tabindex="0" role="button" class="btn btn-outline btn-accent btn-sm flex-nowrap gap-1.5 whitespace-nowrap">
     <pc-icon name="plus" [size]="4"></pc-icon>
     <span>{{ label() }}</span>
     <pc-icon name="chevron-down" [size]="4"></pc-icon>
@@ -65542,6 +65193,454 @@ export const dashboardRoutes: Routes = [
     ],
   },
 ];
+```
+
+## File: apps/frontend/src/styles.css
+
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #818789;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: rgb(226, 226, 226);
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e3d6a7;
+  --color-warning-content: #4a3d0a;
+  --color-error: #f37373;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
+
+/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
+   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
+   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
+   just apply on the touch surface). Keep the control's own flex centering. */
+@utility touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts

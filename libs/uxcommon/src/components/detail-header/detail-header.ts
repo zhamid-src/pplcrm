@@ -79,7 +79,7 @@ import { FormActions } from '../form-actions/form-actions';
           <ng-content select="[pc-actions-prefix]"></ng-content>
           @if (showActions()) {
             <pc-form-actions
-              size="xs"
+              size="sm"
               [isLoading]="isLoading()"
               [signalForm]="form()"
               [disabled]="disabled()"
