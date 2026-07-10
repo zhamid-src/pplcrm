@@ -227,9 +227,10 @@ name the state change an animation narrates, cut it.
   backend's public event/web-form pages still load Roboto from Google Fonts — a separate,
   unmigrated surface as of July 2026.)
 - **Body text is `text-xs` (12px) app-wide** — grids, detail pages, settings, activity logs,
-  dialogs. `text-sm` is the one-notch-up reserved for `pc-detail-item` values and weighted
-  section headings; the Help Center is the deliberate larger exception. The full numeric scale
-  lives in UX-GUIDELINES §8.
+  dialogs. Enforced globally by the `body` font-size rule in `styles.css`, so unsized elements
+  default to 12px and larger type is always an explicit opt-in. `text-sm` is the one-notch-up
+  reserved for `pc-detail-item` values and weighted section headings; the Help Center is the
+  deliberate larger exception. The full numeric scale lives in UX-GUIDELINES §8.
 - Headings earn weight (600–700), so **weight is hierarchy** — don't reach for size or color
   first. Monospace is `ui-monospace`/system mono, reserved for IDs, routes, and kbd hints.
 - Kickers/eyebrows are small uppercase tracked labels; record names are the big type.
