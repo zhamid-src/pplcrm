@@ -720,13 +720,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const refreshHash = hashToken(refreshToken);
 
       // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
-      // itself identifies which session (and therefore tenant) this is.
+      // itself identifies which session (and therefore tenant) this is. Rotated sessions are
+      // accepted here (their reuse window is checked below) so concurrent renewals replaying the
+      // same cookie don't strand a tab.
       // eslint-disable-next-line local/no-unscoped-db-query
       const session = await this.sessions.db
         .selectFrom('sessions')
-        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at'])
+        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at', 'status'])
         .where('refresh_token', '=', refreshHash)
-        .where('status', '=', 'active')
+        .where('status', 'in', ['active', 'rotated'])
         .executeTakeFirst();
 
       if (!session) {
@@ -734,6 +736,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       }
 
       const now = new Date();
+
+      // A rotated session's refresh token stays honored for a short reuse window so concurrent
+      // renewals (two tabs cold-loading with the same cookie, or a rotation response lost to a
+      // dev-server restart) succeed instead of signing a tab out. Beyond the window, a replay is
+      // treated as a stolen/reused token. `last_used_at` was stamped at rotation time by
+      // markRotatedBySessionHash, so here it is the rotation timestamp.
+      if (session.status === 'rotated') {
+        const rotatedAgoMs = session.last_used_at ? now.getTime() - session.last_used_at.getTime() : Infinity;
+        if (rotatedAgoMs > ROTATION_REUSE_GRACE_MS) {
+          throw new UnauthorizedError();
+        }
+      }
 
       if (session.expires_at && session.expires_at < now) {
         throw new UnauthorizedError('Session has expired. Please sign in again.');
@@ -759,15 +773,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         throw new UnauthorizedError();
       }
 
-      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry) and drop
-      // the old session so a stolen or replayed refresh token can't be reused.
+      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry). The old
+      // session is marked rotated rather than deleted: the auth gates stop accepting it
+      // immediately, but its refresh token remains replayable within ROTATION_REUSE_GRACE_MS (see
+      // above) so a sibling tab holding the same cookie can still re-auth. Access tokens that
+      // still reference it recover via the client's refresh-and-retry on UNAUTHORIZED.
       const tokens = await this.createTokens({
         user_id: String(session.user_id),
         tenant_id: String(session.tenant_id),
         name: user.first_name ?? '',
         existingExpiresAt: session.expires_at ?? null,
       });
-      await this.sessions.deleteBySessionHash(session.session_id);
+      if (session.status === 'active') {
+        await this.sessions.markRotatedBySessionHash(session.session_id, String(session.tenant_id));
+      }
+      // Sweep this user's rotated sessions whose reuse window has passed — they're inert.
+      await this.sessions.deleteRotatedBefore(
+        String(session.user_id),
+        String(session.tenant_id),
+        new Date(now.getTime() - ROTATION_REUSE_GRACE_MS),
+      );
       return tokens;
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -2028,6 +2053,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 const PASSWORD_RESET_CODE_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
 const INVITE_ACTIVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+// How long a rotated-away refresh token may still be replayed (concurrent tabs sharing one cookie).
+const ROTATION_REUSE_GRACE_MS = 60 * 1000;
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
