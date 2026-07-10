@@ -56,7 +56,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'invite', text: 'Inviting someone' },
       {
         kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link, and it takes a plan seat right away — the dialog tells you how many seats remain. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, send the person a password reset from the row’s **⋯** menu to issue a fresh link. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
       },
       { kind: 'h2', id: 'roles', text: 'The roles' },
       {

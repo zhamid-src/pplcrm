@@ -615,7 +615,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           to: email,
           tenant_id: auth.tenant_id,
           subject: `You've been invited to join ${auth.name} on PplCRM`,
-          text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}`,
+          text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}\n\nThis invitation expires in 7 days.`,
           html: `<h2>You've Been Invited!</h2>
 <p>Hi ${input.first_name},</p>
 <p>You have been invited to join the campaign team by <strong>${auth.name}</strong>.</p>
@@ -624,6 +624,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   <a href="${env.appUrl}/new-password?code=${code}" class="btn">Activate Account</a>
 </div>
 <p>Your temporary password is: <code>${tempPassword}</code></p>
+<p>This invitation expires in 7 days.</p>
 <p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
         },
         trx,
@@ -818,7 +819,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const user = await this.getRepo()
       .db.selectFrom('authusers')
-      .select(['email', 'first_name', 'tenant_id'])
+      .select(['email', 'first_name', 'tenant_id', 'verified'])
       .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst();
 
@@ -826,11 +827,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new BadRequestError('Invalid or expired password reset link.');
     }
 
-    // Check if the code is valid
+    // Check if the code is valid. An unverified user is activating an invitation — that link
+    // lives 7 days; a password reset for an established account stays short-lived.
     const msec = await this.getCodeAge(code);
-    // 15 minutes in milliseconds
-    if (msec > 15 * 60 * 1000) {
-      throw new BadRequestError('The code is expired. Please request a new code');
+    if (user.verified) {
+      if (msec > PASSWORD_RESET_CODE_MAX_AGE_MS) {
+        throw new BadRequestError('The code is expired. Please request a new code');
+      }
+    } else if (msec > INVITE_ACTIVATION_MAX_AGE_MS) {
+      throw new BadRequestError('This invitation has expired. Ask an administrator to send a new one.');
     }
 
     await this.getRepo()
@@ -2020,6 +2025,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 }
 
+const PASSWORD_RESET_CODE_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
+const INVITE_ACTIVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
