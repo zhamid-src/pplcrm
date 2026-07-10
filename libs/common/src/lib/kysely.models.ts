@@ -674,6 +674,10 @@ export interface NewsletterEvents {
   url: string | null;
   ip: string | null;
   user_agent: string | null;
+  /** SendGrid's human-readable failure reason (bounce/dropped events only). */
+  reason: string | null;
+  /** SendGrid bounce sub-type: 'bounce' = hard, 'blocked' = soft. */
+  bounce_type: string | null;
   timestamp: Timestamp;
   created_at: Generated<Timestamp>;
 }

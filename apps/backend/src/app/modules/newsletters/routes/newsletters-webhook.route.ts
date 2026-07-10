@@ -113,6 +113,10 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
         const url = ev.url || null;
         const ip = ev.ip || null;
         const userAgent = ev.useragent || null;
+        // Bounce diagnostics for the report: reason ("Mailbox does not exist")
+        // on bounce/dropped events, type 'bounce' (hard) / 'blocked' (soft) on bounces.
+        const reason = typeof ev.reason === 'string' && ev.reason ? ev.reason : null;
+        const bounceType = eventType === 'bounce' && typeof ev.type === 'string' && ev.type ? ev.type : null;
         const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
 
         try {
@@ -128,6 +132,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
               url,
               ip,
               user_agent: userAgent,
+              reason,
+              bounce_type: bounceType,
               timestamp,
               created_at: new Date() as any,
             })

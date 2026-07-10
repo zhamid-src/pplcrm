@@ -1,527 +1,558 @@
-@if (email()) {
-<div class="flex flex-col gap-6">
-  <div class="flex items-center gap-3">
-    <button class="btn btn-ghost btn-sm" (click)="goBack()">
-      <pc-icon name="arrow-left" [size]="4" class="text-base-content"></pc-icon>
-      Back
-    </button>
-    <div class="divider divider-horizontal"></div>
-    <span class="badge badge-outline capitalize">{{ email()?.status || 'sent' }}</span>
-  </div>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h1 class="text-2xl font-semibold text-base-content">{{ email()?.name || 'Newsletter' }}</h1>
-    @if (email()?.summary) {
-    <p class="mt-1 text-sm text-base-content/70">{{ email()?.summary }}</p>
-    }
-    <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (metric of coreMetrics(); track metric.label) {
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ metric.label }}
-          </div>
-          <div class="stat-value text-lg font-extrabold text-base-content mt-1 sm:text-xl">{{ metric.value }}</div>
-          @if (metric.help) {
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">{{ metric.help }}</div>
-          }
-        </div>
+@if (email(); as em) {
+<div class="mx-auto w-full max-w-7xl p-6">
+  <!-- Report header -->
+  <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">{{ eyebrow() }}</div>
+      <div class="mt-1 flex flex-wrap items-center gap-3">
+        <h1 class="text-[22px] font-bold leading-tight text-base-content">{{ em.name || 'Untitled newsletter' }}</h1>
+        <pc-status-badge [type]="statusTone(em.status)">{{ statusLabel(em.status) }}</pc-status-badge>
       </div>
-      }
+      <p class="mt-1 text-xs text-base-content/60">{{ sentSentence() }}</p>
     </div>
-  </section>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold text-base-content">Audience</h2>
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Target lists / segments
-          </div>
-          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">{{ audienceLabel() }}</div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Primary audience selection</div>
-        </div>
-      </div>
-      <div class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-0">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Audience summary
-          </div>
-          <div class="stat-value text-base font-extrabold text-base-content mt-1 sm:text-lg">
-            {{ email()?.audience_description || '—' }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Short description of the send</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Engagement Analytics</h2>
-
-    <!-- Stats Cards + Funnel Grid -->
-    <div class="mt-4 grid gap-6 lg:grid-cols-3">
-      <!-- Stats Cards (2 cols on lg) -->
-      <div class="lg:col-span-2 grid gap-4 sm:grid-cols-2">
-        <!-- Open Rate Radial Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Open Rate</div>
-            <div class="stat-value text-xl font-extrabold text-success mt-1 tabular-nums">
-              {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(1) : '0.0' }}%
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.unique_opens) }} unique opens
-            </div>
-          </div>
-          <div
-            class="radial-progress text-success font-bold text-xs flex-shrink-0"
-            [style.--value]="email()?.open_rate || 0"
-            [style.--size]="'3.5rem'"
-            [style.--thickness]="'4px'"
-            role="progressbar"
-          >
-            {{ email()?.open_rate != null ? email()?.open_rate?.toFixed(0) : '0' }}%
-          </div>
-        </div>
-
-        <!-- Click Rate Radial Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Click Rate</div>
-            <div class="stat-value text-xl font-extrabold text-accent mt-1 tabular-nums">
-              {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(1) : '0.0' }}%
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.unique_clicks) }} unique clicks
-            </div>
-          </div>
-          <div
-            class="radial-progress text-accent font-bold text-xs flex-shrink-0"
-            [style.--value]="email()?.click_rate || 0"
-            [style.--size]="'3.5rem'"
-            [style.--thickness]="'4px'"
-            role="progressbar"
-          >
-            {{ email()?.click_rate != null ? email()?.click_rate?.toFixed(0) : '0' }}%
-          </div>
-        </div>
-
-        <!-- Delivered Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
-            <div class="stat-value text-xl font-extrabold text-info mt-1 tabular-nums">
-              {{ formatNumber(email()?.delivered_count) }}
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-              {{ formatNumber(email()?.total_recipients) }} total recipients
-            </div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center text-info flex-shrink-0">
-            <pc-icon name="envelope" [size]="6"></pc-icon>
-          </div>
-        </div>
-
-        <!-- Bounces Card -->
-        <div
-          class="stats border border-base-200 bg-base-100 p-4 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between gap-4"
-        >
-          <div>
-            <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-            <div class="stat-value text-xl font-extrabold text-warning mt-1 tabular-nums">
-              {{ formatNumber(email()?.bounce_count) }}
-            </div>
-            <div class="stat-desc text-[10px] text-base-content/40 mt-1">Undelivered / dropped</div>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-          </div>
-        </div>
-
-        <!-- Replies, Unsubscribes, Spam complaints counts -->
-        <div class="sm:col-span-2 grid gap-4 grid-cols-3">
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Replies</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 tabular-nums">
-                {{ formatNumber(email()?.reply_count) }}
-              </div>
-            </div>
-          </div>
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Unsubscribes</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-neutral-content/70 tabular-nums">
-                {{ formatNumber(email()?.unsubscribe_count) }}
-              </div>
-            </div>
-          </div>
-          <div class="stats border border-base-200 bg-base-100 p-3 shadow-xs">
-            <div class="stat p-0">
-              <div class="stat-title text-[10px] uppercase font-bold text-base-content/40">Spam Reports</div>
-              <div class="stat-value text-sm font-extrabold mt-0.5 text-error tabular-nums">
-                {{ formatNumber(email()?.spam_complaint_count) }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Funnel Chart Card -->
-      <div class="flex flex-col gap-3 p-4 border border-base-200 rounded-xl bg-base-100/50 shadow-sm">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Delivery Funnel</h3>
-
-        <!-- Sent -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Sent</span>
-            <span>{{ formatNumber(funnelMetrics()?.sent) }} (100%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-primary h-full rounded-full" style="width: 100%"></div>
-          </div>
-        </div>
-
-        <!-- Delivered -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Delivered</span>
-            <span>{{ formatNumber(funnelMetrics()?.delivered) }} ({{ funnelMetrics()?.delPct?.toFixed(1) }}%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-info h-full rounded-full" [style.width.%]="funnelMetrics()?.delPct"></div>
-          </div>
-        </div>
-
-        <!-- Opened -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Opened</span>
-            <span>{{ formatNumber(funnelMetrics()?.opened) }} ({{ funnelMetrics()?.opPct?.toFixed(1) }}%)</span>
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-success h-full rounded-full" [style.width.%]="funnelMetrics()?.opPct"></div>
-          </div>
-        </div>
-
-        <!-- Clicked -->
-        <div class="flex flex-col gap-1">
-          <div class="flex justify-between text-[10px] font-semibold text-base-content/70">
-            <span>Clicked</span>
-            <span
-              >{{ formatNumber(funnelMetrics()?.clicked) }} ({{ funnelMetrics()?.clPct?.toFixed(1) }}% of open)</span
-            >
-          </div>
-          <div class="w-full bg-base-200 h-2 rounded-full overflow-hidden">
-            <div class="bg-accent h-full rounded-full" [style.width.%]="funnelMetrics()?.clPct"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Timeline & Top Links Row -->
-    <div class="mt-6 grid gap-6 md:grid-cols-3">
-      <!-- Timeline Chart (2 cols on md) -->
-      <div class="md:col-span-2 border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Engagement Timeline</h3>
-          <div class="flex items-center gap-3 text-[10px] font-semibold">
-            <div class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full bg-success"></span>
-              <span class="text-base-content/70">Opens</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full bg-accent"></span>
-              <span class="text-base-content/70">Clicks</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="relative w-full h-[150px]">
-          @if (timelinePoints().points.length > 0) {
-          <svg viewBox="0 0 600 150" width="100%" height="100%" class="overflow-visible">
-            <defs>
-              <linearGradient id="openAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--color-success, #10b981)" stop-opacity="0.25" />
-                <stop offset="100%" stop-color="var(--color-success, #10b981)" stop-opacity="0" />
-              </linearGradient>
-              <linearGradient id="clickAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0.25" />
-                <stop offset="100%" stop-color="var(--color-accent, #06b6d4)" stop-opacity="0" />
-              </linearGradient>
-            </defs>
-
-            <!-- Horizontal Grid Lines -->
-            <g stroke="var(--fallback-bc,oklch(var(--bc)/0.05))" stroke-width="1">
-              @for (line of timelinePoints().gridLines; track line.y) {
-              <line
-                x1="50"
-                [attr.y1]="line.y"
-                x2="580"
-                [attr.y2]="line.y"
-                [attr.stroke-dasharray]="line.y === 120 ? 'none' : '3,3'"
-              ></line>
-              <text
-                x="42"
-                [attr.y]="line.y + 3"
-                text-anchor="end"
-                class="text-[9px] fill-base-content/40 font-sans font-medium"
-                stroke="none"
-              >
-                {{ line.label }}
-              </text>
-              }
-            </g>
-
-            <!-- Area Under Line -->
-            <path [attr.d]="timelinePoints().opensArea" fill="url(#openAreaGrad)" stroke="none"></path>
-            <path [attr.d]="timelinePoints().clicksArea" fill="url(#clickAreaGrad)" stroke="none"></path>
-
-            <!-- Line Plots -->
-            <path
-              [attr.d]="timelinePoints().opensPath"
-              fill="none"
-              class="stroke-success"
-              stroke-width="2"
-              stroke-linecap="round"
-            ></path>
-            <path
-              [attr.d]="timelinePoints().clicksPath"
-              fill="none"
-              class="stroke-accent"
-              stroke-width="2"
-              stroke-linecap="round"
-            ></path>
-
-            <!-- Data points (circles) -->
-            @for (pt of timelinePoints().points; track pt.label) {
-            <g>
-              <circle
-                [attr.cx]="pt.x"
-                [attr.cy]="pt.yOpens"
-                r="3"
-                class="fill-success stroke-base-100"
-                stroke-width="1"
-              >
-                <title>{{ pt.label }} - Opens: {{ pt.opens }}</title>
-              </circle>
-              <circle
-                [attr.cx]="pt.x"
-                [attr.cy]="pt.yClicks"
-                r="3"
-                class="fill-accent stroke-base-100"
-                stroke-width="1"
-              >
-                <title>{{ pt.label }} - Clicks: {{ pt.clicks }}</title>
-              </circle>
-              <text
-                [attr.x]="pt.x"
-                y="142"
-                text-anchor="middle"
-                class="text-[8px] fill-base-content/40 font-sans font-semibold"
-              >
-                {{ pt.label }}
-              </text>
-            </g>
-            }
-          </svg>
-          } @else {
-          <div
-            class="flex h-full w-full items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-          >
-            <span class="text-xs font-semibold text-base-content/40">No engagement history yet</span>
-            <span class="text-[10px] text-base-content/30"
-              >History will record hourly opens and clicks since campaign send.</span
-            >
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Top Links (1 col on md) -->
-      <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 shadow-sm">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Top Links Clicked</h3>
-        @if (topLinks().length) {
-        <div class="grid gap-2 overflow-y-auto max-h-[160px]">
-          @for (link of topLinks(); track link.url) {
-          <div class="rounded border border-base-200 bg-base-100 p-2.5 shadow-xs flex flex-col gap-1">
-            <div class="truncate text-[10px] font-semibold text-base-content/80" [title]="link.url">{{ link.url }}</div>
-            <div class="text-xs font-bold text-accent">{{ formatNumber(link.clicks) }} clicks</div>
-          </div>
-          }
-        </div>
-        } @else {
-        <div
-          class="flex h-36 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-        >
-          <span class="text-xs font-semibold text-base-content/40">No links clicked</span>
-        </div>
-        }
-      </div>
-    </div>
-
-    <!-- Activity Log -->
-    <div class="border border-base-200 rounded-xl bg-base-100/50 p-5 mt-6 shadow-sm">
-      <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Recent Engagement Activity</h3>
-
-      @if (stats()?.activities?.length) {
-      <div class="overflow-x-auto max-h-80">
-        <table class="table table-xs table-zebra w-full text-left">
-          <thead>
-            <tr class="text-base-content/50 border-b border-base-200">
-              <th class="py-2">Recipient Email</th>
-              <th class="py-2">Action</th>
-              <th class="py-2">Time</th>
-              <th class="py-2">Detail</th>
-              <th class="py-2">IP / User Agent</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (act of stats()?.activities; track act.timestamp) {
-            <tr class="hover">
-              <td class="font-medium text-base-content">{{ act.email }}</td>
-              <td>
-                <span
-                  class="badge badge-sm py-1 capitalize font-semibold"
-                  [class.badge-success]="act.event_type === 'open'"
-                  [class.text-success-content]="act.event_type === 'open'"
-                  [class.badge-accent]="act.event_type === 'click'"
-                  [class.text-accent-content]="act.event_type === 'click'"
-                  [class.badge-warning]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  [class.text-warning-content]="act.event_type === 'bounce' || act.event_type === 'dropped'"
-                  [class.badge-error]="act.event_type === 'spamreport'"
-                  [class.text-error-content]="act.event_type === 'spamreport'"
-                  [class.badge-neutral]="act.event_type === 'unsubscribe'"
-                  [class.text-neutral-content]="act.event_type === 'unsubscribe'"
-                >
-                  {{ act.event_type }}
-                </span>
-              </td>
-              <td class="text-base-content/70 whitespace-nowrap">{{ formatActivityDate(act.timestamp) }}</td>
-              <td class="max-w-[200px] truncate text-base-content/60" [title]="act.url || ''">
-                {{ act.url ? act.url : '—' }}
-              </td>
-              <td class="max-w-[150px] truncate text-[10px] text-base-content/40" [title]="act.user_agent || ''">
-                @if (act.user_agent) { {{ act.ip || '—' }}
-                <span class="hidden sm:inline">/ {{ act.user_agent }}</span> }
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center flex-col gap-1 text-center bg-base-200/20 rounded-xl border border-dashed border-base-200"
-      >
-        <pc-icon name="inbox" [size]="5" class="text-base-content/30"></pc-icon>
-        <span class="text-xs font-semibold text-base-content/40">No activity logged yet</span>
-        <span class="text-[10px] text-base-content/30"
-          >Opens, clicks, bounces, and other actions will list here in real time.</span
-        >
-      </div>
-      }
-    </div>
-  </section>
-
-  @if (email()?.html_content || email()?.plain_text_content) {
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <h2 class="text-lg font-semibold">Content preview</h2>
-    <div class="mt-4 grid gap-6 lg:grid-cols-2">
-      <div>
-        <h3 class="text-sm font-semibold text-base-content/60">Subject line</h3>
-        <p class="mt-1 text-base">{{ email()?.subject || '—' }}</p>
-
-        <h3 class="mt-4 text-sm font-semibold text-base-content/60">Preview text</h3>
-        <p class="mt-1 text-base">{{ email()?.preview_text || '—' }}</p>
-      </div>
-      <div>
-        <h3 class="text-sm font-semibold text-base-content/60">HTML content</h3>
-        @if (email()?.html_content) {
-        <div class="mt-2 max-h-72 overflow-auto rounded border border-base-200 bg-base-200/20 p-3">
-          <div [innerHTML]="email()?.html_content"></div>
-        </div>
-        } @else {
-        <p class="mt-2 text-sm text-base-content/60">No HTML content stored.</p>
-        }
-      </div>
-    </div>
-    <div class="mt-4">
-      <h3 class="text-sm font-semibold text-base-content/60">Plain text content</h3>
-      <pre class="mt-2 max-h-56 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-sm">
-{{ email()?.plain_text_content || 'No plain text version stored.' }}</pre
-      >
-    </div>
-  </section>
-  } @if (attachments().length > 0 || canManageAttachments()) {
-  <section class="rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-    <div class="flex items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">Attachments</h2>
-      @if (canManageAttachments()) {
-      <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
-      <button
-        class="btn btn-primary btn-sm gap-2"
-        [disabled]="isUploadingAttachment()"
-        (click)="attachmentInput.click()"
-      >
-        @if (isUploadingAttachment()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        Attaching… } @else {
-        <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
-        Attach file }
+    <div class="flex items-center gap-2">
+      @if (!isUnsent()) {
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
+        Export report CSV
       </button>
       }
+      <button
+        type="button"
+        class="btn btn-primary btn-sm gap-2"
+        [disabled]="isDuplicating()"
+        (click)="duplicateNewsletter()"
+      >
+        @if (isDuplicating()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } @else {
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        } Duplicate newsletter
+      </button>
     </div>
+  </div>
 
-    @if (attachments().length === 0) {
-    <p class="mt-3 text-sm text-base-content/60">No files attached to this newsletter.</p>
-    } @else {
-    <ul class="mt-3 divide-y divide-base-200">
-      @for (attachment of attachments(); track attachment.id) {
-      <li class="flex items-center justify-between gap-3 py-2">
-        <div class="min-w-0">
-          <p class="truncate text-sm font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
-          @if (attachment.size_bytes) {
-          <p class="text-xs text-base-content/60">{{ formatBytes(attachment.size_bytes) }}</p>
+  <!-- Stat tiles -->
+  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    @for (tile of tiles(); track tile.label) {
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ tile.label }}
+        </div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl" [class]="tile.valueClass">
+          {{ tile.value }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] tabular-nums text-base-content/40">{{ tile.sub }}</div>
+      </div>
+    </div>
+    }
+  </div>
+
+  <div class="grid items-start gap-6 lg:grid-cols-3">
+    <!-- ============================== main column ============================== -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <!-- How the send resolved -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+          How the send resolved
+        </h2>
+        @if (funnel().length > 0) {
+        <div class="mt-4 flex flex-col gap-3">
+          @for (row of funnel(); track row.label) {
+          <div class="flex items-center gap-4">
+            <span class="w-16 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+            <div class="h-2 flex-1 overflow-hidden rounded-full bg-base-200">
+              <div class="h-full rounded-full bg-primary" [style.width.%]="row.width"></div>
+            </div>
+            <span class="w-40 shrink-0 text-right text-xs tabular-nums">
+              <span class="font-bold text-base-content">{{ row.count }}</span>
+              <span class="text-base-content/50"> · {{ row.share }}</span>
+            </span>
+          </div>
           }
         </div>
-        @if (canManageAttachments()) {
-        <button
-          class="btn btn-sm btn-circle btn-ghost text-error"
-          title="Remove attachment"
-          (click)="removeAttachment(attachment)"
-        >
-          <pc-icon name="trash" [size]="4"></pc-icon>
-        </button>
+        @if (report(); as rep) { @if (rep.bounces.total > 0) {
+        <div class="mt-4 flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs">
+          <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+          <p class="text-base-content/80">
+            {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
+            }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}) — hard bounces joined
+            the suppression list and future sends skip them automatically per the
+            <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
+          </p>
+        </div>
+        } } } @else {
+        <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+          <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
+          <p class="text-xs text-base-content/60">Nothing has been sent yet — delivery results will appear here.</p>
+        </div>
         }
-      </li>
+      </section>
+
+      <!-- Bounced addresses -->
+      @if (report(); as rep) {
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Bounced addresses @if (rep.bounces.total > 0) { · {{ formatNumber(rep.bounces.total) }} }
+          </h2>
+          @if (rep.bounces.rows.length > 0) {
+          <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="exportBouncesCsv()">
+            Export {{ formatNumber(rep.bounces.total) }} bounces CSV
+          </button>
+          }
+        </div>
+        @if (bounceRowsShown().length > 0) {
+        <ul class="mt-3 divide-y divide-base-200">
+          @for (bounce of bounceRowsShown(); track bounce.email) {
+          <li class="flex items-center justify-between gap-3 py-2.5">
+            <div class="min-w-0">
+              <p class="truncate font-mono text-xs text-base-content">{{ bounce.email }}</p>
+              <p class="mt-0.5 text-[10px] text-base-content/50">
+                {{ bounce.reason || 'No reason recorded by the provider' }}
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-3">
+              <pc-status-badge [type]="bounceKindTone(bounce.kind)">{{ bounceKindLabel(bounce.kind) }}</pc-status-badge>
+              @if (bounce.person; as person) {
+              <a
+                class="link link-hover w-28 truncate text-right text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                [routerLink]="personRoute(person)"
+              >
+                {{ person.name }}
+              </a>
+              } @else {
+              <span class="w-28 text-right text-xs text-base-content/40">No CRM match</span>
+              }
+            </div>
+          </li>
+          }
+        </ul>
+        <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+          Showing {{ bounceRowsShown().length }} of {{ formatNumber(rep.bounces.total) }} · hard bounces are suppressed
+          from future sends; soft bounces are retried by the provider.
+        </p>
+        } @else {
+        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+          <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
+          <p class="text-xs text-base-content/60">No bounces — every address accepted this send.</p>
+        </div>
+        }
+      </section>
       }
-    </ul>
-    }
-  </section>
-  } @if (error()) {
-  <div class="alert alert-error">
-    <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
-    {{ error() }}
+
+      <!-- Engagement · first 48 hours -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Engagement · first 48 hours
+          </h2>
+          <div class="flex items-center gap-3 text-[10px] font-semibold text-base-content/70">
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Opens</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-secondary"></span> Clicks</span>
+          </div>
+        </div>
+        @if (engagementChart(); as chart) {
+        <div class="mt-4 flex h-32 items-end gap-1">
+          @for (bucket of chart; track $index) {
+          <div class="tooltip flex h-full flex-1 items-end justify-center gap-px" [attr.data-tip]="bucket.tip">
+            <div
+              class="w-1/3 rounded-t-sm bg-primary"
+              [style.height.%]="bucket.opensPct"
+              [style.minHeight.px]="bucket.opens > 0 ? 2 : 0"
+            ></div>
+            <div
+              class="w-1/3 rounded-t-sm bg-secondary"
+              [style.height.%]="bucket.clicksPct"
+              [style.minHeight.px]="bucket.clicks > 0 ? 2 : 0"
+            ></div>
+          </div>
+          }
+        </div>
+        <div class="mt-1 flex justify-between border-t border-base-200 pt-1 text-[10px] text-base-content/40">
+          <span>Send</span><span>12h</span><span>24h</span><span>36h</span><span>48h</span>
+        </div>
+        @if (opensIn24hSentence(); as sentence) {
+        <p class="mt-3 text-[10px] text-base-content/50">{{ sentence }}</p>
+        } } @else {
+        <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+          <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
+          <p class="text-xs text-base-content/60">
+            No hour-by-hour engagement to chart — opens and clicks appear here as they arrive.
+          </p>
+        </div>
+        }
+      </section>
+
+      <!-- Top links clicked -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Top links clicked
+          </h2>
+          @if (topLinks().length > 0) {
+          <span class="text-[10px] tabular-nums text-base-content/50">{{ linksSentence() }}</span>
+          }
+        </div>
+        @if (topLinks().length > 0) {
+        <ul class="mt-3 divide-y divide-base-200">
+          @for (link of topLinks(); track link.url) {
+          <li class="flex items-center gap-4 py-2.5">
+            <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content" [title]="link.url">
+              {{ link.display }}
+            </span>
+            <div class="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-base-200">
+              <div class="h-full rounded-full bg-secondary" [style.width.%]="link.width"></div>
+            </div>
+            <span class="w-36 shrink-0 text-right text-xs tabular-nums text-base-content/70">
+              {{ formatNumber(link.clicks) }} clicks@if (link.people != null) { · {{ formatNumber(link.people) }} people
+              }
+            </span>
+          </li>
+          }
+        </ul>
+        } @else {
+        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+          <pc-icon name="queue-list" [size]="6" class="text-base-content/30"></pc-icon>
+          <p class="text-xs text-base-content/60">No link clicks recorded for this send yet.</p>
+        </div>
+        }
+      </section>
+
+      <!-- Vs previous sends -->
+      @if (comparison().length > 0) {
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Vs previous sends</h2>
+        <div class="mt-4 flex flex-col gap-4">
+          @for (row of comparison(); track row.label) {
+          <div class="flex items-center gap-4">
+            <span class="w-32 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+            <div class="flex h-9 items-end gap-1">
+              @for (bar of row.bars; track $index) {
+              <div
+                class="w-2.5 rounded-t-sm"
+                [class.bg-primary]="bar.isCurrent"
+                [class.bg-base-300]="!bar.isCurrent"
+                [style.height.%]="bar.height"
+              ></div>
+              }
+            </div>
+            <div class="flex-1 text-right">
+              <div class="text-sm font-bold tabular-nums text-base-content">{{ row.current }}</div>
+              @if (row.delta) {
+              <div class="text-[10px] tabular-nums" [class]="row.deltaClass">{{ row.delta }}</div>
+              }
+            </div>
+          </div>
+          }
+        </div>
+        <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+          The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest — this send is the solid bar.
+          Deltas compare against the send before it.
+        </p>
+      </section>
+      }
+    </div>
+
+    <!-- ============================== side column ============================== -->
+    <div class="flex flex-col gap-6">
+      <!-- What to do next -->
+      @if (report(); as rep) {
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What to do next</h2>
+        <span
+          class="mt-3 block"
+          [class.tooltip]="rep.unique_clickers === 0"
+          data-tip="No one has clicked this newsletter yet"
+        >
+          <button
+            type="button"
+            class="btn btn-primary btn-sm w-full"
+            [disabled]="rep.unique_clickers === 0 || isCreatingList()"
+            (click)="createClickersList()"
+          >
+            @if (isCreatingList()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            } Create list of {{ formatNumber(rep.unique_clickers) }} clickers
+          </button>
+        </span>
+        <p class="mt-2 text-[10px] text-base-content/50">
+          A static snapshot — target the next send at the people who acted on this one.
+        </p>
+
+        <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
+          <div>
+            <p class="text-xs font-semibold text-base-content">
+              {{ formatNumber(em.reply_count) }} {{ em.reply_count === 1 ? 'reply' : 'replies' }} landed in the Inbox
+            </p>
+            <p class="mt-0.5 text-[10px] text-base-content/50">Replies thread into conversations there</p>
+          </div>
+          <a routerLink="/inbox" class="btn btn-outline btn-secondary btn-xs shrink-0">Open Inbox</a>
+        </div>
+
+        @if (mostEngaged().length > 0) {
+        <div class="mt-4 border-t border-base-200 pt-4">
+          <h3 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Most engaged</h3>
+          <ul class="mt-2 flex flex-col gap-2.5">
+            @for (person of mostEngaged(); track person.email) {
+            <li class="flex items-center gap-3">
+              <span
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
+              >
+                {{ person.initials }}
+              </span>
+              <div class="min-w-0">
+                @if (person.person; as match) {
+                <a
+                  class="link link-hover block truncate text-xs font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                  [routerLink]="personRoute(match)"
+                >
+                  {{ person.displayName }}
+                </a>
+                } @else {
+                <span class="block truncate text-xs font-semibold text-base-content" [title]="person.email">
+                  {{ person.displayName }}
+                </span>
+                }
+                <p class="truncate text-[10px] text-base-content/50">{{ person.summary }}</p>
+              </div>
+            </li>
+            }
+          </ul>
+        </div>
+        }
+      </section>
+
+      <!-- Audience at send -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Audience at send</h2>
+        @if (rep.audience.lists.length > 0) {
+        <ul class="mt-3 flex flex-col gap-2 text-xs">
+          @for (list of rep.audience.lists; track list.id) {
+          <li class="flex items-center justify-between gap-3">
+            <span class="min-w-0 truncate text-base-content/80">
+              {{ list.mode === 'include' ? 'In list' : 'Excluding list' }} "{{ list.name }}"
+            </span>
+            <span class="shrink-0 font-semibold tabular-nums text-base-content">
+              {{ list.mode === 'include' ? '+' : '−' }}{{ formatNumber(list.members) }}
+            </span>
+          </li>
+          } @if (rep.audience.overlap_removed > 0) {
+          <li class="flex items-center justify-between gap-3">
+            <span class="text-base-content/60">Overlap removed</span>
+            <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+              −{{ formatNumber(rep.audience.overlap_removed) }}
+            </span>
+          </li>
+          } @if (rep.audience.suppressed_skipped > 0) {
+          <li class="flex items-center justify-between gap-3">
+            <span class="text-base-content/60">Previously bounced skipped (Workspace setting)</span>
+            <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+              −{{ formatNumber(rep.audience.suppressed_skipped) }}
+            </span>
+          </li>
+          }
+        </ul>
+        <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-200 pt-3 text-xs">
+          <span class="font-bold text-base-content">Total</span>
+          <span class="font-bold tabular-nums text-base-content">
+            {{ formatNumber(em.total_recipients) }} recipients
+          </span>
+        </div>
+        <p class="mt-3 text-[10px] text-base-content/50">
+          @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now — lists may have
+          changed since the send.
+        </p>
+        } @else {
+        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+          <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
+          <p class="text-xs text-base-content/60">No lists were targeted — the audience came from tag segments.</p>
+        </div>
+        }
+      </section>
+
+      <!-- Unsubscribe reasons -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Unsubscribe reasons @if (rep.unsubscribes.total > 0) { · {{ formatNumber(rep.unsubscribes.total) }} }
+          </h2>
+          @if (unsubscribeRate(); as rate) {
+          <span class="text-[10px] tabular-nums text-base-content/50">{{ rate }} of delivered</span>
+          }
+        </div>
+        @if (unsubscribeReasons().length > 0) {
+        <ul class="mt-3 flex flex-col gap-2.5">
+          @for (reason of unsubscribeReasons(); track reason.label) {
+          <li class="flex items-center gap-3 text-xs">
+            <span class="min-w-0 flex-1 truncate text-base-content/80">{{ reason.label }}</span>
+            <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-base-200">
+              <div class="h-full rounded-full bg-base-content/30" [style.width.%]="reason.width"></div>
+            </div>
+            <span class="w-6 shrink-0 text-right font-semibold tabular-nums text-base-content">
+              {{ reason.count }}
+            </span>
+          </li>
+          }
+        </ul>
+        <p class="mt-3 text-[10px] text-base-content/50">
+          The unsubscribe page doesn't ask why yet, so reasons aren't broken down.
+        </p>
+        } @else {
+        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No unsubscribes from this send.</p>
+        }
+      </section>
+
+      <!-- Spam reports -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Spam reports @if (rep.spam_reports.total > 0) { · {{ formatNumber(rep.spam_reports.total) }} }
+          </h2>
+          @if (spamRate() != null) {
+          <span class="text-[10px] tabular-nums text-base-content/50"
+            >{{ formatSpamRate(spamRate()) }} of delivered</span
+          >
+          }
+        </div>
+        @if (rep.spam_reports.total > 0) { @for (row of spamRows(); track $index) {
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="truncate font-mono text-xs text-base-content">{{ row.email }}</p>
+            @if (row.timing) {
+            <p class="mt-0.5 text-[10px] text-base-content/50">Provider feedback loop · {{ row.timing }}</p>
+            }
+          </div>
+          <pc-status-badge type="neutral">Suppressed</pc-status-badge>
+        </div>
+        }
+        <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+          Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1% — @if
+          (spamRateIsSafe()) { this send is well clear. } @else { this send is over that line — review the audience
+          before the next send. }
+        </p>
+        } @else {
+        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No spam reports from this send.</p>
+        }
+      </section>
+      }
+
+      <!-- What was sent -->
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What was sent</h2>
+        <div class="mt-3 flex flex-col gap-3 text-xs">
+          <div>
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Subject</div>
+            <p class="mt-0.5 font-semibold text-base-content">{{ em.subject || '—' }}</p>
+          </div>
+          @if (em.preview_text) {
+          <div>
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Preview text</div>
+            <p class="mt-0.5 text-base-content/80">{{ em.preview_text }}</p>
+          </div>
+          } @if (report()?.from; as from) {
+          <div>
+            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">From</div>
+            <p class="mt-0.5 text-base-content/80">{{ from.name }} @if (from.email) { &lt;{{ from.email }}&gt; }</p>
+          </div>
+          }
+        </div>
+        @if (em.html_content || em.plain_text_content) {
+        <div
+          class="mt-3 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-xs"
+          [class.max-h-56]="!emailExpanded()"
+        >
+          @if (em.html_content) {
+          <div [innerHTML]="em.html_content"></div>
+          } @else {
+          <pre class="whitespace-pre-wrap font-sans">{{ em.plain_text_content }}</pre>
+          }
+        </div>
+        <button
+          type="button"
+          class="btn btn-outline btn-secondary btn-xs mt-3 w-full"
+          (click)="emailExpanded.set(!emailExpanded())"
+        >
+          {{ emailExpanded() ? 'Collapse email' : 'View sent email' }}
+        </button>
+        } @else {
+        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No content stored for this newsletter.</p>
+        }
+      </section>
+
+      <!-- Attachments (manageable until the newsletter goes out) -->
+      @if (attachments().length > 0 || canManageAttachments()) {
+      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Attachments @if (attachments().length > 0) { · {{ attachments().length }} }
+          </h2>
+          @if (canManageAttachments()) {
+          <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-xs gap-1"
+            [disabled]="isUploadingAttachment()"
+            (click)="attachmentInput.click()"
+          >
+            @if (isUploadingAttachment()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            Attaching… } @else {
+            <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+            Attach file }
+          </button>
+          }
+        </div>
+        @if (attachments().length === 0) {
+        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No files attached to this newsletter.</p>
+        } @else {
+        <ul class="mt-2 divide-y divide-base-200">
+          @for (attachment of attachments(); track attachment.id) {
+          <li class="flex items-center justify-between gap-3 py-2">
+            <div class="min-w-0">
+              <p class="truncate text-xs font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+              @if (attachment.size_bytes) {
+              <p class="text-[10px] text-base-content/50">{{ formatBytes(attachment.size_bytes) }}</p>
+              }
+            </div>
+            @if (canManageAttachments()) {
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs btn-circle text-error"
+              title="Remove attachment"
+              (click)="removeAttachment(attachment)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+            }
+          </li>
+          }
+        </ul>
+        }
+      </section>
+      }
+    </div>
   </div>
-  }
 </div>
 } @else { @if (!error()) {
-<div class="flex flex-col gap-4">
-  <div class="skeleton h-6 w-32"></div>
-  <div class="skeleton h-32 w-full"></div>
+<div class="mx-auto w-full max-w-7xl p-6">
+  <div class="flex flex-col gap-6">
+    <div class="skeleton h-16 w-80"></div>
+    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div class="skeleton h-24"></div>
+      <div class="skeleton h-24"></div>
+      <div class="skeleton h-24"></div>
+      <div class="skeleton h-24"></div>
+      <div class="skeleton h-24"></div>
+    </div>
+    <div class="skeleton h-64 w-full"></div>
+  </div>
 </div>
 } @else {
-<div class="alert alert-error">
-  <pc-icon name="exclamation-triangle" class="mr-2"></pc-icon>
-  {{ error() }}
+<div class="mx-auto w-full max-w-7xl p-6">
+  <div class="alert alert-error">
+    <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+    {{ error() }}
+  </div>
 </div>
 } }

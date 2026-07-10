@@ -1,9 +1,11 @@
 import { Service, inject } from '@angular/core';
 import {
   AddMarketingEmailType,
+  CreateClickersListResultType,
   ExportCsvInputType,
   ExportCsvResponseType,
   MarketingEmailTopLinkType,
+  NewsletterReportType,
   UpdateMarketingEmailType,
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
@@ -59,8 +61,12 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.normalize(record);
   }
 
-  public getEngagementStats(id: string) {
-    return this.api.newsletters.getEngagementStats.query(id);
+  public getReport(id: string): Promise<NewsletterReportType> {
+    return this.api.newsletters.getReport.query(id);
+  }
+
+  public createClickersList(id: string): Promise<CreateClickersListResultType> {
+    return this.api.newsletters.createClickersList.mutate(id);
   }
 
   public async getTags(_id: string) {

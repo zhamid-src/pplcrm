@@ -96,12 +96,7 @@
     } @else { @for (row of rows(); track row.id) {
     <tr>
       <td>
-        <a
-          class="link link-hover font-semibold text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="[row.id]"
-        >
-          {{ row.name || 'Untitled newsletter' }}
-        </a>
+        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
       </td>
       <td>
         <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
@@ -128,6 +123,7 @@
         }
       </td>
       <td class="text-right">
+        <!-- A report only exists once a send is (or was) underway. -->
         @if (row.status === 'draft') {
         <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
           <button
@@ -139,7 +135,7 @@
             Send…
           </button>
         </span>
-        } @else {
+        } @else if (row.status !== 'scheduled') {
         <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
         }
       </td>
