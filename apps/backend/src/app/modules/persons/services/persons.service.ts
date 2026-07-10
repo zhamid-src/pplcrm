@@ -536,8 +536,10 @@ export class PersonsService {
     input: {
       rows: Array<{
         first_name?: string;
+        middle_names?: string;
         last_name?: string;
         email?: string;
+        email2?: string;
         mobile?: string;
         notes?: string;
         home_phone?: string;
@@ -549,6 +551,8 @@ export class PersonsService {
         state?: string;
         zip?: string;
         country?: string;
+        company?: string;
+        tags?: string;
       }>;
       tags?: string[];
       skipped?: number;
@@ -740,6 +744,9 @@ export class PersonsService {
 
     const errorMessages: string[] = [];
     let cachedBlankHouseholdId: string | null = null;
+    // Companies resolved so far, keyed by lower(name) — merged from each chunk's
+    // transaction only after it commits, so a rolled-back create is never reused.
+    const companyIdByName = new Map<string, string>();
     let autoTagId: string | null = null;
     const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
 
@@ -751,8 +758,10 @@ export class PersonsService {
       type ValidEntry = {
         sanitized: {
           first_name?: string;
+          middle_names?: string;
           last_name?: string;
           email?: string;
+          email2?: string;
           mobile?: string;
           notes?: string;
           home_phone?: string;
@@ -764,6 +773,8 @@ export class PersonsService {
           state?: string;
           zip?: string;
           country?: string;
+          company?: string;
+          tags: string[];
         };
         isBlankAddress: boolean;
         fp_street: string | null;
@@ -918,6 +929,50 @@ export class PersonsService {
             householdsCreatedDelta += 1;
           }
 
+          // 2c'. Resolve companies by case-insensitive name: one IN query for the
+          // chunk's unmatched names, then create whatever is still missing —
+          // attributed to this import via file_id so deleting the import can
+          // clean them up. Kept in a chunk-local map and merged into the outer
+          // cache only after commit.
+          const localCompanyIdByName = new Map<string, string>(companyIdByName);
+          const chunkCompanyNames = new Map<string, string>(); // lower(name) -> original casing
+          for (const entry of validEntries) {
+            const name = entry.sanitized.company;
+            if (name && !localCompanyIdByName.has(name.toLowerCase())) {
+              if (!chunkCompanyNames.has(name.toLowerCase())) chunkCompanyNames.set(name.toLowerCase(), name);
+            }
+          }
+          if (chunkCompanyNames.size > 0) {
+            const existingCompanies = await trx
+              .selectFrom('companies')
+              .select(['id', 'name'])
+              .where('tenant_id', '=', tenant_id)
+              .where(sql`lower(name)`, 'in', [...chunkCompanyNames.keys()])
+              .execute();
+            for (const c of existingCompanies) {
+              localCompanyIdByName.set(c.name.toLowerCase(), String(c.id));
+            }
+            for (const [lowerName, name] of chunkCompanyNames) {
+              if (localCompanyIdByName.has(lowerName)) continue;
+              const created = await trx
+                .insertInto('companies')
+                .values({
+                  tenant_id,
+                  createdby_id: user_id,
+                  updatedby_id: user_id,
+                  name,
+                  file_id: import_id,
+                } as OperationDataType<'companies', 'insert'>)
+                .returning('id')
+                .executeTakeFirst();
+              if (created?.id) localCompanyIdByName.set(lowerName, String(created.id));
+            }
+          }
+          const companyIdFor = (entry: (typeof validEntries)[number]): string | null => {
+            const name = entry.sanitized.company;
+            return name ? (localCompanyIdByName.get(name.toLowerCase()) ?? null) : null;
+          };
+
           // 2d. Duplicate-email resolution (spec §17 Review step — a single
           // decision governs every row whose email matches a person that
           // already exists; email is the match key app-wide, same as
@@ -976,22 +1031,26 @@ export class PersonsService {
           }
 
           // 3. Batch insert all persons in one statement
-          const personRows = insertEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
-            tenant_id,
-            campaign_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
-            first_name: sanitized.first_name ?? null,
-            middle_names: null,
-            last_name: sanitized.last_name ?? null,
-            email: sanitized.email ?? null,
-            email2: null,
-            mobile: sanitized.mobile ?? null,
-            home_phone: null,
-            file_id: import_id,
-            notes: sanitized.notes ?? null,
-          }));
+          const personRows = insertEntries.map((entry) => {
+            const { sanitized, isBlankAddress, fp_full } = entry;
+            return {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
+              first_name: sanitized.first_name ?? null,
+              middle_names: sanitized.middle_names ?? null,
+              last_name: sanitized.last_name ?? null,
+              email: sanitized.email ?? null,
+              email2: sanitized.email2 ?? null,
+              mobile: sanitized.mobile ?? null,
+              home_phone: null,
+              company_id: companyIdFor(entry),
+              file_id: import_id,
+              notes: sanitized.notes ?? null,
+            };
+          });
           const insertedPersons = personRows.length
             ? await trx
                 .insertInto('persons')
@@ -1012,8 +1071,11 @@ export class PersonsService {
               .updateTable('persons')
               .set({
                 first_name: sql`COALESCE(persons.first_name, ${entry.sanitized.first_name ?? null})`,
+                middle_names: sql`COALESCE(persons.middle_names, ${entry.sanitized.middle_names ?? null})`,
                 last_name: sql`COALESCE(persons.last_name, ${entry.sanitized.last_name ?? null})`,
+                email2: sql`COALESCE(persons.email2, ${entry.sanitized.email2 ?? null})`,
                 mobile: sql`COALESCE(persons.mobile, ${entry.sanitized.mobile ?? null})`,
+                company_id: sql`COALESCE(persons.company_id, ${companyIdFor(entry)})`,
                 notes: sql`COALESCE(persons.notes, ${entry.sanitized.notes ?? null})`,
                 updated_at: sql`now()`,
                 updatedby_id: user_id,
@@ -1025,9 +1087,16 @@ export class PersonsService {
           }
           results.merged += mergedPersonIds.length;
 
-          // 4. Upsert each unique tag name exactly once (not once per row)
+          // 4. Upsert each unique tag name exactly once (not once per row) —
+          // the batch-level tags plus every name from a mapped Tags column,
+          // deduplicated case-insensitively (first casing wins).
+          const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
+          for (const name of [...tags, ...validEntries.flatMap((e) => e.sanitized.tags)]) {
+            if (!uniqueTagNames.has(name.toLowerCase())) uniqueTagNames.set(name.toLowerCase(), name);
+          }
+          const tagIdByLowerName = new Map<string, string>();
           const tagRecords: Array<{ name: string; id: string }> = [];
-          for (const name of tags) {
+          for (const name of uniqueTagNames.values()) {
             const row = {
               name,
               tenant_id,
@@ -1036,23 +1105,55 @@ export class PersonsService {
             } as OperationDataType<'tags', 'insert'>;
             const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
             if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
-            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
+            if (tag?.id) {
+              tagRecords.push({ name, id: String(tag.id) });
+              tagIdByLowerName.set(name.toLowerCase(), String(tag.id));
+            }
           }
 
-          // 5. Batch insert all tag-person mappings in one statement — for
-          // both freshly-inserted persons and persons a 'merge' decision
-          // folded this import's tags into.
-          const taggableIds = [...insertedPersons.map((p) => String(p.id)), ...mergedPersonIds];
-          if (tagRecords.length > 0 && taggableIds.length > 0) {
-            const tagMapRows = taggableIds.flatMap((person_id) =>
-              tagRecords.map(({ id: tag_id }) => ({
-                tenant_id,
-                person_id,
-                tag_id: tag_id as unknown as string,
-                createdby_id: user_id,
-                updatedby_id: user_id,
-              })),
+          // 5. Work out which tags each person gets: every batch-level tag,
+          // plus the row's own Tags-column names. Inserted persons are paired
+          // back to their source rows by position when the insert dropped
+          // nothing; if onConflict(doNothing) dropped rows the positions no
+          // longer line up, so fall back to email pairing (rows that can't be
+          // paired still get the batch-level tags).
+          const batchTagRecords = tagRecords.filter((t) => tags.some((n) => n.toLowerCase() === t.name.toLowerCase()));
+          const rowTagRecords = (
+            entry: (typeof validEntries)[number] | undefined,
+          ): Array<{ name: string; id: string }> => {
+            if (!entry) return batchTagRecords;
+            const names = new Set([...tags, ...entry.sanitized.tags].map((n) => n.toLowerCase()));
+            return tagRecords.filter((t) => names.has(t.name.toLowerCase()));
+          };
+
+          const personTags = new Map<string, Array<{ name: string; id: string }>>();
+          if (insertedPersons.length === insertEntries.length) {
+            insertedPersons.forEach((p, idx) => personTags.set(String(p.id), rowTagRecords(insertEntries[idx])));
+          } else {
+            const entryByEmail = new Map(
+              insertEntries
+                .filter((e) => e.sanitized.email)
+                .map((e) => [(e.sanitized.email as string).toLowerCase(), e] as const),
             );
+            for (const p of insertedPersons) {
+              const entry = p.email ? entryByEmail.get(String(p.email).toLowerCase()) : undefined;
+              personTags.set(String(p.id), rowTagRecords(entry));
+            }
+          }
+          for (const { entry, personId } of mergeEntries) {
+            personTags.set(personId, rowTagRecords(entry));
+          }
+
+          const tagMapRows = [...personTags.entries()].flatMap(([person_id, records]) =>
+            records.map(({ id: tag_id }) => ({
+              tenant_id,
+              person_id,
+              tag_id: tag_id as unknown as string,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            })),
+          );
+          if (tagMapRows.length > 0) {
             // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
             await (trx as any)
               .insertInto('map_peoples_tags')
@@ -1064,9 +1165,10 @@ export class PersonsService {
           return {
             insertedPersons,
             mergedPersonIds,
-            tagRecords,
+            personTags,
             householdsCreatedDelta,
             blankHouseholdId: localBlankHouseholdId,
+            companyIdByName: localCompanyIdByName,
             autoTagId: localAutoTagId,
           };
         });
@@ -1081,7 +1183,7 @@ export class PersonsService {
           } catch (err) {
             logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
           }
-          for (const { name, id: tagId } of outcome.tagRecords) {
+          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
             try {
               await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
             } catch (err) {
@@ -1093,7 +1195,7 @@ export class PersonsService {
         // they still belong in the static-list membership pass below.
         for (const personId of outcome.mergedPersonIds) {
           importedPersonIds.push(personId);
-          for (const { name, id: tagId } of outcome.tagRecords) {
+          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
             try {
               await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
             } catch (err) {
@@ -1105,6 +1207,7 @@ export class PersonsService {
         results.inserted += outcome.insertedPersons.length;
         results.households_created += outcome.householdsCreatedDelta;
         if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
+        for (const [lowerName, companyId] of outcome.companyIdByName) companyIdByName.set(lowerName, companyId);
         if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
       } catch (err: unknown) {
         // If the chunk transaction fails, count all valid rows in the chunk as errors
@@ -1151,6 +1254,7 @@ export class PersonsService {
     try {
       await backfillPersonPublicIds(this.personsRepo.db, tenant_id);
       await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'companies', tenant_id);
     } catch (err) {
       logger.error({ err }, 'Failed to backfill record identifiers after import');
     }
@@ -1371,8 +1475,10 @@ export class PersonsService {
 
   private sanitizeRow(row: {
     first_name?: string;
+    middle_names?: string;
     last_name?: string;
     email?: string;
+    email2?: string;
     mobile?: string;
     notes?: string;
     home_phone?: string;
@@ -1384,15 +1490,27 @@ export class PersonsService {
     state?: string;
     zip?: string;
     country?: string;
+    company?: string;
+    tags?: string;
   }) {
     const trim = (v?: string) => (v ? v.trim() : undefined);
 
     let first_name = trim(row.first_name);
+    const middle_names = trim(row.middle_names);
     const last_name = trim(row.last_name);
     let email = (trim(row.email) || '').toLowerCase();
+    let email2 = (trim(row.email2) || '').toLowerCase();
+    if (email2 && !/.+@.+\..+/.test(email2)) email2 = '';
     let mobile = this.sanitizePhone(row.mobile);
     const home_phone = this.sanitizePhone(row.home_phone);
     const notes = trim(row.notes);
+    const company = trim(row.company);
+    // A mapped Tags column holds comma/semicolon-separated names; over-long
+    // names are dropped rather than failing the row (same 50-char cap as tags).
+    const tags = (row.tags ?? '')
+      .split(/[,;]/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && t.length <= 50);
 
     if (!email) {
       email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
@@ -1409,8 +1527,10 @@ export class PersonsService {
 
     return {
       first_name,
+      middle_names,
       last_name,
       email: email || undefined,
+      email2: email2 || undefined,
       mobile,
       notes,
       home_phone,
@@ -1422,6 +1542,8 @@ export class PersonsService {
       state: trim(row.state),
       zip: trim(row.zip),
       country: trim(row.country),
+      company,
+      tags,
     };
   }
 

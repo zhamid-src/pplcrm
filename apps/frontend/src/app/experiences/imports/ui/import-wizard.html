@@ -97,9 +97,12 @@
               [value]="mapping()[idx] || ''"
               (change)="setMapping(idx, $any($event.target).value)"
             >
-              <option value="">— Skip this column —</option>
+              <!-- [selected] on the options, not just [value] on the select: the select's
+                   value is assigned before the @for options exist in the DOM, so an
+                   auto-mapped field would otherwise render as unselected. -->
+              <option value="" [selected]="!mapping()[idx]">— Skip this column —</option>
               @for (field of mappableFields; track field) {
-              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
+              <option [value]="field" [selected]="mapping()[idx] === field">{{ fieldLabels[field] ?? field }}</option>
               }
             </select>
             @if (!mapping()[idx]) {
@@ -328,7 +331,10 @@
           <li>Added to list: {{ listName().trim() }}</li>
           }
         </ul>
-        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
+        <p class="text-base-content/60">
+          The import runs in the background — once started you can navigate away, and it lands in import history and the
+          Activity log.
+        </p>
       </div>
       <div class="flex justify-between">
         <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
@@ -345,6 +351,13 @@
         <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
         <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
         <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
+        <p class="text-sm text-base-content/60">
+          You can leave this page — the import keeps running in the background and its result lands in import history.
+        </p>
+        <button type="button" class="btn btn-ghost btn-sm gap-2 mt-2" (click)="backToHistory()">
+          <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+          Go to import history
+        </button>
       </div>
       } @case ('done') {
       <div class="flex flex-col gap-4">

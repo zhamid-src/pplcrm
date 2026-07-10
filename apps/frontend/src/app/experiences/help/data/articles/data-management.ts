@@ -18,8 +18,9 @@ export const DATA_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
-          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
+          'Use a CSV with a header row — column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
+          'A **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
+          'This wizard imports people (with their companies and households). Standalone company and task files still use their own grid-toolbar importer.',
           'Both UTF-8 and Excel-exported CSVs work as-is.',
         ],
       },
@@ -44,7 +45,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
           {
             title: 'Import',
             detail:
-              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
+              'Confirm the recap and click **Import N people**. The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
           },
         ],
       },
