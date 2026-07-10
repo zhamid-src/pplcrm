@@ -615,7 +615,7 @@
               @if (rowCanSelect()(r.original)) {
               <input
                 type="checkbox"
-                class="checkbox checkbox-sm"
+                class="checkbox checkbox-xs"
                 [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />

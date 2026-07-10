@@ -47,10 +47,15 @@ libs/
     src/
       lib/
         schemas/
+          activity.schema.ts
           auth.schema.ts
+          campaigns.schema.ts
+          canvassing.schema.ts
           companies.schema.ts
           connections.schema.ts
           core.schema.ts
+          deliveries.schema.ts
+          donations.schema.ts
           emails.schema.ts
           events.schema.ts
           lists.schema.ts
@@ -68,6 +73,7 @@ libs/
         jsend.ts
         kysely.models.ts
         models.ts
+        public-id.ts
         schema.ts
         sla.ts
         utils.ts
@@ -97,9 +103,8 @@ libs/
         card/
           card.ts
         csv-import/
-          csv-import.html
-          csv-import.ts
           csv.worker.ts
+          persons-field-mapping.ts
         detail-header/
           detail-header.ts
         detail-item/
@@ -116,6 +121,8 @@ libs/
         form-actions/
           form-actions.html
           form-actions.ts
+        geocode-chip/
+          geocode-chip.ts
         grid-header/
           grid-header.ts
         icons/
@@ -124,6 +131,9 @@ libs/
           icons.index.ts
         input/
           input.ts
+        map/
+          map-types.ts
+          map.ts
         not-found/
           not-found.ts
         profile-card/
@@ -143,6 +153,8 @@ libs/
           swap.ts
         system-metadata/
           system-metadata.ts
+        table/
+          table.ts
         tabs/
           tabs.ts
         tags/
@@ -183,6 +195,34 @@ libs/
 ```
 
 # Files
+
+## File: libs/common/src/lib/schemas/companies.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+/**
+ * Shape of the companies.enrichment jsonb column (formerly the untyped
+ * companies.json grab-bag) — the Google Places enrichment payload.
+ * `place_details` is the raw Places API result and deliberately unmodeled.
+ */
+export const CompanyEnrichmentObj = z
+  .object({
+    google_enriched: z.boolean().optional(),
+    place_details: z.unknown().optional(),
+  })
+  .catchall(z.unknown());
+
+export const CompanyInputObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
+  description: z.string().trim().max(1000).optional().nullable(),
+  website: z.string().trim().max(255).optional().nullable().or(z.literal('')),
+  email: z.string().trim().max(255).optional().nullable().or(z.literal('')),
+  phone: z.string().trim().max(50).optional().nullable(),
+  industry: z.string().trim().max(100).optional().nullable(),
+  notes: z.string().trim().max(10000).optional().nullable(),
+});
+```
 
 ## File: libs/common/src/lib/schemas/connections.schema.ts
 
@@ -296,298 +336,6 @@ export const EmailObj = z.object({
 });
 ```
 
-## File: libs/common/src/lib/schemas/events.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/schemas/lists.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddListObj = z.object({
-  name: nameSchema('List name', 100),
-  description: descriptionSchema(1000),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  member_ids: z.array(idSchema).optional(),
-});
-
-export const ListsObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const UpdateListObj = z.object({
-  name: nameSchema('List name', 100).optional(),
-  description: descriptionSchema(1000).optional(),
-  object: z.enum(['people', 'households']).optional(),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const ImportListItemObj = z.object({
-  id: idSchema,
-  fileName: z.string(),
-  source: z.string(),
-  tagName: z.string().nullable(),
-  tagMissing: z.boolean(),
-  createdAt: z.coerce.date(),
-  processedAt: z.coerce.date(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
-  insertedCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  rowCount: z.number().int().nonnegative(),
-  householdsCreated: z.number().int().nonnegative(),
-  contactCount: z.number().int().nonnegative(),
-  householdCount: z.number().int().nonnegative(),
-  companyCount: z.number().int().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  status: z.string(),
-  errorMessage: z.string().nullable().optional(),
-  canDeleteContacts: z.boolean(),
-});
-```
-
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-```
-
 ## File: libs/common/src/lib/schemas/settings.schema.ts
 
 ```typescript
@@ -650,12 +398,55 @@ export const UpdateTagObj = z.object({
 import { z } from 'zod';
 import { nameSchema, notesSchema, idSchema } from './core.schema';
 
+/**
+ * Canonical task status vocabulary (spec §4). This is the single source of truth —
+ * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
+ * derives from this list. Do not hand-roll a parallel status array anywhere.
+ *
+ * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
+ * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
+ * state — a canceled task is, in practice, a task nobody is coming back to, which is
+ * exactly what "archived" already means in this app (hidden from the active views,
+ * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
+ * normalizes existing rows to this vocabulary.
+ */
+export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
+export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
+export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
+
+/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
+export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
+
+/** Type guard for the four board columns specifically (excludes `archived`). */
+export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
+  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
+}
+
+const taskStatusEnum = z.enum(TASK_STATUSES);
+const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
+
 export const AddTaskObj = z.object({
   name: nameSchema('Task name', 200),
   details: z.string().trim().max(10000, 'Details too long').optional(),
   due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  status: taskStatusEnum.default('todo').optional(),
+  priority: taskPriorityEnum.optional(),
   completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
@@ -667,8 +458,8 @@ export const TasksObj = z.object({
   name: z.string(),
   details: z.string().optional(),
   due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
+  status: taskStatusEnum.nullable().optional(),
+  priority: taskPriorityEnum.nullable().optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
   assigned_to: z.string().nullable().optional(),
@@ -679,8 +470,8 @@ export const UpdateTaskObj = z.object({
   name: nameSchema('Task name', 200).optional(),
   details: notesSchema,
   due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  status: taskStatusEnum.optional(),
+  priority: taskPriorityEnum.optional(),
   completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
@@ -833,28 +624,65 @@ export const UpdateVolunteerShiftObj = z.object({
 
 ```typescript
 import { z } from 'zod';
+import { queryBuilderNodeSchema } from './core.schema';
+
+// Spec §16 Automations — the trigger picker's 12 cards. `volunteer_signup` is kept for
+// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
+// volunteer-events controller) but is not offered as a card.
+export const WORKFLOW_TRIGGER_TYPES = [
+  'manual',
+  'web_form_submitted',
+  'contact_created',
+  'tag_added',
+  'list_joined',
+  'donation_recorded',
+  'payment_event',
+  'volunteer_shift_status',
+  'task_sla_breach',
+  'new_subscriber',
+  'new_unsubscriber',
+  'date_arrives',
+  'volunteer_signup',
+] as const;
+
+export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
+
+const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
+
+// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
+export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
+
+export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
+
+const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
+
+// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
+// at the schema boundary; the controller maps each kind's meaningful fields when executing.
+export const WorkflowStepConfigObj = z
+  .object({
+    // add_tag
+    tag_id: z.string().nullable().optional(),
+    tag_name: z.string().nullable().optional(),
+    // create_task
+    task_title: z.string().nullable().optional(),
+    // notify_team
+    notify_user_id: z.string().nullable().optional(),
+    notify_user_name: z.string().nullable().optional(),
+    notify_message: z.string().nullable().optional(),
+  })
+  .strict();
+
+export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
 
 export const WorkflowObj = z.object({
   id: z.string(),
   tenant_id: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
+  trigger_type: triggerTypeSchema.default('manual'),
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft'),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
   created_at: z.coerce.date(),
@@ -864,22 +692,10 @@ export const WorkflowObj = z.object({
 export const AddWorkflowObj = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
+  trigger_type: triggerTypeSchema.default('manual'),
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
 });
 
 export const UpdateWorkflowObj = AddWorkflowObj.partial();
@@ -892,9 +708,11 @@ export const WorkflowStepObj = z.object({
   tenant_id: z.string(),
   workflow_id: z.string(),
   step_number: z.number().int().positive(),
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
   delay_days: z.number().int().nonnegative(),
   delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().min(1, 'Subject is required'),
+  subject: z.string().nullable().optional(),
   preview_text: z.string().nullable().optional(),
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
@@ -902,11 +720,13 @@ export const WorkflowStepObj = z.object({
   updated_at: z.coerce.date(),
 });
 
+// Input shape for saveSteps — order is implied by array position, so no step_number here.
 export const AddWorkflowStepObj = z.object({
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days').optional(),
-  subject: z.string().min(1, 'Subject is required'),
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative().default(0),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
   preview_text: z.string().nullable().optional(),
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
@@ -929,188 +749,21 @@ export const WorkflowEnrollmentObj = z.object({
   created_at: z.coerce.date(),
   updated_at: z.coerce.date(),
 });
-```
 
-## File: libs/common/src/lib/emails.ts
+export const WorkflowRunObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  enrollment_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+  step_number: z.number().int().nullable().optional(),
+  step_kind: z.string().nullable().optional(),
+  status: z.enum(['success', 'failed']),
+  error: z.string().nullable().optional(),
+  created_at: z.coerce.date(),
+});
 
-```typescript
-// ---------- Public compatibility interface (loose) ----------
-// ---------- Strict types for compile-time guarantees ----------
-interface EmailFolderBase {
-  icon: string;
-  id: string;
-  is_default: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface EmailFolderConfig {
-  code?: string; // optional/loose for compatibility
-  icon: string;
-  id: string;
-  is_default: boolean;
-  is_virtual: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface RealEmailFolder extends EmailFolderBase {
-  code?: never; // forbidden on real folders
-  is_virtual: false;
-}
-
-export interface VirtualEmailFolder extends EmailFolderBase {
-  code: string; // required when virtual
-  is_virtual: true;
-}
-
-// ---------- Derived types ----------
-type Folder = (typeof EMAIL_FOLDERS)[number];
-
-type OnlyReal = Extract<Folder, { is_virtual: false }>;
-
-type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
-
-// All folders (merged, exact keys/ids)
-export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
-
-export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
-
-export type EmailStatus = 'open' | 'closed';
-
-export type HasRow = {
-  email_id: string;
-  has: boolean;
-};
-
-export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
-
-export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
-
-export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
-
-export type ServerEmail = {
-  assigned_to?: string | null;
-  attachment_count?: number | string | bigint | null;
-  folder_id: string | number;
-  from_email?: string | null;
-  is_read?: boolean;
-
-  // any of these might be present depending on endpoint:
-  has_attachment?: boolean | null;
-  id: string | number;
-  is_favourite: boolean;
-  preview?: string | null;
-  status?: string;
-  subject?: string | null;
-  to_email?: string | null;
-  updated_at: string | Date;
-  date_sent?: string | Date | null;
-  sender_first_name?: string | null;
-  sender_last_name?: string | null;
-};
-
-export type SpecialFolderId = OnlyVirtual['id'];
-
-export type SpecialFolderKey = OnlyVirtual['code'];
-
-export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
-
-function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type RegularFolder = Extract<F[number], { is_virtual: false }>;
-  type FolderKey = Uppercase<RegularFolder['name'] & string>;
-  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
-
-  const entries = folders
-    .filter((f): f is RegularFolder => !f.is_virtual)
-    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
-}
-
-function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
-  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
-  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
-
-  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
-}
-
-export const isRegularFolderId = (id: string): id is RegularFolderId =>
-  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
-
-// Optional runtime type guards
-export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
-  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
-
-// ---------- Configuration (validated against STRICT type) ----------
-export const EMAIL_FOLDERS = [
-  // Virtual
-  {
-    id: '8',
-    name: 'Unassigned',
-    icon: 'inbox',
-    sort_order: 1,
-    is_default: false,
-    is_virtual: true,
-    code: 'UNASSIGNED',
-  },
-  {
-    id: '6',
-    name: 'Assigned to me',
-    icon: 'user-circle',
-    sort_order: 2,
-    is_default: true,
-    is_virtual: true,
-    code: 'ASSIGNED_TO_ME',
-  },
-  { id: '9', name: 'Favourites', icon: 'star', sort_order: 3, is_default: false, is_virtual: true, code: 'FAVOURITES' },
-  {
-    id: '1',
-    name: 'All Open',
-    icon: 'document-duplicate',
-    sort_order: 4,
-    is_default: false,
-    is_virtual: true,
-    code: 'ALL_OPEN',
-  },
-  {
-    id: '2',
-    name: 'Completed',
-    icon: 'document-check',
-    sort_order: 5,
-    is_default: false,
-    is_virtual: true,
-    code: 'CLOSED',
-  },
-
-  // Real
-  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
-] as const satisfies StrictEmailFolderConfig[];
-
-// Real-only (exact keys/ids)
-export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
-
-// ---------- Exposed constants ----------
-
-// Virtual-only (exact keys/ids)
-export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
-export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
-
-// Useful helpers
-export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
-export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
-  Record<Folder['id'], Folder>
->;
+export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
 ```
 
 ## File: libs/common/src/lib/jsend.ts
@@ -1221,25 +874,112 @@ export const jsend = {
 };
 ```
 
-## File: libs/common/src/lib/schema.ts
+## File: libs/common/src/lib/public-id.ts
 
 ```typescript
-export * from './schemas/core.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
+import { slugifyRecordName } from './utils';
+
+/**
+ * Opaque public identifiers for person records (spec §1 security surface).
+ *
+ * Unlike households/companies, persons do NOT use a name slug: at 100k+ people
+ * name slugs collide (`amira-hassan-4787`), leak counts, and put real names in
+ * URLs and logs — bad for a political CRM. Instead each person carries an
+ * opaque `public_id`: 8 Crockford Base32 characters encoding 40 bits from a
+ * CSPRNG (`crypto.randomBytes(5)` on the backend), stored uppercase-canonical
+ * (e.g. `4T9K2XPM`).
+ *
+ * The URL display form (what the browser shows) is `{name}-{XXXX}-{XXXX}`, e.g.
+ * `/people/joseph-4t9k-2xpm`: a decorative slugified first/last name followed by
+ * the public_id split 4-4. The name is cosmetic — resolution strips it and looks
+ * up by public_id only, so a stale name in an old URL still resolves.
+ *
+ * These helpers are shared by the frontend resolver and the backend so decode
+ * and slug-building stay identical on both sides. Generation (randomBytes +
+ * retry-on-collision) is backend-only — see
+ * `apps/backend/src/app/lib/person-public-id.ts`.
+ */
+
+/** Crockford Base32 alphabet — excludes I, L, O, U to avoid visual/spoken ambiguity. */
+export const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/** Canonical public_id length in characters (40 bits / 5 bits-per-char = 8). */
+export const PUBLIC_ID_LENGTH = 8;
+
+const CROCKFORD_SET = new Set(CROCKFORD_ALPHABET);
+
+/**
+ * Encode raw bytes to Crockford Base32 (big-endian, no padding). 5 bytes
+ * (40 bits) produce exactly 8 characters. Bit accumulation is masked to stay
+ * within JS's 32-bit bitwise range, so this is correct for any byte length.
+ */
+export function encodeCrockford(bytes: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let output = '';
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      output += CROCKFORD_ALPHABET[(value >>> bits) & 31];
+    }
+    // Keep only the bits not yet emitted so `value` never exceeds ~12 bits.
+    value &= (1 << bits) - 1;
+  }
+  if (bits > 0) {
+    output += CROCKFORD_ALPHABET[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
+/**
+ * Normalize a Crockford string to canonical form: uppercase, map the
+ * confusable letters back to digits (I/L → 1, O → 0), and drop any character
+ * outside the alphabet (hyphens, spaces, etc.). The result contains only
+ * canonical alphabet characters.
+ */
+export function normalizeCrockford(input: string): string {
+  let output = '';
+  for (const raw of input.toUpperCase()) {
+    let ch = raw;
+    if (ch === 'O') ch = '0';
+    else if (ch === 'I' || ch === 'L') ch = '1';
+    if (CROCKFORD_SET.has(ch)) output += ch;
+  }
+  return output;
+}
+
+/**
+ * Decode a URL segment to a canonical person public_id, or `null` when it does
+ * not contain one. Strips all hyphens, takes the last {@link PUBLIC_ID_LENGTH}
+ * characters (the public_id is always appended last), then Crockford-normalizes.
+ * Robust to a decorative name that itself contains hyphens (`mary-jane-4t9k-2xpm`
+ * → `4T9K2XPM`), a bare id (`4t9k2xpm`), and a hyphenated bare id (`4T9K-2XPM`).
+ */
+export function extractPublicIdFromSlug(segment: string): string | null {
+  const stripped = segment.replace(/-/g, '');
+  const tail = stripped.slice(-PUBLIC_ID_LENGTH);
+  const normalized = normalizeCrockford(tail);
+  return normalized.length === PUBLIC_ID_LENGTH ? normalized : null;
+}
+
+/**
+ * Build the person URL display slug `{name}-{xxxx}-{xxxx}` from a canonical
+ * public_id. The decorative name is the slugified first name, else last name,
+ * else the literal `person`. The id is lowercased and split 4-4 for readability
+ * (e.g. `joseph-4t9k-2xpm`). Resolution ignores the name entirely.
+ */
+export function buildPersonSlug(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+  publicId: string,
+): string {
+  const source = (firstName ?? '').trim() || (lastName ?? '').trim();
+  const name = slugifyRecordName(source, 'person');
+  const id = publicId.toLowerCase();
+  return `${name}-${id.slice(0, 4)}-${id.slice(4, PUBLIC_ID_LENGTH)}`;
+}
 ```
 
 ## File: libs/common/src/lib/sla.ts
@@ -1301,6 +1041,224 @@ export function calculateWorkingTimeMs(
 }
 ```
 
+## File: libs/common/src/lib/utils.ts
+
+```typescript
+export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<F>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), delay);
+  };
+}
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Subdomain labels that must never be assigned to a tenant — they collide with app/infra hosts.
+ * A tenant's slug becomes `<slug>.<baseDomain>`, so the public form page can resolve the tenant
+ * from the Host header; these labels are reserved so a tenant can't shadow `app`, `api`, etc.
+ */
+export const RESERVED_SUBDOMAINS = new Set<string>([
+  'app',
+  'www',
+  'api',
+  'admin',
+  'mail',
+  'email',
+  'ftp',
+  'smtp',
+  'imap',
+  'pop',
+  'ns',
+  'ns1',
+  'ns2',
+  'dns',
+  'mx',
+  'static',
+  'assets',
+  'cdn',
+  'media',
+  'files',
+  'download',
+  'downloads',
+  'status',
+  'help',
+  'support',
+  'docs',
+  'blog',
+  'dev',
+  'staging',
+  'stage',
+  'test',
+  'demo',
+  'sandbox',
+  'portal',
+  'dashboard',
+  'account',
+  'accounts',
+  'billing',
+  'pay',
+  'payments',
+  'auth',
+  'login',
+  'logout',
+  'signup',
+  'signin',
+  'register',
+  'public',
+  'forms',
+  'f',
+  'localhost',
+  'root',
+  'system',
+]);
+
+/**
+ * Turn a name into a DNS-safe subdomain label: lowercase, ASCII alphanumerics + single hyphens,
+ * no leading/trailing hyphen, capped at 40 chars. Returns '' when nothing usable remains — callers
+ * must fall back (e.g. `t-<id>`) and check {@link RESERVED_SUBDOMAINS}.
+ */
+export function slugifyHandle(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '');
+}
+
+/**
+ * Slugify a record's display name for slug-based record routing
+ * (`/people/amira-hassan` \u2014 spec \u00a71: URLs carry slugs, never internal IDs).
+ * Lowercase, accent-stripped, non-alphanumerics collapsed to single hyphens,
+ * capped at 80 chars. Falls back to `fallback` (e.g. "person") when nothing
+ * usable remains, and prefixes the fallback when the result is all digits so a
+ * slug can never be mistaken for a numeric record-ID URL. Per-tenant
+ * uniqueness is the caller's job \u2014 see `apps/backend/src/app/lib/slug.ts`.
+ */
+export function slugifyRecordName(value: string, fallback: string): string {
+  const base = value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/g, '');
+  if (!base) return fallback;
+  if (/^\d+$/.test(base)) return `${fallback}-${base}`;
+  return base;
+}
+
+/**
+ * Escape a string for safe interpolation into HTML markup (element text or
+ * double/single-quoted attribute values).
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+```
+
+## File: libs/common/eslint.config.cjs
+
+```javascript
+/* ---------------------------------------------------------------
+ *  libs/common/eslint.config.cjs
+ *  Universal shared library rules (used by frontend + backend)
+ * -------------------------------------------------------------- */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+/** @type {import('eslint').Linter.FlatConfig[]} */
+module.exports = [
+  /* Compose the root config so `nx lint common` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Confirmed zero new violations. */
+  ...require('../../eslint.config.cjs'),
+
+  /* JavaScript/TypeScript base rules */
+  ...compat
+    .config({
+      extends: [
+        'plugin:@nx/javascript',
+        'plugin:@typescript-eslint/recommended',
+        'plugin:@typescript-eslint/stylistic',
+      ],
+      parserOptions: {
+        project: [
+          require('path').resolve(__dirname, 'tsconfig.lib.json'),
+          require('path').resolve(__dirname, '../../tsconfig.base.json'),
+        ],
+        sourceType: 'module',
+      },
+    })
+    .map((cfg) => ({
+      ...cfg,
+      files: ['**/*.{ts,tsx,js,jsx}'],
+      rules: {
+        /* Shared TypeScript rules */
+        '@typescript-eslint/consistent-type-imports': 'warn',
+        '@typescript-eslint/no-explicit-any': 'warn',
+        '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        '@typescript-eslint/no-inferrable-types': 'off',
+        '@typescript-eslint/explicit-function-return-type': 'off',
+
+        /* General JS/TS best practices */
+        'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
+        'prefer-const': 'error',
+        'no-var': 'error',
+        'no-empty': ['warn', { allowEmptyCatch: true }],
+      },
+    })),
+];
+```
+
+## File: libs/common/project.json
+
+```json
+{
+  "name": "common",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/common/src",
+  "projectType": "library",
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["libs/common/**/*.ts"]
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/libs/common"],
+      "options": {
+        "cwd": "libs/common",
+        "command": "vitest run"
+      }
+    }
+  },
+  "tags": []
+}
+```
+
 ## File: libs/common/tsconfig.json
 
 ```json
@@ -1340,94 +1298,43 @@ export function calculateWorkingTimeMs(
 }
 ```
 
-## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
+## File: libs/common/vite.config.ts
 
 ```typescript
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
-import { Loader } from '@googlemaps/js-api-loader';
-import { AddressType } from '../../../../common/src/lib/kysely.models';
-import { parseAddress } from './googlePlacesAddressMapper';
+/// <reference types='vitest' />
+import { defineConfig } from 'vite';
 
-@Component({
-  selector: 'pc-address-autocomplete',
-  standalone: true,
-  template: `
-    <div class="relative w-full">
-      <input
-        #inputEl
-        type="text"
-        class="input w-full"
-        [placeholder]="placeholder()"
-        [disabled]="disabled()"
-        autocomplete="one-time-code"
-      />
-    </div>
-  `,
-})
-export class AddressAutocomplete implements OnInit {
-  private readonly loader = inject(Loader);
-
-  public readonly disabled = input<boolean>(false);
-  public readonly placeholder = input<string>('Start typing an address…');
-  public readonly regionCodes = input<string[]>(['ca']);
-
-  public readonly addressSelected = output<AddressType>();
-
-  private inputElement: HTMLInputElement | null = null;
-  private isLibraryLoaded = false;
-  private isAutocompleteInitialized = false;
-
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
-  }
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    try {
-      await this.loader.importLibrary('places');
-      this.isLibraryLoaded = true;
-      this.tryInitAutocomplete();
-    } catch (err) {
-      console.error('Failed to load Google Maps Places library', err);
-    }
-  }
-
-  private tryInitAutocomplete() {
-    if (
-      this.isAutocompleteInitialized ||
-      !this.inputElement ||
-      !this.isLibraryLoaded ||
-      typeof google === 'undefined' ||
-      !google.maps ||
-      !google.maps.places
-    ) {
-      return;
-    }
-
-    const options: google.maps.places.AutocompleteOptions = {
-      componentRestrictions: { country: this.regionCodes() },
-      types: ['geocode'],
-    };
-
-    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
-    this.isAutocompleteInitialized = true;
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place) {
-        const address = parseAddress(place);
-        this.addressSelected.emit(address);
-      }
-    });
-  }
-}
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/libs/common',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'common',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/libs/common',
+      provider: 'v8' as const,
+      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
+      // 94% branch on this small lib; held slightly below so one new helper
+      // file doesn't instantly break the build, but keep raising it as the
+      // lib grows. Never lower these — add tests instead.
+      thresholds: {
+        statements: 95,
+        branches: 90,
+        functions: 95,
+        lines: 95,
+      },
+    },
+  },
+}));
 ```
 
 ## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
@@ -1548,6 +1455,173 @@ export class AddressFormGroup {
 }
 ```
 
+## File: libs/uxcommon/src/components/alerts/alert-service.ts
+
+```typescript
+import { Injectable, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+
+export class AlertMessage {
+  public readonly visible = signal(true);
+  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
+  public readonly count = signal(1);
+
+  public OKBtn: string;
+  public OKBtnCallback?: () => void;
+  public duration = 3000;
+  public id: string;
+  public text: string;
+  public timeoutId: NodeJS.Timeout | undefined;
+  public title?: string;
+  public type?: ALERTTYPE;
+
+  constructor(init?: Partial<AlertMessage>) {
+    Object.assign(this, init);
+    this.id = init?.id ?? crypto.randomUUID();
+    this.OKBtn = init?.OKBtn ?? 'OK';
+    this.duration = init?.duration || 3000;
+    this.text = init?.text ?? 'Alert';
+  }
+}
+
+/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
+const MAX_TOAST_STACK = 3;
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AlertService {
+  private readonly alertsSignal = signal<AlertMessage[]>([]);
+
+  public readonly alertList = this.alertsSignal.asReadonly();
+  public readonly alerts$ = toObservable(this.alertsSignal);
+
+  public OKBtnCallback(id: string): void {
+    const alert = this.findById(id);
+    alert?.OKBtnCallback?.();
+  }
+
+  public dismiss(id: string): void {
+    const alert = this.findById(id);
+
+    if (!alert) return;
+
+    // Clear any pending removal timeout
+    clearTimeout(alert.timeoutId);
+    alert.timeoutId = undefined;
+
+    alert.visible.set(false);
+
+    // Have to let the animation do its thing first
+    setTimeout(() => {
+      const next = this.alertsSignal().filter((msg) => msg.id !== id);
+      this.alertsSignal.set(next);
+    }, 300);
+  }
+
+  public getAlerts(): AlertMessage[] {
+    return this.alertsSignal();
+  }
+
+  public show(alert: Partial<AlertMessage>): void {
+    // Coalesce an identical (same text + type) toast into a ×N count with a
+    // refreshed timer instead of stacking duplicates (§2).
+    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
+
+    if (existing) {
+      existing.count.update((c) => c + 1);
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
+      return;
+    }
+
+    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
+    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
+    this.alertsSignal.update((list) => {
+      const next = [messageWithMeta, ...list];
+      const dropped = next.slice(MAX_TOAST_STACK);
+      dropped.forEach((m) => clearTimeout(m.timeoutId));
+      return next.slice(0, MAX_TOAST_STACK);
+    });
+
+    const duration = messageWithMeta.duration || 3000;
+    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
+  }
+
+  public showError(text: string): void {
+    this.show(new AlertMessage({ text, type: 'error' }));
+  }
+
+  public showInfo(text: string): void {
+    this.show(new AlertMessage({ text, type: 'info' }));
+  }
+
+  public showSuccess(text: string): void {
+    this.show(new AlertMessage({ text, type: 'success' }));
+  }
+
+  public showWarn(text: string): void {
+    this.show(new AlertMessage({ text, type: 'warning' }));
+  }
+
+  private findById(id: string) {
+    return this.alertsSignal().find((m) => m.id === id);
+  }
+}
+
+export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
+```
+
+## File: libs/uxcommon/src/components/alerts/alerts.html
+
+```html
+<div
+  class="z-50 top-0 absolute w-full left-0"
+  [class.absolute]="!isPositionRelative()"
+  [class.top-0]="isPositionTop()"
+  [class.bottom-0]="isPositionBottom()"
+>
+  @for (alert of alerts(); track alert.id) {
+
+  <div
+    class="alert rounded-none"
+    role="alert"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
+    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
+    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
+    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
+    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
+    [class.alert-info]="alert.type === 'info'"
+    [class.alert-warning]="alert.type === 'warning'"
+    [class.alert-success]="alert.type === 'success'"
+    [class.alert-error]="alert.type === 'error'"
+    [class.error]="alert.type === 'error'"
+    [class.animate-bounce]="isPositionBottom()"
+  >
+    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
+    <div>
+      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
+      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
+    </div>
+    @if (alert.count() > 1) {
+    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
+    }
+    <button
+      class="btn btn-sm"
+      [class.hidden]="!alert.OKBtn"
+      [class.btn-info]="alert.type === 'info'"
+      [class.btn-warning]="alert.type === 'warning'"
+      [class.btn-success]="alert.type === 'success'"
+      [class.btn-error]="alert.type === 'error'"
+      (click)="OKBtnClick(alert.id)"
+    >
+      {{ alert.OKBtn }}
+    </button>
+  </div>
+  }
+</div>
+```
+
 ## File: libs/uxcommon/src/components/alerts/alerts.ts
 
 ```typescript
@@ -1609,90 +1683,6 @@ export class Alerts {
 }
 ```
 
-## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-
-```typescript
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '../../../../common/src';
-
-@Component({
-  selector: 'pc-autocomplete',
-  template: ` <input
-      #inputEl
-      type="text"
-      class="input w-full"
-      [placeholder]="placeholder()"
-      (keyup)="onKey($event)"
-      (input)="onInput($event)"
-      (focus)="showAutoCompleteList()"
-      (blur)="hideAutoCompleteList()"
-    />
-    @if (matches().length && !hideAutoComplete()) {
-      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-        @for (match of matches(); track match) {
-          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
-            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
-          </li>
-        }
-      </ul>
-    }`,
-})
-export class AutoComplete {
-  protected readonly matches = signal<string[]>([]);
-
-  protected hideAutoComplete = signal(true);
-
-  public readonly valueChange = output<string>();
-
-  public filterSvc = input<TFILTER | null>(null);
-  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
-
-  public placeholder = input('');
-
-  private readonly debouncedFilter = debounce(async (key: string) => {
-    const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      this.matches.set([]);
-      return;
-    }
-    const matches = await filterSvc.filter(key);
-    this.matches.set(matches);
-  }, 250);
-
-  protected onInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    this.debouncedFilter(target.value || '');
-  }
-
-  protected hideAutoCompleteList() {
-    setTimeout(() => this.hideAutoComplete.set(true), 200);
-  }
-
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Enter' || event.key === ',') {
-      this.reset(target.value);
-    }
-  }
-
-  protected reset(key: string) {
-    this.valueChange.emit(key);
-    this.matches.set([]);
-    if (this.inputRef()?.nativeElement) {
-      this.inputRef().nativeElement.value = '';
-    }
-  }
-
-  protected showAutoCompleteList() {
-    this.hideAutoComplete.set(false);
-  }
-}
-
-type TFILTER = {
-  filter: (arg0: string) => Promise<string[]>;
-};
-```
-
 ## File: libs/uxcommon/src/components/card/card.ts
 
 ```typescript
@@ -1742,328 +1732,82 @@ export class Card {
 }
 ```
 
-## File: libs/uxcommon/src/components/csv-import/csv-import.html
-
-```html
-<dialog class="modal" [open]="open()" (close)="onCloseDialog()">
-  <div class="modal-box max-w-5xl">
-    <h3 class="text-lg font-bold mb-3">{{ title() }}</h3>
-    <div class="grid gap-4">
-      <div class="grid gap-2">
-        <label class="font-semibold">1) Choose CSV file</label>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          (change)="onFileSelected($event)"
-          class="file-input file-input-bordered"
-        />
-        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
-      </div>
-
-      @if (parsing()) {
-      <div class="grid gap-2">
-        <progress class="progress w-full"></progress>
-        <span class="text-xs opacity-70" aria-live="polite">Reading and parsing the file...</span>
-      </div>
-      } @if (csvHeaders().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">2) Map CSV columns</label>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          @for (hdr of csvHeaders(); track hdr; let idx = $index) {
-          <div class="grid grid-cols-2 gap-2 items-center">
-            <div class="truncate" [title]="hdr">{{ hdr }}</div>
-            <select
-              class="select select-bordered select-sm"
-              [ngModel]="mapping()[idx]"
-              (ngModelChange)="setMappingAt(idx, $event)"
-            >
-              <option value="">Skip</option>
-              @for (f of mappableFields(); track f) {
-              <option [value]="f">{{ f }}</option>
-              }
-            </select>
-          </div>
-          }
-        </div>
-      </div>
-      }
-
-      <!-- Optional extras slot provided by parent (e.g., tags) -->
-      <ng-content select="[pc-import-extras]"></ng-content>
-
-      @if (csvRows().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">Preview</label>
-        <div class="overflow-auto border rounded relative">
-          @if (parsing()) {
-          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
-            <progress class="progress w-64"></progress>
-          </div>
-          }
-          <table class="table table-zebra table-xs">
-            <thead>
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <th>{{ h }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of previewRows(); track r) {
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <td>{{ r[h] }}</td>
-                }
-              </tr>
-              }
-            </tbody>
-          </table>
-          <div class="flex items-center justify-end gap-2 p-2">
-            <button class="btn btn-xs" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
-            <span class="text-xs opacity-70">Page {{ pageIndex() + 1 }} of {{ totalPages() }}</span>
-            <button class="btn btn-xs" [disabled]="!canNext()" (click)="nextPage()">Next</button>
-          </div>
-        </div>
-      </div>
-      }
-
-      <div class="flex justify-end gap-2 mt-2">
-        <button class="btn" (click)="closeDialog()">Cancel</button>
-        <button class="btn btn-primary" [disabled]="!csvRows().length" (click)="onSubmit()">
-          <pc-icon name="cloud-arrow-up" />
-          Import
-        </button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<!-- Summary Modal controlled by parent-provided summary input -->
-<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="onSummaryClosed()">
-  <div class="modal-box">
-    @if (!!summary() && !summary()!.failed) {
-    <h3 class="text-lg font-bold mb-2">Import Summary</h3>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      @if (!summary()!.queued) {
-      <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
-      <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-      } @if (summary()!.tag) {
-      <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
-      } @if (summary()!.message) {
-      <li class="opacity-90 whitespace-pre-wrap text-xs"><span>{{ summary()!.message }}</span></li>
-      }
-    </ul>
-    } @else if (!!summary()) {
-    <h3 class="text-lg font-bold mb-2">Import Failed</h3>
-    <p class="py-2 font-light">{{ summary()!.message }}</p>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-    </ul>
-    }
-    <div class="modal-action">
-      <form method="dialog">
-        <button class="btn" type="submit">OK</button>
-      </form>
-    </div>
-  </div>
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.ts
+## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+// CSV/TSV parsing web worker (shared)
+// Receives: { type: 'parse', text: string }
+// Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
 
-export type CsvImportSummary = {
-  inserted: number;
-  errors: number;
-  skipped: number;
-  failed?: boolean;
-  queued?: boolean;
-  message?: string;
-  tag?: string;
-};
-
-@Component({
-  selector: 'pc-csv-importer',
-  imports: [FormsModule, Icon],
-  templateUrl: './csv-import.html',
-})
-export class CsvImportComponent {
-  private readonly alerts = inject(AlertService);
-
-  // Inputs
-  public readonly title = input<string>('Import Data from CSV');
-  public readonly open = input<boolean>(false);
-  public readonly mappableFields = input<string[]>([]);
-  public readonly autoMapHeader = input<(h: string) => string>(() => '');
-  public readonly previewPageSize = input<number>(5);
-  public readonly summary = input<CsvImportSummary | null>(null);
-
-  // Outputs
-  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number; fileName?: string | null }>();
-  public readonly close = output<void>();
-  public readonly closeSummary = output<void>();
-
-  // State signals
-  protected readonly parsing = signal(false);
-  protected readonly csvHeaders = signal<string[]>([]);
-  protected readonly csvRows = signal<Array<Record<string, string>>>([]);
-  protected readonly mapping = signal<string[]>([]);
-  protected readonly pageIndex = signal(0);
-  protected readonly submitted = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-
-  private getNonEmptyMappedRows() {
-    const map = this.mapping();
-    const headers = this.csvHeaders();
-    const rows = this.csvRows();
-    const mapped = rows.map((row) => {
-      const result: Record<string, string> = {};
-      headers.forEach((h, idx) => {
-        const field = map[idx];
-        if (!field) return;
-        const raw = (row[h] ?? '').toString();
-        if (raw && !(field in result) && raw.trim().length > 0) result[field] = raw;
-      });
-      return result;
-    });
-    const nonEmpty = mapped.filter((r) => Object.keys(r).length > 0);
-    return { nonEmpty, skipped: mapped.length - nonEmpty.length };
-  }
-
-  protected readonly totalPages = computed(() => {
-    const total = Math.ceil((this.csvRows().length || 0) / this.previewPageSize());
-    return total || 1;
-  });
-  protected readonly canNext = computed(() => (this.pageIndex() + 1) * this.previewPageSize() < this.csvRows().length);
-  protected readonly canPrev = computed(() => this.pageIndex() > 0);
-
-  constructor() {
-    // Auto-map when headers first arrive
-    effect(() => {
-      const headers = this.csvHeaders();
-      if (!headers.length) return;
-      const auto = this.autoMapHeader();
-      const mapped = headers.map((h) => (typeof auto === 'function' ? auto(h) : ''));
-      this.mapping.set(mapped);
-    });
-    // Reset submitted flag whenever dialog is opened anew
-    effect(() => {
-      if (this.open()) {
-        this.submitted.set(false);
-      }
-    });
-  }
-
-  protected previewRows() {
-    const start = this.pageIndex() * this.previewPageSize();
-    const end = start + this.previewPageSize();
-    return this.csvRows().slice(start, end);
-  }
-
-  protected nextPage() {
-    if (this.canNext()) this.pageIndex.update((v) => v + 1);
-  }
-
-  protected prevPage() {
-    if (this.canPrev()) this.pageIndex.update((v) => v - 1);
-  }
-
-  protected setMappingAt(index: number, value: string) {
-    const m = [...this.mapping()];
-    m[index] = value;
-    this.mapping.set(m);
-  }
-
-  protected onFileSelected(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.parsing.set(true);
-    this.fileName.set(file.name || null);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string) || '';
-      try {
-        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
-        const handle = (e: MessageEvent) => {
-          const data: any = e.data || {};
-          if (data.type === 'result') {
-            this.csvHeaders.set(data.headers || []);
-            this.csvRows.set(data.rows || []);
-            this.pageIndex.set(0);
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          } else if (data.type === 'error') {
-            this.alerts.showError(data.message || 'Failed to parse CSV');
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          }
-        };
-        worker.onmessage = handle;
-        worker.postMessage({ type: 'parse', text });
-      } catch {
-        this.alerts.showError('Failed to parse CSV');
-        this.parsing.set(false);
-      }
-    };
-    reader.onerror = () => this.parsing.set(false);
-    reader.readAsText(file);
-  }
-
-  protected onSubmit() {
-    const { nonEmpty, skipped } = this.getNonEmptyMappedRows();
-    if (!nonEmpty.length) {
-      this.alerts.showError('Nothing to import. Please map at least one column.');
-      return;
+function detectDelimiter(sample: string[]) {
+  const candidates = [',', '\t', ';'];
+  let best: { ch: string; score: number } = { ch: ',', score: -1 };
+  for (const ch of candidates) {
+    let score = 0;
+    for (let i = 0; i < Math.min(sample.length, 5); i++) {
+      const line = sample[i] ?? '';
+      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(line)) continue;
+      score += line.split(ch).length - 1 || 0;
     }
-    this.submitted.set(true);
-    this.submit.emit({ rows: nonEmpty, skipped, fileName: this.fileName() });
+    if (score > best.score) best = { ch, score };
   }
-
-  protected requestClose() {
-    this.close.emit();
-  }
-
-  protected onCloseDialog() {
-    // Soft reset local state when dialog closes via native controls
-    this.csvHeaders.set([]);
-    this.csvRows.set([]);
-    this.mapping.set([]);
-    this.pageIndex.set(0);
-    this.parsing.set(false);
-    this.submitted.set(false);
-    this.fileName.set(null);
-    // Propagate close so parent can clear any summary state
-    this.close.emit();
-  }
-
-  protected onSummaryClosed() {
-    this.submitted.set(false);
-    this.closeSummary.emit();
-  }
-
-  protected closeDialog() {
-    // Close the hosting dialog element programmatically
-    const active = document.activeElement as HTMLElement | null;
-    const dlg = active?.closest('dialog') as HTMLDialogElement | null;
-    if (dlg) {
-      dlg.close();
-      return;
-    }
-    // Fallback: just emit close
-    this.close.emit();
-  }
+  return best.ch;
 }
+
+function splitLine(line: string, delimiter: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === delimiter && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result.map((s) => s.trim());
+}
+
+const ctx: any = self as unknown;
+
+ctx.onmessage = (e: MessageEvent) => {
+  try {
+    const { type, text } = e.data || {};
+    if (type !== 'parse' || typeof text !== 'string') return;
+
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    const delimiter = detectDelimiter(lines);
+    const headerLine = lines.find((l) => !!l && !/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(l)) || '';
+    const headers = splitLine(headerLine, delimiter);
+    const rows: Array<Record<string, string>> = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i];
+      if (!rawLine) continue;
+      if (rawLine === headerLine) continue;
+      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(rawLine)) continue;
+      const cols = splitLine(rawLine, delimiter);
+      if (cols.every((c) => !c || c.trim().length === 0)) continue;
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => (row[h] = cols[idx] ?? ''));
+      rows.push(row);
+    }
+
+    ctx.postMessage({ type: 'result', headers, rows });
+  } catch (err) {
+    ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
+  }
+};
 ```
 
 ## File: libs/uxcommon/src/components/detail-row/detail-row.ts
@@ -2168,46 +1912,6 @@ export class EntityOverview {
 }
 ```
 
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
-
-```html
-<div class="space-y-0.5">
-  <!-- Email is always required and locked -->
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
-      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-      <span class="text-sm font-bold text-primary">Email Address</span>
-    </label>
-    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-  </div>
-
-  @for (field of allFields; track field.key) {
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        [checked]="isEnabled(field.key)"
-        (change)="toggleField(field.key)"
-        class="checkbox checkbox-sm checkbox-primary"
-      />
-      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
-    </label>
-    @if (isEnabled(field.key)) {
-    <button
-      type="button"
-      (click)="toggleRequired(field.key)"
-      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-      [class.btn-primary]="isRequired(field.key)"
-      [class.btn-outline]="!isRequired(field.key)"
-    >
-      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
-    </button>
-    }
-  </div>
-  }
-</div>
-```
-
 ## File: libs/uxcommon/src/components/fields-selector/fields-selector.ts
 
 ```typescript
@@ -2265,41 +1969,53 @@ export class FieldsSelector {
 }
 ```
 
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
+## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
 
-```html
-<div class="flex gap-2 justify-center">
-  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
+```typescript
+import { Component, computed, input } from '@angular/core';
+import { StatusBadge } from '../status-badge/status-badge';
+import type { PcStatusType } from '../status-badge/status-badge';
 
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline btn-sm gap-2"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
+/** The household geocoding lifecycle as stored in `households.geocoding_status`. */
+export type PcGeocodeStatus = 'success' | 'pending' | 'failed' | null | undefined;
+
+interface GeocodeChipSpec {
+  label: string;
+  type: PcStatusType;
+}
+
+/**
+ * The single, binding surface for a household's geocode state (§6 consumers):
+ * "Located / Locating… / Address problem" — never a hidden row. Wave 2
+ * (canvassing readiness, delivery coverage) reads the same three states.
+ *
+ * DB status → chip:
+ *  - `success`            → **Located** (success — done)
+ *  - `pending` / `null`   → **Locating…** (info — in progress)
+ *  - `failed`             → **Address problem** (warning — needs attention)
+ */
+export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSpec {
+  switch (status) {
+    case 'success':
+      return { label: 'Located', type: 'success' };
+    case 'failed':
+      return { label: 'Address problem', type: 'warning' };
+    default:
+      return { label: 'Locating…', type: 'info' };
   }
+}
 
-  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
-</div>
+@Component({
+  selector: 'pc-geocode-chip',
+  imports: [StatusBadge],
+  template: ` <pc-status-badge [type]="spec().type" [size]="size()">{{ spec().label }}</pc-status-badge> `,
+})
+export class GeocodeChip {
+  public readonly status = input<PcGeocodeStatus | string>(null);
+  public readonly size = input<'sm' | 'md' | 'lg'>('sm');
+
+  protected readonly spec = computed(() => geocodeChipSpec(this.status()));
+}
 ```
 
 ## File: libs/uxcommon/src/components/icons/attachment-icon.ts
@@ -2421,250 +2137,324 @@ export class Icon {
 }
 ```
 
-## File: libs/uxcommon/src/components/icons/icons.index.ts
+## File: libs/uxcommon/src/components/map/map-types.ts
 
 ```typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
+/**
+ * Shared value types for the single Google Maps primitive, `<pc-map>`.
+ *
+ * These are the binding contract consumed by §6 (household card), §13
+ * (canvassing turf polygons) and §14 (delivery routes / per-door dots). Keep
+ * them free of any Google Maps SDK types so consumers and unit tests can build
+ * marker/polygon inputs without loading the SDK.
+ */
 
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
+/** A plain latitude/longitude pair (never a `google.maps.LatLng`). */
+export interface PcLatLng {
+  lat: number;
+  lng: number;
 }
 
-const UNKNOWN: PcIconNameType = 'unknown';
+/**
+ * Semantic colour bucket. Maps 1:1 to a DaisyUI `--color-*` token, resolved at
+ * runtime so overlays stay correct across a light/dark theme flip. `muted`
+ * resolves to `base-content` at reduced opacity.
+ */
+export type PcMapVariant = 'primary' | 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'muted';
 
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
+/** One point marker. `payload` is echoed back on `markerClicked`. */
+export interface PcMapMarker<T = unknown> {
+  position: PcLatLng;
+  variant?: PcMapVariant;
+  tooltip?: string;
+  id?: string;
+  payload?: T;
+}
 
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
+/** One filled polygon (a turf boundary). `payload` is echoed on `polygonClicked`. */
+export interface PcMapPolygon<T = unknown> {
+  path: PcLatLng[];
+  variant?: PcMapVariant;
+  label?: string;
+  dashed?: boolean;
+  id?: string;
+  payload?: T;
+}
 ```
 
-## File: libs/uxcommon/src/components/input/input.ts
+## File: libs/uxcommon/src/components/map/map.ts
 
 ```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
+import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Loader } from '@googlemaps/js-api-loader';
+import { Icon } from '../icons/icon';
+import type { PcLatLng, PcMapMarker, PcMapPolygon, PcMapVariant } from './map-types';
 
+const DEFAULT_ZOOM = 14;
+const DEFAULT_MAP_ID = 'DEMO_MAP_ID';
+const FILL_OPACITY = 0.18;
+const MUTED_OPACITY = 0.55;
+
+/**
+ * `<pc-map>` — the single Google Maps primitive for the whole app (§13 maps
+ * ruling: Google Maps Platform only, no mixed providers).
+ *
+ * - **Real browser + a provided `Loader`** → lazy-loads the `maps` + `marker`
+ *   libraries and draws markers/polygons tinted by DaisyUI semantic tokens.
+ * - **No `Loader` (unit tests) / offline / a load failure** → renders a
+ *   deterministic placeholder (a pin icon + label) and never touches the
+ *   network. This mirrors the geocoding mock's degrade-don't-crash approach, so
+ *   the app never crashes and never fakes a pin.
+ *
+ * See `docs/spec/pc-map-usage.md` for the three consumption patterns and the
+ * binding input/output contract.
+ */
 @Component({
-  selector: 'pc-input',
-  imports: [FormField],
+  selector: 'pc-map',
+  imports: [Icon],
   template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <label
-        class="input w-full flex items-center gap-2"
-        [class.input-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
+    @if (ready()) {
+      <div #mapHost class="h-full w-full min-h-40"></div>
+    } @else {
+      <div
+        class="flex h-full w-full min-h-40 flex-col items-center justify-center gap-2 rounded-lg bg-base-200 text-base-content/40 select-none"
+        role="img"
+        [attr.aria-label]="ariaLabel()"
       >
-        <ng-content select="[pc-prefix]"></ng-content>
-        <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />
-        <ng-content select="[pc-suffix]"></ng-content>
-      </label>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
+        <pc-icon name="map-pin" [size]="8" class="text-base-content/25"></pc-icon>
+        <span class="text-xs font-medium text-base-content/50">{{ placeholderLabel() }}</span>
+      </div>
+    }
   `,
 })
-export class Input {
-  public label = input<string>();
-  public type = input<string>('text');
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
+export class PcMap {
+  /** Optional so unit tests (and any host without the SDK key) fall back to the placeholder. */
+  private readonly loader = inject(Loader, { optional: true });
+
+  public readonly markers = input<PcMapMarker[]>([]);
+  public readonly polygons = input<PcMapPolygon[]>([]);
+  public readonly center = input<PcLatLng | null>(null);
+  public readonly zoom = input<number>(DEFAULT_ZOOM);
+  public readonly fitBounds = input<boolean>(true);
+  public readonly interactive = input<boolean>(true);
+  public readonly deepLink = input<boolean>(false);
+  public readonly mapId = input<string>(DEFAULT_MAP_ID);
+  public readonly ariaLabel = input<string>('Map');
+
+  public readonly markerClicked = output<PcMapMarker>();
+  public readonly polygonClicked = output<PcMapPolygon>();
+
+  protected readonly ready = signal(false);
+
+  private readonly mapHost = viewChild<ElementRef<HTMLElement>>('mapHost');
+
+  private map: google.maps.Map | null = null;
+  private drawnMarkers: google.maps.marker.AdvancedMarkerElement[] = [];
+  private drawnPolygons: google.maps.Polygon[] = [];
+  private themeObserver: MutationObserver | null = null;
+
+  protected readonly placeholderLabel = signal('Map unavailable');
+
+  constructor() {
+    // Kick off the SDK load once. If there is no Loader we stay a placeholder.
+    void this.tryLoad();
+
+    // Redraw whenever inputs change and the map is live.
+    effect(() => {
+      const markers = this.markers();
+      const polygons = this.polygons();
+      // Recompute the placeholder caption from current content.
+      this.placeholderLabel.set(this.computePlaceholderLabel(markers, polygons));
+      if (this.map) {
+        this.redraw(markers, polygons);
+      }
+    });
+
+    // Once the host element materialises (after `ready` flips), build the map.
+    effect(() => {
+      const host = this.mapHost();
+      if (host && !this.map) {
+        this.buildMap(host.nativeElement);
+      }
+    });
+  }
+
+  private async tryLoad(): Promise<void> {
+    if (!this.loader) return;
+    try {
+      await this.loader.importLibrary('maps');
+      await this.loader.importLibrary('marker');
+      this.ready.set(true);
+    } catch {
+      // Bad key / offline / blocked — stay on the honest placeholder.
+      this.ready.set(false);
+    }
+  }
+
+  private buildMap(hostEl: HTMLElement): void {
+    try {
+      const explicitCenter = this.center();
+      this.map = new google.maps.Map(hostEl, {
+        center: explicitCenter ?? { lat: 0, lng: 0 },
+        zoom: this.zoom(),
+        mapId: this.mapId(),
+        disableDefaultUI: !this.interactive(),
+        gestureHandling: this.interactive() ? 'greedy' : 'none',
+        scrollwheel: false, // §13.3 — keep the page scrolling
+        streetViewControl: false,
+        mapTypeControl: false,
+        keyboardShortcuts: this.interactive(),
+      });
+
+      if (this.deepLink()) {
+        this.map.addListener('click', () => this.openInMapsApp());
+        hostEl.style.cursor = 'pointer';
+      }
+
+      this.observeTheme();
+      this.redraw(this.markers(), this.polygons());
+    } catch {
+      // A partial/broken SDK (or an offline draw failure) degrades to the
+      // honest placeholder rather than crashing the host page.
+      this.map = null;
+      this.ready.set(false);
+    }
+  }
+
+  private redraw(markers: PcMapMarker[], polygons: PcMapPolygon[]): void {
+    if (!this.map) return;
+    this.clearOverlays();
+
+    for (const poly of polygons) {
+      this.drawPolygon(poly);
+    }
+    for (const marker of markers) {
+      this.drawMarker(marker);
+    }
+
+    if (!this.center()) {
+      this.fitToContent(markers, polygons);
+    }
+  }
+
+  private drawMarker(marker: PcMapMarker): void {
+    if (!this.map) return;
+    const color = this.resolveColor(marker.variant ?? 'primary');
+    const pin = document.createElement('div');
+    pin.style.width = '14px';
+    pin.style.height = '14px';
+    pin.style.borderRadius = '9999px';
+    pin.style.background = color;
+    pin.style.border = '2px solid var(--color-base-100, #fff)';
+    pin.style.boxShadow = '0 1px 3px rgba(0,0,0,0.4)';
+    if (marker.tooltip) pin.title = marker.tooltip;
+
+    const advanced = new google.maps.marker.AdvancedMarkerElement({
+      map: this.map,
+      position: marker.position,
+      content: pin,
+      title: marker.tooltip ?? '',
+      gmpClickable: true,
+    });
+    advanced.addListener('gmp-click', () => {
+      this.markerClicked.emit(marker);
+      if (this.deepLink()) this.openInMapsApp(marker.position);
+    });
+    this.drawnMarkers.push(advanced);
+  }
+
+  private drawPolygon(poly: PcMapPolygon): void {
+    if (!this.map) return;
+    const color = this.resolveColor(poly.variant ?? 'neutral');
+    const shape = new google.maps.Polygon({
+      map: this.map,
+      paths: poly.path,
+      strokeColor: color,
+      // Polygons can't render a dashed outline (that's a Polyline feature); a
+      // dashed turf uses a thinner, lower-opacity solid stroke for now.
+      // TODO(Wave 2F turf boundaries): overlay a dashed Polyline for `poly.dashed`.
+      strokeWeight: poly.dashed ? 1.5 : 2,
+      strokeOpacity: poly.dashed ? 0.6 : 0.9,
+      fillColor: color,
+      fillOpacity: FILL_OPACITY,
+      clickable: true,
+    });
+    shape.addListener('click', () => this.polygonClicked.emit(poly));
+    this.drawnPolygons.push(shape);
+  }
+
+  private fitToContent(markers: PcMapMarker[], polygons: PcMapPolygon[]): void {
+    if (!this.map || !this.fitBounds()) return;
+    const bounds = new google.maps.LatLngBounds();
+    let has = false;
+    for (const m of markers) {
+      bounds.extend(m.position);
+      has = true;
+    }
+    for (const p of polygons) {
+      for (const pt of p.path) {
+        bounds.extend(pt);
+        has = true;
+      }
+    }
+    if (!has) return;
+    const soleMarker = markers.length === 1 && polygons.length === 0 ? markers[0] : undefined;
+    if (soleMarker) {
+      // A single door reads better centred at a street zoom than fit-to-point.
+      this.map.setCenter(soleMarker.position);
+      this.map.setZoom(this.zoom());
+      return;
+    }
+    this.map.fitBounds(bounds);
+  }
+
+  private clearOverlays(): void {
+    for (const m of this.drawnMarkers) m.map = null;
+    for (const p of this.drawnPolygons) p.setMap(null);
+    this.drawnMarkers = [];
+    this.drawnPolygons = [];
+  }
+
+  private observeTheme(): void {
+    if (this.themeObserver || typeof MutationObserver === 'undefined') return;
+    this.themeObserver = new MutationObserver(() => this.redraw(this.markers(), this.polygons()));
+    this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+
+  private openInMapsApp(position?: PcLatLng): void {
+    const target = position ?? this.center() ?? this.markers()[0]?.position;
+    if (!target) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${target.lat},${target.lng}`;
+    window.open(url, '_blank', 'noopener');
+  }
+
+  /**
+   * Resolve a semantic variant to a concrete CSS colour string Google's canvas
+   * renderer accepts. Reads the live DaisyUI `--color-*` token through a probe
+   * element so the value survives a theme flip.
+   */
+  private resolveColor(variant: PcMapVariant): string {
+    const token = variant === 'muted' ? 'base-content' : variant;
+    const host = this.mapHost()?.nativeElement ?? document.body;
+    const probe = document.createElement('span');
+    probe.style.color = `var(--color-${token})`;
+    probe.style.display = 'none';
+    host.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    host.removeChild(probe);
+    if (variant === 'muted' && resolved.startsWith('rgb')) {
+      return resolved.replace('rgb(', 'rgba(').replace(')', `, ${MUTED_OPACITY})`);
+    }
+    return resolved || '#3b82f6';
+  }
+
+  private computePlaceholderLabel(markers: PcMapMarker[], polygons: PcMapPolygon[]): string {
+    if (markers.length === 0 && polygons.length === 0) return this.ariaLabel();
+    const parts: string[] = [];
+    if (markers.length) parts.push(`${markers.length} ${markers.length === 1 ? 'location' : 'locations'}`);
+    if (polygons.length) parts.push(`${polygons.length} ${polygons.length === 1 ? 'area' : 'areas'}`);
+    return parts.join(' · ');
+  }
 }
 ```
 
@@ -2736,29 +2526,6 @@ export class ProfileCard {
   public avatarText = input<string | null | undefined>();
   public iconName = input<PcIconNameType | null | undefined>();
 }
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
-
-```html
-<pc-card [title]="label()" [subtitle]="subtitle()">
-  <div class="space-y-3">
-    <div class="flex gap-2">
-      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
-      <a
-        [href]="url()"
-        target="_blank"
-        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-        title="Open public page"
-      >
-        <pc-icon name="arrow-top-right-on-square"></pc-icon>
-      </a>
-      <button type="button" class="btn btn-sm btn-outline btn-primary px-3" (click)="copyUrl()" title="Copy link">
-        <pc-icon name="document-duplicate"></pc-icon>
-      </button>
-    </div>
-  </div>
-</pc-card>
 ```
 
 ## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.ts
@@ -2893,6 +2660,66 @@ export class SideDrawer {
 }
 ```
 
+## File: libs/uxcommon/src/components/stat-card/stat-card.ts
+
+```typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-stat-card',
+  imports: [Icon],
+  template: `
+    <div
+      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
+    >
+      <div class="stat p-0 leading-normal">
+        @if (title()) {
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            {{ title() }}
+          </div>
+        }
+        @if (loading()) {
+          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
+          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
+        } @else {
+          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
+            {{ value() }}
+          </div>
+        }
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+          @if (description()) {
+            <span>{{ description() }}</span>
+          }
+          <ng-content select="[pc-stat-desc]"></ng-content>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 flex items-center justify-center gap-2">
+        @if (icon()) {
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
+            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
+          </div>
+        }
+        <ng-content select="[pc-stat-extra]"></ng-content>
+      </div>
+    </div>
+  `,
+})
+export class StatCard {
+  public title = input<string>();
+  public value = input<string | number>();
+  /** When true, the value renders as a skeleton block instead of a number/spinner. */
+  public loading = input<boolean>(false);
+  public description = input<string>();
+  public icon = input<PcIconNameType>();
+  public valueColorClass = input<string>('text-base-content');
+  public iconBgClass = input<string>('bg-base-200/50');
+  public iconColorClass = input<string>('text-base-content/70');
+}
+```
+
 ## File: libs/uxcommon/src/components/status-badge/status-badge.ts
 
 ```typescript
@@ -3022,85 +2849,6 @@ export class SystemMetadata {
   public updatedBy = input<string | null | undefined>();
   public layout = input<'row' | 'col'>('row');
   public dateFormat = input<string>('M/d/yyyy');
-}
-```
-
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-
-```typescript
-import { Component, computed, input, model } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  icon?: PcIconNameType;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-}
-
-@Component({
-  selector: 'pc-tabs',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-      <!-- Tabs Header -->
-      <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-        @for (tab of tabs(); track tab.id) {
-          <a
-            role="tab"
-            class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-            [class.tab-active]="activeTab() === tab.id"
-            [class.opacity-50]="tab.disabled"
-            [class.cursor-not-allowed]="tab.disabled"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            @if (tab.icon) {
-              <pc-icon [name]="tab.icon" [size]="4" class="flex-shrink-0"></pc-icon>
-            }
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="badge badge-sm badge-neutral">{{ tab.badge }}</span>
-            }
-          </a>
-        }
-      </div>
-
-      <!-- Tab Panels -->
-      <div class="p-6">
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-
-  public selectTab(id: string) {
-    this.activeTab.set(id);
-  }
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
 }
 ```
 
@@ -3412,6 +3160,232 @@ export class UserAvatarComponent {
     return PALETTES[sum % PALETTES.length];
   });
 }
+```
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.html
+
+```html
+<dialog #dlg class="modal">
+  @if (state()) {
+  <div class="modal-box">
+    <div class="flex items-center gap-2">
+      <pc-icon [name]="icon()" class="text-xl" />
+      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
+    </div>
+
+    @if (state()!.message) {
+    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
+    } @if (state()!.type === 'prompt') {
+    <input
+      [placeholder]="state()!.inputPlaceholder || ''"
+      class="input input-bordered w-full mb-4"
+      [value]="promptValue()"
+      (input)="promptValue.set($any($event.target).value)"
+    />
+    } @if (state()!.type === 'choose') {
+    <div class="flex flex-col gap-2 w-full mt-4">
+      @for (choice of state()!.choices; track choice.label) {
+      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
+        {{ choice.label }}
+      </button>
+      } @if (showCancel()) {
+      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+    </div>
+    } @else {
+    <div class="flex justify-end gap-2">
+      @if (showCancel()) {
+      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
+    </div>
+    }
+  </div>
+
+  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
+    <button>close</button>
+  </form>
+  }
+</dialog>
+```
+
+## File: libs/uxcommon/src/components/confirm-dialog.service.ts
+
+```typescript
+import { signal, computed, Service } from '@angular/core';
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface DialogChoice<T = any> {
+  label: string;
+  value: T;
+  variant?: DialogVariant;
+}
+
+export interface ChooseOptions<T = any> {
+  allowBackdropClose?: boolean;
+  cancelText?: string;
+  choices: DialogChoice<T>[];
+  icon?: PcIconNameType;
+  message?: string;
+  title: string;
+  variant?: DialogVariant;
+}
+
+export interface BaseDialogOptions {
+  allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
+  cancelText?: string; // default per type
+  confirmText?: string; // default per type
+  /** Style cancel as the primary/safe-default button and confirm as a plain variant-colored one (e.g. "Keep editing" vs. "Discard changes"). */
+  emphasizeCancel?: boolean;
+  icon?: PcIconNameType; // optional icon name for <pc-icon>
+  message?: string;
+  title: string;
+  variant?: DialogVariant;
+}
+
+export interface DialogState {
+  allowBackdropClose: boolean;
+  cancelText: string;
+  confirmText: string;
+  defaultValue?: string;
+  emphasizeCancel?: boolean;
+  icon?: PcIconNameType;
+
+  // prompt
+  inputPlaceholder?: string;
+  message?: string;
+  title: string;
+  type: DialogType;
+  variant: DialogVariant;
+
+  // choose
+  choices?: DialogChoice[];
+}
+
+export interface PromptOptions extends BaseDialogOptions {
+  defaultValue?: string;
+  inputPlaceholder?: string;
+}
+
+@Service()
+export class ConfirmDialogService {
+  private _resolve: ((value?: any) => void) | null = null;
+
+  public readonly stateSignal = signal<DialogState | null>(null);
+
+  public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
+
+  public alert(opts: BaseDialogOptions): Promise<void> {
+    this.open({
+      type: 'alert',
+      title: opts.title,
+      message: opts.message,
+      variant: opts.variant ?? 'info',
+      icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
+      allowBackdropClose: opts.allowBackdropClose ?? true,
+      confirmText: 'OK',
+      cancelText: '',
+    });
+    return new Promise<void>((resolve) => (this._resolve = resolve));
+  }
+
+  public cancel(): void {
+    // Normalize cancel values per dialog type
+    const st = this.stateSignal();
+    if (st?.type === 'confirm') this._resolve?.(false);
+    else if (st?.type === 'alert') this._resolve?.();
+    else if (st?.type === 'prompt') this._resolve?.(null);
+    else if (st?.type === 'choose') this._resolve?.(null);
+    this.close();
+  }
+
+  public confirm(opts: BaseDialogOptions): Promise<boolean> {
+    const v = opts.variant ?? 'neutral';
+    const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
+    const confirmText = opts.confirmText ?? (v === 'danger' ? 'Delete' : 'OK');
+    const cancelText = opts.cancelText ?? 'Cancel';
+
+    this.open({
+      type: 'confirm',
+      title: opts.title,
+      message: opts.message,
+      variant: v,
+      icon: opts.icon ?? this.defaultIconFor(v),
+      allowBackdropClose,
+      confirmText,
+      cancelText,
+      emphasizeCancel: opts.emphasizeCancel,
+    });
+
+    return new Promise<boolean>((resolve) => (this._resolve = resolve));
+  }
+
+  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
+    const v = opts.variant ?? 'neutral';
+    this.open({
+      type: 'choose',
+      title: opts.title,
+      message: opts.message,
+      variant: v,
+      icon: opts.icon ?? this.defaultIconFor(v),
+      allowBackdropClose: opts.allowBackdropClose ?? true,
+      confirmText: '',
+      cancelText: opts.cancelText ?? 'Cancel',
+      choices: opts.choices,
+    });
+
+    return new Promise<T | null>((resolve) => (this._resolve = resolve));
+  }
+
+  public defaultIconFor(variant: DialogVariant): PcIconNameType {
+    switch (variant) {
+      case 'danger':
+        return 'exclamation-triangle';
+      case 'warning':
+        return 'exclamation-circle';
+      case 'info':
+        return 'information-circle';
+      case 'success':
+        return 'check-circle';
+      default:
+        return 'x-mark';
+    }
+  }
+
+  public ok(payload?: unknown): void {
+    this._resolve?.(payload ?? true);
+    this.close();
+  }
+
+  public prompt(opts: PromptOptions): Promise<string | null> {
+    this.open({
+      type: 'prompt',
+      title: opts.title,
+      message: opts.message,
+      variant: opts.variant ?? 'neutral',
+      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
+      allowBackdropClose: opts.allowBackdropClose ?? true,
+      confirmText: opts.confirmText ?? 'OK',
+      cancelText: opts.cancelText ?? 'Cancel',
+      inputPlaceholder: opts.inputPlaceholder,
+      defaultValue: opts.defaultValue,
+    });
+    return new Promise<string | null>((resolve) => (this._resolve = resolve));
+  }
+
+  private close(): void {
+    this.stateSignal.set(null);
+    this._resolve = null;
+  }
+
+  private open(st: DialogState): void {
+    this.stateSignal.set(st);
+  }
+}
+
+export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
+
+export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
 ```
 
 ## File: libs/uxcommon/src/directives/animate-if.directive.ts
@@ -4155,52 +4129,6 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 }
 ```
 
-## File: libs/uxcommon/src/index.ts
-
-```typescript
-export * from './loading-gate';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-```
-
 ## File: libs/uxcommon/src/test-setup.ts
 
 ```typescript
@@ -4393,6 +4321,91 @@ Run `nx test uxcommon` to execute the unit tests.
 }
 ```
 
+## File: libs/uxcommon/vite.config.mts
+
+```typescript
+/// <reference types='vitest' />
+import { defineConfig } from 'vite';
+import angular from '@analogjs/vite-plugin-angular';
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/libs/uxcommon',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [angular()],
+  test: {
+    name: 'uxcommon',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'jsdom',
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    setupFiles: ['src/test-setup.ts'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/libs/uxcommon',
+      provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 81.22% stmts / 63.21% branch / 67.05% funcs / 82.27% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 80,
+        branches: 62,
+        functions: 66,
+        lines: 81,
+      },
+    },
+  },
+}));
+```
+
+## File: libs/common/src/lib/schemas/activity.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+/**
+ * Interaction types a user can log by hand from a record page ("Log an
+ * interaction"). These are stored in `user_activity.activity` alongside the
+ * auto-generated audit types (create/update/…); they are the human-authored
+ * subset. Keep in sync with the `UserActivityType` union in
+ * `apps/backend/src/app/lib/user-activity.repo.ts`.
+ */
+export const INTERACTION_TYPES = ['call', 'door_knock', 'note', 'meeting'] as const;
+export type InteractionType = (typeof INTERACTION_TYPES)[number];
+
+export const INTERACTION_TYPE_LABELS: Record<InteractionType, string> = {
+  call: 'Call',
+  door_knock: 'Door knock',
+  note: 'Email / note',
+  meeting: 'Meeting',
+};
+
+export const interactionTypeSchema = z.enum(INTERACTION_TYPES);
+
+/** Longest note we accept for a logged interaction. */
+export const INTERACTION_NOTE_MAX = 2000;
+
+/**
+ * Payload for the `activity.logInteraction` mutation. `entity` is the DB table
+ * name the record lives in (`persons` / `households` / `companies`), `entityId`
+ * the record id. `note` is optional free text; `occurredAt` lets the user
+ * back-date the interaction (defaults to now server-side).
+ */
+export const LogInteractionObj = z.object({
+  entity: z.string().min(1),
+  entityId: z.string().min(1),
+  type: interactionTypeSchema,
+  note: z.string().trim().max(INTERACTION_NOTE_MAX).optional(),
+  occurredAt: z.coerce.date().optional(),
+});
+
+export type LogInteractionType = z.infer<typeof LogInteractionObj>;
+```
+
 ## File: libs/common/src/lib/schemas/auth.schema.ts
 
 ```typescript
@@ -4429,6 +4442,8 @@ export const NotificationPreferencesObj = z.object({
 export const ProfilePreferencesObj = z
   .object({
     notifications: NotificationPreferencesObj.partial().optional(),
+    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
+    active_campaign_id: z.string().optional(),
   })
   .catchall(z.unknown());
 
@@ -4449,225 +4464,622 @@ export const Verify2FAObj = z.object({
 });
 ```
 
-## File: libs/common/src/lib/schemas/companies.schema.ts
+## File: libs/common/src/lib/schemas/campaigns.schema.ts
 
 ```typescript
 import { z } from 'zod';
+import { descriptionSchema, idSchema, nameSchema, notesSchema } from './core.schema';
 
 /**
- * Shape of the companies.enrichment jsonb column (formerly the untyped
- * companies.json grab-bag) — the Google Places enrichment payload.
- * `place_details` is the raw Places API result and deliberately unmodeled.
+ * Campaigns §15 — a campaign is a *context*: the permanent constituency office
+ * ('office') or a time-bounded election run ('election'). Several can be active at
+ * once; users pick the one they're working in via the header switcher. Archived
+ * campaigns are read-only history.
  */
-export const CompanyEnrichmentObj = z
-  .object({
-    google_enriched: z.boolean().optional(),
-    place_details: z.unknown().optional(),
-  })
-  .catchall(z.unknown());
+export const CAMPAIGN_KINDS = ['office', 'election'] as const;
+export type CampaignKind = (typeof CAMPAIGN_KINDS)[number];
 
-export const CompanyInputObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
-  description: z.string().trim().max(1000).optional().nullable(),
-  website: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  email: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  phone: z.string().trim().max(50).optional().nullable(),
-  industry: z.string().trim().max(100).optional().nullable(),
-  notes: z.string().trim().max(10000).optional().nullable(),
+export const CAMPAIGN_STATUSES = ['active', 'archived'] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/** Plain calendar date (campaigns.startdate/enddate are Postgres `date` columns). */
+const campaignDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+  .nullable()
+  .optional();
+
+export const AddCampaignObj = z.object({
+  name: nameSchema('Name', 100),
+  description: descriptionSchema(1000),
+  notes: notesSchema,
+  kind: z.enum(CAMPAIGN_KINDS).default('election'),
+  startdate: campaignDateSchema,
+  enddate: campaignDateSchema,
+});
+
+export const UpdateCampaignObj = z.object({
+  name: nameSchema('Name', 100).optional(),
+  description: descriptionSchema(1000),
+  notes: notesSchema,
+  startdate: campaignDateSchema,
+  enddate: campaignDateSchema,
+});
+
+/**
+ * Campaign-scoped person facts (Campaigns §15) — structured concepts, not tags.
+ * One row per (campaign, person); a missing row / NULL field is "Unknown".
+ * UI copy: Neutral = engaged but indifferent; Undecided = engaged, hasn't
+ * decided; Unknown = never asked.
+ */
+export const SUPPORT_LEVELS = ['strong', 'leaning', 'neutral', 'leaning_against', 'against', 'undecided'] as const;
+export type SupportLevel = (typeof SUPPORT_LEVELS)[number];
+
+export const SUPPORT_LEVEL_LABELS: Record<SupportLevel, string> = {
+  strong: 'Strong',
+  leaning: 'Leaning',
+  neutral: 'Neutral',
+  leaning_against: 'Leaning against',
+  against: 'Against',
+  undecided: 'Undecided',
+};
+
+/** GOTV voting status. Advance voters are struck from later call/knock lists. */
+export const VOTING_STATUSES = ['will_vote', 'voted_advance', 'voted_eday', 'not_voting', 'ineligible'] as const;
+export type VotingStatus = (typeof VOTING_STATUSES)[number];
+
+export const VOTING_STATUS_LABELS: Record<VotingStatus, string> = {
+  will_vote: 'Will vote',
+  voted_advance: 'Voted — advance',
+  voted_eday: 'Voted — election day',
+  not_voting: 'Not voting',
+  ineligible: 'Ineligible',
+};
+
+export const FACT_SOURCES = ['manual', 'canvass', 'form', 'import', 'carryover'] as const;
+export type FactSource = (typeof FACT_SOURCES)[number];
+
+/** Upsert one person's facts in one campaign. Omitted field = leave unchanged; explicit null = back to Unknown. */
+export const UpsertCampaignPersonFactObj = z.object({
+  campaign_id: idSchema,
+  person_id: idSchema,
+  support_level: z.enum(SUPPORT_LEVELS).nullable().optional(),
+  voting_status: z.enum(VOTING_STATUSES).nullable().optional(),
+});
+
+/**
+ * Per-campaign email consent (§15, layer 1 of 3). 'pending' is double opt-in
+ * awaiting confirmation. Layers 2 & 3 (address suppressions, person DNC) are
+ * global and live elsewhere; sendable = subscribed ∧ not suppressed ∧ not DNC.
+ */
+export const SUBSCRIPTION_STATUSES = ['subscribed', 'pending', 'unsubscribed'] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+export const CONSENT_SOURCES = ['form', 'import', 'manual', 'copied'] as const;
+export type ConsentSource = (typeof CONSENT_SOURCES)[number];
+
+/** Staff-set subscription change; 'pending' is machine-only (double opt-in flow). */
+export const SetCampaignSubscriptionObj = z.object({
+  campaign_id: idSchema,
+  person_id: idSchema,
+  status: z.enum(['subscribed', 'unsubscribed']),
+});
+
+/**
+ * Carry-over (§15): seed a campaign from a prior one. Support levels copy as a
+ * starting assumption (source='carryover'); voting status NEVER copies (it is
+ * election-specific by definition); subscriptions copy only when the caller has
+ * explicitly confirmed the compliance warning (consent_source='copied',
+ * original consent_at preserved).
+ */
+export const CarryOverCampaignObj = z.object({
+  source_campaign_id: idSchema,
+  target_campaign_id: idSchema,
+  copy_support: z.boolean().default(true),
+  copy_subscriptions: z.boolean().default(false),
 });
 ```
 
-## File: libs/common/src/lib/schemas/core.schema.ts
+## File: libs/common/src/lib/schemas/canvassing.schema.ts
 
 ```typescript
 import { z } from 'zod';
 
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
+import { idSchema, nameSchema, notesSchema } from './core.schema';
+
+/**
+ * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
+ * they drive both Zod validation and exhaustive discriminated-union switches on
+ * the frontend and in the controller.
+ */
+
+/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
+export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
+export type TurfStatus = (typeof TURF_STATUSES)[number];
+
+/** What happened at the door. "attempted" = any knock; "conversation" = a talk. */
+export const KNOCK_OUTCOMES = ['conversation', 'no_answer', 'not_home', 'refused', 'inaccessible'] as const;
+export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
+
+/** The voter's stance, when a conversation happened ("what voters said"). */
+export const KNOCK_RESPONSES = ['strong_support', 'lean_support', 'undecided', 'opposed'] as const;
+export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
+
+/** Doors-per-turf presets from the Cut-new-turfs dialog. */
+export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
+
+export const turfStatusSchema = z.enum(TURF_STATUSES);
+export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
+export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
+
+export const AddTurfObj = z.object({
+  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Name', 120),
+  list_id: idSchema.nullable().optional(),
+  notes: notesSchema,
 });
 
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
+export const UpdateTurfObj = z.object({
+  name: nameSchema('Name', 120).optional(),
+  status: turfStatusSchema.optional(),
+  notes: notesSchema,
+});
+
+/** Preview and Cut share this input; preview never writes. */
+export const CutTurfsObj = z.object({
+  list_id: idSchema,
+  doors_per_turf: z.number().int().min(5).max(500),
+});
+
+export const AssignTurfObj = z.object({
+  turf_id: idSchema,
+  team_id: idSchema.nullable().optional(),
+});
+
+export const FieldReportRangeObj = z.object({
+  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
+  from: z.string().datetime().nullable().optional(),
+  to: z.string().datetime().nullable().optional(),
+});
+
+/**
+ * Companion knock payload. Arrives over the tokenised public route (no account),
+ * so the token authorises the turf and `client_knock_id` de-dupes offline
+ * re-sends. Parsed from `unknown` at the REST boundary.
+ */
+export const LogKnockObj = z.object({
+  token: z.string().min(10).max(200),
+  client_knock_id: z.string().min(1).max(200),
+  household_id: idSchema,
+  person_id: idSchema.nullable().optional(),
+  outcome: knockOutcomeSchema,
+  response: knockResponseSchema.nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  canvasser_name: z.string().trim().max(120).nullable().optional(),
+  knocked_at: z.string().datetime().nullable().optional(),
+});
+
+export function isTurfStatus(v: unknown): v is TurfStatus {
+  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
 }
 
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
+export function isKnockOutcome(v: unknown): v is KnockOutcome {
+  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
 }
+```
 
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
 
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
+```typescript
+import { z } from 'zod';
 
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
+import { idSchema, notesSchema } from './core.schema';
 
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
+
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
+
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
+
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
+});
+
+// Bulk approve/decline from the selection bar (spec §4.1).
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(['approved', 'declined']),
+});
+
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
+
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+```
+
+## File: libs/common/src/lib/schemas/events.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
+
+const slugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(
+    /^(?=.*[a-z])[a-z0-9-]+$/,
+    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+  );
+
+export const AddEventObj = z.object({
+  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Event name', 200),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'Start date & time is required' }),
   ),
+  end_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'End date & time is required' }),
+  ),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema,
+  is_published: z.boolean().default(false).optional(),
+  send_reminder: z.boolean().default(true).optional(),
+  send_registration_confirmation: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
 });
 
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const queueExportInput = z.object({
-  entity: z.enum([
-    'persons',
-    'households',
-    'companies',
-    'tags',
-    'issues',
-    'tasks',
-    'lists',
-    'newsletters',
-    'teams',
-    'users',
-    'volunteer',
-    'forms',
-    'workflows',
-  ]),
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-export const dataExportRecord = z.object({
+export const EventObj = z.object({
   id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  location_address: z.string().nullable().optional(),
+  start_time: z.coerce.date(),
+  end_time: z.coerce.date(),
+  capacity: z.number().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
+  contact_phone: z.string().nullable().optional(),
+  slug: z.string(),
+  is_published: z.boolean(),
+  send_reminder: z.boolean(),
+  send_registration_confirmation: z.boolean(),
+});
+
+export const UpdateEventObj = z.object({
+  name: nameSchema('Event name', 200).optional(),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'Start date & time is required' }),
+    )
+    .optional(),
+  end_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'End date & time is required' }),
+    )
+    .optional(),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema.optional(),
+  is_published: z.boolean().optional(),
+  send_reminder: z.boolean().optional(),
+  send_registration_confirmation: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const AddTicketTypeObj = z.object({
+  event_id: idSchema,
+  name: nameSchema('Ticket type name', 100),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).default(0).optional(),
+});
+
+export const TicketTypeObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  price_cents: z.number(),
+  capacity: z.number().nullable().optional(),
+  sort_order: z.number(),
+});
+
+export const UpdateTicketTypeObj = z.object({
+  name: nameSchema('Ticket type name', 100).optional(),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).optional(),
+});
+
+const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
+
+export const AddRegistrationObj = z.object({
+  event_id: idSchema,
+  person_id: idSchema,
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.default('registered').optional(),
+  notes: notesSchema,
+});
+
+export const RegistrationObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  person_id: z.string(),
+  ticket_type_id: z.string().nullable().optional(),
+  status: registrationStatusEnum,
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const UpdateRegistrationObj = z.object({
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.optional(),
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: notesSchema,
+});
+```
+
+## File: libs/common/src/lib/schemas/lists.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
+
+export const AddListObj = z.object({
+  /** Campaigns §15 — the context this segment belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('List name', 100),
+  description: descriptionSchema(1000),
+  object: z.enum(['people', 'households']),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  member_ids: z.array(idSchema).optional(),
+});
+
+export const ListsObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  object: z.enum(['people', 'households']),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
+});
+
+export const UpdateListObj = z.object({
+  name: nameSchema('List name', 100).optional(),
+  description: descriptionSchema(1000).optional(),
+  object: z.enum(['people', 'households']).optional(),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
+});
+
+export const ImportListItemObj = z.object({
+  id: idSchema,
+  fileName: z.string(),
+  source: z.string(),
+  tagName: z.string().nullable(),
+  tagMissing: z.boolean(),
+  createdAt: z.coerce.date(),
+  processedAt: z.coerce.date(),
   createdBy: z
     .object({
       id: z.string(),
       name: z.string().nullable(),
       email: z.string().nullable(),
     })
-    .nullable()
-    .optional(),
+    .nullable(),
+  insertedCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  mergedCount: z.number().int().nonnegative(),
+  tagsApplied: z.array(z.string()),
+  rowCount: z.number().int().nonnegative(),
+  householdsCreated: z.number().int().nonnegative(),
+  contactCount: z.number().int().nonnegative(),
+  householdCount: z.number().int().nonnegative(),
+  companyCount: z.number().int().nonnegative(),
+  taskCount: z.number().int().nonnegative(),
+  status: z.string(),
+  errorMessage: z.string().nullable().optional(),
+  canDeleteContacts: z.boolean(),
+  /** File size in bytes, when the original upload is still retained (90 days, spec §17). */
+  sourceFileSize: z.number().int().nonnegative().nullable(),
+  canDownloadSource: z.boolean(),
+  canDownloadSkipped: z.boolean(),
+});
+```
+
+## File: libs/common/src/lib/schemas/persons.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
+
+/**
+ * Do-not-contact channels (Campaigns §15). The flag lives on the person — it is a
+ * global compliance override, never a per-campaign preference. A null/absent
+ * channel list means "no contact on any channel".
+ */
+export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
+export type DncChannel = (typeof DNC_CHANNELS)[number];
+
+export const PersonsObj = z.object({
+  id: z.string(),
+  household_id: z.string(),
+  email: z.string(),
+  email2: z.string(),
+  first_name: z.string(),
+  middle_names: z.string(),
+  last_name: z.string(),
+  home_phone: z.string(),
+  mobile: z.string(),
+  notes: z.string(),
+  linkedin: z.string().nullable().optional(),
+  twitter: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
+  instagram: z.string().nullable().optional(),
+  assigned_to: z.string().nullable().optional(),
+  preferred_contact: z.string().nullable().optional(),
 });
 
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+export const UpdateHouseholdsObj = addressSchema.extend({
+  home_phone: phoneSchema('Home phone'),
+  notes: notesSchema,
 });
 
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
+export const UpdatePersonsObj = z.object({
+  campaign_id: idSchema.optional(),
+  household_id: idSchema.optional(),
+  company_id: idSchema.or(z.literal('')).nullable().optional(),
+  email: nullableEmailSchema,
+  email2: nullableEmailSchema,
+  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
+  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
+  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
+  home_phone: phoneSchema('Home phone'),
+  mobile: phoneSchema('Mobile phone'),
+  notes: notesSchema,
+  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
+  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
+  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
+  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
+  do_not_contact: z.boolean().optional(),
+  do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
+});
 ```
 
 ## File: libs/common/src/lib/schemas/web-forms.schema.ts
 
 ```typescript
 import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
+import { idSchema, nameSchema, descriptionSchema } from './core.schema';
 
 export const AddWebFormObj = z.object({
   name: nameSchema('Web Form name', 100),
@@ -4911,6 +5323,8 @@ export function fieldsForTemplate(type: FormType): FormField[] {
 export const CreateFormObj = z.object({
   name: nameSchema('Form name', 100),
   type: FormTypeEnum,
+  /** Campaigns §15 — the context this form collects consent for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
 });
 
 /** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
@@ -4937,943 +5351,6 @@ export const FormSubmissionObj = z.object({
   person_name: z.string().nullable(),
   answers: z.record(z.string(), z.unknown()),
   created_at: z.union([z.date(), z.string()]),
-});
-```
-
-## File: libs/common/src/lib/utils.ts
-
-```typescript
-export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-}
-
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Subdomain labels that must never be assigned to a tenant — they collide with app/infra hosts.
- * A tenant's slug becomes `<slug>.<baseDomain>`, so the public form page can resolve the tenant
- * from the Host header; these labels are reserved so a tenant can't shadow `app`, `api`, etc.
- */
-export const RESERVED_SUBDOMAINS = new Set<string>([
-  'app',
-  'www',
-  'api',
-  'admin',
-  'mail',
-  'email',
-  'ftp',
-  'smtp',
-  'imap',
-  'pop',
-  'ns',
-  'ns1',
-  'ns2',
-  'dns',
-  'mx',
-  'static',
-  'assets',
-  'cdn',
-  'media',
-  'files',
-  'download',
-  'downloads',
-  'status',
-  'help',
-  'support',
-  'docs',
-  'blog',
-  'dev',
-  'staging',
-  'stage',
-  'test',
-  'demo',
-  'sandbox',
-  'portal',
-  'dashboard',
-  'account',
-  'accounts',
-  'billing',
-  'pay',
-  'payments',
-  'auth',
-  'login',
-  'logout',
-  'signup',
-  'signin',
-  'register',
-  'public',
-  'forms',
-  'f',
-  'localhost',
-  'root',
-  'system',
-]);
-
-/**
- * Turn a name into a DNS-safe subdomain label: lowercase, ASCII alphanumerics + single hyphens,
- * no leading/trailing hyphen, capped at 40 chars. Returns '' when nothing usable remains — callers
- * must fall back (e.g. `t-<id>`) and check {@link RESERVED_SUBDOMAINS}.
- */
-export function slugifyHandle(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/g, '');
-}
-
-/**
- * Escape a string for safe interpolation into HTML markup (element text or
- * double/single-quoted attribute values).
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-```
-
-## File: libs/common/eslint.config.cjs
-
-```javascript
-/* ---------------------------------------------------------------
- *  libs/common/eslint.config.cjs
- *  Universal shared library rules (used by frontend + backend)
- * -------------------------------------------------------------- */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-/** @type {import('eslint').Linter.FlatConfig[]} */
-module.exports = [
-  /* Compose the root config so `nx lint common` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Confirmed zero new violations. */
-  ...require('../../eslint.config.cjs'),
-
-  /* JavaScript/TypeScript base rules */
-  ...compat
-    .config({
-      extends: [
-        'plugin:@nx/javascript',
-        'plugin:@typescript-eslint/recommended',
-        'plugin:@typescript-eslint/stylistic',
-      ],
-      parserOptions: {
-        project: [
-          require('path').resolve(__dirname, 'tsconfig.lib.json'),
-          require('path').resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.{ts,tsx,js,jsx}'],
-      rules: {
-        /* Shared TypeScript rules */
-        '@typescript-eslint/consistent-type-imports': 'warn',
-        '@typescript-eslint/no-explicit-any': 'warn',
-        '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-        '@typescript-eslint/no-inferrable-types': 'off',
-        '@typescript-eslint/explicit-function-return-type': 'off',
-
-        /* General JS/TS best practices */
-        'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
-        'prefer-const': 'error',
-        'no-var': 'error',
-        'no-empty': ['warn', { allowEmptyCatch: true }],
-      },
-    })),
-];
-```
-
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-
-export class AlertMessage {
-  public readonly visible = signal(true);
-  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
-  public readonly count = signal(1);
-
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
-  public type?: ALERTTYPE;
-
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
-const MAX_TOAST_STACK = 3;
-
-@Injectable({
-  providedIn: 'root',
-})
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
-
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
-
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
-
-    if (!alert) return;
-
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
-
-    alert.visible.set(false);
-
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // Coalesce an identical (same text + type) toast into a ×N count with a
-    // refreshed timer instead of stacking duplicates (§2).
-    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
-
-    if (existing) {
-      existing.count.update((c) => c + 1);
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
-      return;
-    }
-
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
-    this.alertsSignal.update((list) => {
-      const next = [messageWithMeta, ...list];
-      const dropped = next.slice(MAX_TOAST_STACK);
-      dropped.forEach((m) => clearTimeout(m.timeoutId));
-      return next.slice(0, MAX_TOAST_STACK);
-    });
-
-    const duration = messageWithMeta.duration || 3000;
-    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
-  }
-}
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="z-50 top-0 absolute w-full left-0"
-  [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-
-  <div
-    class="alert rounded-none"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
-  >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
-    </div>
-    @if (alert.count() > 1) {
-    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
-    }
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
-    >
-      {{ alert.OKBtn }}
-    </button>
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-
-import { PcBreadcrumb } from './breadcrumbs';
-
-/**
- * The full breadcrumb strip published by the current page: the crumb trail plus
- * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
- * The pager's prev/next are callbacks (not outputs) so they can route back to the
- * page that owns the record-navigation handle from wherever the strip is rendered.
- */
-export interface BreadcrumbTrail {
-  crumbs: PcBreadcrumb[];
-  positionLabel: string | null;
-  hasPrev: boolean;
-  hasNext: boolean;
-  prevLabel: string;
-  nextLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-}
-
-/**
- * Hoists the breadcrumb trail out of the page body and into the navbar.
- *
- * A page (via `pc-detail-header`, or directly) `set()`s its trail on init and
- * `clear()`s it on destroy; the navbar reads `trail()` and renders it. The router
- * destroys the old routed component before creating the new one, so a page's
- * clear-on-destroy always runs before the next page's set-on-init — list/grid pages
- * that never set a trail are left with a cleared (null) strip.
- */
-@Injectable({ providedIn: 'root' })
-export class BreadcrumbsService {
-  private readonly _trail = signal<BreadcrumbTrail | null>(null);
-  public readonly trail = this._trail.asReadonly();
-
-  public set(trail: BreadcrumbTrail): void {
-    this._trail.set(trail);
-  }
-
-  public clear(): void {
-    this._trail.set(null);
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
-
-```typescript
-// CSV/TSV parsing web worker (shared)
-// Receives: { type: 'parse', text: string }
-// Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
-
-function detectDelimiter(sample: string[]) {
-  const candidates = [',', '\t', ';'];
-  let best: { ch: string; score: number } = { ch: ',', score: -1 };
-  for (const ch of candidates) {
-    let score = 0;
-    for (let i = 0; i < Math.min(sample.length, 5); i++) {
-      const line = sample[i] ?? '';
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(line)) continue;
-      score += line.split(ch).length - 1 || 0;
-    }
-    if (score > best.score) best = { ch, score };
-  }
-  return best.ch;
-}
-
-function splitLine(line: string, delimiter: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result.map((s) => s.trim());
-}
-
-const ctx: any = self as unknown;
-
-ctx.onmessage = (e: MessageEvent) => {
-  try {
-    const { type, text } = e.data || {};
-    if (type !== 'parse' || typeof text !== 'string') return;
-
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
-    const delimiter = detectDelimiter(lines);
-    const headerLine = lines.find((l) => !!l && !/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(l)) || '';
-    const headers = splitLine(headerLine, delimiter);
-    const rows: Array<Record<string, string>> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      if (!rawLine) continue;
-      if (rawLine === headerLine) continue;
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(rawLine)) continue;
-      const cols = splitLine(rawLine, delimiter);
-      if (cols.every((c) => !c || c.trim().length === 0)) continue;
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => (row[h] = cols[idx] ?? ''));
-      rows.push(row);
-    }
-
-    ctx.postMessage({ type: 'result', headers, rows });
-  } catch (err) {
-    ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
-  }
-};
-```
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-
-```typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-
-```html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="promptValue.set($any($event.target).value)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog.service.ts
-
-```typescript
-import { signal, computed, Service } from '@angular/core';
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface DialogChoice<T = any> {
-  label: string;
-  value: T;
-  variant?: DialogVariant;
-}
-
-export interface ChooseOptions<T = any> {
-  allowBackdropClose?: boolean;
-  cancelText?: string;
-  choices: DialogChoice<T>[];
-  icon?: PcIconNameType;
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface BaseDialogOptions {
-  allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
-  cancelText?: string; // default per type
-  confirmText?: string; // default per type
-  /** Style cancel as the primary/safe-default button and confirm as a plain variant-colored one (e.g. "Keep editing" vs. "Discard changes"). */
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType; // optional icon name for <pc-icon>
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface DialogState {
-  allowBackdropClose: boolean;
-  cancelText: string;
-  confirmText: string;
-  defaultValue?: string;
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType;
-
-  // prompt
-  inputPlaceholder?: string;
-  message?: string;
-  title: string;
-  type: DialogType;
-  variant: DialogVariant;
-
-  // choose
-  choices?: DialogChoice[];
-}
-
-export interface PromptOptions extends BaseDialogOptions {
-  defaultValue?: string;
-  inputPlaceholder?: string;
-}
-
-@Service()
-export class ConfirmDialogService {
-  private _resolve: ((value?: any) => void) | null = null;
-
-  public readonly stateSignal = signal<DialogState | null>(null);
-
-  public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
-
-  public alert(opts: BaseDialogOptions): Promise<void> {
-    this.open({
-      type: 'alert',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'info',
-      icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: 'OK',
-      cancelText: '',
-    });
-    return new Promise<void>((resolve) => (this._resolve = resolve));
-  }
-
-  public cancel(): void {
-    // Normalize cancel values per dialog type
-    const st = this.stateSignal();
-    if (st?.type === 'confirm') this._resolve?.(false);
-    else if (st?.type === 'alert') this._resolve?.();
-    else if (st?.type === 'prompt') this._resolve?.(null);
-    else if (st?.type === 'choose') this._resolve?.(null);
-    this.close();
-  }
-
-  public confirm(opts: BaseDialogOptions): Promise<boolean> {
-    const v = opts.variant ?? 'neutral';
-    const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
-    const confirmText = opts.confirmText ?? (v === 'danger' ? 'Delete' : 'OK');
-    const cancelText = opts.cancelText ?? 'Cancel';
-
-    this.open({
-      type: 'confirm',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose,
-      confirmText,
-      cancelText,
-      emphasizeCancel: opts.emphasizeCancel,
-    });
-
-    return new Promise<boolean>((resolve) => (this._resolve = resolve));
-  }
-
-  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
-    const v = opts.variant ?? 'neutral';
-    this.open({
-      type: 'choose',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: '',
-      cancelText: opts.cancelText ?? 'Cancel',
-      choices: opts.choices,
-    });
-
-    return new Promise<T | null>((resolve) => (this._resolve = resolve));
-  }
-
-  public defaultIconFor(variant: DialogVariant): PcIconNameType {
-    switch (variant) {
-      case 'danger':
-        return 'exclamation-triangle';
-      case 'warning':
-        return 'exclamation-circle';
-      case 'info':
-        return 'information-circle';
-      case 'success':
-        return 'check-circle';
-      default:
-        return 'x-mark';
-    }
-  }
-
-  public ok(payload?: unknown): void {
-    this._resolve?.(payload ?? true);
-    this.close();
-  }
-
-  public prompt(opts: PromptOptions): Promise<string | null> {
-    this.open({
-      type: 'prompt',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'neutral',
-      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: opts.confirmText ?? 'OK',
-      cancelText: opts.cancelText ?? 'Cancel',
-      inputPlaceholder: opts.inputPlaceholder,
-      defaultValue: opts.defaultValue,
-    });
-    return new Promise<string | null>((resolve) => (this._resolve = resolve));
-  }
-
-  private close(): void {
-    this.stateSignal.set(null);
-    this._resolve = null;
-  }
-
-  private open(st: DialogState): void {
-    this.stateSignal.set(st);
-  }
-}
-
-export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
-
-export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
-```
-
-## File: libs/uxcommon/src/loading-gate.ts
-
-```typescript
-// _loading-gate.ts
-import { signal } from '@angular/core';
-
-export type loadingGate = {
-  visible: ReturnType<typeof signal<boolean>>;
-
-  begin(): () => void;
-};
-
-export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 300; // ms before showing
-  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
-
-  const visible = signal(false);
-  let pendingCount = 0;
-  let showTimer: ReturnType<typeof setTimeout> | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let shownAt = 0;
-
-  const clearShowTimer = () => {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = null;
-    }
-  };
-  const clearHideTimer = () => {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
-
-  function scheduleShow() {
-    clearShowTimer();
-    showTimer = setTimeout(() => {
-      showTimer = null;
-      if (pendingCount > 0 && !visible()) {
-        visible.set(true);
-        shownAt = performance.now();
-      }
-    }, delay);
-  }
-
-  function scheduleHide() {
-    clearHideTimer();
-    if (!visible()) return; // never shown → nothing to hide
-
-    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
-    hideTimer = setTimeout(() => {
-      if (pendingCount === 0) visible.set(false);
-    }, remaining);
-  }
-
-  function begin() {
-    pendingCount++;
-    if (pendingCount === 1) {
-      // First operation: start the delayed show
-      scheduleShow();
-    }
-    // Return disposer
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      pendingCount--;
-      if (pendingCount <= 0) {
-        pendingCount = 0;
-        // If we never showed, cancel the show timer so _loading never appears
-        clearShowTimer();
-        scheduleHide(); // hides now or after minDuration
-      }
-    };
-  }
-
-  return { begin, visible };
-}
-```
-
-## File: libs/uxcommon/vite.config.mts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import angular from '@analogjs/vite-plugin-angular';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/uxcommon',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [angular()],
-  test: {
-    name: 'uxcommon',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'jsdom',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    setupFiles: ['src/test-setup.ts'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/uxcommon',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 81.22% stmts / 63.21% branch / 67.05% funcs / 82.27% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 80,
-        branches: 62,
-        functions: 66,
-        lines: 81,
-      },
-    },
-  },
-}));
-```
-
-## File: libs/common/src/lib/schemas/persons.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-  preferred_contact: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
 });
 ```
 
@@ -5949,6 +5426,8 @@ export interface IAuthUserRecord extends IAuthUser {
   verified: boolean;
   two_factor_enabled: boolean;
   deletion_scheduled_at: Date | null;
+  /** Most recent session activity; null until the user has signed in at least once. */
+  last_active_at?: Date | null;
   created_at: Date | null;
   updated_at: Date | null;
   previous_email?: string | null;
@@ -6005,22 +5484,1692 @@ export const signUpInputObj = z.object({
 });
 ```
 
+## File: libs/common/src/lib/emails.ts
+
+```typescript
+// ---------- Public compatibility interface (loose) ----------
+// ---------- Strict types for compile-time guarantees ----------
+interface EmailFolderBase {
+  icon: string;
+  id: string;
+  is_default: boolean;
+  name: string;
+  sort_order: number;
+  is_hidden?: boolean;
+}
+
+export interface EmailFolderConfig {
+  code?: string; // optional/loose for compatibility
+  icon: string;
+  id: string;
+  is_default: boolean;
+  is_virtual: boolean;
+  name: string;
+  sort_order: number;
+  is_hidden?: boolean;
+}
+
+export interface RealEmailFolder extends EmailFolderBase {
+  code?: never; // forbidden on real folders
+  is_virtual: false;
+}
+
+export interface VirtualEmailFolder extends EmailFolderBase {
+  code: string; // required when virtual
+  is_virtual: true;
+}
+
+// ---------- Derived types ----------
+type Folder = (typeof EMAIL_FOLDERS)[number];
+
+type OnlyReal = Extract<Folder, { is_virtual: false }>;
+
+type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
+
+// All folders (merged, exact keys/ids)
+export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
+
+export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
+
+export type EmailStatus = 'open' | 'closed';
+
+export type HasRow = {
+  email_id: string;
+  has: boolean;
+};
+
+export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
+
+export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
+
+export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
+
+export type ServerEmail = {
+  assigned_to?: string | null;
+  attachment_count?: number | string | bigint | null;
+  folder_id: string | number;
+  from_email?: string | null;
+  is_read?: boolean;
+
+  // any of these might be present depending on endpoint:
+  has_attachment?: boolean | null;
+  id: string | number;
+  is_favourite: boolean;
+  preview?: string | null;
+  status?: string;
+  subject?: string | null;
+  to_email?: string | null;
+  updated_at: string | Date;
+  date_sent?: string | Date | null;
+  sender_first_name?: string | null;
+  sender_last_name?: string | null;
+};
+
+export type SpecialFolderId = OnlyVirtual['id'];
+
+export type SpecialFolderKey = OnlyVirtual['code'];
+
+export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
+
+function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type RegularFolder = Extract<F[number], { is_virtual: false }>;
+  type FolderKey = Uppercase<RegularFolder['name'] & string>;
+  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
+
+  const entries = folders
+    .filter((f): f is RegularFolder => !f.is_virtual)
+    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
+
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
+}
+
+function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
+  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
+  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
+
+  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
+
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
+}
+
+export const isRegularFolderId = (id: string): id is RegularFolderId =>
+  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
+
+// Optional runtime type guards
+export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
+  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
+
+// ---------- Configuration (validated against STRICT type) ----------
+export const EMAIL_FOLDERS = [
+  // Virtual
+  { id: '9', name: 'Starred', icon: 'star', sort_order: 1, is_default: false, is_virtual: true, code: 'FAVOURITES' },
+  {
+    id: '8',
+    name: 'Unassigned',
+    icon: 'inbox',
+    sort_order: 2,
+    is_default: false,
+    is_virtual: true,
+    code: 'UNASSIGNED',
+  },
+  {
+    id: '6',
+    name: 'Mine',
+    icon: 'user-circle',
+    sort_order: 3,
+    is_default: true,
+    is_virtual: true,
+    code: 'ASSIGNED_TO_ME',
+  },
+  {
+    id: '1',
+    name: 'Open',
+    icon: 'document-duplicate',
+    sort_order: 4,
+    is_default: false,
+    is_virtual: true,
+    code: 'ALL_OPEN',
+  },
+  {
+    id: '2',
+    name: 'Closed',
+    icon: 'document-check',
+    sort_order: 5,
+    is_default: false,
+    is_virtual: true,
+    code: 'CLOSED',
+  },
+
+  // Real
+  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
+  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
+  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
+  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
+  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
+  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
+] as const satisfies StrictEmailFolderConfig[];
+
+// Real-only (exact keys/ids)
+export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
+
+// ---------- Exposed constants ----------
+
+// Virtual-only (exact keys/ids)
+export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
+export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
+
+// Useful helpers
+export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
+export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
+  Record<Folder['id'], Folder>
+>;
+```
+
+## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
+
+```typescript
+import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
+import { Loader } from '@googlemaps/js-api-loader';
+import { AddressType } from '../../../../common/src/lib/kysely.models';
+import { parseAddress } from './googlePlacesAddressMapper';
+
+/**
+ * `<pc-address-autocomplete>` — a text input that upgrades into a Google Places
+ * Autocomplete field (§6 / §13 / §14 maps ruling: Google Maps Platform only).
+ *
+ * Two shapes of consumer:
+ * - **Search box** (household form): ignore `value`/`textChange`, listen to
+ *   `addressSelected` to fan a structured `AddressType` into other fields.
+ * - **Field of record** (plan-routes start address): seed with `value`, keep a
+ *   signal in sync via `textChange` (freeform typing) *and* `addressSelected`
+ *   (picking a suggestion).
+ *
+ * The `Loader` is injected **optionally** — mirroring `<pc-map>` — so unit tests
+ * and any host without an API key keep a plain, fully-functional text input and
+ * never touch the network.
+ */
+@Component({
+  selector: 'pc-address-autocomplete',
+  standalone: true,
+  template: `
+    <div class="relative w-full">
+      <input
+        #inputEl
+        type="text"
+        class="input w-full"
+        [placeholder]="placeholder()"
+        [disabled]="disabled()"
+        [value]="value()"
+        (input)="onInput($event)"
+        autocomplete="one-time-code"
+      />
+    </div>
+  `,
+})
+export class AddressAutocomplete implements OnInit {
+  /** Optional so unit tests (and any host without the SDK key) keep a plain text input. */
+  private readonly loader = inject(Loader, { optional: true });
+
+  public readonly disabled = input<boolean>(false);
+  public readonly placeholder = input<string>('Start typing an address…');
+  public readonly regionCodes = input<string[]>(['ca']);
+  /** Seeds the field and reflects programmatic changes (for field-of-record use). */
+  public readonly value = input<string>('');
+
+  public readonly addressSelected = output<AddressType>();
+  /** Raw text on every keystroke — for consumers that treat this as the field of record. */
+  public readonly textChange = output<string>();
+
+  private inputElement: HTMLInputElement | null = null;
+  private isLibraryLoaded = false;
+  private isAutocompleteInitialized = false;
+
+  @ViewChild('inputEl')
+  set inputEl(elRef: ElementRef | undefined) {
+    if (elRef) {
+      this.inputElement = elRef.nativeElement;
+      this.tryInitAutocomplete();
+    }
+  }
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  protected onInput(event: Event): void {
+    this.textChange.emit((event.target as HTMLInputElement).value);
+  }
+
+  private async initialize() {
+    if (!this.loader) return;
+    try {
+      await this.loader.importLibrary('places');
+      this.isLibraryLoaded = true;
+      this.tryInitAutocomplete();
+    } catch (err) {
+      // Bad key / offline / blocked — stay on the honest plain input.
+      console.error('Failed to load Google Maps Places library', err);
+    }
+  }
+
+  private tryInitAutocomplete() {
+    if (
+      this.isAutocompleteInitialized ||
+      !this.inputElement ||
+      !this.isLibraryLoaded ||
+      typeof google === 'undefined' ||
+      !google.maps ||
+      !google.maps.places
+    ) {
+      return;
+    }
+
+    const options: google.maps.places.AutocompleteOptions = {
+      componentRestrictions: { country: this.regionCodes() },
+      types: ['geocode'],
+    };
+
+    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
+    this.isAutocompleteInitialized = true;
+
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if (place) {
+        const address = parseAddress(place);
+        // Keep field-of-record consumers in sync with the picked formatted address.
+        if (place.formatted_address) this.textChange.emit(place.formatted_address);
+        this.addressSelected.emit(address);
+      }
+    });
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
+
+```typescript
+import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
+import { debounce } from '../../../../common/src';
+
+@Component({
+  selector: 'pc-autocomplete',
+  template: ` <div
+      class="input w-full flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5 cursor-text"
+      (click)="focusInput()"
+    >
+      <ng-content></ng-content>
+      <input
+        #inputEl
+        type="text"
+        class="grow basis-0 min-w-0 border-none bg-transparent p-0 focus:outline-none"
+        [placeholder]="placeholder()"
+        (keyup)="onKey($event)"
+        (keydown)="onKeyDown($event)"
+        (input)="onInput($event)"
+        (focus)="showAutoCompleteList()"
+        (blur)="hideAutoCompleteList()"
+      />
+    </div>
+    @if (matches().length && !hideAutoComplete()) {
+      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
+        @for (match of matches(); track match) {
+          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
+            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
+          </li>
+        }
+      </ul>
+    }`,
+})
+export class AutoComplete {
+  protected readonly matches = signal<string[]>([]);
+
+  protected hideAutoComplete = signal(true);
+
+  public readonly valueChange = output<string>();
+
+  /** Emitted when Backspace is pressed while the text field is empty — lets the host pop the last chip. */
+  public readonly backspaceEmpty = output<void>();
+
+  public filterSvc = input<TFILTER | null>(null);
+  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
+
+  public placeholder = input('');
+
+  private readonly debouncedFilter = debounce(async (key: string) => {
+    const filterSvc = this.filterSvc();
+    if (!filterSvc || !key?.length) {
+      this.matches.set([]);
+      return;
+    }
+    const matches = await filterSvc.filter(key);
+    this.matches.set(matches);
+  }, 250);
+
+  protected onInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.debouncedFilter(target.value || '');
+  }
+
+  protected hideAutoCompleteList() {
+    setTimeout(() => this.hideAutoComplete.set(true), 200);
+  }
+
+  protected onKey(event: KeyboardEvent) {
+    const target = event.target as HTMLInputElement;
+    if (event.key === 'Enter' || event.key === ',') {
+      this.reset(target.value);
+    }
+  }
+
+  protected onKeyDown(event: KeyboardEvent) {
+    const target = event.target as HTMLInputElement;
+    if (event.key === 'Backspace' && target.value.length === 0) {
+      this.backspaceEmpty.emit();
+    }
+  }
+
+  protected focusInput() {
+    this.inputRef()?.nativeElement.focus();
+  }
+
+  protected reset(key: string) {
+    this.valueChange.emit(key);
+    this.matches.set([]);
+    if (this.inputRef()?.nativeElement) {
+      this.inputRef().nativeElement.value = '';
+    }
+  }
+
+  protected showAutoCompleteList() {
+    this.hideAutoComplete.set(false);
+  }
+}
+
+type TFILTER = {
+  filter: (arg0: string) => Promise<string[]>;
+};
+```
+
+## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
+
+```typescript
+import { Injectable, signal } from '@angular/core';
+
+import { PcBreadcrumb } from './breadcrumbs';
+
+/**
+ * The full breadcrumb strip published by the current page: the crumb trail plus
+ * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
+ * The pager's prev/next are callbacks (not outputs) so they can route back to the
+ * page that owns the record-navigation handle from wherever the strip is rendered.
+ */
+export interface BreadcrumbTrail {
+  crumbs: PcBreadcrumb[];
+  positionLabel: string | null;
+  hasPrev: boolean;
+  hasNext: boolean;
+  prevLabel: string;
+  nextLabel: string;
+  onPrev: () => void;
+  onNext: () => void;
+}
+
+/**
+ * Hoists the breadcrumb trail out of the page body and into the navbar.
+ *
+ * Every navigation gets a route-driven default trail (built from `data.breadcrumb`
+ * by the frontend's BreadcrumbDefaultsService on NavigationEnd), so the strip is
+ * never empty or stale. Pages that own a richer trail (detail views via
+ * `pc-detail-header`, tabbed pages) `set()` theirs afterwards — their effects flush
+ * after NavigationEnd, so the page's trail wins. No page needs to clear on destroy
+ * anymore; the next navigation's default replaces whatever was published.
+ */
+@Injectable({ providedIn: 'root' })
+export class BreadcrumbsService {
+  private readonly _trail = signal<BreadcrumbTrail | null>(null);
+  public readonly trail = this._trail.asReadonly();
+
+  public set(trail: BreadcrumbTrail): void {
+    this._trail.set(trail);
+  }
+
+  /** Publish a plain crumb trail with no record pager — the common case. */
+  public setCrumbs(crumbs: PcBreadcrumb[]): void {
+    this._trail.set({
+      crumbs,
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
+  }
+
+  public clear(): void {
+    this._trail.set(null);
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+/**
+ * A single breadcrumb entry. Crumbs with a `route` render as links;
+ * the last crumb (the current page) renders as plain text.
+ */
+export interface PcBreadcrumb {
+  label: string;
+  route?: string | readonly unknown[];
+}
+
+@Component({
+  selector: 'pc-breadcrumbs',
+  imports: [RouterLink, Icon],
+  template: `
+    <div class="flex min-w-0 items-center justify-between gap-3">
+      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
+        <ol class="flex flex-wrap items-center gap-1.5">
+          @for (crumb of crumbs(); track $index; let last = $last; let first = $first) {
+            <li class="flex min-w-0 items-center gap-1.5">
+              <!-- The first crumb doubles as the page title (pages no longer repeat it
+                   in-body), so it renders larger and in full-contrast ink. -->
+              @if (!last && crumb.route) {
+                <a
+                  [routerLink]="crumb.route"
+                  class="max-w-48 truncate font-medium hover:underline"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-primary'"
+                >
+                  {{ crumb.label }}
+                </a>
+              } @else {
+                <span
+                  class="max-w-48 truncate font-medium"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-base-content/60'"
+                  [attr.aria-current]="last ? 'page' : null"
+                >
+                  {{ crumb.label }}
+                </span>
+              }
+              @if (!last) {
+                <span class="select-none opacity-60" aria-hidden="true">/</span>
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+      @if (positionLabel()) {
+        <div class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-xs"
+            [attr.aria-label]="prevLabel()"
+            [disabled]="!hasPrev()"
+            (click)="prev.emit()"
+          >
+            <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          </button>
+          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-xs"
+            [attr.aria-label]="nextLabel()"
+            [disabled]="!hasNext()"
+            (click)="next.emit()"
+          >
+            <pc-icon name="chevron-right" [size]="4"></pc-icon>
+          </button>
+        </div>
+      }
+    </div>
+  `,
+})
+export class Breadcrumbs {
+  public readonly crumbs = input.required<PcBreadcrumb[]>();
+
+  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
+  public readonly positionLabel = input<string | null>(null);
+  public readonly hasPrev = input<boolean>(false);
+  public readonly hasNext = input<boolean>(false);
+  public readonly prevLabel = input<string>('Previous record');
+  public readonly nextLabel = input<string>('Next record');
+
+  public readonly prev = output<void>();
+  public readonly next = output<void>();
+}
+```
+
+## File: libs/uxcommon/src/components/csv-import/persons-field-mapping.ts
+
+```typescript
+/**
+ * Shared header-to-field auto-mapping heuristic for importing people from a
+ * CSV/TSV file. Originally lived inline in `persons-grid.ts` (the legacy
+ * modal importer); the CSV import wizard (spec §17, `/imports/new`) reuses it
+ * verbatim rather than re-deriving a second mapping table.
+ */
+export const PERSONS_MAPPABLE_FIELDS: string[] = [
+  'first_name',
+  'middle_names',
+  'last_name',
+  'email',
+  'email2',
+  'mobile',
+  'home_phone',
+  'street_num',
+  'street1',
+  'street2',
+  'apt',
+  'city',
+  'state',
+  'zip',
+  'country',
+  'company',
+  'tags',
+  'notes',
+];
+
+const HEADER_TO_FIELD: Record<string, string> = {
+  firstname: 'first_name',
+  fname: 'first_name',
+  givenname: 'first_name',
+  middlename: 'middle_names',
+  middlenames: 'middle_names',
+  middleinitial: 'middle_names',
+  lastname: 'last_name',
+  lname: 'last_name',
+  surname: 'last_name',
+  familyname: 'last_name',
+  name: 'first_name',
+  email: 'email',
+  emailaddress: 'email',
+  email1: 'email',
+  email1address: 'email',
+  primaryemail: 'email',
+  email2: 'email2',
+  email2address: 'email2',
+  secondaryemail: 'email2',
+  mobile: 'mobile',
+  mobilephone: 'mobile',
+  cellphone: 'mobile',
+  cell: 'mobile',
+  phone: 'mobile',
+  phonenumber: 'mobile',
+  telephone: 'mobile',
+  primaryphone: 'mobile',
+  businessphone: 'mobile',
+  homephone: 'home_phone',
+  streetnum: 'street_num',
+  streetnumber: 'street_num',
+  homestreet: 'street1',
+  homestreet1: 'street1',
+  homestreet2: 'street2',
+  homestreet3: 'street2',
+  homeaddress: 'street1',
+  homeaddresspobox: 'street2',
+  homecity: 'city',
+  homestate: 'state',
+  homepostalcode: 'zip',
+  homecountry: 'country',
+  businessstreet: 'street1',
+  businessstreet1: 'street1',
+  businessstreet2: 'street2',
+  businessstreet3: 'street2',
+  businessaddress: 'street1',
+  businessaddresspobox: 'street2',
+  businesscity: 'city',
+  businessstate: 'state',
+  businesspostalcode: 'zip',
+  businesscountry: 'country',
+  address: 'street1',
+  address1: 'street1',
+  address2: 'street2',
+  addressline1: 'street1',
+  addressline2: 'street2',
+  street: 'street1',
+  streetaddress: 'street1',
+  street1: 'street1',
+  street2: 'street2',
+  apt: 'apt',
+  apartment: 'apt',
+  unit: 'apt',
+  suite: 'apt',
+  city: 'city',
+  town: 'city',
+  state: 'state',
+  province: 'state',
+  stateprovince: 'state',
+  region: 'state',
+  zip: 'zip',
+  zipcode: 'zip',
+  postal: 'zip',
+  postalcode: 'zip',
+  postcode: 'zip',
+  country: 'country',
+  company: 'company',
+  companyname: 'company',
+  organization: 'company',
+  organisation: 'company',
+  employer: 'company',
+  business: 'company',
+  tag: 'tags',
+  tags: 'tags',
+  label: 'tags',
+  labels: 'tags',
+  groups: 'tags',
+  notes: 'notes',
+  note: 'notes',
+  comments: 'notes',
+};
+
+/** Best-effort guess of which persons field a CSV header maps to, or '' (skip) if unknown. */
+export function autoMapPersonsHeader(header: string): string {
+  const raw = (header || '').toLowerCase().trim();
+  const key = raw.replace(/[^a-z0-9]/g, '');
+  return HEADER_TO_FIELD[key] || '';
+}
+```
+
+## File: libs/uxcommon/src/components/detail-item/detail-item.ts
+
+```typescript
+import { Component, inject, input, output } from '@angular/core';
+import { AlertService } from '../alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-detail-item',
+  imports: [Icon],
+  template: `
+    <div class="flex flex-col gap-1 mb-4">
+      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
+        {{ label() }}
+      </span>
+      <div class="flex items-center gap-2">
+        @if (icon()) {
+          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
+        }
+        @if (value() && link()) {
+          <button
+            type="button"
+            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            (click)="linkClicked.emit()"
+          >
+            {{ value() }}
+          </button>
+        } @else {
+          <span class="text-sm font-medium text-base-content break-words">
+            @if (value()) {
+              {{ value() }}
+            } @else {
+              <span class="italic text-base-content/30">Not provided</span>
+            }
+          </span>
+        }
+        @if (value() && copyable()) {
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
+            [attr.data-tip]="'Copy ' + label()"
+            (click)="copyToClipboard($event)"
+          >
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+          </button>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailItem {
+  public label = input.required<string>();
+  public value = input<string | null | undefined>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public copyable = input<boolean>(false);
+  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
+  public link = input<boolean>(false);
+  public readonly linkClicked = output<void>();
+
+  private readonly alertSvc = inject(AlertService);
+
+  protected copyToClipboard(event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const val = this.value();
+    if (!val) return;
+
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${this.label()}`);
+      });
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
+
+```html
+<div class="space-y-0.5">
+  <!-- Email is always required and locked -->
+  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
+    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
+      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
+      <span class="text-sm font-bold text-primary">Email Address</span>
+    </label>
+    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
+  </div>
+
+  @for (field of allFields; track field.key) {
+  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        [checked]="isEnabled(field.key)"
+        (change)="toggleField(field.key)"
+        class="checkbox checkbox-sm checkbox-primary"
+      />
+      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
+    </label>
+    @if (isEnabled(field.key)) {
+    <button
+      type="button"
+      (click)="toggleRequired(field.key)"
+      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
+      [class.btn-primary]="isRequired(field.key)"
+      [class.btn-outline]="!isRequired(field.key)"
+      [class.btn-accent]="!isRequired(field.key)"
+    >
+      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
+    </button>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: libs/uxcommon/src/components/grid-header/grid-header.ts
+
+```typescript
+import { Component, computed, input, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+@Component({
+  selector: 'pc-grid-header',
+  imports: [Icon],
+  template: `
+    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <!-- The visible page title is the navbar breadcrumb's first crumb; keep an
+             sr-only h1 so the page still has an accessible heading. -->
+        <h1 class="sr-only">{{ title() }}</h1>
+        <div class="flex items-center gap-1.5">
+          @if (countText(); as text) {
+            <p class="text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
+          }
+          @if (description()) {
+            <button
+              type="button"
+              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
+              aria-label="About this page"
+              [attr.aria-expanded]="descriptionOpen()"
+              (click)="toggleDescription()"
+            >
+              <pc-icon name="information-circle" [size]="4"></pc-icon>
+            </button>
+          }
+        </div>
+        @if (descriptionOpen() && description()) {
+          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
+        }
+      </div>
+      <div class="flex items-center gap-2">
+        <ng-content></ng-content>
+      </div>
+    </header>
+  `,
+})
+export class GridHeaderComponent {
+  public readonly title = input.required<string>();
+  public readonly description = input<string>('');
+  public readonly eyebrow = input<string>('');
+
+  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
+  public readonly open = input<boolean>(false);
+
+  /** Total row count for the current query; null while unknown (before the first load). */
+  public readonly totalCount = input<number | null>(null);
+
+  /** Whether any user-applied filter is narrowing the results. */
+  public readonly filtered = input<boolean>(false);
+
+  /**
+   * Optional caller-provided sentence for the unfiltered total, e.g. "5,012 people total"
+   * or "1,890 households across 8 wards". When filters are active it is appended after the
+   * matched count: "43 match your filters · 5,012 people total".
+   */
+  public readonly totalSentence = input<string | null>(null);
+
+  private readonly descToggled = signal<boolean | null>(null);
+  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  protected readonly countText = computed<string | null>(() => {
+    const count = this.totalCount();
+    const sentence = this.totalSentence();
+    if (count !== null && this.filtered()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
+    }
+    if (sentence) return sentence;
+    if (count === null) return null;
+    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
+  });
+
+  protected toggleDescription(): void {
+    this.descToggled.set(!this.descriptionOpen());
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/input/input.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { FormField } from '@angular/forms/signals';
+
+@Component({
+  selector: 'pc-input',
+  imports: [FormField],
+  template: `
+    <div class="flex flex-col gap-1 w-full">
+      @if (label()) {
+        <label class="label py-0 pl-1">
+          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
+        </label>
+      }
+
+      <label
+        class="input w-full flex items-center gap-2"
+        [class.input-error]="
+          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
+        "
+      >
+        <ng-content select="[pc-prefix]"></ng-content>
+        <input
+          [type]="type()"
+          [placeholder]="placeholder()"
+          [formField]="formField()"
+          class="grow"
+          (blur)="blurred.emit()"
+        />
+        <ng-content select="[pc-suffix]"></ng-content>
+      </label>
+
+      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
+        @for (err of formField()().errors(); track err) {
+          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
+        }
+      }
+    </div>
+  `,
+})
+export class Input {
+  public label = input<string>();
+  public type = input<string>('text');
+  public placeholder = input<string>('');
+  public formField = input.required<any>();
+  public hasError = input<boolean>(false);
+  public blurred = output<void>();
+}
+```
+
+## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
+
+```html
+<pc-card [title]="label()" [subtitle]="subtitle()">
+  <div class="space-y-3">
+    <div class="flex gap-2">
+      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
+      <a
+        [href]="url()"
+        target="_blank"
+        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+        title="Open public page"
+      >
+        <pc-icon name="arrow-top-right-on-square"></pc-icon>
+      </a>
+      <button type="button" class="btn btn-sm btn-outline btn-secondary px-3" (click)="copyUrl()" title="Copy link">
+        <pc-icon name="document-duplicate"></pc-icon>
+      </button>
+    </div>
+  </div>
+</pc-card>
+```
+
+## File: libs/uxcommon/src/components/table/table.ts
+
+````typescript
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+
+/**
+ * `pc-table` — the lightweight presentational table shell.
+ *
+ * The counterpart to the house `pc-datagrid`: where the datagrid owns data
+ * fetching, sorting, filtering, selection and inline editing, `pc-table` owns
+ * only the *chrome* — the bordered shell, the micro-caps header row, cell
+ * density and the shared skeleton-loading idiom. It exists so bespoke tables
+ * (Tags, Issues, Donations) stay visually identical to the datagrid without
+ * inheriting its machinery. See the `pplcrm-table` skill.
+ *
+ * All visual styling comes from the shared, global `.pc-table-shell` / `.pc-table`
+ * contract in `apps/frontend/src/styles.css` — the single source of truth both
+ * this component and the datagrid consume. This component ships no styles of its
+ * own (emulated encapsulation could not reach the projected rows anyway).
+ *
+ * Consumers keep full control of every cell and of the empty state (which is
+ * per-entity by design — see design principles §3), projecting:
+ *   - `[pcTableHead]` — the `<th>` cells for the header row
+ *   - the default slot — the body rows *and* the page's own empty-state row,
+ *     rendered only when not loading
+ *   - `[pcTableFooter]` — optional caption/pagination hint rendered inside the
+ *     shell, below the table (e.g. "Showing the latest 25 of 312")
+ *
+ * ```html
+ * <pc-table [loading]="loading()" [columns]="5">
+ *   <ng-container pcTableHead>
+ *     <th>Tag</th><th>People</th><th>Last applied</th><th class="w-10"></th>
+ *   </ng-container>
+ *
+ *   @if (rows().length === 0) {
+ *     <tr><td colspan="5">…guided empty state…</td></tr>
+ *   } @else {
+ *     @for (row of rows(); track row.id) {
+ *       <tr [class.animate-saved-flash]="highlightId() === row.id">…</tr>
+ *     }
+ *   }
+ * </pc-table>
+ * ```
+ */
+@Component({
+  selector: 'pc-table',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="pc-table-shell">
+      <table class="table pc-table w-full">
+        <thead>
+          <tr>
+            <ng-content select="[pcTableHead]"></ng-content>
+          </tr>
+        </thead>
+        <tbody>
+          @if (loading()) {
+            @for (row of skeletonList(); track row) {
+              <tr>
+                <td [attr.colspan]="columns()">
+                  <div class="skeleton h-6 w-full"></div>
+                </td>
+              </tr>
+            }
+          } @else {
+            <ng-content></ng-content>
+          }
+        </tbody>
+      </table>
+      <ng-content select="[pcTableFooter]"></ng-content>
+    </div>
+  `,
+})
+export class Table {
+  /** Number of columns — drives the skeleton row's colspan so it spans the table. */
+  public readonly columns = input.required<number>();
+
+  /** When true, render placeholder skeleton rows instead of the projected body. */
+  public readonly loading = input<boolean>(false);
+
+  /** How many skeleton rows to show while loading. */
+  public readonly skeletonRows = input<number>(5);
+
+  protected readonly skeletonList = computed<number[]>(() => Array.from({ length: this.skeletonRows() }, (_, i) => i));
+}
+````
+
+## File: libs/uxcommon/src/components/tabs/tabs.ts
+
+```typescript
+import { Component, computed, input, model } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+
+export interface PcTabOption {
+  id: string;
+  label: string;
+  badge?: string | number;
+  disabled?: boolean;
+  tooltip?: string;
+  /** When set, the pill renders as a router link (page-level tabs that navigate) instead of a stateful button. */
+  route?: string;
+  /** Match the route exactly for the active state (default false). */
+  exact?: boolean;
+}
+
+const PILL_BASE =
+  'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none';
+const PILL_ACTIVE = 'border-primary/30 bg-primary/10 text-primary';
+const PILL_INACTIVE = 'border-base-200 bg-base-100 text-base-content/70';
+
+/**
+ * The one tab idiom (design §4): the pill tab bar from the person view, with count
+ * badges ("numbers before clicks", §1). Stateful tabs bind `[(activeTab)]`; tabs that
+ * navigate set `route` on the option instead. The only sanctioned exception is the
+ * grain-tabs row on the People / Households / Companies grids.
+ */
+@Component({
+  selector: 'pc-tab-bar',
+  imports: [RouterLink, RouterLinkActive],
+  host: { class: 'block' },
+  template: `
+    <div role="tablist" class="flex flex-wrap gap-2">
+      @for (tab of tabs(); track tab.id) {
+        @if (tab.route) {
+          <a
+            role="tab"
+            [routerLink]="tab.route"
+            routerLinkActive="!border-primary/30 !bg-primary/10 !text-primary"
+            [routerLinkActiveOptions]="{ exact: tab.exact ?? false }"
+            class="{{ pillBase }} {{ pillInactive }} cursor-pointer hover:bg-base-200/60"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span class="rounded-full bg-base-200 px-1.5 text-xs font-semibold tabular-nums text-base-content/50">{{
+                tab.badge
+              }}</span>
+            }
+          </a>
+        } @else {
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === tab.id"
+            [attr.aria-disabled]="tab.disabled || null"
+            [class]="pillClass(tab)"
+            [class.tooltip]="tab.disabled && tab.tooltip"
+            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
+            (click)="!tab.disabled && selectTab(tab.id)"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span
+                class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+                [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+                >{{ tab.badge }}</span
+              >
+            }
+          </button>
+        }
+      }
+    </div>
+  `,
+})
+export class TabBar {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model<string>('');
+
+  protected readonly pillBase = PILL_BASE;
+  protected readonly pillInactive = PILL_INACTIVE;
+
+  protected pillClass(tab: PcTabOption): string {
+    const state = this.activeTab() === tab.id ? PILL_ACTIVE : PILL_INACTIVE;
+    const cursor = tab.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
+    const hover = !tab.disabled && this.activeTab() !== tab.id ? 'hover:bg-base-200/60' : '';
+    return `${PILL_BASE} ${state} ${cursor} ${hover}`;
+  }
+
+  protected selectTab(id: string): void {
+    this.activeTab.set(id);
+  }
+}
+
+/** Pill tab bar + the standard content card (the person-view composition) with projected pc-tab-panels. */
+@Component({
+  selector: 'pc-tabs',
+  imports: [TabBar],
+  host: { class: 'flex flex-grow flex-col gap-6' },
+  template: `
+    <pc-tab-bar [tabs]="tabs()" [(activeTab)]="activeTab" />
+    <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <ng-content></ng-content>
+    </div>
+  `,
+})
+export class Tabs {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model.required<string>();
+}
+
+@Component({
+  selector: 'pc-tab-panel',
+  template: `
+    @if (isActive()) {
+      <div class="space-y-4">
+        <ng-content></ng-content>
+      </div>
+    }
+  `,
+})
+export class TabPanel {
+  public id = input.required<string>();
+  public activeTab = input.required<string>();
+
+  protected isActive = computed(() => this.activeTab() === this.id());
+}
+```
+
+## File: libs/uxcommon/src/index.ts
+
+```typescript
+export * from './loading-gate';
+
+// Components
+export * from './components/alerts/alert-service';
+export * from './components/alerts/alerts';
+export * from './components/icons/icon';
+export * from './components/icons/icons.index';
+export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
+export * from './components/user-avatar/user-avatar';
+export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/table/table';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
+export * from './components/detail-item/detail-item';
+export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
+
+// Directives
+export * from './directives/animate-if.directive';
+export * from './directives/spin-on-click.directive';
+
+// Pipes
+export * from './pipes/file-icon.pipe';
+export * from './pipes/filesize.pipe';
+export * from './pipes/sanitize-html.pipe';
+export * from './pipes/svg-html-pipe';
+export * from './pipes/timeago.pipe';
+```
+
+## File: libs/common/src/lib/schemas/core.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
+```
+
+## File: libs/common/src/lib/schemas/donations.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { idSchema } from './core.schema';
+
+/**
+ * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
+ * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
+ * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
+ */
+export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
+export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
+  card: 'Card',
+  check: 'Check',
+  cash: 'Cash',
+  bank_transfer: 'Bank transfer',
+};
+
+export const donationMethodSchema = z.enum(DONATION_METHODS);
+export type DonationMethod = z.infer<typeof donationMethodSchema>;
+
+export const RecordDonationObj = z.object({
+  personId: idSchema,
+  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
+  method: donationMethodSchema,
+  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+});
+export type RecordDonationType = z.infer<typeof RecordDonationObj>;
+```
+
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+```
+
 ## File: libs/common/src/lib/models.ts
 
 ```typescript
 import type { z } from 'zod';
 
 import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
   AddTagObj,
   AddListObj,
   AddMarketingEmailObj,
   AddTaskObj,
   AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
   EmailCommentObj,
   EmailFolderObj,
   EmailObj,
   MarketingEmailObj,
   marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
   EmailDraftObj,
   PersonsObj,
   SettingsEntryObj,
@@ -6039,6 +7188,7 @@ import type {
   exportCsvInput,
   exportCsvResponse,
   queueExportInput,
+  logInstantExportInput,
   dataExportRecord,
   sortModelItem,
   InviteAuthUserObj,
@@ -6100,6 +7250,18 @@ export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
 
 export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
 
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
 export type EmailDraftType = z.infer<typeof EmailDraftObj>;
 
 export type ImportListItem = z.infer<typeof ImportListItemObj>;
@@ -6132,6 +7294,16 @@ export type getAllOptionsType = z.infer<typeof getAllOptions>;
 
 export type AddListType = z.infer<typeof AddListObj>;
 
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
 export type AddTeamType = z.infer<typeof AddTeamObj>;
 
 export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
@@ -6144,6 +7316,18 @@ export type UpdateListType = z.infer<typeof UpdateListObj>;
 
 export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
 
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
 export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
 
 export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
@@ -6154,6 +7338,7 @@ export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
 export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
 export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
 export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
 export type DataExportRecordType = z.infer<typeof dataExportRecord>;
 
 export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
@@ -6196,157 +7381,142 @@ export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ```
 
-## File: libs/common/project.json
-
-```json
-{
-  "name": "common",
-  "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/common/src",
-  "projectType": "library",
-  "targets": {
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["libs/common/**/*.ts"]
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/libs/common"],
-      "options": {
-        "cwd": "libs/common",
-        "command": "vitest run"
-      }
-    }
-  },
-  "tags": []
-}
-```
-
-## File: libs/common/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/common',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'common',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/common',
-      provider: 'v8' as const,
-      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
-      // 94% branch on this small lib; held slightly below so one new helper
-      // file doesn't instantly break the build, but keep raising it as the
-      // lib grows. Never lower these — add tests instead.
-      thresholds: {
-        statements: 95,
-        branches: 90,
-        functions: 95,
-        lines: 95,
-      },
-    },
-  },
-}));
-```
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
+## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
 
 ```typescript
 import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
-
-/**
- * A single breadcrumb entry. Crumbs with a `route` render as links;
- * the last crumb (the current page) renders as plain text.
- */
-export interface PcBreadcrumb {
-  label: string;
-  route?: string | readonly unknown[];
-}
+import { PcIconNameType } from '@icons/icons.index';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { DetailHeader } from '../detail-header/detail-header';
 
 @Component({
-  selector: 'pc-breadcrumbs',
-  imports: [RouterLink, Icon],
+  selector: 'pc-detail-layout',
+  imports: [Icon, DetailHeader],
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+  },
   template: `
-    <div class="flex min-w-0 items-center justify-between gap-3">
-      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
-        <ol class="flex flex-wrap items-center gap-1.5">
-          @for (crumb of crumbs(); track $index; let last = $last) {
-            <li class="flex min-w-0 items-center gap-1.5">
-              @if (!last && crumb.route) {
-                <a [routerLink]="crumb.route" class="max-w-48 truncate font-medium text-primary hover:underline">
-                  {{ crumb.label }}
-                </a>
-              } @else {
-                <span
-                  class="max-w-48 truncate font-medium text-base-content/60"
-                  [attr.aria-current]="last ? 'page' : null"
-                >
-                  {{ crumb.label }}
-                </span>
-              }
-              @if (!last) {
-                <span class="select-none opacity-60" aria-hidden="true">/</span>
-              }
-            </li>
-          }
-        </ol>
-      </nav>
-      @if (positionLabel()) {
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="prevLabel()"
-            [disabled]="!hasPrev()"
-            (click)="prev.emit()"
-          >
-            <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          </button>
-          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="nextLabel()"
-            [disabled]="!hasNext()"
-            (click)="next.emit()"
-          >
-            <pc-icon name="chevron-right" [size]="4"></pc-icon>
-          </button>
-        </div>
-      }
+    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
+      <div class="flex w-full max-w-7xl flex-col gap-6">
+        <!-- Header -->
+        <pc-detail-header
+          [title]="title()"
+          [subtitle]="subtitle()"
+          [crumbs]="crumbs()"
+          [eyebrow]="eyebrow()"
+          [statusChip]="statusChip()"
+          [icon]="icon()"
+          [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
+          [isLoading]="isLoading()"
+          [disabled]="disabled()"
+          [showActions]="showActions()"
+          [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
+          [deleteText]="deleteText()"
+          [btn1Text]="btn1Text()"
+          [btn1Icon]="btn1Icon()"
+          [positionLabel]="positionLabel()"
+          [hasPrev]="hasPrev()"
+          [hasNext]="hasNext()"
+          [prevLabel]="prevLabel()"
+          [nextLabel]="nextLabel()"
+          (save)="save.emit($event)"
+          (delete)="delete.emit()"
+          (prevRecord)="prevRecord.emit()"
+          (nextRecord)="nextRecord.emit()"
+        >
+          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
+          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
+          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
+        </pc-detail-header>
+
+        <!-- Body/Content Area -->
+        @if (isLoading()) {
+          <div class="flex justify-center items-center py-20">
+            <progress class="progress w-56"></progress>
+          </div>
+        } @else if (error()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ error() }}</span>
+          </div>
+        } @else if (!hasRecord()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ notFoundText() }}</span>
+          </div>
+        } @else {
+          <!-- Main Content Slot -->
+          <ng-content></ng-content>
+        }
+      </div>
     </div>
   `,
 })
-export class Breadcrumbs {
-  public readonly crumbs = input.required<PcBreadcrumb[]>();
+export class DetailLayout {
+  public title = input.required<string>();
+  public subtitle = input<string | null | undefined>();
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title (§3). */
+  public statusChip = input<string | null>(null);
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public error = input<string | null | undefined>();
+  public hasRecord = input<boolean>(true);
+  public notFoundText = input<string>('Record not found or failed to load.');
 
-  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
-  public readonly positionLabel = input<string | null>(null);
-  public readonly hasPrev = input<boolean>(false);
-  public readonly hasNext = input<boolean>(false);
-  public readonly prevLabel = input<string>('Previous record');
-  public readonly nextLabel = input<string>('Next record');
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
+  public deleteText = input<string>('Delete');
+  public btn1Text = input<string>('Edit');
+  public btn1Icon = input<PcIconNameType>('pencil-square');
+  public disabled = input<boolean>(false);
 
-  public readonly prev = output<void>();
-  public readonly next = output<void>();
+  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  public readonly save = output<any>();
+  public readonly delete = output<void>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (!this.positionLabel()) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isEditableTarget(event.target)) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'j' && this.hasNext()) {
+      event.preventDefault();
+      this.nextRecord.emit();
+    } else if (key === 'k' && this.hasPrev()) {
+      event.preventDefault();
+      this.prevRecord.emit();
+    }
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
 }
 ```
 
@@ -6391,6 +7561,10 @@ export class FormActions implements OnInit {
 
   public showDelete = input<boolean>(false);
 
+  /** Whether to render the Cancel button. Read/detail views turn this off — a
+   * read view has no edit to cancel; the header's action is a navigation "Edit". */
+  public showCancel = input<boolean>(true);
+
   public deleteText = input<string>('Delete');
 
   public readonly deleteClicked = output<void>();
@@ -6404,6 +7578,9 @@ export class FormActions implements OnInit {
   public btn2Text = input<string>('Save & add more');
 
   public buttonsToShow = input<'two' | 'three'>('three');
+
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
 
   public isLoading = input.required<boolean>();
 
@@ -6466,138 +7643,210 @@ export class FormActions implements OnInit {
 }
 ```
 
-## File: libs/uxcommon/src/components/grid-header/grid-header.ts
+## File: libs/uxcommon/src/components/icons/icons.index.ts
 
 ```typescript
-import { Component, computed, input, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
 
-@Component({
-  selector: 'pc-grid-header',
-  imports: [Icon],
-  template: `
-    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <!-- Breadcrumb-styled title: matches the crumb trail on view/edit pages -->
-        <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-xs text-base-content/50">
-          <h1 class="max-w-48 truncate font-medium text-base-content/60">{{ title() }}</h1>
-          @if (description()) {
-            <button
-              type="button"
-              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
-              aria-label="About this page"
-              [attr.aria-expanded]="descriptionOpen()"
-              (click)="toggleDescription()"
-            >
-              <pc-icon name="information-circle" [size]="4"></pc-icon>
-            </button>
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  if (!_cache.has(name)) {
+    _cache.set(
+      name,
+      fetch(icons[name])
+        .then((r) => {
+          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
+          return r.text();
+        })
+        .catch(async () => {
+          // last-resort: fetch the unknown icon (cached too)
+          if (!_cache.has(UNKNOWN)) {
+            _cache.set(
+              UNKNOWN,
+              fetch(icons[UNKNOWN]).then((r) => r.text()),
+            );
           }
-        </nav>
-        @if (countText(); as text) {
-          <p class="mt-0.5 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
-        }
-        @if (descriptionOpen() && description()) {
-          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
-        }
-      </div>
-      <div class="flex items-center gap-2">
-        <ng-content></ng-content>
-      </div>
-    </header>
-  `,
-})
-export class GridHeaderComponent {
-  public readonly title = input.required<string>();
-  public readonly description = input<string>('');
-  public readonly eyebrow = input<string>('');
-
-  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
-  public readonly open = input<boolean>(false);
-
-  /** Total row count for the current query; null while unknown (before the first load). */
-  public readonly totalCount = input<number | null>(null);
-
-  /** Whether any user-applied filter is narrowing the results. */
-  public readonly filtered = input<boolean>(false);
-
-  private readonly descToggled = signal<boolean | null>(null);
-  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  protected readonly countText = computed<string | null>(() => {
-    const count = this.totalCount();
-    if (count === null) return null;
-    if (this.filtered()) {
-      return count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
-    }
-    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
-  });
-
-  protected toggleDescription(): void {
-    this.descToggled.set(!this.descriptionOpen());
+          return _cache.get(UNKNOWN)!;
+        }),
+    );
   }
+  return _cache.get(name)!;
 }
-```
 
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
+const UNKNOWN: PcIconNameType = 'unknown';
 
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
 
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  loading: 'assets/icons/loading.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
 ```
 
 ## File: libs/uxcommon/src/components/confirm-dialog-host.ts
@@ -6660,7 +7909,11 @@ export class ConfirmDialogHost {
     }
   });
 
-  public cancelBtnClass = computed(() => (this.state()?.emphasizeCancel ? 'btn-primary' : ''));
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
 
   public choiceBtnClass(v?: DialogVariant): string {
     if (!v) return '';
@@ -6733,330 +7986,188 @@ export class ConfirmDialogHost {
 }
 ```
 
-## File: libs/common/src/index.ts
+## File: libs/uxcommon/src/loading-gate.ts
 
 ```typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
+// _loading-gate.ts
+import { type Signal, signal } from '@angular/core';
 
-export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
+export type loadingGate = {
+  /**
+   * Spinner visibility — intentionally delayed by `delay` ms and held for
+   * `minDuration` ms to suppress flicker. Bind this to spinners ONLY; it can stay
+   * false for a whole sub-`delay` operation, so it is not a truthful "did work
+   * happen" signal.
+   */
+  visible: ReturnType<typeof signal<boolean>>;
 
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-} from './lib/models';
+  /**
+   * True once the first operation has COMPLETED — ungated, so it flips even for a
+   * fast operation that never trips `visible`. Set when a load finishes (not when
+   * it begins), so the data it produced is already in place. Use this for
+   * "has loaded at least once" state (first-load gating, skeleton-vs-empty)
+   * instead of watching `visible`.
+   */
+  loaded: Signal<boolean>;
 
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-} from './lib/schema';
+  begin(): () => void;
+};
 
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
+  const delay = options?.delay ?? 300; // ms before showing
+  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
 
-export { debounce, escapeHtml, sleep, slugifyHandle, RESERVED_SUBDOMAINS } from './lib/utils';
-export { calculateWorkingTimeMs } from './lib/sla';
+  const visible = signal(false);
+  const loaded = signal(false);
+  let pendingCount = 0;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let shownAt = 0;
 
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+  const clearShowTimer = () => {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+  };
+  const clearHideTimer = () => {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
 
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+  function scheduleShow() {
+    clearShowTimer();
+    showTimer = setTimeout(() => {
+      showTimer = null;
+      if (pendingCount > 0 && !visible()) {
+        visible.set(true);
+        shownAt = performance.now();
+      }
+    }, delay);
+  }
 
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+  function scheduleHide() {
+    clearHideTimer();
+    if (!visible()) return; // never shown → nothing to hide
 
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
+    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
+    hideTimer = setTimeout(() => {
+      if (pendingCount === 0) visible.set(false);
+    }, remaining);
+  }
+
+  function begin() {
+    pendingCount++;
+    if (pendingCount === 1) {
+      // First operation: start the delayed show
+      scheduleShow();
+    }
+    // Return disposer
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      pendingCount--;
+      loaded.set(true); // an operation has completed — its result is now in place
+      if (pendingCount <= 0) {
+        pendingCount = 0;
+        // If we never showed, cancel the show timer so _loading never appears
+        clearShowTimer();
+        scheduleHide(); // hides now or after minDuration
+      }
+    };
+  }
+
+  return { begin, visible, loaded };
+}
 ```
 
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
+## File: libs/common/src/lib/schema.ts
 
 ```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+```
 
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
-        >
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
+## File: libs/uxcommon/src/components/form-actions/form-actions.html
 
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
+```html
+<div class="flex gap-2 justify-center">
+  <button
+    type="button"
+    class="btn btn-primary gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn1Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else {
+    <pc-icon [name]="btn1Icon()" [size]="4" />
+    } {{ btn1Text() }}
+  </button>
 
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
-    }
+  @if (showDelete()) {
+  <button
+    type="button"
+    class="btn btn-error btn-outline gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleDeleteClicked()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="trash" [size]="4" />
+    {{ deleteText() }}
+  </button>
+  } @if (buttonsToShow() === 'three' && !showDelete()) {
+  <button
+    type="button"
+    class="btn btn-primary"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn2Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else { {{ btn2Text() }} }
+  </button>
+  } @if (showCancel()) {
+  <button
+    type="button"
+    class="btn btn-outline btn-accent gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="cancel()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="x-mark" [size]="4" />
+    Cancel
+  </button>
   }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
+</div>
 ```
 
 ## File: libs/common/src/lib/kysely.models.ts
@@ -7094,7 +8205,10 @@ type Generated<T> =
 
 export interface Models {
   authusers: AuthUsers;
+  campaign_person_facts: CampaignPersonFacts;
+  campaign_subscriptions: CampaignSubscriptions;
   campaigns: Campaigns;
+  email_suppressions: EmailSuppressions;
   households: Households;
   map_campaigns_users: MapCampaignsUsers;
   map_households_tags: MapHouseholdsTags;
@@ -7152,12 +8266,21 @@ export interface Models {
   webhook_events: WebhookEvents;
   data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
+  dismissed_duplicate_groups: DismissedDuplicateGroups;
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
+  workflow_runs: WorkflowRuns;
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
+  turfs: Turfs;
+  turf_households: TurfHouseholds;
+  turf_assignments: TurfAssignments;
+  turf_knocks: TurfKnocks;
+  delivery_requests: DeliveryRequests;
+  delivery_routes: DeliveryRoutes;
+  delivery_route_stops: DeliveryRouteStops;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -7258,6 +8381,43 @@ interface AuthUsers extends RecordType {
   passkey_setup_dismissed_at: Timestamp | null;
 }
 
+/** Per-campaign email CONSENT (§15). Address health lives in EmailSuppressions; DNC on Persons. */
+interface CampaignSubscriptions extends RecordType {
+  campaign_id: string;
+  person_id: string;
+  email: string;
+  /** 'subscribed' | 'pending' (double opt-in) | 'unsubscribed'. Sendable = subscribed. */
+  status: Generated<string>;
+  /** 'form' (express) | 'import' | 'manual' (implied) | 'copied' (carry-over). */
+  consent_source: Generated<string>;
+  consent_at: Timestamp | null;
+  unsubscribed_at: Timestamp | null;
+}
+
+/** Global per-address suppression (§15): a hard bounce / spam complaint kills the address everywhere. */
+interface EmailSuppressions {
+  id: Generated<string>;
+  tenant_id: string;
+  email: string;
+  reason: string;
+  occurred_at: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+}
+
+/** Campaign-scoped person facts (§15): support level + voting status. No row / NULL = Unknown. */
+interface CampaignPersonFacts extends RecordType {
+  campaign_id: string;
+  person_id: string;
+  support_level: string | null;
+  support_source: string | null;
+  support_recorded_by: string | null;
+  support_recorded_at: Timestamp | null;
+  voting_status: string | null;
+  voting_source: string | null;
+  voting_recorded_by: string | null;
+  voting_recorded_at: Timestamp | null;
+}
+
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   admin_id: string;
   createdby_id: string;
@@ -7266,10 +8426,15 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   enddate: string | null;
   name: string;
   notes: string | null;
+  /** 'office' = the permanent constituency-office context; 'election' = a time-bounded run. */
+  kind: Generated<string>;
+  /** 'active' | 'archived' — archived campaigns are read-only history. */
+  status: Generated<string>;
 }
 
 export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: string;
+  /** Provenance only ("first captured in") — households are tenant-wide, never campaign-scoped. */
+  campaign_id: string | null;
   createdby_id: string;
   file_id: string | null;
   home_phone: string | null;
@@ -7281,6 +8446,8 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   precinct: string | null;
   ward: string | null;
   geocoding_status: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
@@ -7316,9 +8483,104 @@ interface MapTeamsPersons extends JunctionRecordType {
   person_id: string;
 }
 
+// Deliveries (spec §14). "routed" is intentionally NOT a column on delivery_requests — it is
+// derived from an active (pending) delivery_route_stops row (one source of truth).
+export interface DeliveryRequests extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
+  household_id: string;
+  person_id: string | null;
+  web_form_id: string | null;
+  source: Generated<'web_form' | 'manual'>;
+  status: Generated<'new' | 'approved' | 'declined' | 'delivered'>;
+  notes: string | null;
+  skip_reason: string | null;
+}
+
+export interface DeliveryRoutes extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
+  name: string;
+  status: Generated<'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled'>;
+  volunteer_person_id: string | null;
+  start_address: string;
+  start_lat: number;
+  start_lng: number;
+  est_minutes: Generated<number>;
+  est_km: Generated<number>;
+  scheduled_for: Timestamp | null;
+  // Only the sha256 hash of the raw capability token is ever stored; the raw token is returned once.
+  share_token_hash: string | null;
+  share_token_expires_at: Timestamp | null;
+  params: Generated<Json>;
+}
+
+export interface DeliveryRouteStops extends RecordType {
+  route_id: string;
+  request_id: string;
+  seq: number;
+  leg_minutes: Generated<number>;
+  status: Generated<'pending' | 'delivered' | 'skipped'>;
+  reason: string | null;
+  acted_at: Timestamp | null;
+  acted_via: 'volunteer_link' | 'staff' | null;
+}
+
 interface MapTeamsLists extends JunctionRecordType {
   team_id: string;
   list_id: string;
+}
+
+/**
+ * Canvassing §13. A turf is a geographic slice of a smart-list universe cut into
+ * a walkable door list. `status` is the stored lifecycle only —
+ * 'draft' (unassigned) | 'active' (assigned/in the field) | 'retired'. Display
+ * state ("In field now", "Complete") and all progress numbers are DERIVED from
+ * turf_knocks at read time, never stored here (§22.6).
+ */
+interface Turfs extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
+  name: string;
+  status: string;
+  list_id: string | null;
+  target_doors: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  ward: string | null;
+  notes: string | null;
+}
+
+/** The doors of a turf — one row per household. */
+interface TurfHouseholds extends JunctionRecordType {
+  turf_id: string;
+  household_id: string;
+}
+
+/** A turf handed to a team and/or opened via a tokenised Companion link. */
+interface TurfAssignments extends RecordType {
+  turf_id: string;
+  team_id: string | null;
+  token: string;
+  status: string;
+  assigned_at: Timestamp;
+}
+
+/** One door interaction, synced live from a Canvass Companion. */
+interface TurfKnocks extends RecordType {
+  turf_id: string;
+  household_id: string;
+  person_id: string | null;
+  outcome: string;
+  response: string | null;
+  notes: string | null;
+  source: string;
+  canvasser_name: string | null;
+  client_knock_id: string | null;
+  knocked_at: Timestamp;
 }
 
 export interface MapListsPersons extends JunctionRecordType {
@@ -7352,7 +8614,12 @@ export interface MapWebFormsLists extends JunctionRecordType {
 }
 
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: string;
+  /** Provenance only ("first captured in") — persons are tenant-wide, never campaign-scoped. */
+  campaign_id: string | null;
+  /** Global compliance override (§15): suppresses contact in every campaign context. */
+  do_not_contact: Generated<boolean>;
+  /** Channels the DNC applies to ('email' | 'phone' | 'door'); null = all channels. */
+  do_not_contact_channels: string[] | null;
   household_id: string | null;
   createdby_id: string;
   first_name: string | null;
@@ -7370,9 +8637,19 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   facebook: string | null;
   instagram: string | null;
   assigned_to: string | null;
-  opt_in_status: string | null;
-  opt_in_confirmed_at: Timestamp | null;
   preferred_contact: string | null;
+  /**
+   * Opaque public identifier — 8 Crockford Base32 chars (40 CSPRNG bits),
+   * unique per tenant, the canonical person lookup key (spec §1). Generated
+   * app-side and NEVER changes — see lib/person-public-id.ts.
+   */
+  public_id: string | null;
+  /**
+   * URL display slug `{name}-{xxxx}-{xxxx}` (spec §1: /people/joseph-4t9k-2xpm).
+   * The name is decorative; resolution is by public_id. Regenerated on rename,
+   * app-side — see lib/person-public-id.ts.
+   */
+  slug: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {
@@ -7394,6 +8671,9 @@ interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
 }
 
 export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   person_id: string | null;
   amount: number;
   status: Generated<string>;
@@ -7408,9 +8688,14 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   state: string | null;
   zip: string | null;
   country: string | null;
+  method: Generated<string>;
+  receipt_sent: Generated<boolean>;
 }
 
 export interface DonationPeriods extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   start_date: ColumnType<Date, Date | string, Date | string>;
   end_date: ColumnType<Date, Date | string, Date | string> | null;
@@ -7419,6 +8704,9 @@ export interface DonationPeriods extends RecordType {
 }
 
 export interface DonationPledges extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   person_id: string | null;
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
@@ -7454,6 +8742,9 @@ interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'u
 }
 
 export interface Lists extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   object: 'people' | 'households';
@@ -7475,7 +8766,8 @@ export interface Tasks extends RecordType {
   name: string;
   details?: string;
   due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
+  /** Canonical vocabulary: TASK_STATUSES in libs/common/src/lib/schemas/tasks.schema.ts. */
+  status: 'todo' | 'in_progress' | 'waiting' | 'done' | 'archived' | null;
   priority: 'low' | 'medium' | 'high' | 'urgent' | null;
   completed_at: Timestamp | null;
   position: number | null;
@@ -7504,6 +8796,8 @@ interface Tenants extends RecordType, AddressType {
 }
 
 interface Emails extends RecordType {
+  /** The campaign context this email was synced into (§15). */
+  campaign_id: string;
   folder_id: string;
   from_email: string | null;
   /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
@@ -7517,6 +8811,8 @@ interface Emails extends RecordType {
 }
 
 interface Newsletters extends RecordType {
+  /** The context this newsletter belongs to (§15); recipients are filtered by its consent. */
+  campaign_id: string;
   name: string;
   status: string;
   subject: string | null;
@@ -7540,7 +8836,6 @@ interface Newsletters extends RecordType {
   html_content: string | null;
   plain_text_content: string | null;
   top_links: Json | null;
-  attachments: Json | null;
 }
 
 export interface NewsletterEvents {
@@ -7554,6 +8849,10 @@ export interface NewsletterEvents {
   url: string | null;
   ip: string | null;
   user_agent: string | null;
+  /** SendGrid's human-readable failure reason (bounce/dropped events only). */
+  reason: string | null;
+  /** SendGrid bounce sub-type: 'bounce' = hard, 'blocked' = soft. */
+  bounce_type: string | null;
   timestamp: Timestamp;
   created_at: Generated<Timestamp>;
 }
@@ -7576,6 +8875,9 @@ export interface PersonNewsletterEngagements {
 }
 
 interface WebForms extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   redirect_url: string | null;
@@ -7644,6 +8946,8 @@ interface EmailAttachments extends RecordType {
 }
 
 interface EmailDrafts extends RecordType {
+  /** The campaign context this draft belongs to (§15). */
+  campaign_id: string;
   user_id: string;
   thread_id: string | null;
   to_list: JsonValue | null;
@@ -7698,6 +9002,15 @@ interface DataImports extends RecordType {
   processed_at: Timestamp;
   status: Generated<string>;
   error_message: string | null;
+  /** Rows folded into an existing person via the "Merge into existing" duplicate decision (spec §17). */
+  merged_count: Generated<number>;
+  /** All tags applied by this import (the wizard allows several comma-separated tags, not just the auto tag). */
+  tags_applied: Generated<Json>;
+  /** Storage key for the retained original upload — kept 90 days so History can offer a re-download. */
+  source_file_key: string | null;
+  source_file_size: number | null;
+  /** Per-row reasons for skipped rows, so History can offer a "download skipped rows" CSV. */
+  skip_reasons: Generated<Json>;
 }
 
 export interface DataExports {
@@ -7761,9 +9074,20 @@ export interface PotentialDuplicates {
   updated_at: Generated<Timestamp>;
 }
 
+/** §9.3 Duplicates: a "Not duplicates" dismissal, keyed by the same `group_key` the nightly
+ * sweep uses. No surrogate id — `(tenant_id, group_key)` is the natural primary key. */
+export interface DismissedDuplicateGroups {
+  tenant_id: string;
+  group_key: string;
+  dismissed_by_id: string;
+  dismissed_at: Generated<Timestamp>;
+}
+
 interface MsOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;
@@ -7780,6 +9104,8 @@ interface MsOauthTokens {
 export interface GoogleOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;
@@ -7825,6 +9151,8 @@ export interface Companies extends RecordType {
   /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
   enrichment: Json | null;
   file_id: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 export interface Files {
@@ -7836,6 +9164,9 @@ export interface Files {
   storage_key: string;
   sha256_hex: string | null;
   uploaded_by: string | null;
+  /** Polymorphic link — what this file belongs to (e.g. 'newsletter', 'team'). Null for untethered uploads. */
+  entity_type: string | null;
+  entity_id: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -7879,6 +9210,9 @@ export interface VolunteerShifts extends RecordType {
 }
 
 export interface Events extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   location_address: string | null;
@@ -7918,6 +9252,8 @@ export interface Workflows extends RecordType {
   trigger_type: string;
   status: string;
   trigger_event_id: string | null;
+  // Spec §16 ONLY ENROLL IF — a QueryBuilder group node (see core.schema QueryBuilderGroupNode).
+  conditions: Json | null;
 }
 
 export interface WorkflowSteps {
@@ -7927,12 +9263,31 @@ export interface WorkflowSteps {
   step_number: number;
   delay_days: number;
   delay_unit: 'days' | 'hours';
-  subject: string;
+  // Spec §16: steps are polymorphic. `kind` discriminates; the value each kind carries lives
+  // in `config` (send_email uses subject/html/text columns; wait uses delay_days/delay_unit).
+  kind: 'wait' | 'send_email' | 'add_tag' | 'create_task' | 'notify_team';
+  config: Json | null;
+  subject: string | null;
   preview_text: string | null;
   html_content: string | null;
   plain_text_content: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+// Spec §16: one row per executed step (success or failure) — feeds the list's RUNS 30D /
+// LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for narration.
+export interface WorkflowRuns {
+  id: Generated<string>;
+  tenant_id: string;
+  workflow_id: string;
+  enrollment_id: string | null;
+  person_id: string | null;
+  step_number: number | null;
+  step_kind: string | null;
+  status: 'success' | 'failed';
+  error: string | null;
+  created_at: Generated<Timestamp>;
 }
 
 export interface WorkflowEnrollments {
@@ -8006,6 +9361,335 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ```
 
+## File: libs/common/src/index.ts
+
+```typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+} from './lib/schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel } from './lib/schemas/persons.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+} from './lib/schemas/workflows.schema';
+export type { TurfStatus, KnockOutcome, KnockResponse } from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+```
+
 ## File: libs/uxcommon/src/components/detail-header/detail-header.ts
 
 ```typescript
@@ -8021,10 +9705,16 @@ import { FormActions } from '../form-actions/form-actions';
   selector: 'pc-detail-header',
   imports: [Icon, FormActions],
   template: `
-    <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex min-w-0 items-center gap-3">
-          @if (icon()) {
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
             <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
           }
           <div class="min-w-0">
@@ -8052,10 +9742,39 @@ import { FormActions } from '../form-actions/form-actions';
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle btn-ghost btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
           <ng-content select="[pc-actions-prefix]"></ng-content>
           @if (showActions()) {
             <pc-form-actions
-              class="w-full"
+              size="sm"
               [isLoading]="isLoading()"
               [signalForm]="form()"
               [disabled]="disabled()"
@@ -8064,6 +9783,7 @@ import { FormActions } from '../form-actions/form-actions';
               [btn1Text]="btn1Text()"
               [btn1Icon]="btn1Icon()"
               [showDelete]="false"
+              [showCancel]="showCancel()"
               (btn1Clicked)="save.emit($event)"
             ></pc-form-actions>
           }
@@ -8115,9 +9835,14 @@ export class DetailHeader {
   public form = input<any>();
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
   public isLoading = input.required<boolean>();
   public showActions = input<boolean>(true);
   public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
   public subtitle = input<string | null | undefined>();
   public title = input.required<string>();
 
@@ -8139,15 +9864,16 @@ export class DetailHeader {
   );
 
   constructor() {
-    // The breadcrumb trail + record pager render in the navbar, not the page body.
-    // Publish this page's trail whenever its inputs change; clear it on destroy so
-    // the strip empties when navigating to a page (e.g. a grid) that owns no trail.
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
     effect(() => {
       this.breadcrumbs.set({
         crumbs: this.crumbs(),
-        positionLabel: this.positionLabel(),
-        hasPrev: this.hasPrev(),
-        hasNext: this.hasNext(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
         prevLabel: this.prevLabel(),
         nextLabel: this.nextLabel(),
         onPrev: () => this.prevRecord.emit(),
