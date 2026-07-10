@@ -9,10 +9,12 @@ import { CsvTransformStream } from '../../csv-stream';
 import { notificationEnabled } from '../../profile-preferences';
 import { StorageService } from '../../storage.service';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { UserActivityRepo } from '../../user-activity.repo';
 import type { JobPayloadOf } from '../job-payloads';
 
 const storageService = new StorageService();
 const mailService = new TransactionalEmailService();
+const userActivityRepo = new UserActivityRepo();
 
 const ALLOWED_EXPORT_TABLES = [
   'persons',
@@ -151,6 +153,27 @@ export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: K
     });
 
     logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
+
+    // The Exports page promises "every export lands in the Activity log". The inline
+    // exportCsv path logs from BaseController; queued exports must log here on completion.
+    // A logging failure must not fail (and re-run) an export that already succeeded.
+    if (payload.user_id) {
+      try {
+        await userActivityRepo.log({
+          tenant_id: tenantId,
+          user_id: payload.user_id,
+          activity: 'export',
+          entity: table,
+          quantity: count,
+          metadata: {
+            requested_columns: Array.isArray(payload.columns) ? payload.columns.slice(0, 12) : [],
+            file_name: payload.file_name || 'export.csv',
+          },
+        });
+      } catch (activityErr) {
+        logger.error({ err: activityErr }, `Failed to log activity for export job ${exportId}`);
+      }
+    }
 
     // Notify the user who requested the export
     if (payload.user_id) {
