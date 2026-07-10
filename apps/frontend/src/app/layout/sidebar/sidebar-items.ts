@@ -109,7 +109,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Newsletters',
         route: '/newsletters',
-        icon: 'megaphone',
+        icon: 'mailbox',
         shortcut: 'n',
       },
       {
@@ -140,13 +140,13 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Canvassing',
         route: '/canvassing',
-        icon: 'map-pin',
+        icon: 'route',
         shortcut: 'v',
       },
       {
         name: 'Deliveries',
         route: '/deliveries',
-        icon: 'map-pin',
+        icon: 'house-modern',
         // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
         // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
       },
@@ -187,7 +187,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Issues',
         route: '/issues',
-        icon: 'shield-exclamation',
+        icon: 'chat-bubble-bottom-center-text',
       },
       {
         name: `Automations`,
