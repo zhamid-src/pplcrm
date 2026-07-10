@@ -6,6 +6,7 @@ import { Icon } from '@icons/icon';
 import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
@@ -25,7 +26,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, Table, GridHeaderComponent],
+  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
@@ -38,6 +39,11 @@ export class ImportsPage {
   private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly tab = signal<HistoryTab>('imports');
+
+  protected readonly historyTabs = computed<PcTabOption[]>(() => [
+    { id: 'imports', label: 'Imports', badge: this.itemCount() },
+    { id: 'exports', label: 'Exports', badge: this.exportCount() },
+  ]);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -102,7 +108,8 @@ export class ImportsPage {
     });
   }
 
-  protected switchTab(tab: HistoryTab): void {
+  protected switchTab(tab: string): void {
+    if (tab !== 'imports' && tab !== 'exports') return;
     this.tab.set(tab);
     if (tab === 'exports') {
       void this.loadExports();
