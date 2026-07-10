@@ -24,7 +24,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           },
           {
             title: 'Name it clearly',
-            detail: 'The name is how you will find it in the grid and its performance later.',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
           },
         ],
       },
@@ -48,11 +48,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'send', text: 'Send or schedule' },
       {
         kind: 'p',
-        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
       },
       {
         kind: 'p',
-        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report, and each recipient’s profile lists the send under their **Newsletters** tab.',
       },
       { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
       {

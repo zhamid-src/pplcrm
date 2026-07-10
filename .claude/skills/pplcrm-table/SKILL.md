@@ -13,7 +13,7 @@ typography). Pick the right one, and never hand-roll a third table look.
 
 | Use                                                                    | When                                                                                                                                                                                                                                                            | It owns                                                                                                                                                  |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`pc-datagrid`** (`apps/frontend/src/app/shared/components/datagrid`) | A generic, homogeneous "rolodex" of records: persons, companies, households, lists, newsletters, events, shifts, tasks, teams, campaigns, deliveries, forms, files, workflows.                                                                                  | Server-side fetch/sort/filter, inline editing + undo, selection → bulk actions, CSV export/import, grid→detail record-navigation. See `pplcrm-datagrid`. |
+| **`pc-datagrid`** (`apps/frontend/src/app/shared/components/datagrid`) | A generic, homogeneous "rolodex" of records: persons, companies, households, lists, events, shifts, tasks, teams, campaigns, deliveries, forms, files, workflows.                                                                                               | Server-side fetch/sort/filter, inline editing + undo, selection → bulk actions, CSV export/import, grid→detail record-navigation. See `pplcrm-datagrid`. |
 | **`pc-table`** (`libs/uxcommon/src/components/table/table.ts`)         | A bespoke table whose interaction idiom does **not** fit a generic column grid — admin/vocabulary tables (Tags, Issues), a financial ledger (Donations, Pledges), anything with merge/rename actions, callouts, proportional bars, aggregates, or custom cells. | **Chrome only**: the bordered shell, the micro-caps header row, cell density, the skeleton-loading idiom, an optional footer. Nothing else.              |
 
 **Do not force a bespoke table into `pc-datagrid`** — you will re-implement its escape hatches
@@ -119,7 +119,9 @@ class.** Either way the header/density/typography come from the one contract.
 Component (`<pc-table>`): Tags, Issues, Donations, Pledges, Users (`users/ui/users-page.html` —
 summary line, inline role select, kebab menu, seat-aware invite dialog), deliveries-requests,
 deliveries-routes, imports/exports (`imports-page.html`, two tables), forms submissions
-(`forms-page.html`), donations tax-tier settings (`settings/donations/donations-settings.html`).
+(`forms-page.html`), donations tax-tier settings (`settings/donations/donations-settings.html`),
+newsletters (`newsletters/ui/newsletters-page.html` — stat tiles + campaign table with per-row
+Send…/View report actions).
 Class-only (`.pc-table`): canvassing (`canvassing-page.html`, three card-embedded tables),
 list-view newsletters (`lists/ui/list-view.html`), duplicates-people comparison matrix. Read one
 of the matching kind before adding the next — copy the proven structure.
