@@ -708,6 +708,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
+  /** Per-column sort/filter/hide dropdown in the header. Off for read-only "reference table" grids. */
+  public showColumnMenus = input<boolean>(true);
   public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
 
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
