@@ -136,7 +136,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Forms](/forms) and click New form',
-            detail: 'Name it and pick a starting template — it opens as a draft in edit mode.',
+            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
           },
           {
             title: 'Turn fields on and set what’s required',

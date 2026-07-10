@@ -1,6 +1,6 @@
 ---
 name: pplcrm-forms
-description: "How the North Star 'living funnel' Forms experience works end-to-end — the web_forms lifecycle (draft/published/archived), the FormField model + normForm() email-identity invariant + creation templates, the two-mode forms-page (browse + live edit), form_submissions, the tenant-subdomain public /f/:slug page, and why donation forms stay on a separate path (/d/:slug). USE WHEN editing anything under experiences/forms, the web-forms backend module, web_forms/form_submissions schema, the public form page, or reconciling forms with donations. EXAMPLES: 'add a field type to forms', 'why is the email field locked', 'the public /f/:slug page 404s', 'do donation forms show in the Forms page'."
+description: "How the North Star 'living funnel' Forms experience works end-to-end — the web_forms lifecycle (draft/published/archived), the FormField model + normForm() email-identity invariant + creation templates, the three-mode forms-page (browse + New-form stepper + live edit), form_submissions, the tenant-subdomain public /f/:slug page, and why donation forms stay on a separate path (/d/:slug). USE WHEN editing anything under experiences/forms, the web-forms backend module, web_forms/form_submissions schema, the public form page, or reconciling forms with donations. EXAMPLES: 'add a field type to forms', 'why is the email field locked', 'the public /f/:slug page 404s', 'do donation forms show in the Forms page'."
 ---
 
 # PeopleCRM Forms (living-funnel model)
@@ -46,8 +46,9 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   `GET /f/:slug` JSON config for the SPA page, `GET /d/:slug` server-rendered donation page,
   `POST /submit/:slug` for both. There are **no UUID-keyed public routes** — `/view/:formId` and
   `/submit/:formId` were removed in the tenant-subdomain URL convergence, July 2026).
-- **Frontend** — `apps/frontend/src/app/experiences/forms/ui/`: `forms-page.ts/html` (the two-mode
-  browse + live-edit shell), `form-render.ts` (read-only preview card, reused in the pane),
+- **Frontend** — `apps/frontend/src/app/experiences/forms/ui/`: `forms-page.ts/html` (the three-mode
+  shell: browse, in-page New-form flow — a 2-step stepper of template cards then a name, no dialog —
+  and live edit), `form-render.ts` (read-only preview card, reused in the pane),
   `public-form.ts` (the unauthenticated `/f/:slug` page, registered in `app.routes.ts` — NOT the
   dashboard shell). `services/forms-service.ts` carries both the legacy grid contract and the new
   lifecycle methods.
