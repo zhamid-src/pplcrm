@@ -19,21 +19,8 @@
     </div>
   </div>
 
-  <!-- Tabs with live counts -->
-  <div role="tablist" class="tabs tabs-bordered w-fit">
-    @for (tab of tabs; track tab.key) {
-    <button
-      type="button"
-      role="tab"
-      class="tab gap-1.5"
-      [class.tab-active]="activeTab() === tab.key"
-      (click)="setTab(tab.key)"
-    >
-      {{ tab.label }}
-      <span class="text-xs font-semibold tabular-nums text-base-content/50">{{ countFor(tab.key) }}</span>
-    </button>
-    }
-  </div>
+  <!-- Tabs with live counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
 
   <!-- Bulk selection bar -->
   @if (selectedCount() > 0) {

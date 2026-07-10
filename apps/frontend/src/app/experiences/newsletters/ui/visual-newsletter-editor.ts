@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, model, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 import {
   EmailBlock,
@@ -14,18 +15,8 @@ import {
 
 @Component({
   selector: 'pc-visual-newsletter-editor',
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, TabBar],
   templateUrl: './visual-newsletter-editor.html',
-  styles: [
-    `
-      .tabs-lifted .tab {
-        border-bottom-color: transparent;
-      }
-      .tabs-lifted .tab-active {
-        border-bottom-color: transparent;
-      }
-    `,
-  ],
 })
 export class VisualNewsletterEditorComponent implements OnInit {
   public readonly htmlContent = model<string>('');
@@ -36,6 +27,15 @@ export class VisualNewsletterEditorComponent implements OnInit {
   protected readonly previewMode = signal<'desktop' | 'mobile'>('desktop');
   protected readonly editorMode = signal<'visual' | 'code'>('visual');
   protected readonly activeTab = signal<'blocks' | 'edit'>('blocks');
+
+  protected readonly panelTabs: PcTabOption[] = [
+    { id: 'blocks', label: 'Blocks' },
+    { id: 'edit', label: 'Customize' },
+  ];
+
+  protected setPanelTab(tab: string): void {
+    if (tab === 'blocks' || tab === 'edit') this.activeTab.set(tab);
+  }
 
   protected readonly socialSvgPaths = socialSvgPaths;
   protected getSocialBgColor(platform: string, style: string) {

@@ -6,23 +6,8 @@
     [open]="true"
   ></pc-grid-header>
 
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
-      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
-      One-time
-    </a>
-    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Monthly Pledges
-    </a>
-  </div>
+  <!-- Tabs (the standard pill tab bar; route-linked) -->
+  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
 
   @if (_loading.visible()) {
   <progress class="progress w-full text-primary mb-6"></progress>

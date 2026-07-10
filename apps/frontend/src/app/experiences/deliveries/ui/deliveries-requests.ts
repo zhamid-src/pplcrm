@@ -7,6 +7,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
@@ -29,7 +30,7 @@ const STATUS_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-requests',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, Table],
+  imports: [RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, TabBar, Table],
   templateUrl: './deliveries-requests.html',
 })
 export class DeliveriesRequests implements OnInit {
@@ -48,13 +49,17 @@ export class DeliveriesRequests implements OnInit {
   protected readonly selectedCount = computed(() => this.selected().size);
   protected readonly newInView = computed(() => this.rows().filter((r) => r.status === 'new').length);
 
-  protected readonly tabs: Array<{ key: Tab; label: string }> = [
+  private readonly tabs: Array<{ key: Tab; label: string }> = [
     { key: 'open', label: 'Open' },
     { key: 'new', label: 'New' },
     { key: 'approved', label: 'Approved' },
     { key: 'delivered', label: 'Delivered' },
     { key: 'declined', label: 'Declined' },
   ];
+
+  protected readonly tabOptions = computed<PcTabOption[]>(() =>
+    this.tabs.map((t) => ({ id: t.key, label: t.label, badge: this.countFor(t.key) })),
+  );
 
   public ngOnInit(): void {
     void this.reload();
@@ -68,9 +73,10 @@ export class DeliveriesRequests implements OnInit {
     return this.counts()[tab] ?? 0;
   }
 
-  protected async setTab(tab: Tab): Promise<void> {
-    if (this.activeTab() === tab) return;
-    this.activeTab.set(tab);
+  protected async setTab(tab: string): Promise<void> {
+    const match = this.tabs.find((t) => t.key === tab);
+    if (!match || this.activeTab() === match.key) return;
+    this.activeTab.set(match.key);
     this.selected.set(new Set());
     await this.reload();
   }

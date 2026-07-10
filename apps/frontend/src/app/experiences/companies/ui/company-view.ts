@@ -13,7 +13,7 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
@@ -30,6 +30,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     LogInteraction,
     DetailLayout,
     PcCard,
+    PcTabs,
     TabPanel,
     DetailItem,
     SystemMetadata,

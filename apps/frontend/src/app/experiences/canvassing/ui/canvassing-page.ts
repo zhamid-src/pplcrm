@@ -7,6 +7,7 @@ import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.servic
 import { Icon } from '@icons/icon';
 import { PcMap } from '@uxcommon/components/map/map';
 import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
 import {
@@ -72,7 +73,7 @@ const RANGES: { key: ReportRange; label: string }[] = [
 
 @Component({
   selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, CutTurfsDialog],
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog],
   templateUrl: './canvassing-page.html',
 })
 export class CanvassingPage implements OnInit {
@@ -84,6 +85,11 @@ export class CanvassingPage implements OnInit {
   protected readonly loading = this._loading.visible;
 
   protected readonly tab = signal<Tab>('turfs');
+
+  protected readonly pageTabs: PcTabOption[] = [
+    { id: 'turfs', label: 'Turfs & assignments' },
+    { id: 'report', label: 'Field report' },
+  ];
   protected readonly turfs = signal<TurfListItem[]>([]);
   protected readonly summary = signal<FieldSummary | null>(null);
   protected readonly today = signal<InFieldToday | null>(null);
@@ -216,7 +222,8 @@ export class CanvassingPage implements OnInit {
     }));
   });
 
-  protected selectTab(tab: Tab): void {
+  protected selectTab(tab: string): void {
+    if (tab !== 'turfs' && tab !== 'report') return;
     this.tab.set(tab);
     if (tab === 'report' && !this.report()) void this.loadReport();
   }

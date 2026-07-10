@@ -3,6 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 
 import { PcMap } from '@uxcommon/components/map/map';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
 import { DELIVERY_SKIP_REASONS } from '@common';
 import { Icon } from '@icons/icon';
@@ -42,7 +43,7 @@ type ViewMode = 'list' | 'map';
 @Component({
   selector: 'pc-public-route',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PcMap, StatusBadge, Icon],
+  imports: [PcMap, StatusBadge, Icon, TabBar],
   templateUrl: './public-route.html',
 })
 export class PublicRoute implements OnInit {
@@ -52,6 +53,15 @@ export class PublicRoute implements OnInit {
   protected readonly state = signal<PageState>('loading');
   protected readonly data = signal<PublicRouteData | null>(null);
   protected readonly view = signal<ViewMode>('list');
+
+  protected readonly viewTabs: PcTabOption[] = [
+    { id: 'list', label: 'List' },
+    { id: 'map', label: 'Map' },
+  ];
+
+  protected setView(view: string): void {
+    if (view === 'list' || view === 'map') this.view.set(view);
+  }
   protected readonly reasonPickerFor = signal<string | null>(null);
   protected readonly lastActioned = signal<string | null>(null);
   protected readonly selectedStopId = signal<string | null>(null);

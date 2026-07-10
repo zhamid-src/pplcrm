@@ -66,11 +66,11 @@ export class TeamViewComponent {
   protected activeTab = signal<string>('volunteers');
 
   protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
-    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
-    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+    { id: 'volunteers', label: 'Volunteers', badge: this.volunteers().length },
+    { id: 'lists', label: 'Target lists', badge: this.team()?.lists?.length || 0 },
+    { id: 'tasks', label: 'Team tasks', badge: this.teamTasks().length },
     // Activity is the record's history — last tab in every view.
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'activity', label: 'Activity' },
   ]);
 
   protected readonly captainName = computed(() => {

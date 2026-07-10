@@ -22,23 +22,8 @@
     </div>
   </div>
 
-  <!-- Quiet tab row with counts (design idiom table §4) -->
-  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
-    @for (t of tabs(); track t.key) {
-    <button
-      type="button"
-      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
-      [class.text-primary]="tab() === t.key"
-      [class.font-semibold]="tab() === t.key"
-      [class.border-primary]="tab() === t.key"
-      [class.text-base-content/70]="tab() !== t.key"
-      (click)="setTab(t.key)"
-    >
-      {{ t.label }}
-      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
-    </button>
-    }
-  </nav>
+  <!-- Tabs with counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
 
   @if (loaded() && !filtered().length) {
   <div class="flex flex-col items-center gap-3 py-16 text-center">
