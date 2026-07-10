@@ -33,7 +33,7 @@
     <div
       class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
     >
-      <span>Status</span>
+      <span class="w-24">Status</span>
       <span>Automation</span>
       <span class="text-right">Runs 30d</span>
       <span>Last run</span>
@@ -41,12 +41,12 @@
 
     @for (row of rows(); track row.id) {
     <div
-      class="grid cursor-pointer grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+      class="grid cursor-pointer text-xs grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
       [class.opacity-60]="row.status === 'paused'"
       (click)="openAutomation(row)"
     >
       <!-- STATUS toggle -->
-      <div class="flex items-center gap-2" (click)="$event.stopPropagation()">
+      <div class="flex items-center text-xs gap-2 w-24" (click)="$event.stopPropagation()">
         <input
           type="checkbox"
           class="toggle toggle-primary toggle-sm"
@@ -55,24 +55,22 @@
           [attr.aria-label]="statusTooltip(row)"
           (change)="toggleStatus(row, $event)"
         />
-        @if (row.status === 'paused') {
-        <span class="text-xs font-medium text-base-content/50">Paused</span>
-        }
+        <span>{{ row.status === 'active' ? 'Active' : 'Paused' }}</span>
       </div>
 
       <!-- AUTOMATION: name door + recipe sentence -->
       <div class="min-w-0">
         <div class="truncate font-medium text-base-content">{{ row.name }}</div>
-        <div class="truncate text-sm text-base-content/60">{{ recipe(row) }}</div>
+        <div class="truncate text-xs text-base-content/60">{{ recipe(row) }}</div>
       </div>
 
       <!-- RUNS 30D -->
-      <div class="text-sm tabular-nums text-base-content/80 md:text-right">
+      <div class="text-xs tabular-nums text-base-content/80 md:text-right">
         <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
       </div>
 
       <!-- LAST RUN (+ inline failure narration) -->
-      <div class="text-sm">
+      <div class="text-xs">
         <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
         @if (row.last_run_error) {
         <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
