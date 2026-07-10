@@ -362,9 +362,10 @@ body {
     padding-block: var(--pc-table-cell-py);
   }
   /* Subtle row hover (design §8: hover is a quiet secondary signal). The
-     datagrid opts out via its own zebra + `hover:bg-base-300` utilities, which
-     win from the utilities layer — a deliberate scale adaptation for long
-     data tables, documented in the pplcrm-datagrid skill. */
+     datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
+     which win from the utilities layer — a deliberate scale adaptation for
+     long data tables (base-300 stays visible over the base-200 zebra stripes;
+     40% keeps it a wash), documented in the pplcrm-datagrid skill. */
   .pc-table tbody tr:hover {
     background-color: color-mix(in oklch, var(--color-base-200) 60%, transparent);
   }
