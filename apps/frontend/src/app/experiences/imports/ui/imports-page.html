@@ -1,9 +1,18 @@
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header
-    title="Import / export"
-    [totalSentence]="tab() === 'imports' ? historySentence() : null"
-  ></pc-grid-header>
+  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
+    @if (tab() === 'imports') {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
+      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+      <span>Import CSV</span>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      <span>New export</span>
+    </button>
+    }
+  </pc-grid-header>
 
   <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
   <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
@@ -33,22 +42,22 @@
       @for (item of items(); track item.id) {
       <tr>
         <td>
-          <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
+          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
           <div class="text-xs text-base-content/60">
             {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
           </div>
         </td>
         <td>
-          <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
         </td>
         <td>
           @if (item.createdBy) {
           <div class="flex flex-col">
-            <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
             <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
           </div>
           } @else {
-          <span class="text-sm text-base-content/40">—</span>
+          <span class="text-xs text-base-content/40">—</span>
           }
         </td>
         <td>
@@ -60,7 +69,7 @@
             Processing
           </span>
           } @case ('completed') {
-          <div class="text-sm text-base-content">
+          <div class="text-xs text-base-content">
             <div>{{ item.insertedCount }} imported</div>
             @if (item.mergedCount > 0) {
             <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
@@ -90,7 +99,7 @@
             }
           </div>
           } @else {
-          <span class="text-sm text-base-content/40">—</span>
+          <span class="text-xs text-base-content/40">—</span>
           }
         </td>
         <td class="text-right">
@@ -141,11 +150,6 @@
   <!-- ============ EXPORTS TAB ============ -->
   @if (tab() === 'exports') {
   <div>
-    <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="toggleNewExportInfo()">
-        New export
-      </button>
-    </div>
     @if (showNewExportInfo()) {
     <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
       <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
@@ -153,7 +157,9 @@
         Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
         files land on this page.
       </span>
-      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
+        Go to People
+      </button>
     </div>
     } @if (exportsLoading.visible()) {
     <progress class="progress w-full text-primary mb-4"></progress>
@@ -171,19 +177,19 @@
       @for (job of exportJobs(); track job.id) {
       <tr>
         <td>
-          <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
+          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
         </td>
         <td>
-          <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
         </td>
         <td>
           @if (job.createdBy) {
           <div class="flex flex-col">
-            <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
             <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
           </div>
           } @else {
-          <span class="text-sm text-base-content/40">—</span>
+          <span class="text-xs text-base-content/40">—</span>
           }
         </td>
         <td>
@@ -195,7 +201,7 @@
             Processing
           </span>
           } @case ('completed') {
-          <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
           } @default {
           <span class="badge badge-error text-xs">Failed</span>
           } }

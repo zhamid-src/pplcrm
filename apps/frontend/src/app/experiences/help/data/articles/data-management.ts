@@ -12,7 +12,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** in the People grid toolbar (under the Import/export icon) — it opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People grid toolbar (under the Import/export icon) — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
@@ -80,7 +80,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
       {
         kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
       },
       {
         kind: 'callout',
