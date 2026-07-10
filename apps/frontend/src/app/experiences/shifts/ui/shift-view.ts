@@ -67,8 +67,8 @@ export class ShiftViewComponent {
   protected activeTab = signal<string>('roster');
 
   protected readonly eventTabs = computed<PcTabOption[]>(() => [
-    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'roster', label: 'Volunteer roster', badge: this.roster().length },
+    { id: 'activity', label: 'Activity' },
   ]);
 
   protected readonly eventPassed = computed(() => {

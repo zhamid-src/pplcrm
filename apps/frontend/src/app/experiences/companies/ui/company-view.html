@@ -86,37 +86,9 @@
       </pc-card>
     </div>
 
-    <!-- Right Column: pill tab bar + content card (matches person view) -->
+    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
     <div class="flex flex-col gap-6 lg:col-span-2">
-      <!-- Pill tab bar with counts (§1 "numbers before clicks") -->
-      <div role="tablist" class="flex flex-wrap gap-2">
-        @for (tab of companyTabs(); track tab.id) {
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="activeTab() === tab.id"
-          class="inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none"
-          [class]="
-            activeTab() === tab.id
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-base-200 bg-base-100 text-base-content/70 hover:bg-base-200/60'
-          "
-          (click)="activeTab.set(tab.id)"
-        >
-          <span>{{ tab.label }}</span>
-          @if (tab.badge !== undefined && tab.badge !== null) {
-          <span
-            class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
-            [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
-            >{{ tab.badge }}</span
-          >
-          }
-        </button>
-        }
-      </div>
-
-      <!-- Content card -->
-      <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
         <pc-tab-panel id="activity" [activeTab]="activeTab()">
           <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
             <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
@@ -141,7 +113,7 @@
           <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
           }
         </pc-tab-panel>
-      </div>
+      </pc-tabs>
     </div>
   </div>
   }

@@ -81,10 +81,10 @@ export class EventViewComponent {
   protected readonly eventTabs = computed<PcTabOption[]>(() => [
     {
       id: 'attendees',
-      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
-      icon: 'user-group',
+      label: 'Attendees',
+      badge: this.registrations().filter((r) => r.status !== 'cancelled').length,
     },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'activity', label: 'Activity' },
   ]);
 
   protected readonly eventPassed = computed(() => {

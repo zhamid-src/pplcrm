@@ -143,11 +143,11 @@ export class WorkflowFormComponent implements OnInit {
   });
 
   protected readonly tabs = computed<PcTabOption[]>(() => [
-    { id: 'sequence', label: 'Sequence designer', icon: 'pencil-square' },
+    { id: 'sequence', label: 'Sequence designer' },
     {
       id: 'enrolled',
-      label: `Enrolled contacts (${this.enrollments().length})`,
-      icon: 'user-group',
+      label: 'Enrolled contacts',
+      badge: this.isNew() ? undefined : this.enrollments().length,
       disabled: this.isNew(),
       tooltip: this.isNew() ? 'Save the automation to enroll contacts' : undefined,
     },

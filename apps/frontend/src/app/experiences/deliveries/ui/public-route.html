@@ -34,20 +34,7 @@
       ></progress>
 
       <div class="mt-3 flex items-center gap-2">
-        <div role="tablist" class="tabs tabs-boxed tabs-sm">
-          <button
-            type="button"
-            role="tab"
-            class="tab"
-            [class.tab-active]="view() === 'list'"
-            (click)="view.set('list')"
-          >
-            List
-          </button>
-          <button type="button" role="tab" class="tab" [class.tab-active]="view() === 'map'" (click)="view.set('map')">
-            Map
-          </button>
-        </div>
+        <pc-tab-bar [tabs]="viewTabs" [activeTab]="view()" (activeTabChange)="setView($event)" />
         <button type="button" class="btn btn-ghost btn-sm ml-auto" (click)="openFullRoute()">
           <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
         </button>

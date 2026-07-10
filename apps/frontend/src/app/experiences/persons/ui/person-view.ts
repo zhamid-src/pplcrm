@@ -20,7 +20,7 @@ import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
@@ -42,6 +42,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     LogInteraction,
     DetailLayout,
     PcCard,
+    PcTabs,
     TabPanel,
     StatusBadge,
     DetailItem,
@@ -192,19 +193,14 @@ export class PersonView {
 
   // Seven tabs (§3): Newsletters fold into Emails; Household and Connections are distinct concepts, own tabs each.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'household', label: 'Household', icon: 'home' },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
-    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
-    {
-      id: 'donations',
-      label: 'Donations',
-      icon: 'currency-dollar',
-      badge: this.donationHistory()?.length || undefined,
-    },
-    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
+    { id: 'household', label: 'Household' },
+    { id: 'connections', label: 'Connections', badge: this.connectionCount() || undefined },
+    { id: 'emails', label: 'Emails', badge: this.activityData()?.emails?.length || undefined },
+    { id: 'donations', label: 'Donations', badge: this.donationHistory()?.length || undefined },
+    { id: 'volunteer', label: 'Volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', badge: this.eventHistory()?.length || undefined },
     // Activity is the record's history — last tab in every view.
-    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+    { id: 'activity', label: 'Activity' },
   ]);
 
   /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */

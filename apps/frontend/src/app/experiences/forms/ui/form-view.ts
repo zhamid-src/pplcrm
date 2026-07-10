@@ -70,10 +70,10 @@ export class FormViewComponent {
   protected activeTab = signal<string>('targetActions');
 
   protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
+    { id: 'targetActions', label: 'Target lists & actions' },
+    { id: 'fieldsPreview', label: 'Fields & layout' },
     // Activity is the record's history — last tab in every view.
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'activity', label: 'Activity' },
   ]);
 
   protected readonly selectedFields = computed(() => {

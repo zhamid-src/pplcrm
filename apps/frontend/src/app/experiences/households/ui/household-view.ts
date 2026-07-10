@@ -17,7 +17,7 @@ import { Households } from '../../../../../../../libs/common/src/lib/kysely.mode
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -36,6 +36,7 @@ type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: s
     LogInteraction,
     DetailLayout,
     PcCard,
+    PcTabs,
     TabPanel,
     PcMap,
     GeocodeChip,

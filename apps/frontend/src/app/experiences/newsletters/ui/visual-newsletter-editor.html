@@ -388,25 +388,13 @@
   <aside
     class="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-base-300 bg-base-100 h-full overflow-hidden"
   >
-    <!-- TABS -->
-    <div role="tablist" class="tabs tabs-lifted w-full px-4 pt-4 bg-base-200/50">
-      <a
-        role="tab"
-        class="tab focus:outline-none cursor-pointer"
-        [class.tab-active]="activeTab() === 'blocks'"
-        (click)="activeTab.set('blocks')"
-      >
-        Blocks
-      </a>
-      <a
-        role="tab"
-        class="tab focus:outline-none cursor-pointer"
-        [class.tab-active]="activeTab() === 'edit'"
-        (click)="activeTab.set('edit')"
-      >
-        Customize
-      </a>
-    </div>
+    <!-- Tabs (the standard pill tab bar) -->
+    <pc-tab-bar
+      class="border-b border-base-300 px-4 py-3"
+      [tabs]="panelTabs"
+      [activeTab]="activeTab()"
+      (activeTabChange)="setPanelTab($event)"
+    />
 
     <!-- TAB CONTENT -->
     <div class="flex-1 overflow-y-auto p-4">

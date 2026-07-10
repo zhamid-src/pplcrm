@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SettingsService } from '@experiences/settings/services/settings-service';
@@ -40,7 +41,7 @@ const MS_PER_DAY = 86_400_000;
 
 @Component({
   selector: 'pc-tasks-list',
-  imports: [Icon, CsvImportComponent],
+  imports: [Icon, TabBar, CsvImportComponent],
   templateUrl: './tasks-list.html',
 })
 export class TasksList implements OnInit {
@@ -89,14 +90,14 @@ export class TasksList implements OnInit {
     };
   });
 
-  /** Quiet tab row data (design idiom table §4) — typed so `tab.key` narrows to `ListTab`. */
-  protected readonly tabs = computed((): Array<{ count: number; key: ListTab; label: string }> => {
+  /** The standard pill tab bar with counts (§1 "numbers before clicks"). */
+  protected readonly tabs = computed((): PcTabOption[] => {
     const c = this.tabCounts();
     return [
-      { key: 'all', label: 'All', count: c.all },
-      { key: 'mine', label: 'Mine', count: c.mine },
-      { key: 'unassigned', label: 'Unassigned', count: c.unassigned },
-      { key: 'done', label: 'Done', count: c.done },
+      { id: 'all', label: 'All', badge: c.all },
+      { id: 'mine', label: 'Mine', badge: c.mine },
+      { id: 'unassigned', label: 'Unassigned', badge: c.unassigned },
+      { id: 'done', label: 'Done', badge: c.done },
     ];
   });
 
@@ -187,7 +188,8 @@ export class TasksList implements OnInit {
     return v.length > 10 ? v.slice(0, 10) : v;
   }
 
-  protected setTab(tab: ListTab): void {
+  protected setTab(tab: string): void {
+    if (tab !== 'all' && tab !== 'mine' && tab !== 'unassigned' && tab !== 'done') return;
     this.tab.set(tab);
   }
 

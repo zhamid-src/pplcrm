@@ -15,15 +15,8 @@
     </button>
   </div>
 
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-bordered mb-4">
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
-      Turfs &amp; assignments
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
-      Field report
-    </button>
-  </div>
+  <!-- Tabs (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
 
   @if (tab() === 'turfs') {
   <!-- In the field today -->
