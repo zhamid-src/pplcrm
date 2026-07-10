@@ -41,6 +41,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           (prevRecord)="prevRecord.emit()"
           (nextRecord)="nextRecord.emit()"
         >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
           <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
           <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
           <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>

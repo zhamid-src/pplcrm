@@ -8,7 +8,8 @@ import {
 } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
@@ -90,7 +91,7 @@ interface CompareRow {
 
 @Component({
   selector: 'pc-newsletter-detail',
-  imports: [Icon, RouterLink, StatusBadge],
+  imports: [DetailLayout, Icon, RouterLink, StatusBadge],
   templateUrl: './newsletter-detail.html',
 })
 export class NewsletterDetailComponent {
@@ -100,7 +101,6 @@ export class NewsletterDetailComponent {
   private readonly filesSvc = inject(FilesService);
   private readonly alertSvc = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly router = inject(Router);
 
   protected readonly loading = createLoadingGate();
@@ -126,6 +126,18 @@ export class NewsletterDetailComponent {
   });
 
   protected readonly eyebrow = computed(() => (this.isUnsent() ? 'Newsletter details' : 'Newsletter report'));
+
+  /** Entity noun while loading; the record's real name (or explicit "Untitled") once loaded. */
+  protected readonly pageTitle = computed(() => {
+    const email = this.email();
+    if (!email) return 'Newsletter';
+    return email.name || 'Untitled newsletter';
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Newsletters', route: '/newsletters' },
+    { label: this.pageTitle() },
+  ]);
 
   protected readonly sentSentence = computed(() => {
     const email = this.email();
@@ -400,16 +412,6 @@ export class NewsletterDetailComponent {
     effect(() => {
       const currentId = this.id();
       void untracked(() => this.load(currentId));
-    });
-    // Navbar trail with the newsletter's real name once loaded (until then the
-    // route default — Newsletters — is showing).
-    effect(() => {
-      const email = this.email();
-      if (!email) return;
-      this.breadcrumbs.setCrumbs([
-        { label: 'Newsletters', route: '/newsletters' },
-        { label: email.name || 'Untitled newsletter' },
-      ]);
     });
   }
 

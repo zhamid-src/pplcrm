@@ -173,15 +173,6 @@
       </div>
     </div>
 
-    <!-- Back to the household record -->
-    @if (household()?.id) {
-    <a
-      [routerLink]="['/households', household()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ addressString() || 'household' }}
-    </a>
-    } }
+    }
   </div>
 </div>

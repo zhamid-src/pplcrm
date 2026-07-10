@@ -89,8 +89,29 @@ NavigationEnd, so the page's richer trail always wins. **No page needs to `clear
 **The first crumb doubles as the visible page title** — `pc-breadcrumbs` renders it
 `text-sm font-semibold text-base-content`. List pages therefore do NOT render a visible
 in-body title: `pc-grid-header`'s `title` is an `sr-only` h1 (kept for accessibility), and
-bespoke pages (tasks, canvassing, deliveries) use `<h1 class="sr-only">` the same way.
+bespoke pages (canvassing, deliveries) use `<h1 class="sr-only">` the same way.
 Don't reintroduce a visible in-body page title, and don't hand-roll an in-page crumb row.
+
+**The breadcrumb is the only "back" affordance on routed pages.** The first crumb links to
+the list; do not add an in-body "Back to …" link or button — edit forms escape via the
+header's Cancel action, nothing else. The sanctioned exceptions, all cases where a crumb
+routerLink cannot do the job:
+
+- **Mode toggles** — a page whose "sub-page" is an internal mode signal, not a route
+  (the forms page's "All forms" button exits its live-edit mode; a crumb to `/forms`
+  would be a no-op on the same URL).
+- **Empty-state CTAs** — the icon + sentence + action idiom may route "back" as its
+  action (deliveries-plan's "Back to requests").
+- **End-of-flow CTAs** — a wizard's done/error screen offering "Back to import history"
+  is a forward action, not header nav.
+- **Responsive pane switches** — the email client's mobile back swaps master/detail panes.
+- **Navbar-less public pages** — tokenized routes (`/r/:token`, public events/forms)
+  have no crumb strip to lean on.
+
+**Title-suffix slot**: tone-colored badges beside the title (a `pc-status-badge`, task
+priority badges) project via `[pc-title-suffix]` — the `statusChip` input is fixed
+success-tinted and only fits "positive standing" chips. See `newsletter-detail.html`
+and `task-view.html`.
 
 For detail views, build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention
 (see the `crumbs` computed in `company-view.ts`, `person-view.ts`, `team-view.ts`): first crumb
