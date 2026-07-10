@@ -99,32 +99,14 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-        data: { shouldReuse: true, key: 'tagsadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+    data: { shouldReuse: true, key: 'tagsadminroot' },
   },
 
   {
     path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-        data: { shouldReuse: true, key: 'issuesadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+    data: { shouldReuse: true, key: 'issuesadminroot' },
   },
 
   {

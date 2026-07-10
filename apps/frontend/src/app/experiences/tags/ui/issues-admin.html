@@ -6,10 +6,10 @@
       <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-issue" [size]="4"></pc-icon>
       New issue
-    </a>
+    </button>
   </div>
 
   <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
@@ -35,7 +35,7 @@
             <div class="flex flex-col items-center gap-2">
               <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
               <p class="text-sm text-base-content/60">No issues yet.</p>
-              <a routerLink="add" class="btn btn-sm btn-primary">New issue</a>
+              <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
             </div>
           </td>
         </tr>
@@ -103,3 +103,5 @@
     field from tags everywhere because issues power issue-based filtering and targeting.
   </p>
 </div>
+
+<pc-add-issue-dialog (saved)="onIssueSaved()" />

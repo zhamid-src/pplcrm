@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -6,6 +6,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagDialog } from './add-tag';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 
 const UNUSED_DAYS = 90;
@@ -18,13 +19,15 @@ const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink, TagItem],
+  imports: [Icon, RouterLink, TagItem, AddTagDialog],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly alertSvc = inject(AlertService);
   protected readonly actions = inject(TagAdminActions);
+
+  protected readonly addDialog = viewChild.required(AddTagDialog);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -63,6 +66,14 @@ export class TagsAdmin implements OnInit {
   );
 
   public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openAddDialog(): void {
+    this.addDialog().open();
+  }
+
+  protected onTagSaved(): void {
     void this.load();
   }
 

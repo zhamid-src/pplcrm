@@ -1,19 +1,17 @@
-import type { ComponentFixture} from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
-import { AddTag } from './add-tag';
+import { AddTagDialog } from './add-tag';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { ActivatedRoute, Router } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-describe('AddTag', () => {
-  let component: AddTag;
-  let fixture: ComponentFixture<AddTag>;
+describe('AddTagDialog', () => {
+  let component: AddTagDialog;
+  let fixture: ComponentFixture<AddTagDialog>;
 
   let mockTagsSvc: any;
   let mockAlertSvc: any;
-  let mockRouter: any;
   let mockTagOptionsSvc: any;
 
   beforeEach(async () => {
@@ -28,26 +26,20 @@ describe('AddTag', () => {
       alertList: vi.fn().mockReturnValue([]),
     };
 
-    mockRouter = {
-      navigate: vi.fn(),
-    };
-
     mockTagOptionsSvc = {
       invalidate: vi.fn().mockResolvedValue(undefined),
     };
 
     await TestBed.configureTestingModule({
-      imports: [AddTag],
+      imports: [AddTagDialog],
       providers: [
         { provide: TagsService, useValue: mockTagsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: TagOptionsService, useValue: mockTagOptionsSvc },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => null } } } },
-        { provide: Router, useValue: mockRouter },
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(AddTag);
+    fixture = TestBed.createComponent(AddTagDialog);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
@@ -66,7 +58,10 @@ describe('AddTag', () => {
     expect(mockTagsSvc.add).not.toHaveBeenCalled();
   });
 
-  it('should submit form when valid, and then reset payload', async () => {
+  it('should submit form when valid, emit saved, and close', async () => {
+    const savedSpy = vi.spyOn(component.saved, 'emit');
+    const closeSpy = vi.spyOn(component, 'close').mockImplementation(() => undefined);
+
     component.form.name().value.set('Test Tag');
     component.form.description().value.set('Test Description');
     component.form.color().value.set('#ff0000');
@@ -80,11 +75,8 @@ describe('AddTag', () => {
     });
     expect(mockTagsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Tag added successfully.');
-
-    // Backing payload should reset (color is randomly generated, only check name and description)
-    expect(component['payload']().name).toBe('');
-    expect(component['payload']().description).toBe('');
-    expect(component['payload']().color).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(savedSpy).toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalled();
   });
 
   it('should handle service errors gracefully', async () => {

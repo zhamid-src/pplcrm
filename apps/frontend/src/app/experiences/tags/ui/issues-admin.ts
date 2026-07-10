@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -6,6 +6,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddIssueDialog } from './add-issue';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 
 /**
@@ -17,13 +18,15 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly alertSvc = inject(AlertService);
   protected readonly actions = inject(TagAdminActions);
+
+  protected readonly addDialog = viewChild.required(AddIssueDialog);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -47,6 +50,14 @@ export class IssuesAdmin implements OnInit {
   });
 
   public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openAddDialog(): void {
+    this.addDialog().open();
+  }
+
+  protected onIssueSaved(): void {
     void this.load();
   }
 

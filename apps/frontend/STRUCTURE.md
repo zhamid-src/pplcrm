@@ -11253,310 +11253,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
-
-```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { UpdateListType } from '../../../../../../../libs/common/src';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { describeListDefinition } from '@experiences/lists/services/list-definition';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function formatDateTime(value: unknown): string {
-  if (value == null) return '—';
-  const date = new Date(value as string | number | Date);
-  if (isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-@Component({
-  selector: 'pc-lists-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-4">
-      <!-- Where am I going? The grain sentence carries the numbers before clicks (§1). -->
-      <p class="text-sm text-base-content/70 tabular-nums" data-testid="lists-summary">{{ summarySentence() }}</p>
-
-      <pc-datagrid
-        #grid
-        title="Lists"
-        i18n-title
-        description="Reusable audiences for outreach, canvassing and forms — smart lists that refresh themselves or static snapshots you curate."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [allowFilter]="false"
-        plusIcon="add-list"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-
-      <!-- Footer explainer (verbatim §8): narrates what each list type does. -->
-      <p class="text-xs leading-relaxed text-base-content/60">
-        Smart lists refresh themselves — membership updates automatically as people and households change. Static lists
-        run their rules once at creation and save a fixed snapshot; membership only changes when you edit it by hand.
-        Opening a list shows it applied on the grid.
-      </p>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
-  ],
-})
-export class ListsGridComponent implements OnInit, OnDestroy {
-  private readonly refreshSvc = inject(ListsRefreshService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
-
-  /** Counts for the grain sentence — refreshed alongside the grid. */
-  private readonly counts = signal<{ total: number; smart: number; static: number }>({ total: 0, smart: 0, static: 0 });
-
-  protected readonly summarySentence = computed<string>(() => {
-    const { total, smart, static: staticCount } = this.counts();
-    const n = (v: number) => new Intl.NumberFormat().format(v);
-    if (total === 0) return 'No lists yet · create a smart list that refreshes itself or a static snapshot';
-    const listWord = total === 1 ? 'list' : 'lists';
-    return `${n(total)} ${listWord} · ${n(smart)} smart (refresh themselves), ${n(staticCount)} static (fixed snapshots)`;
-  });
-
-  constructor() {
-    effect(() => {
-      const count = this.refreshSvc.refreshCount();
-      if (count > 0) {
-        untracked(() => {
-          void this.grid()?.refresh();
-          void this.loadCounts();
-        });
-      }
-    });
-  }
-
-  public ngOnInit(): void {
-    void this.loadCounts();
-  }
-
-  private async loadCounts(): Promise<void> {
-    try {
-      const result = await this.listsSvc.getAll();
-      const rows = isRecord(result) && Array.isArray(result['rows']) ? result['rows'] : [];
-      let smart = 0;
-      for (const r of rows) {
-        if (isRecord(r) && r['is_dynamic'] === true) smart += 1;
-      }
-      this.counts.set({ total: rows.length, smart, static: rows.length - smart });
-    } catch {
-      // The grid itself surfaces load errors; the sentence just stays put.
-    }
-  }
-
-  protected col: ColDef[] = [
-    {
-      // LIST — the name is the door: opens People/Households with this list
-      // applied as a removable chip (§8). withComponentInputBinding() maps the
-      // ?listId query param onto the grid's listId input.
-      field: 'name',
-      headerName: 'List',
-      cellRenderer: (p: CellParams) => {
-        const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
-        return `<span class="link link-hover text-primary font-medium">${escapeHtml(name)}</span>`;
-      },
-      onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
-    },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'is_dynamic',
-      headerName: 'Type',
-      cellRenderer: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        return isSmart
-          ? `<span class="badge badge-primary badge-sm font-semibold">Smart</span>`
-          : `<span class="badge badge-neutral badge-sm font-semibold">Static</span>`;
-      },
-    },
-    {
-      field: 'object',
-      headerName: 'Of',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        if (val === 'people') return 'People';
-        if (val === 'households') return 'Households';
-        return typeof val === 'string' && val ? val : '—';
-      },
-    },
-    {
-      field: 'definition',
-      headerName: 'Definition',
-      valueFormatter: (p: CellParams) => describeListDefinition(p?.data?.['definition']),
-    },
-    {
-      field: 'list_size',
-      headerName: 'Members',
-      // Right-aligned, tabular figures (§1/§8). Populated for both types.
-      valueFormatter: (p: CellParams) => new Intl.NumberFormat().format(Number(p?.value ?? 0)),
-    },
-    {
-      field: 'last_used_in',
-      headerName: 'Last used in',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        return typeof val === 'string' && val.trim() ? val : 'Not used yet';
-      },
-    },
-    {
-      field: 'refresh_action',
-      headerName: 'Refresh',
-      cellRenderer: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        if (!isSmart) return '—';
-        const status = p?.data?.['status'];
-        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
-        if (status === 'refreshing' || isLocallyRefreshing) {
-          return `
-            <div class="flex items-center justify-center h-full w-full">
-              <span class="loading loading-ring loading-lg text-primary"></span>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center justify-center h-full w-full">
-            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh smart list">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          </div>
-        `;
-      },
-      onCellClicked: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        const id = String(p?.data?.['id'] ?? '');
-        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
-        if (isSmart && id && !isRefreshing) {
-          void this.refreshList(id, p);
-        }
-      },
-    },
-    {
-      field: 'last_refreshed_at',
-      headerName: 'Last refreshed',
-      valueFormatter: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        if (!isSmart) return '—';
-        if (!p?.value) return 'Never';
-        return formatDateTime(p.value);
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      valueFormatter: (p: CellParams) => formatDateTime(p?.value),
-    },
-    { field: 'created_by', headerName: 'Created by' },
-  ];
-
-  private readonly refreshingIds = new Set<string>();
-
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
-
-  /** Open the People/Households grid with this list applied as a chip. */
-  private openListOnGrid(data: unknown): void {
-    if (!isRecord(data)) return;
-    const id = String(data['id'] ?? '');
-    if (!id) return;
-    const route = data['object'] === 'households' ? '/households' : '/people';
-    void this.router.navigate([route], { queryParams: { listId: id } });
-  }
-
-  private async refreshList(id: string, cellParams: CellParams): Promise<void> {
-    try {
-      this.refreshingIds.add(id);
-      this.refreshCellIfPossible(cellParams);
-
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      await this.listsSvc.refreshList(id);
-      this.pollRefreshStatus(id);
-    } catch (e) {
-      this.refreshingIds.delete(id);
-      this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
-    }
-  }
-
-  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
-  private refreshCellIfPossible(cellParams: unknown): void {
-    if (!isRecord(cellParams)) return;
-    const api = cellParams['api'];
-    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
-    (api['refreshCells'] as (opts: unknown) => void)({
-      rowNodes: [cellParams['node']],
-      columns: ['refresh_action'],
-      force: true,
-    });
-  }
-
-  private pollRefreshStatus(id: string): void {
-    const existing = this.pollIntervals.get(id);
-    if (existing) clearInterval(existing);
-
-    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
-    this.pollIntervals.set(id, interval);
-  }
-
-  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
-    try {
-      const list = await this.listsSvc.getById(id);
-      if (isRecord(list) && list['status'] !== 'refreshing') {
-        clearInterval(interval);
-        this.pollIntervals.delete(id);
-        this.refreshingIds.delete(id);
-        if (isRecord(list) && list['status'] === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        void this.grid()?.refresh();
-        void this.loadCounts();
-      }
-    } catch {
-      clearInterval(interval);
-      this.pollIntervals.delete(id);
-      this.refreshingIds.delete(id);
-    }
-  }
-
-  public ngOnDestroy(): void {
-    for (const interval of this.pollIntervals.values()) {
-      clearInterval(interval);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
 
 ```typescript
@@ -18215,12 +17911,12 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
 
 ```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
+import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
 import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AddTagObj } from '../../../../../../../libs/common/src';
 
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
@@ -18235,40 +17931,70 @@ function randomHexColor(): string {
   );
 }
 
+/** Fig. 11 "New issue" — a popup, not a routed page, so adding an issue never leaves the admin table. */
 @Component({
-  selector: 'pc-add-issue',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique issue name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input
-            class="input input-bordered input-sm w-24"
-            type="color"
-            [formField]="form.color"
-            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
-          />
-          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
-            @for (err of form.color().errors(); track err) {
-              <span class="text-error text-xs">{{ err.message }}</span>
-            }
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+  selector: 'pc-add-issue-dialog',
+  imports: [PcInput, FormField, Icon],
+  template: `<dialog #dlg class="modal">
+    <div class="modal-box max-w-md">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-xl font-bold flex items-center gap-2">
+          <pc-icon name="add-issue" [size]="5" class="text-primary"></pc-icon>
+          New issue
+        </h3>
+        <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+          <pc-icon name="x-mark" [size]="4"></pc-icon>
+        </button>
       </div>
+
+      <form (submit)="add($event)" class="flex flex-col gap-4" novalidate>
+        <div class="flex flex-col gap-2">
+          <label i18n class="label text-sm font-light">
+            Enter a unique issue name (and optionally, give it a description)
+          </label>
+          <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+          <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+          <div class="flex items-center gap-2">
+            <label i18n class="label-text font-light text-sm">Colour</label>
+            <input
+              class="input input-bordered input-sm w-24"
+              type="color"
+              [formField]="form.color"
+              [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+            />
+            @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+              @for (err of form.color().errors(); track err) {
+                <span class="text-error text-xs">{{ err.message }}</span>
+              }
+            }
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="isLoading()">Cancel</button>
+          <button type="submit" class="btn btn-primary gap-2" [disabled]="isLoading()">
+            @if (isLoading()) {
+              <span class="loading loading-spinner loading-xs"></span>
+            } @else {
+              <pc-icon name="add-issue" [size]="4"></pc-icon>
+            }
+            Add issue
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button (click)="close()">close</button>
     </form>
-  </div>`,
+  </dialog>`,
 })
-export class AddIssue {
+export class AddIssueDialog {
   private readonly alertSvc = inject(AlertService);
   private readonly tagSvc = inject(TagsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
 
   private _loading = createLoadingGate();
 
@@ -18284,10 +18010,20 @@ export class AddIssue {
 
   protected isLoading = this._loading.visible;
 
-  public readonly formActions = viewChild(FormActions);
+  public readonly saved = output<void>();
 
-  protected async add(event?: any) {
-    if (event instanceof Event) {
+  public open(): void {
+    this.payload.set({ name: '', description: '', color: randomHexColor() });
+    this.form().reset();
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected async add(event?: Event) {
+    if (event) {
       event.preventDefault();
     }
 
@@ -18305,124 +18041,8 @@ export class AddIssue {
           await this.tagOptionsSvc.invalidate('issue');
           this.tagSvc.triggerRefresh();
           this.alertSvc.showSuccess('Issue added successfully.');
-
-          this.payload.set({ name: '', description: '', color: randomHexColor() });
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-tag',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique tag name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
-          @if (form.color().invalid() && form.color().touched()) {
-            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddTag {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.name);
-    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) {
-      return;
-    }
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add(formObj);
-          await this.tagOptionsSvc.invalidate('tag');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Tag added successfully.');
-
-          // Reset the backing signal
-          this.payload.set({
-            name: '',
-            description: '',
-            color: randomHexColor(),
-          });
-
-          this.formActions()?.stayOrCancel();
+          this.saved.emit();
+          this.close();
         } catch (err) {
           this.alertSvc.showError(
             err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
@@ -38664,6 +38284,207 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
+
+```typescript
+import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { describeListDefinition } from '@experiences/lists/services/list-definition';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { Icon } from '@icons/icon';
+import { UpdateListType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function formatDateTime(value: unknown): string {
+  if (value == null) return '—';
+  const date = new Date(value as string | number | Date);
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+@Component({
+  selector: 'pc-lists-grid',
+  imports: [DataGrid, Icon],
+  template: `
+    <div class="flex flex-col gap-4 p-6">
+      <!-- Page header: title + grain sentence on the left, primary action on the right —
+           the grid's own in-grid title/toolbar are switched off below so this is the only header,
+           and its p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
+      <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-base-content">Lists</h1>
+          <p class="text-sm text-base-content/70 tabular-nums mt-1" data-testid="lists-summary">
+            {{ summarySentence() }}
+          </p>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm rounded-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          <span>New list</span>
+        </button>
+      </div>
+
+      <pc-datagrid
+        #grid
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        [enableSelection]="false"
+        [showToolbar]="false"
+        [showColumnMenus]="false"
+        plusIcon="add-list"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+
+      <!-- Footer explainer (verbatim §8): narrates what each list type does. -->
+      <p class="text-xs leading-relaxed text-base-content/60">
+        Smart lists refresh themselves — membership updates automatically as people and households change. Static lists
+        run their rules once at creation and save a fixed snapshot; membership only changes when you edit it by hand.
+        Opening a list shows it applied on the grid.
+      </p>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+  ],
+})
+export class ListsGridComponent implements OnInit {
+  private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+
+  /** Counts for the grain sentence — refreshed alongside the grid. */
+  private readonly counts = signal<{ total: number; smart: number; static: number }>({ total: 0, smart: 0, static: 0 });
+
+  protected readonly summarySentence = computed<string>(() => {
+    const { total, smart, static: staticCount } = this.counts();
+    const n = (v: number) => new Intl.NumberFormat().format(v);
+    if (total === 0) return 'No lists yet · create a smart list that refreshes itself or a static snapshot';
+    const listWord = total === 1 ? 'list' : 'lists';
+    return `${n(total)} ${listWord} · ${n(smart)} smart (refresh themselves), ${n(staticCount)} static (fixed snapshots)`;
+  });
+
+  constructor() {
+    effect(() => {
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        untracked(() => {
+          void this.grid()?.refresh();
+          void this.loadCounts();
+        });
+      }
+    });
+  }
+
+  public ngOnInit(): void {
+    void this.loadCounts();
+  }
+
+  private async loadCounts(): Promise<void> {
+    try {
+      const result = await this.listsSvc.getAll();
+      const rows = isRecord(result) && Array.isArray(result['rows']) ? result['rows'] : [];
+      let smart = 0;
+      for (const r of rows) {
+        if (isRecord(r) && r['is_dynamic'] === true) smart += 1;
+      }
+      this.counts.set({ total: rows.length, smart, static: rows.length - smart });
+    } catch {
+      // The grid itself surfaces load errors; the sentence just stays put.
+    }
+  }
+
+  protected col: ColDef[] = [
+    {
+      // LIST — the name is the door: opens People/Households with this list
+      // applied as a removable chip (§8). withComponentInputBinding() maps the
+      // ?listId query param onto the grid's listId input.
+      field: 'name',
+      headerName: 'List',
+      cellRenderer: (p: CellParams) => {
+        const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
+        return `<span class="link link-hover text-primary font-medium">${escapeHtml(name)}</span>`;
+      },
+      onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'Type',
+      cellRenderer: (p: CellParams) => {
+        const isSmart = p?.data?.['is_dynamic'] === true;
+        return isSmart
+          ? `<span class="badge badge-primary badge-sm font-semibold">Smart</span>`
+          : `<span class="badge badge-neutral badge-sm font-semibold">Static</span>`;
+      },
+    },
+    {
+      field: 'object',
+      headerName: 'Of',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return typeof val === 'string' && val ? val : '—';
+      },
+    },
+    {
+      field: 'definition',
+      headerName: 'Definition',
+      valueFormatter: (p: CellParams) => describeListDefinition(p?.data?.['definition']),
+    },
+    {
+      field: 'list_size',
+      headerName: 'Members',
+      // Right-aligned, tabular figures (§1/§8). Populated for both types.
+      valueFormatter: (p: CellParams) => new Intl.NumberFormat().format(Number(p?.value ?? 0)),
+    },
+    {
+      field: 'last_used_in',
+      headerName: 'Last used in',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        return typeof val === 'string' && val.trim() ? val : 'Not used yet';
+      },
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      valueFormatter: (p: CellParams) => formatDateTime(p?.value),
+    },
+  ];
+
+  /** Open the People/Households grid with this list applied as a chip. */
+  private openListOnGrid(data: unknown): void {
+    if (!isRecord(data)) return;
+    const id = String(data['id'] ?? '');
+    if (!id) return;
+    const route = data['object'] === 'households' ? '/households' : '/people';
+    void this.router.navigate([route], { queryParams: { listId: id } });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
 
 ```html
@@ -41207,806 +41028,6 @@ export class PersonCampaignFacts {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
-
-```typescript
-import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Tags } from '@experiences/tags/ui/tags';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { TeamsService } from '../../teams/services/teams-service';
-import { CompaniesService } from '../../companies/services/companies-service';
-import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { Selectable } from 'kysely';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { PersonCampaignFacts } from './person-campaign-facts';
-
-@Component({
-  selector: 'pc-person-form',
-  imports: [
-    PcInput,
-    PcSelect,
-    PcTextarea,
-    Tags,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    SideDrawer,
-    PcCard,
-    DatePipe,
-    PersonCampaignFacts,
-  ],
-  templateUrl: './person-form.html',
-})
-export class PersonForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
-
-  private _loading = createLoadingGate();
-  private usersById = new Map<string, IAuthUser>();
-
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return null;
-    return this.getFormattedAddress(hh);
-  });
-
-  /** Overview rail (§6): everyone else sharing this person's household. */
-  protected readonly householdMembersResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getPeopleCount(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly companyName = computed(() => {
-    const id = this.person()?.company_id;
-    if (!id) return null;
-    return this.companies().find((c) => c.id === id)?.name ?? null;
-  });
-
-  protected readonly preferredContactLabel = computed(() => {
-    switch (this.person()?.preferred_contact) {
-      case 'email':
-        return 'Email';
-      case 'mobile':
-        return 'Mobile phone';
-      case 'home_phone':
-        return 'Home phone';
-      default:
-        return 'No preference';
-    }
-  });
-
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
-  });
-
-  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
-  protected readonly addressWithWard = computed(() => {
-    const base = this.addressString();
-    if (!base) return null;
-    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
-    return ward ? `${base} · Ward ${ward}` : base;
-  });
-
-  // Drawer state for assigning household
-  protected readonly assignDrawerOpen = signal(false);
-  protected readonly householdResults = signal<any[]>([]);
-  protected readonly householdSearch = signal('');
-  protected readonly householdsLoading = signal(false);
-
-  protected readonly pendingHouseholdId = signal<string | null>(null);
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly emailError = linkedSignal({
-    source: () => this.form.email().value(),
-    computation: () => null as string | null,
-  });
-  protected readonly person = signal<Selectable<Persons> | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly companies = signal<any[]>([]);
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-
-  protected readonly payload = signal({
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    email: '',
-    email2: '',
-    home_phone: '',
-    mobile: '',
-    notes: '',
-    company_id: '',
-    preferred_contact: '',
-    linkedin: '',
-    twitter: '',
-    facebook: '',
-    instagram: '',
-    assigned_to: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, UpdatePersonsObj);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected id = input<string>();
-  protected tags = signal<string[]>([]);
-  protected issues = signal<string[]>([]);
-
-  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
-  protected readonly allTagNames = signal<string[]>([]);
-  protected readonly allIssueNames = signal<string[]>([]);
-  private readonly SUGGESTION_LIMIT = 6;
-  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
-  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
-
-  private suggestFrom(all: string[], applied: string[]): string[] {
-    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
-    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
-  }
-
-  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
-  protected addTagSuggestion(name: string): void {
-    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.tags.update((list) => [...list, name]);
-    void this.tagAdded(name);
-  }
-
-  protected addIssueSuggestion(name: string): void {
-    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.issues.update((list) => [...list, name]);
-    void this.issueAdded(name);
-  }
-
-  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  protected readonly formName = computed(() => {
-    const v = this.payload();
-    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const people: PcBreadcrumb = { label: 'People', route: '/people' };
-    const id = this.person()?.id;
-    if (id) {
-      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
-    }
-    return [people, { label: 'New person' }];
-  });
-
-  protected readonly formInitials = computed(() => {
-    const name = this.formName() || '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
-
-  constructor() {
-    // Load users once for display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadPerson();
-    await this.loadCompanies();
-    void this.loadSuggestionNames();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          first_name: data.first_name ?? '',
-          middle_names: data.middle_names ?? '',
-          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
-          email: data.email ?? '',
-          email2: data.email2 ?? '',
-          home_phone: data.home_phone ?? '',
-          mobile: data.mobile ?? '',
-          notes: data.notes ?? '',
-          company_id: data.company_id ?? '',
-          preferred_contact: data.preferred_contact ?? '',
-          linkedin: data.linkedin ?? '',
-          twitter: data.twitter ?? '',
-          facebook: data.facebook ?? '',
-          instagram: data.instagram ?? '',
-          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
-        });
-        if (data.household_id) {
-          this.pendingHouseholdId.set(data.household_id);
-        }
-      }
-    }
-  }
-
-  private async loadSuggestionNames() {
-    try {
-      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
-      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
-    } catch (err) {
-      console.error('Failed to load tag/issue suggestions', err);
-    }
-  }
-
-  private async loadCompanies() {
-    try {
-      const res = await this.companiesSvc.getAll();
-      this.companies.set(res.rows || []);
-    } catch {
-      this.companies.set([]);
-    }
-  }
-
-  protected async deletePerson() {
-    const id = this.id();
-    if (!id) return;
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(id);
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
-  }
-
-  public save(done?: () => void) {
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      // §4: Save never disables — instead of blocking, surface the errors and
-      // move focus to the first invalid field so the user knows what to fix.
-      queueMicrotask(() => {
-        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
-        el?.focus();
-      });
-      return;
-    }
-    const raw = this.payload();
-    const data = {
-      ...raw,
-      company_id: raw.company_id || null,
-      assigned_to: raw.assigned_to || null,
-      preferred_contact: raw.preferred_contact || null,
-    } as UpdatePersonsType;
-    return this.id() ? this.update(data, done) : this.add(data, done);
-  }
-
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
-    }
-  }
-
-  protected async assignToHousehold(household_id: string) {
-    const id = this.id();
-    // NEW PERSON: just store the pending selection; it will be sent on save
-    if (!id) {
-      this.pendingHouseholdId.set(household_id);
-      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
-      this.closeAssignDrawer();
-      return;
-    }
-
-    // Ask scope: just this person vs everyone in current household
-    const applyToAll = await this.confirmDlg.confirm({
-      title: 'Change household',
-      message: 'Apply to everyone in the current household, or just this person?',
-      variant: 'info',
-      confirmText: 'Everyone',
-      cancelText: 'Just this person',
-    });
-
-    const currentHousehold = this.householdId();
-
-    const end = this._loading.begin();
-    try {
-      if (applyToAll && currentHousehold) {
-        // Single atomic tRPC call to the backend
-        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
-      } else {
-        // Only move this person
-        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
-      }
-
-      // update local state for current person and UI
-      this.person.update((p) => (p ? { ...p, household_id } : p));
-
-      this.alertSvc.showSuccess('Assigned to selected household');
-      this.closeAssignDrawer();
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  protected closeAssignDrawer() {
-    this.assignDrawerOpen.set(false);
-  }
-
-  protected formatHouseholdRow(row: any) {
-    const address = {
-      apt: row.apt ?? null,
-      street_num: row.street_num ?? '',
-      street1: row.street1 ?? '',
-      street2: row.street2 ?? '',
-      city: row.city ?? '',
-      state: row.state ?? '',
-      zip: row.zip ?? '',
-      country: row.country ?? '',
-    } as AddressType;
-    return this.getFormattedAddress(address);
-  }
-
-  protected getId() {
-    const id = this.person()?.id;
-    if (!id) return null;
-
-    return id as unknown as string;
-  }
-
-  protected getUserName(id: string | null | undefined = null): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  protected onHouseholdSearch(ev: Event) {
-    const target = ev.target as HTMLInputElement | null;
-    const val = target?.value ?? '';
-    this.householdSearch.set(val);
-    void this.fetchHouseholds();
-  }
-
-  protected openAssignDrawer() {
-    this.assignDrawerOpen.set(true);
-    // Initial fetch
-    void this.fetchHouseholds();
-  }
-
-  protected async removeAddress() {
-    const id = this.id();
-    // New person: just clear the pending household — no API call needed yet
-    if (!id) {
-      this.pendingHouseholdId.set(null);
-      return;
-    }
-
-    if (!this.person()) return;
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Remove Address',
-      message: 'This will move the person to a new blank household (clearing address). Continue?',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.removeHousehold(id);
-      this.person.update((p) => (p ? { ...p, household_id: null } : p));
-      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
-    } catch (err) {
-      this.alertSvc.showError(
-        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
-      );
-    } finally {
-      end();
-    }
-  }
-
-  protected async tagAdded(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to attach tag:', err);
-    }
-  }
-
-  protected async tagRemoved(tag: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const normalized = tag.trim().toLowerCase();
-    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
-
-    try {
-      if (normalized === 'volunteer') {
-        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
-        try {
-          teams = await this.teamsSvc.getTeamsForVolunteer(id);
-        } catch (err) {
-          console.error('Failed to load teams for volunteer tag removal', err);
-        }
-
-        if (teams.length) {
-          const details = teams
-            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
-            .join('\n');
-          const confirmed = await this.confirmDlg.confirm({
-            title: 'Remove volunteer tag?',
-            message:
-              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
-              details +
-              '\n\nDo you want to continue?',
-            confirmText: 'Remove tag',
-            cancelText: 'Keep tag',
-            variant: 'warning',
-          });
-          if (!confirmed) {
-            restoreTag();
-            return;
-          }
-        }
-
-        const result = await this.personsSvc.detachTag(id, tag, 'tag');
-        await this.updateTags();
-        await this.tagOptionsSvc.invalidate('tag');
-        if (result?.removed_teams && result.removed_teams.length > 0) {
-          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
-          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
-        }
-        return;
-      }
-
-      await this.personsSvc.detachTag(id, tag, 'tag');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to detach tag:', err);
-      restoreTag();
-    }
-  }
-
-  protected async issueAdded(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to attach issue:', err);
-    }
-  }
-
-  protected async issueRemoved(issue: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
-
-    try {
-      await this.personsSvc.detachTag(id, issue, 'issue');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to detach issue:', err);
-      restoreIssue();
-    }
-  }
-
-  private add(data: UpdatePersonsType, done?: () => void) {
-    // Include any household selected via the drawer before saving
-    const pendingHousehold = this.pendingHouseholdId();
-    if (pendingHousehold) {
-      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
-    }
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .add(data, { context: { skipErrorHandler: true } })
-      .then(() => {
-        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
-        this.personsSvc.triggerRefresh();
-        if (done) {
-          done();
-          this.pendingHouseholdId.set(null);
-          this.tags.set([]);
-          this.issues.set([]);
-          this.form().reset();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  private isDuplicateEmailError(err: unknown): boolean {
-    if (!err || typeof err !== 'object') return false;
-    const e = err as Record<string, any>;
-    // tRPC wraps backend errors; check both data.httpStatus and message
-    return (
-      e['data']?.['httpStatus'] === 409 ||
-      String(e['message'] ?? '')
-        .toLowerCase()
-        .includes('already exists')
-    );
-  }
-
-  private async fetchHouseholds() {
-    try {
-      this.householdsLoading.set(true);
-      const opts = {
-        searchStr: this.householdSearch(),
-        limit: 25,
-        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
-      };
-      const res = await this.householdsSvc.getAll(opts);
-      this.householdResults.set(res.rows || []);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
-      this.householdResults.set([]);
-    } finally {
-      this.householdsLoading.set(false);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-
-  private async loadPerson() {
-    const id = this.id();
-    if (!id) return;
-
-    const end = this._loading.begin();
-    try {
-      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
-
-      await this.updateTags();
-      await this.loadVolunteerInfo();
-
-      this.refreshForm();
-    } finally {
-      end();
-    }
-  }
-
-  private refreshForm() {
-    const person = this.person();
-    if (!person) return;
-
-    this.payload.set({
-      first_name: person.first_name ?? '',
-      middle_names: person.middle_names ?? '',
-      last_name: person.last_name ?? '',
-      email: person.email ?? '',
-      email2: person.email2 ?? '',
-      home_phone: person.home_phone ?? '',
-      mobile: person.mobile ?? '',
-      notes: person.notes ?? '',
-      company_id: person.company_id ?? '',
-      preferred_contact: person.preferred_contact ?? '',
-      linkedin: person.linkedin ?? '',
-      twitter: person.twitter ?? '',
-      facebook: person.facebook ?? '',
-      instagram: person.instagram ?? '',
-      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
-    });
-  }
-
-  // Friendly labels for the field-naming save toast (§4).
-  private readonly fieldLabels: Record<string, string> = {
-    first_name: 'first name',
-    middle_names: 'middle name',
-    last_name: 'last name',
-    email: 'email',
-    email2: 'secondary email',
-    mobile: 'mobile phone',
-    home_phone: 'home phone',
-    company_id: 'company',
-    preferred_contact: 'preferred contact',
-    assigned_to: 'owner',
-    notes: 'notes',
-    linkedin: 'LinkedIn',
-    twitter: 'X',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-  };
-
-  private changedFieldLabels(): string[] {
-    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
-    return Object.keys(this.fieldLabels)
-      .filter((k) => {
-        try {
-          return !!f[k]?.().dirty?.();
-        } catch {
-          return false;
-        }
-      })
-      .map((k) => this.fieldLabels[k]!);
-  }
-
-  private joinWithAnd(items: string[]): string {
-    if (items.length <= 1) return items[0] ?? '';
-    if (items.length === 2) return `${items[0]} and ${items[1]}`;
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-  }
-
-  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
-    const id = this.id();
-    if (!id) return;
-
-    const changed = this.changedFieldLabels();
-    const savedName = this.formName() || 'person';
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .update(id, data, { context: { skipErrorHandler: true } })
-      .then(() => {
-        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
-        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
-        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
-        this.form().reset();
-        this.personsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  private async updateTags() {
-    if (!this.person()) return;
-
-    const id = this.id();
-    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
-    this.tags.set(tags);
-
-    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
-    this.issues.set(issues);
-  }
-
-  private async loadVolunteerInfo() {
-    const id = this.id();
-    if (!id) return;
-    try {
-      const stats = await this.volunteerSvc.getVolunteerStats(id);
-      this.volunteerStats.set(stats);
-      const history = await this.volunteerSvc.getHistoryForPerson(id);
-      this.volunteerHistory.set(history || []);
-    } catch (err) {
-      console.error('Failed to load volunteer info', err);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.html
 
 ```html
@@ -44335,6 +43356,154 @@ export class Summary implements OnInit {
     } finally {
       this.isLoadingTasks.set(false);
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
+
+```typescript
+import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
+}
+
+/** Fig. 10 "New tag" — a popup, not a routed page, so adding a tag never leaves the admin table. */
+@Component({
+  selector: 'pc-add-tag-dialog',
+  imports: [PcInput, FormField, Icon],
+  template: `<dialog #dlg class="modal">
+    <div class="modal-box max-w-md">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-xl font-bold flex items-center gap-2">
+          <pc-icon name="add-label" [size]="5" class="text-primary"></pc-icon>
+          New tag
+        </h3>
+        <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+          <pc-icon name="x-mark" [size]="4"></pc-icon>
+        </button>
+      </div>
+
+      <form (submit)="add($event)" class="flex flex-col gap-4" novalidate>
+        <div class="flex flex-col gap-2">
+          <label i18n class="label text-sm font-light">
+            Enter a unique tag name (and optionally, give it a description)
+          </label>
+          <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
+          <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+          <div class="flex items-center gap-2">
+            <label i18n class="label-text font-light text-sm">Colour</label>
+            <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
+            @if (form.color().invalid() && form.color().touched()) {
+              <span i18n class="text-error text-xs">Use a value like #3366ff</span>
+            }
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="isLoading()">Cancel</button>
+          <button type="submit" class="btn btn-primary gap-2" [disabled]="isLoading()">
+            @if (isLoading()) {
+              <span class="loading loading-spinner loading-xs"></span>
+            } @else {
+              <pc-icon name="add-label" [size]="4"></pc-icon>
+            }
+            Add tag
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button (click)="close()">close</button>
+    </form>
+  </dialog>`,
+})
+export class AddTagDialog {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.name);
+    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly saved = output<void>();
+
+  public open(): void {
+    this.payload.set({ name: '', description: '', color: randomHexColor() });
+    this.form().reset();
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected async add(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) {
+      return;
+    }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add(formObj);
+          await this.tagOptionsSvc.invalidate('tag');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Tag added successfully.');
+          this.saved.emit();
+          this.close();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
   }
 }
 ```
@@ -46928,104 +46097,6 @@ function emptyConditions(): QueryBuilderGroupNode {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
-
-```html
-<div class="flex flex-col gap-6">
-  <!-- Header ------------------------------------------------------------------>
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Automations</h1>
-      <p class="mt-1 text-sm text-base-content/60">{{ summarySentence() }}</p>
-    </div>
-    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
-      <pc-icon name="add-schedule" [size]="4"></pc-icon>
-      New automation
-    </button>
-  </div>
-
-  @if (isLoading() && !loaded()) {
-  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
-  } @else if (rows().length === 0) {
-  <!-- Empty state ------------------------------------------------------------->
-  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
-    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
-      <pc-icon name="add-schedule" [size]="6"></pc-icon>
-    </div>
-    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
-    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
-      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
-      your first one to start.
-    </p>
-    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
-  </div>
-  } @else {
-  <!-- List -------------------------------------------------------------------->
-  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
-    <!-- Column header -->
-    <div
-      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
-    >
-      <span>Status</span>
-      <span>Automation</span>
-      <span class="text-right">Runs 30d</span>
-      <span>Last run</span>
-    </div>
-
-    @for (row of rows(); track row.id) {
-    <div
-      class="grid cursor-pointer grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
-      [class.opacity-60]="row.status === 'paused'"
-      (click)="openAutomation(row)"
-    >
-      <!-- STATUS toggle -->
-      <div class="flex items-center gap-2" (click)="$event.stopPropagation()">
-        <input
-          type="checkbox"
-          class="toggle toggle-primary toggle-sm"
-          [checked]="row.status === 'active'"
-          [title]="statusTooltip(row)"
-          [attr.aria-label]="statusTooltip(row)"
-          (change)="toggleStatus(row, $event)"
-        />
-        @if (row.status === 'paused') {
-        <span class="text-xs font-medium text-base-content/50">Paused</span>
-        }
-      </div>
-
-      <!-- AUTOMATION: name door + recipe sentence -->
-      <div class="min-w-0">
-        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
-        <div class="truncate text-sm text-base-content/60">{{ recipe(row) }}</div>
-      </div>
-
-      <!-- RUNS 30D -->
-      <div class="text-sm tabular-nums text-base-content/80 md:text-right">
-        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
-      </div>
-
-      <!-- LAST RUN (+ inline failure narration) -->
-      <div class="text-sm">
-        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
-        @if (row.last_run_error) {
-        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
-          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
-          <span>Last run failed — {{ row.last_run_error }}</span>
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-
-  <!-- Footer (verbatim spec copy) --------------------------------------------->
-  <p class="text-xs text-base-content/50">
-    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
-  </p>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.ts
 
 ```typescript
@@ -47958,6 +47029,121 @@ type DeleteCtx = {
     </div>
   </aside>
 </div>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
+
+  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
+   *  grid config carries no specific entity noun. */
+  readonly addLabel = computed(() => {
+    const noun = this.grid.entityNoun;
+    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
+  });
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
@@ -50521,191 +49707,6 @@ export class PublicRoute implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
-        Donations
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
-    </div>
-    <div class="flex gap-2 items-center">
-      <button
-        id="donations-refresh-btn"
-        class="btn btn-outline btn-accent btn-sm gap-2"
-        title="Refresh donations log"
-        pcSpinOnClick
-        [disabled]="_loading.visible()"
-        (click)="refresh()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-      <button
-        routerLink="/donation-pages/add"
-        class="btn btn-ghost btn-sm gap-2"
-        title="Create a public form that charges cards through Stripe and records every gift here"
-      >
-        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-        New donation form
-      </button>
-      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Record donation
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
-      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
-      One-time
-    </a>
-    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Monthly Pledges
-    </a>
-  </div>
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] mt-1">
-          @if (monthOverMonthDelta() !== null) {
-          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
-            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
-          </span>
-          } @else {
-          <span class="text-base-content/40">No prior month to compare</span>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ monthlyDonorCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-    <table class="table w-full">
-      <thead>
-        <tr class="bg-base-200/50">
-          <th>Donor</th>
-          <th class="text-right">Amount</th>
-          <th>Method</th>
-          <th>Date</th>
-          <th>Receipt</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (d of recentGifts(); track d.id) {
-        <tr
-          class="hover:bg-base-200/30 transition-all duration-200"
-          [class.animate-saved-flash]="highlightId() === d.id"
-        >
-          <td>
-            <div class="flex flex-col">
-              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
-                {{ d.person_first_name }} {{ d.person_last_name }}
-              </a>
-              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-            </div>
-          </td>
-          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
-          <td>
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
-              >{{ methodLabel(d.method) }}</span
-            >
-          </td>
-          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-          <td>
-            @if (d.receipt_sent) {
-            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Receipted
-            </span>
-            } @else {
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-            }
-          </td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="5" class="text-center py-16 text-base-content/50">
-            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-            <h3 class="font-semibold text-base-content/70">No donations found</h3>
-            <p class="text-xs text-base-content/50 mt-1 mb-3">
-              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-            </p>
-            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-              <pc-icon name="plus" [size]="4"></pc-icon>
-              Record donation
-            </button>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-    @if (totalGiftCount() > recentGifts().length) {
-    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
-      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
-    </div>
-    }
-  </div>
-</div>
-
-<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
@@ -53500,324 +52501,804 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 export type DATA_TYPE = 'persons' | 'households';
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
 
-```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
+```typescript
+import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { TeamsService } from '../../teams/services/teams-service';
+import { CompaniesService } from '../../companies/services/companies-service';
+import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { PersonCampaignFacts } from './person-campaign-facts';
 
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
-        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
-          <!-- Tags & issues — standalone card, first section -->
-          <pc-card>
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
+@Component({
+  selector: 'pc-person-form',
+  imports: [
+    PcInput,
+    PcSelect,
+    PcTextarea,
+    Tags,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    SideDrawer,
+    PcCard,
+    DatePipe,
+    PersonCampaignFacts,
+  ],
+  templateUrl: './person-form.html',
+})
+export class PersonForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly router = inject(Router);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-          </pc-card>
+  private _loading = createLoadingGate();
+  private usersById = new Map<string, IAuthUser>();
 
-          <pc-card>
-            @if (!person()?.id) {
-            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
-            }
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
 
-            <!-- Name -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
-              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
-            </div>
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return null;
+    return this.getFormattedAddress(hh);
+  });
 
-            <!-- Emails -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input
-                label="Primary email"
-                type="email"
-                placeholder="name@example.com"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                label="Secondary email"
-                type="email"
-                placeholder="Optional"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
+  /** Overview rail (§6): everyone else sharing this person's household. */
+  protected readonly householdMembersResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getPeopleCount(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
 
-            <!-- Phones -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
-              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
-            </div>
+  protected readonly companyName = computed(() => {
+    const id = this.person()?.company_id;
+    if (!id) return null;
+    return this.companies().find((c) => c.id === id)?.name ?? null;
+  });
 
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Address & Household Assignment -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
-              @if (householdId() && !isPlaceholderHousehold()) {
-              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
-                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
-                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
-                  Edit on household
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
-                  data-tip="Change household"
-                  (click)="openAssignDrawer()"
-                >
-                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
-                  data-tip="Remove address"
-                  (click)="removeAddress()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div
-                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                  <span class="italic text-base-content/50">No address assigned</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Assign household
-                </button>
-              </div>
-              }
-              <p class="pl-1 text-xs text-base-content/50">
-                Addresses belong to households, so everyone at the same address stays in sync.
-              </p>
-            </div>
-
-            <!-- Internal notes -->
-            <pc-textarea
-              label="Internal notes"
-              placeholder="Anything the team should know about this person…"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-
-            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
-            <details class="group border-t border-base-200 pt-3">
-              <summary
-                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-              >
-                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                More details
-              </summary>
-              <div class="mt-4 flex flex-col gap-4">
-                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
-
-                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
-                  @for (u of users(); track u.id) {
-                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </pc-select>
-
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
-                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
-                </div>
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
-                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
-                </div>
-              </div>
-            </details>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
-      <div class="flex flex-col gap-6">
-        @if (person()?.id && person(); as p) {
-        <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
-
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">First seen</dt>
-              <dd class="text-right font-medium text-base-content">
-                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">People in home</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">
-                {{ householdMembersResource.value() ?? '—' }}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Company</dt>
-              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
-            </div>
-          </dl>
-
-          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Contact owner</dt>
-              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Preferred contact</dt>
-              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
-            </div>
-          </dl>
-
-          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            People in home counts everyone sharing this person's address — edit it from the household record.
-          </p>
-        </pc-card>
-
-        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
-        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
-        }
-      </div>
-    </div>
-
-    <!-- Back to the person record -->
-    @if (person()?.id) {
-    <a
-      [routerLink]="['/people', person()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ formName() || 'person' }}
-    </a>
+  protected readonly preferredContactLabel = computed(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return 'No preference';
     }
-  </div>
+  });
 
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
+  protected readonly addressWithWard = computed(() => {
+    const base = this.addressString();
+    if (!base) return null;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
+  });
+
+  // Drawer state for assigning household
+  protected readonly assignDrawerOpen = signal(false);
+  protected readonly householdResults = signal<any[]>([]);
+  protected readonly householdSearch = signal('');
+  protected readonly householdsLoading = signal(false);
+
+  protected readonly pendingHouseholdId = signal<string | null>(null);
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly emailError = linkedSignal({
+    source: () => this.form.email().value(),
+    computation: () => null as string | null,
+  });
+  protected readonly person = signal<Selectable<Persons> | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly companies = signal<any[]>([]);
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+
+  protected readonly payload = signal({
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    email: '',
+    email2: '',
+    home_phone: '',
+    mobile: '',
+    notes: '',
+    company_id: '',
+    preferred_contact: '',
+    linkedin: '',
+    twitter: '',
+    facebook: '',
+    instagram: '',
+    assigned_to: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdatePersonsObj);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected id = input<string>();
+  protected tags = signal<string[]>([]);
+  protected issues = signal<string[]>([]);
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
+
+  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  protected readonly formName = computed(() => {
+    const v = this.payload();
+    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
+    }
+    return [people, { label: 'New person' }];
+  });
+
+  protected readonly formInitials = computed(() => {
+    const name = this.formName() || '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
+
+  constructor() {
+    // Load users once for display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadPerson();
+    await this.loadCompanies();
+    void this.loadSuggestionNames();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          first_name: data.first_name ?? '',
+          middle_names: data.middle_names ?? '',
+          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
+          email: data.email ?? '',
+          email2: data.email2 ?? '',
+          home_phone: data.home_phone ?? '',
+          mobile: data.mobile ?? '',
+          notes: data.notes ?? '',
+          company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
+          linkedin: data.linkedin ?? '',
+          twitter: data.twitter ?? '',
+          facebook: data.facebook ?? '',
+          instagram: data.instagram ?? '',
+          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
+        });
+        if (data.household_id) {
+          this.pendingHouseholdId.set(data.household_id);
         }
-      </div>
-    </div>
-  </pc-side-drawer>
-</div>
+      }
+    }
+  }
+
+  private async loadSuggestionNames() {
+    try {
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
+    } catch (err) {
+      console.error('Failed to load tag/issue suggestions', err);
+    }
+  }
+
+  private async loadCompanies() {
+    try {
+      const res = await this.companiesSvc.getAll();
+      this.companies.set(res.rows || []);
+    } catch {
+      this.companies.set([]);
+    }
+  }
+
+  protected async deletePerson() {
+    const id = this.id();
+    if (!id) return;
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(id);
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
+  }
+
+  public save(done?: () => void) {
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      // §4: Save never disables — instead of blocking, surface the errors and
+      // move focus to the first invalid field so the user knows what to fix.
+      queueMicrotask(() => {
+        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
+        el?.focus();
+      });
+      return;
+    }
+    const raw = this.payload();
+    const data = {
+      ...raw,
+      company_id: raw.company_id || null,
+      assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
+    } as UpdatePersonsType;
+    return this.id() ? this.update(data, done) : this.add(data, done);
+  }
+
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected async assignToHousehold(household_id: string) {
+    const id = this.id();
+    // NEW PERSON: just store the pending selection; it will be sent on save
+    if (!id) {
+      this.pendingHouseholdId.set(household_id);
+      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
+      this.closeAssignDrawer();
+      return;
+    }
+
+    // Ask scope: just this person vs everyone in current household
+    const applyToAll = await this.confirmDlg.confirm({
+      title: 'Change household',
+      message: 'Apply to everyone in the current household, or just this person?',
+      variant: 'info',
+      confirmText: 'Everyone',
+      cancelText: 'Just this person',
+    });
+
+    const currentHousehold = this.householdId();
+
+    const end = this._loading.begin();
+    try {
+      if (applyToAll && currentHousehold) {
+        // Single atomic tRPC call to the backend
+        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
+      } else {
+        // Only move this person
+        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
+      }
+
+      // update local state for current person and UI
+      this.person.update((p) => (p ? { ...p, household_id } : p));
+
+      this.alertSvc.showSuccess('Assigned to selected household');
+      this.closeAssignDrawer();
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  protected closeAssignDrawer() {
+    this.assignDrawerOpen.set(false);
+  }
+
+  protected formatHouseholdRow(row: any) {
+    const address = {
+      apt: row.apt ?? null,
+      street_num: row.street_num ?? '',
+      street1: row.street1 ?? '',
+      street2: row.street2 ?? '',
+      city: row.city ?? '',
+      state: row.state ?? '',
+      zip: row.zip ?? '',
+      country: row.country ?? '',
+    } as AddressType;
+    return this.getFormattedAddress(address);
+  }
+
+  protected getId() {
+    const id = this.person()?.id;
+    if (!id) return null;
+
+    return id as unknown as string;
+  }
+
+  protected getUserName(id: string | null | undefined = null): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  protected onHouseholdSearch(ev: Event) {
+    const target = ev.target as HTMLInputElement | null;
+    const val = target?.value ?? '';
+    this.householdSearch.set(val);
+    void this.fetchHouseholds();
+  }
+
+  protected openAssignDrawer() {
+    this.assignDrawerOpen.set(true);
+    // Initial fetch
+    void this.fetchHouseholds();
+  }
+
+  protected async removeAddress() {
+    const id = this.id();
+    // New person: just clear the pending household — no API call needed yet
+    if (!id) {
+      this.pendingHouseholdId.set(null);
+      return;
+    }
+
+    if (!this.person()) return;
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Remove Address',
+      message: 'This will move the person to a new blank household (clearing address). Continue?',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.removeHousehold(id);
+      this.person.update((p) => (p ? { ...p, household_id: null } : p));
+      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
+    } catch (err) {
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
+    } finally {
+      end();
+    }
+  }
+
+  protected async tagAdded(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to attach tag:', err);
+    }
+  }
+
+  protected async tagRemoved(tag: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const normalized = tag.trim().toLowerCase();
+    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
+
+    try {
+      if (normalized === 'volunteer') {
+        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
+        try {
+          teams = await this.teamsSvc.getTeamsForVolunteer(id);
+        } catch (err) {
+          console.error('Failed to load teams for volunteer tag removal', err);
+        }
+
+        if (teams.length) {
+          const details = teams
+            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
+            .join('\n');
+          const confirmed = await this.confirmDlg.confirm({
+            title: 'Remove volunteer tag?',
+            message:
+              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
+              details +
+              '\n\nDo you want to continue?',
+            confirmText: 'Remove tag',
+            cancelText: 'Keep tag',
+            variant: 'warning',
+          });
+          if (!confirmed) {
+            restoreTag();
+            return;
+          }
+        }
+
+        const result = await this.personsSvc.detachTag(id, tag, 'tag');
+        await this.updateTags();
+        await this.tagOptionsSvc.invalidate('tag');
+        if (result?.removed_teams && result.removed_teams.length > 0) {
+          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
+          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
+        }
+        return;
+      }
+
+      await this.personsSvc.detachTag(id, tag, 'tag');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to detach tag:', err);
+      restoreTag();
+    }
+  }
+
+  protected async issueAdded(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to attach issue:', err);
+    }
+  }
+
+  protected async issueRemoved(issue: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
+
+    try {
+      await this.personsSvc.detachTag(id, issue, 'issue');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to detach issue:', err);
+      restoreIssue();
+    }
+  }
+
+  private add(data: UpdatePersonsType, done?: () => void) {
+    // Include any household selected via the drawer before saving
+    const pendingHousehold = this.pendingHouseholdId();
+    if (pendingHousehold) {
+      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
+    }
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .add(data, { context: { skipErrorHandler: true } })
+      .then(() => {
+        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+          this.pendingHouseholdId.set(null);
+          this.tags.set([]);
+          this.issues.set([]);
+          this.form().reset();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  private isDuplicateEmailError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as Record<string, any>;
+    // tRPC wraps backend errors; check both data.httpStatus and message
+    return (
+      e['data']?.['httpStatus'] === 409 ||
+      String(e['message'] ?? '')
+        .toLowerCase()
+        .includes('already exists')
+    );
+  }
+
+  private async fetchHouseholds() {
+    try {
+      this.householdsLoading.set(true);
+      const opts = {
+        searchStr: this.householdSearch(),
+        limit: 25,
+        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
+      };
+      const res = await this.householdsSvc.getAll(opts);
+      this.householdResults.set(res.rows || []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
+      this.householdResults.set([]);
+    } finally {
+      this.householdsLoading.set(false);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
+  }
+
+  private async loadPerson() {
+    const id = this.id();
+    if (!id) return;
+
+    const end = this._loading.begin();
+    try {
+      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
+
+      await this.updateTags();
+      await this.loadVolunteerInfo();
+
+      this.refreshForm();
+    } finally {
+      end();
+    }
+  }
+
+  private refreshForm() {
+    const person = this.person();
+    if (!person) return;
+
+    this.payload.set({
+      first_name: person.first_name ?? '',
+      middle_names: person.middle_names ?? '',
+      last_name: person.last_name ?? '',
+      email: person.email ?? '',
+      email2: person.email2 ?? '',
+      home_phone: person.home_phone ?? '',
+      mobile: person.mobile ?? '',
+      notes: person.notes ?? '',
+      company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
+      linkedin: person.linkedin ?? '',
+      twitter: person.twitter ?? '',
+      facebook: person.facebook ?? '',
+      instagram: person.instagram ?? '',
+      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
+    });
+  }
+
+  // Friendly labels for the field-naming save toast (§4).
+  private readonly fieldLabels: Record<string, string> = {
+    first_name: 'first name',
+    middle_names: 'middle name',
+    last_name: 'last name',
+    email: 'email',
+    email2: 'secondary email',
+    mobile: 'mobile phone',
+    home_phone: 'home phone',
+    company_id: 'company',
+    preferred_contact: 'preferred contact',
+    assigned_to: 'owner',
+    notes: 'notes',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  };
+
+  private changedFieldLabels(): string[] {
+    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
+    return Object.keys(this.fieldLabels)
+      .filter((k) => {
+        try {
+          return !!f[k]?.().dirty?.();
+        } catch {
+          return false;
+        }
+      })
+      .map((k) => this.fieldLabels[k]!);
+  }
+
+  private joinWithAnd(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
+  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
+    const id = this.id();
+    if (!id) return;
+
+    const changed = this.changedFieldLabels();
+    const savedName = this.formName() || 'person';
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .update(id, data, { context: { skipErrorHandler: true } })
+      .then(() => {
+        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
+        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
+        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
+        this.form().reset();
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  private async updateTags() {
+    if (!this.person()) return;
+
+    const id = this.id();
+    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
+    this.tags.set(tags);
+
+    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
+    this.issues.set(issues);
+  }
+
+  private async loadVolunteerInfo() {
+    const id = this.id();
+    if (!id) return;
+    try {
+      const stats = await this.volunteerSvc.getVolunteerStats(id);
+      this.volunteerStats.set(stats);
+      const history = await this.volunteerSvc.getHistoryForPerson(id);
+      this.volunteerHistory.set(history || []);
+    } catch (err) {
+      console.error('Failed to load volunteer info', err);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
@@ -55378,10 +54859,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-issue" [size]="4"></pc-icon>
       New issue
-    </a>
+    </button>
   </div>
 
   <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
@@ -55407,7 +54888,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             <div class="flex flex-col items-center gap-2">
               <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
               <p class="text-sm text-base-content/60">No issues yet.</p>
-              <a routerLink="add" class="btn btn-sm btn-primary">New issue</a>
+              <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
             </div>
           </td>
         </tr>
@@ -55475,12 +54956,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     field from tags everywhere because issues power issue-based filtering and targeting.
   </p>
 </div>
+
+<pc-add-issue-dialog (saved)="onIssueSaved()" />
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
 
 ```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -55488,6 +54971,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddIssueDialog } from './add-issue';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 
 /**
@@ -55499,13 +54983,15 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly alertSvc = inject(AlertService);
   protected readonly actions = inject(TagAdminActions);
+
+  protected readonly addDialog = viewChild.required(AddIssueDialog);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -55529,6 +55015,14 @@ export class IssuesAdmin implements OnInit {
   });
 
   public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openAddDialog(): void {
+    this.addDialog().open();
+  }
+
+  protected onIssueSaved(): void {
     void this.load();
   }
 
@@ -55587,7 +55081,7 @@ export class IssuesAdmin implements OnInit {
 ## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.ts
 
 ```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -55595,6 +55089,7 @@ import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagDialog } from './add-tag';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 
 const UNUSED_DAYS = 90;
@@ -55607,13 +55102,15 @@ const UNUSED_MS = UNUSED_DAYS * 24 * 60 * 60 * 1000;
  */
 @Component({
   selector: 'pc-tags-admin',
-  imports: [Icon, RouterLink, TagItem],
+  imports: [Icon, RouterLink, TagItem, AddTagDialog],
   templateUrl: './tags-admin.html',
 })
 export class TagsAdmin implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly alertSvc = inject(AlertService);
   protected readonly actions = inject(TagAdminActions);
+
+  protected readonly addDialog = viewChild.required(AddTagDialog);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -55652,6 +55149,14 @@ export class TagsAdmin implements OnInit {
   );
 
   public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openAddDialog(): void {
+    this.addDialog().open();
+  }
+
+  protected onTagSaved(): void {
     void this.load();
   }
 
@@ -56116,6 +55621,7 @@ export class TasksList implements OnInit {
     <pc-form-actions
       [isLoading]="isLoading()"
       [signalForm]="form"
+      [saveAlwaysEnabled]="true"
       (btn1Clicked)="save($event)"
       [buttonsToShow]="'two'"
       [btn1Text]="'Save automation'"
@@ -56571,119 +56077,102 @@ export class TasksList implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
 
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+```html
+<div class="flex flex-col gap-6 p-6">
+  <!-- Header ------------------------------------------------------------------>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Automations</h1>
+      <p class="mt-1 text-sm text-base-content/60">{{ summarySentence() }}</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
+      <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      New automation
+    </button>
+  </div>
 
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
+  @if (isLoading() && !loaded()) {
+  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
+  } @else if (rows().length === 0) {
+  <!-- Empty state ------------------------------------------------------------->
+  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
+      <pc-icon name="add-schedule" [size]="6"></pc-icon>
+    </div>
+    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
+    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
+      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
+      your first one to start.
+    </p>
+    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
+  </div>
+  } @else {
+  <!-- List -------------------------------------------------------------------->
+  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
+    <!-- Column header -->
+    <div
+      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
+    >
+      <span>Status</span>
+      <span>Automation</span>
+      <span class="text-right">Runs 30d</span>
+      <span>Last run</span>
+    </div>
 
-  private readonly countFormatter = new Intl.NumberFormat();
+    @for (row of rows(); track row.id) {
+    <div
+      class="grid cursor-pointer grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+      [class.opacity-60]="row.status === 'paused'"
+      (click)="openAutomation(row)"
+    >
+      <!-- STATUS toggle -->
+      <div class="flex items-center gap-2" (click)="$event.stopPropagation()">
+        <input
+          type="checkbox"
+          class="toggle toggle-primary toggle-sm"
+          [checked]="row.status === 'active'"
+          [title]="statusTooltip(row)"
+          [attr.aria-label]="statusTooltip(row)"
+          (change)="toggleStatus(row, $event)"
+        />
+        @if (row.status === 'paused') {
+        <span class="text-xs font-medium text-base-content/50">Paused</span>
+        }
+      </div>
 
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
+      <!-- AUTOMATION: name door + recipe sentence -->
+      <div class="min-w-0">
+        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
+        <div class="truncate text-sm text-base-content/60">{{ recipe(row) }}</div>
+      </div>
 
-  /**
-   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
-   * count-sentence: "matching" only when a filter narrows the set, singular noun
-   * at 1, and just "Export people" before the first load resolves a count.
-   */
-  readonly exportLabel = computed<string>(() => {
-    const count = this.grid.totalCountAll();
-    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
-    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
-    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
-    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
-  });
+      <!-- RUNS 30D -->
+      <div class="text-sm tabular-nums text-base-content/80 md:text-right">
+        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
+      </div>
 
-  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
-   *  grid config carries no specific entity noun. */
-  readonly addLabel = computed(() => {
-    const noun = this.grid.entityNoun;
-    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
-  });
+      <!-- LAST RUN (+ inline failure narration) -->
+      <div class="text-sm">
+        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
+        @if (row.last_run_error) {
+        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
+          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
+          <span>Last run failed — {{ row.last_run_error }}</span>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
 
-  public onAdd() {
-    this.grid.doAdd();
+  <!-- Footer (verbatim spec copy) --------------------------------------------->
+  <p class="text-xs text-base-content/50">
+    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
+  </p>
   }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/app.routes.ts
@@ -57439,6 +56928,180 @@ export class CompanyView {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
+        Donations
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">{{ headerSentence() }}</p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button
+        routerLink="/donation-pages/add"
+        class="btn btn-outline btn-accent btn-sm gap-2"
+        title="Create a public form that charges cards through Stripe and records every gift here"
+      >
+        <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+        New donation form
+      </button>
+      <button id="record-donation-btn" class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Record donation
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
+    <a
+      routerLink="/donations"
+      routerLinkActive="tab-active"
+      [routerLinkActiveOptions]="{exact:true}"
+      role="tab"
+      class="tab font-semibold gap-1.5"
+    >
+      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
+      One-time
+    </a>
+    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Monthly Pledges
+    </a>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+    <table class="table w-full">
+      <thead>
+        <tr class="bg-base-200/50">
+          <th>Donor</th>
+          <th class="text-right">Amount</th>
+          <th>Method</th>
+          <th>Date</th>
+          <th>Receipt</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of recentGifts(); track d.id) {
+        <tr
+          class="hover:bg-base-200/30 transition-all duration-200"
+          [class.animate-saved-flash]="highlightId() === d.id"
+        >
+          <td>
+            <div class="flex flex-col">
+              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
+                {{ d.person_first_name }} {{ d.person_last_name }}
+              </a>
+              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+            </div>
+          </td>
+          <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
+          <td>
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize"
+              >{{ methodLabel(d.method) }}</span
+            >
+          </td>
+          <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+          <td>
+            @if (d.receipt_sent) {
+            <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Receipted
+            </span>
+            } @else {
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
+            }
+          </td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="5" class="text-center py-16 text-base-content/50">
+            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+            <h3 class="font-semibold text-base-content/70">No donations found</h3>
+            <p class="text-xs text-base-content/50 mt-1 mb-3">
+              Configure your Stripe integration and set up a donation form, or record an offline gift directly.
+            </p>
+            <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+              <pc-icon name="plus" [size]="4"></pc-icon>
+              Record donation
+            </button>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    @if (totalGiftCount() > recentGifts().length) {
+    <div class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
+  </div>
+</div>
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
@@ -58954,6 +58617,326 @@ export class PersonConnections implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <!-- Back to profile or list -->
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+          <!-- Tags & issues — standalone card, first section -->
+          <pc-card>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+          </pc-card>
+
+          <pc-card>
+            @if (!person()?.id) {
+            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+            }
+
+            <!-- Name -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Primary email"
+                type="email"
+                placeholder="name@example.com"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                label="Secondary email"
+                type="email"
+                placeholder="Optional"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+            </div>
+
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
+              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
+
+            <!-- Address & Household Assignment -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+              @if (householdId() && !isPlaceholderHousehold()) {
+              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                  Edit on household
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                  data-tip="Change household"
+                  (click)="openAssignDrawer()"
+                >
+                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                  data-tip="Remove address"
+                  (click)="removeAddress()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div
+                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                  <span class="italic text-base-content/50">No address assigned</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Assign household
+                </button>
+              </div>
+              }
+              <p class="pl-1 text-xs text-base-content/50">
+                Addresses belong to households, so everyone at the same address stays in sync.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Anything the team should know about this person…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+
+            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+            <details class="group border-t border-base-200 pt-3">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                More details
+              </summary>
+              <div class="mt-4 flex flex-col gap-4">
+                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                  @for (u of users(); track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </pc-select>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+                </div>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+                </div>
+              </div>
+            </details>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (person()?.id && person(); as p) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People in home</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">
+                {{ householdMembersResource.value() ?? '—' }}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Company</dt>
+              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Contact owner</dt>
+              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Preferred contact</dt>
+              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            People in home counts everyone sharing this person's address — edit it from the household record.
+          </p>
+        </pc-card>
+
+        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
+        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        }
+      </div>
+    </div>
+
+    <!-- Back to the person record -->
+    @if (person()?.id) {
+    <a
+      [routerLink]="['/people', person()!.id]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ formName() || 'person' }}
+    </a>
+    }
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
 
 ```html
@@ -60110,10 +60093,10 @@ export class PersonConnections implements OnInit {
       <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
       }
     </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-label" [size]="4"></pc-icon>
       New tag
-    </a>
+    </button>
   </div>
 
   @if (loaded() && unusedRows().length > 0) {
@@ -60164,7 +60147,7 @@ export class PersonConnections implements OnInit {
                 Show all tags
               </button>
               } @else {
-              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
+              <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New tag</button>
               }
             </div>
           </td>
@@ -60229,6 +60212,8 @@ export class PersonConnections implements OnInit {
     Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
   </p>
 </div>
+
+<pc-add-tag-dialog (saved)="onTagSaved()" />
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
@@ -63006,6 +62991,319 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.addRoute()"
+    [tip]="'Add'"
+    [icon]="grid.plusIcon()"
+    (action)="onAdd()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canUndo()"
+    [tip]="'Undo'"
+    icon="arrow-uturn-left"
+    (action)="onUndo()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canRedo()"
+    [tip]="'Redo'"
+    icon="arrow-uturn-right"
+    (action)="onRedo()"
+  />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [touch]="true"
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg
+             fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6
+             sm:static sm:w-72 sm:rounded-box sm:pb-3"
+    >
+      <!-- Grab handle — bottom-sheet affordance, touch only -->
+      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
+      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
+        Filters
+      </h3>
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onClone()">
+          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Clone</span>
+            @if (!grid.hasSingleSelection()) {
+            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
+          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Merge</span>
+            @if (grid.getCountRowSelected() !== 2) {
+            <span class="text-base-content/50 text-[11px]"
+              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+            >
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider divider-horizontal"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
 
 ```typescript
@@ -63130,76 +63428,6 @@ export class GridActionComponent {
       detailsEl.removeAttribute('open');
     }
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
-
-```html
-<!-- Split-button: primary action opens the menu of interaction types -->
-<div class="dropdown dropdown-end">
-  <div tabindex="0" role="button" class="btn btn-outline btn-accent btn-sm flex-nowrap gap-1.5 whitespace-nowrap">
-    <pc-icon name="plus" [size]="4"></pc-icon>
-    <span>{{ label() }}</span>
-    <pc-icon name="chevron-down" [size]="4"></pc-icon>
-  </div>
-  <ul
-    tabindex="0"
-    class="dropdown-content menu z-10 mt-1 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
-  >
-    @for (option of options; track option.value) {
-    <li>
-      <button type="button" class="gap-2 btn-xs text-xs" (click)="choose(option)">
-        <pc-icon [name]="option.icon" [size]="4" class="text-primary"></pc-icon>
-        {{ option.label }}
-      </button>
-    </li>
-    }
-  </ul>
-</div>
-
-<!-- Note-capture modal for the chosen interaction type -->
-@if (open() && selected(); as option) {
-<div class="modal modal-open z-50">
-  <div class="modal-box max-w-md rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl">
-    <div class="mb-4 flex items-center justify-between border-b border-base-200 pb-3">
-      <h3 class="flex items-center gap-2 text-lg font-bold text-base-content">
-        <pc-icon [name]="option.icon" [size]="5" class="text-primary"></pc-icon>
-        Log {{ option.label.toLowerCase() }}
-      </h3>
-      <button type="button" class="btn btn-xs btn-circle btn-ghost" [disabled]="saving()" (click)="close()">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="flex flex-col gap-1.5">
-      <label for="interaction_note" class="text-xs font-semibold text-base-content/90">Note (optional)</label>
-      <textarea
-        #noteInput
-        id="interaction_note"
-        rows="4"
-        class="textarea textarea-bordered w-full text-xs focus:textarea-primary"
-        placeholder="What happened? (e.g. left a voicemail, spoke at the door)"
-        [value]="note()"
-        (input)="note.set(noteInput.value)"
-      ></textarea>
-    </div>
-
-    <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
-      <button
-        type="button"
-        class="btn btn-primary min-w-[110px] text-xs btn-xs font-semibold"
-        [disabled]="saving()"
-        (click)="save()"
-      >
-        @if (saving()) {
-        <span class="loading loading-spinner loading-xs mr-1.5"></span>
-        Saving… } @else { Log {{ option.label.toLowerCase() }} }
-      </button>
-    </div>
-  </div>
-  <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
-</div>
 }
 ```
 
@@ -64349,319 +64577,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.addRoute()"
-    [tip]="'Add'"
-    [icon]="grid.plusIcon()"
-    (action)="onAdd()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canUndo()"
-    [tip]="'Undo'"
-    icon="arrow-uturn-left"
-    (action)="onUndo()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canRedo()"
-    [tip]="'Redo'"
-    icon="arrow-uturn-right"
-    (action)="onRedo()"
-  />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [touch]="true"
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
-         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg
-             fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6
-             sm:static sm:w-72 sm:rounded-box sm:pb-3"
-    >
-      <!-- Grab handle — bottom-sheet affordance, touch only -->
-      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
-      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
-        Filters
-      </h3>
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onClone()">
-          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Clone</span>
-            @if (!grid.hasSingleSelection()) {
-            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
-          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Merge</span>
-            @if (grid.getCountRowSelected() !== 2) {
-            <span class="text-base-content/50 text-[11px]"
-              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
-            >
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider divider-horizontal"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
-     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3 rounded-lg">
-  <ul
-    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
-  >
-    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-      [spinning]="grid.isRefreshing()"
-      [tip]="'Refresh the grid'"
-      icon="arrow-path"
-      (action)="onRefresh()"
-    />
-    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
-    <pc-grid-tool-btn
-      icon="arrows-up-down-tray"
-      tip="Import / export"
-      [hasDropdown]="true"
-      [dropdownEnd]="true"
-      [hideCaret]="true"
-      [hidden]="grid.disableImport() && grid.disableExport()"
-    >
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
-      >
-        @if (!grid.disableImport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
-            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">Import from CSV…</span>
-              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
-            </span>
-          </a>
-        </li>
-        } @if (!grid.disableExport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
-            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </pc-grid-tool-btn>
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
-    <pc-grid-tool-btn
-      icon="funnel"
-      tip="Advanced Filters"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.anyFilterActive()"
-      [enabled]="!grid.hasActiveAdvancedFilters()"
-      (action)="onToggleFilters()"
-    />
-    <pc-grid-tool-btn
-      icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-      (action)="grid.openAdvancedFilterBuilder()"
-    />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-      <pc-dg-columns-dropdown [grid]="grid" />
-    </pc-grid-tool-btn>
-
-    <pc-grid-tool-btn
-      [icon]="grid.archiveIcon()"
-      [tip]="grid.archiveTip()"
-      [hidden]="!grid.showArchiveIcon()"
-      [active]="grid.archiveModeState()"
-      (action)="onToggleArchive()"
-    />
-  </ul>
-
-  <!-- + Add — a solid-primary button outside the group (spec §5). -->
-  @if (grid.addRoute()) {
-  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
-    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
-    <span>{{ addLabel() }}</span>
-  </button>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/dashboard.routes.ts
 
 ```typescript
@@ -64766,32 +64681,14 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-        data: { shouldReuse: true, key: 'tagsadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+    data: { shouldReuse: true, key: 'tagsadminroot' },
   },
 
   {
     path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-        data: { shouldReuse: true, key: 'issuesadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+    data: { shouldReuse: true, key: 'issuesadminroot' },
   },
 
   {
@@ -65640,6 +65537,76 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
+
+```html
+<!-- Split-button: primary action opens the menu of interaction types -->
+<div class="dropdown dropdown-end">
+  <div tabindex="0" role="button" class="btn btn-outline btn-accent btn-sm flex-nowrap gap-1.5 whitespace-nowrap">
+    <pc-icon name="plus" [size]="4"></pc-icon>
+    <span>{{ label() }}</span>
+    <pc-icon name="chevron-down" [size]="4"></pc-icon>
+  </div>
+  <ul
+    tabindex="0"
+    class="dropdown-content menu z-10 mt-1 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+  >
+    @for (option of options; track option.value) {
+    <li>
+      <button type="button" class="gap-2 btn-xs text-xs" (click)="choose(option)">
+        <pc-icon [name]="option.icon" [size]="4" class="text-primary"></pc-icon>
+        {{ option.label }}
+      </button>
+    </li>
+    }
+  </ul>
+</div>
+
+<!-- Note-capture modal for the chosen interaction type -->
+@if (open() && selected(); as option) {
+<div class="modal modal-open z-50">
+  <div class="modal-box max-w-md rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl">
+    <div class="mb-4 flex items-center justify-between border-b border-base-200 pb-3">
+      <h3 class="flex items-center gap-2 text-lg font-bold text-base-content">
+        <pc-icon [name]="option.icon" [size]="5" class="text-primary"></pc-icon>
+        Log {{ option.label.toLowerCase() }}
+      </h3>
+      <button type="button" class="btn btn-xs btn-circle btn-ghost" [disabled]="saving()" (click)="close()">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="interaction_note" class="text-xs font-semibold text-base-content/90">Note (optional)</label>
+      <textarea
+        #noteInput
+        id="interaction_note"
+        rows="4"
+        class="textarea textarea-bordered w-full text-xs focus:textarea-primary"
+        placeholder="What happened? (e.g. left a voicemail, spoke at the door)"
+        [value]="note()"
+        (input)="note.set(noteInput.value)"
+      ></textarea>
+    </div>
+
+    <div class="modal-action mt-6 flex justify-end gap-3 border-t border-base-200 pt-4">
+      <button
+        type="button"
+        class="btn btn-primary min-w-[110px] text-xs btn-xs font-semibold"
+        [disabled]="saving()"
+        (click)="save()"
+      >
+        @if (saving()) {
+        <span class="loading loading-spinner loading-xs mr-1.5"></span>
+        Saving… } @else { Log {{ option.label.toLowerCase() }} }
+      </button>
+    </div>
+  </div>
+  <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
+</div>
 }
 ```
 
@@ -66576,7 +66543,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Newsletters',
         route: '/newsletters',
-        icon: 'megaphone',
+        icon: 'mailbox',
         shortcut: 'n',
       },
       {
@@ -66607,13 +66574,13 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Canvassing',
         route: '/canvassing',
-        icon: 'map-pin',
+        icon: 'route',
         shortcut: 'v',
       },
       {
         name: 'Deliveries',
         route: '/deliveries',
-        icon: 'map-pin',
+        icon: 'house-modern',
         // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
         // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
       },
@@ -66654,7 +66621,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Issues',
         route: '/issues',
-        icon: 'shield-exclamation',
+        icon: 'chat-bubble-bottom-center-text',
       },
       {
         name: `Automations`,
@@ -67087,6 +67054,7 @@ export const SidebarItems: ISidebarItem[] = [
                 {{ h.column.columnDef.header || h.column.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              @if (showColumnMenus()) {
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
                 <label
                   tabindex="0"
@@ -67218,6 +67186,7 @@ export const SidebarItems: ISidebarItem[] = [
                   </li>
                 </ul>
               </div>
+              }
               <span
                 class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
                 title="Resize column"
@@ -68376,6 +68345,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
+  /** Per-column sort/filter/hide dropdown in the header. Off for read-only "reference table" grids. */
+  public showColumnMenus = input<boolean>(true);
   public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
 
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
