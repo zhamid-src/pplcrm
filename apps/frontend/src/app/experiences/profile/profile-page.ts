@@ -1,4 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, disabled, FormField } from '@angular/forms/signals';
@@ -15,12 +16,10 @@ import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avata
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem, StatCard],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {
@@ -66,52 +65,22 @@ export class ProfilePage implements OnInit {
     disabled(p.last_name, () => this.isViewer() || this.saving());
   });
 
-  // Instant-apply card: each email-notification toggle persists immediately (no Save button).
-  protected readonly notifPrefs = signal<NotifPrefs>({
-    mention_in_comment: true,
-    task_assigned: true,
-    task_due: true,
-    person_assigned: true,
-    export_ready: true,
-    import_summary: true,
-  });
-  protected readonly savingNotif = signal<NotifKey | null>(null);
-
-  // Grouped per §20: work-facing alerts vs data-job outcomes.
-  protected readonly notifGroups: ReadonlyArray<{
-    heading: string;
-    items: ReadonlyArray<{ key: NotifKey; title: string; description: string }>;
-  }> = [
-    {
-      heading: 'About your work',
-      items: [
-        {
-          key: 'mention_in_comment',
-          title: 'Mentioned in a comment',
-          description: 'When someone @-mentions you in a thread',
-        },
-        { key: 'task_assigned', title: 'Task assigned to you', description: 'When a task is assigned to you' },
-        { key: 'task_due', title: 'Task due today or overdue', description: 'A daily reminder of tasks that need you' },
-        {
-          key: 'person_assigned',
-          title: 'Contact assigned to you',
-          description: 'When a contact’s ownership moves to you',
-        },
-      ],
-    },
-    {
-      heading: 'About your data',
-      items: [
-        { key: 'export_ready', title: 'Export ready', description: 'A download link when your CSV export finishes' },
-        { key: 'import_summary', title: 'Import summary', description: 'Completion stats after a spreadsheet import' },
-      ],
-    },
-  ];
-
   protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
 
   /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
   protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner — full access',
+      admin: 'Admin — users & workspace settings',
+      user: 'Editor — day-to-day work',
+      viewer: 'Viewer — read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
 
   // Narrate unsaved identity edits (§2 disclosure).
   protected readonly dirtyFieldCount = computed(() => {
@@ -143,37 +112,41 @@ export class ProfilePage implements OnInit {
     return '?';
   });
 
-  protected readonly activityCards = computed(() => {
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
     const s = this.stats();
     if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you — all open'
+          : emails.open === 0
+            ? 'assigned to you — all closed'
+            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
     return [
       {
         key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
       },
       {
         key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
       },
       {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
       },
     ];
   });
@@ -250,18 +223,6 @@ export class ProfilePage implements OnInit {
     if (!user) return;
     this.setForm(user);
     this.form().reset();
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(new Date(date));
-    } catch {
-      return date.toString();
-    }
   }
 
   protected onAvatarFileChange(event: Event) {
@@ -421,19 +382,10 @@ export class ProfilePage implements OnInit {
   }
 
   private setForm(user: IAuthUserDetail) {
-    const prefs = user.notification_preferences;
     this.payload.set({
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name ?? '',
-    });
-    this.notifPrefs.set({
-      mention_in_comment: prefs?.mention_in_comment ?? true,
-      task_assigned: prefs?.task_assigned ?? true,
-      task_due: prefs?.task_due ?? true,
-      person_assigned: prefs?.person_assigned ?? true,
-      export_ready: prefs?.export_ready ?? true,
-      import_summary: prefs?.import_summary ?? true,
     });
   }
 
@@ -443,75 +395,14 @@ export class ProfilePage implements OnInit {
       const trimmed = value?.trim() ?? '';
       return trimmed.length ? trimmed : null;
     };
-    // Identity only — notification preferences are persisted instantly by their own card.
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
     return {
       email: raw.email?.trim() ?? '',
       first_name: raw.first_name?.trim() ?? '',
       last_name: normalize(raw.last_name),
     } as UpdateAuthUserType;
   }
-
-  // Instant-apply: flip one toggle and persist just the notification preferences.
-  protected async toggleNotif(key: NotifKey): Promise<void> {
-    if (this.isViewer() || this.savingNotif()) return;
-    const user = this.detail();
-    if (!user) return;
-
-    const previous = this.notifPrefs();
-    const next: NotifPrefs = { ...previous, [key]: !previous[key] };
-    this.notifPrefs.set(next);
-    this.savingNotif.set(key);
-    // Profile only toggles the 6 email prefs; preserve the untouched in-app
-    // variants (and default any missing) so the full 12-field shape stays valid.
-    const fullPrefs: NonNullable<IAuthUserDetail['notification_preferences']> = {
-      ...FULL_NOTIF_DEFAULTS,
-      ...user.notification_preferences,
-      ...next,
-    };
-    try {
-      await this.userService.updateUserProfile(user.id, {
-        notification_preferences: fullPrefs,
-      } as UpdateAuthUserType);
-      this.detail.set({ ...user, notification_preferences: fullPrefs });
-    } catch (err) {
-      // Roll the toggle back so the UI never lies about what's stored.
-      this.notifPrefs.set(previous);
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Could not save your notification preference',
-      );
-    } finally {
-      this.savingNotif.set(null);
-    }
-  }
 }
-
-type NotifPrefs = {
-  mention_in_comment: boolean;
-  task_assigned: boolean;
-  task_due: boolean;
-  person_assigned: boolean;
-  export_ready: boolean;
-  import_summary: boolean;
-};
-
-type NotifKey = keyof NotifPrefs;
-
-// Complete 12-field default (email + in-app variants) so a persisted preferences
-// object always satisfies the canonical shape even when the source is undefined.
-const FULL_NOTIF_DEFAULTS: NonNullable<IAuthUserDetail['notification_preferences']> = {
-  mention_in_comment: true,
-  mention_in_comment_in_app: true,
-  task_assigned: true,
-  task_assigned_in_app: true,
-  task_due: true,
-  task_due_in_app: true,
-  person_assigned: true,
-  person_assigned_in_app: true,
-  export_ready: true,
-  export_ready_in_app: true,
-  import_summary: true,
-  import_summary_in_app: true,
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

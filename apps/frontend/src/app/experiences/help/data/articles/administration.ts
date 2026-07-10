@@ -5,8 +5,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     id: 'profile',
     category: 'admin',
     title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    summary: 'Your photo, your details, and your account facts — plus a snapshot of your own activity.',
     keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
     related: ['users-roles', 'settings', 'getting-around'],
     blocks: [
@@ -22,7 +21,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page: choose, per event, whether you are alerted by email and in-app — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
