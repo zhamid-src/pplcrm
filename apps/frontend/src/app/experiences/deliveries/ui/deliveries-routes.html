@@ -39,9 +39,9 @@
         </a>
       </td>
       <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-      <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
-      <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-      <td class="text-sm">
+      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td>
         @if (row.volunteer_person_id) {
         <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
           >{{ row.volunteer_name || 'Volunteer' }}</a
@@ -50,10 +50,10 @@
         <span class="text-base-content/40">Unassigned</span>
         }
       </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
         {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
       </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
         {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
       </td>
     </tr>

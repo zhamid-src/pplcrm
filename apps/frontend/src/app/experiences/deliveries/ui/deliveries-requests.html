@@ -114,7 +114,7 @@
           }
         </div>
       </td>
-      <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
       <td>
         @if (row.route_id) {
         <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
@@ -124,7 +124,7 @@
         <span class="text-base-content/40">—</span>
         }
       </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
         {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
       </td>
     </tr>

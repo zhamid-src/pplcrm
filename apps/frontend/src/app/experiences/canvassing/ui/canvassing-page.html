@@ -113,10 +113,10 @@
               <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
               }
             </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
             <td>
               @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
+              <span>{{ t.team_name }}</span>
               } @else {
               <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
               }
