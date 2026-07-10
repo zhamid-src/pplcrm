@@ -55,6 +55,8 @@ const FIELD_LABELS: Record<string, string> = {
   state: 'State/Province',
   zip: 'Zip/Postal code',
   country: 'Country',
+  company: 'Company',
+  tags: 'Tags (comma-separated)',
   notes: 'Notes',
 };
 
