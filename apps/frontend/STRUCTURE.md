@@ -424,12 +424,11 @@ apps/
             ui/
               invite-user-dialog.html
               invite-user-dialog.ts
-              user-edit.html
-              user-edit.ts
               user-view.html
               user-view.ts
               users-page.html
               users-page.ts
+            user-status.ts
           workflows/
             models/
               automations.model.ts
@@ -2798,6 +2797,89 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import type {
+  AddTurfType,
+  AssignTurfType,
+  CutTurfsType,
+  FieldReportRangeType,
+  UpdateTurfType,
+} from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+import type { RouterOutputs } from '../../../services/api/trpc-types';
+
+export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
+export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
+export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
+export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
+export type Coverage = RouterOutputs['canvassing']['getCoverage'];
+export type CutPreview = RouterOutputs['canvassing']['previewCut'];
+
+@Service()
+export class CanvassingService extends TRPCService<unknown> {
+  public getTurfs(): Promise<TurfListItem[]> {
+    return this.api.canvassing.getTurfs.query();
+  }
+
+  public getFieldSummary(): Promise<FieldSummary> {
+    return this.api.canvassing.getFieldSummary.query();
+  }
+
+  public getInFieldToday(): Promise<InFieldToday> {
+    return this.api.canvassing.getInFieldToday.query();
+  }
+
+  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
+    return this.api.canvassing.getFieldReport.query(input);
+  }
+
+  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
+    return this.api.canvassing.exportFieldReport.query(input);
+  }
+
+  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
+    return this.api.canvassing.getCoverage.query(input);
+  }
+
+  public previewCut(input: CutTurfsType): Promise<CutPreview> {
+    return this.api.canvassing.previewCut.query(input);
+  }
+
+  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
+    return this.api.canvassing.cutTurfs.mutate(input);
+  }
+
+  public assign(input: AssignTurfType): Promise<{ token: string }> {
+    return this.api.canvassing.assign.mutate(input);
+  }
+
+  public getCompanionLink(turfId: string): Promise<{ token: string }> {
+    return this.api.canvassing.getCompanionLink.mutate(turfId);
+  }
+
+  public retire(turfId: string): Promise<void> {
+    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
+  }
+
+  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
+    return this.api.canvassing.refreshFromList.mutate(turfId);
+  }
+
+  public addTurf(input: AddTurfType): Promise<{ id: string }> {
+    return this.api.canvassing.addTurf.mutate(input);
+  }
+
+  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
+    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.ts
 
 ```typescript
@@ -3995,91 +4077,6 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<PersonDuplic
     parts.push('nothing overwritten');
     return parts.join(' · ');
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-duplicate-page-shell',
-  imports: [RouterLink, Icon],
-  templateUrl: './merge-summary.html',
-})
-export class DuplicatePageShellComponent {
-  title = input.required<string>();
-  icon = input.required<PcIconNameType>();
-  description = input.required<string>();
-  entityRoute = input.required<string>();
-  isLoading = input.required<boolean>();
-  isEmpty = input.required<boolean>();
-  currentPage = input.required<number>();
-  totalPages = input.required<number>();
-  totalGroups = input.required<number>();
-  /** "N possible duplicates waiting · found by the nightly sweep — ... · last sweep TIME"
-   * (spec §9.3) — see `BaseDuplicateManager.sweepSentence`. */
-  sweepSentence = input<string | null>(null);
-
-  next = output<void>();
-  prev = output<void>();
-}
-
-@Component({
-  selector: 'pc-merge-summary',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between h-full">
-      <div class="card-body p-5">
-        <h4 class="font-bold text-base-content mb-2 flex items-center gap-2">
-          <pc-icon name="information-circle" class="text-warning" [size]="5"></pc-icon>
-          Merge Summary
-        </h4>
-
-        <div class="space-y-3 text-sm flex-1">
-          @if (!hasSelections()) {
-            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
-              Select which record to Keep and which to Merge.
-            </div>
-          } @else {
-            <div class="space-y-3">
-              <div class="alert alert-info py-2 text-[11px] leading-relaxed">
-                <span>{{ mergeDescription() }}</span>
-              </div>
-              <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
-                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
-                <div class="flex justify-between text-success gap-2">
-                  <span i18n class="flex-shrink-0">Keep Primary:</span>
-                  <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
-                </div>
-                <div class="flex justify-between text-error gap-2">
-                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
-                  <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
-                </div>
-              </div>
-            </div>
-          }
-        </div>
-
-        <div class="card-actions mt-4 pt-3 border-t border-base-300">
-          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="merge.emit()">
-            <pc-icon name="merge" [size]="4"></pc-icon> Merge Records
-          </button>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class MergeSummaryComponent {
-  hasSelections = input.required<boolean>();
-  targetName = input<string>('');
-  sourceName = input<string>('');
-  mergeDescription = input.required<string>();
-  merge = output<void>();
 }
 ```
 
@@ -14312,485 +14309,6 @@ export class TaskAddComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
-
-```typescript
-import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { TeamsService } from '../../teams/services/teams-service';
-import { QuillModule } from 'ngx-quill';
-
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
-import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { UserService } from '../../../services/user.service';
-
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-task-view',
-  imports: [
-    DatePipe,
-    DecimalPipe,
-    SlicePipe,
-    FormsModule,
-    RouterModule,
-    QuillModule,
-    Icon,
-    SanitizeHtmlPipe,
-    MentionifyPipe,
-    TimeAgoPipe,
-    RecordActivities,
-    UserAvatarComponent,
-  ],
-  templateUrl: './task-view.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class TaskView {
-  readonly id = input.required<string>();
-
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly tasks = inject(TasksService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly teams = inject(TeamsService);
-  private readonly userService = inject(UserService);
-
-  protected readonly task = signal<any | null>(null);
-  protected readonly comments = signal<any[]>([]);
-  protected readonly attachments = signal<any[]>([]);
-  protected readonly subtasks = signal<any[]>([]);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly assignedTo = signal<string>('');
-  protected readonly teamsList = signal<any[]>([]);
-  protected readonly teamId = signal<string>('');
-
-  // Form Fields & Inline Editing State
-  protected isEditingName = signal(false);
-  protected isEditingDetails = signal(false);
-  protected isEditingDueDate = signal(false);
-  protected tempName = signal('');
-  protected tempDetails = signal('');
-  protected readonly defaultDetails =
-    '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
-  private readonly activityHistory = viewChild<RecordActivities>('activityHistory');
-
-  private refreshActivities() {
-    const component = this.activityHistory();
-    if (component) {
-      void component.loadActivities();
-    }
-  }
-
-  protected newComment = signal('');
-  protected attName = signal('');
-  protected attUrl = signal('');
-  protected subtaskName = signal('');
-
-  // Expand / collapse sections
-  protected showComments = signal(true);
-  protected showSubtasks = signal(true);
-  protected showAttachments = signal(true);
-
-  // Autocomplete mentions (shared controller)
-  private readonly taskComposer = viewChild<{ nativeElement: HTMLTextAreaElement }>('taskComposer');
-  public mc = new MentionController(() => this.users());
-
-  // Priority classes and options for display/inputs
-  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = TASK_BOARD_STATUSES;
-  protected readonly statusLabels = TASK_STATUS_LABELS;
-
-  constructor() {
-    effect(() => {
-      void untracked(() => this.load());
-    });
-  }
-
-  // Load task and its children
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const [t, us, ts] = await Promise.all([
-        this.tasks.getById(this.id()),
-        this.userService.getUsers(),
-        this.teams.getAll({ limit: 1000 }),
-      ]);
-      if (!t) {
-        this.alertSvc.showError('Task not found.');
-        return;
-      }
-      this.task.set(t as any);
-      this.users.set(us || []);
-      this.teamsList.set(ts?.rows ?? []);
-      const assigned = (t as any)?.assigned_to;
-      this.assignedTo.set(assigned == null ? '' : String(assigned));
-      const team = (t as any)?.team_id;
-      this.teamId.set(team == null ? '' : String(team));
-
-      // Load subtasks, comments, attachments
-      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  private async loadComments() {
-    const list = await this.tasks.api.tasks.getComments.query(this.id());
-    this.comments.set(list);
-  }
-
-  private async loadAttachments() {
-    const list = await this.tasks.api.tasks.getAttachments.query(this.id());
-    this.attachments.set(list);
-  }
-
-  private async loadSubtasks() {
-    const list = await this.tasks.api.tasks.getSubtasks.query(this.id());
-    this.subtasks.set(list);
-  }
-
-  protected asDate(v: any) {
-    return v ? new Date(v) : null;
-  }
-
-  protected dateOnly(v: any) {
-    if (!v) return '';
-    const s = typeof v === 'string' ? v : new Date(v).toISOString();
-    return s.slice(0, 10);
-  }
-
-  protected async update(patch: any) {
-    if (!this.task()) return;
-    const id = this.id();
-    try {
-      await this.tasks.update(id, patch);
-      this.tasks.triggerRefresh();
-      this.task.update((t) => ({ ...(t ?? {}), ...patch }));
-      if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
-        const v = patch.assigned_to;
-        this.assignedTo.set(v == null || v === '' ? '' : String(v));
-      }
-      if (Object.prototype.hasOwnProperty.call(patch, 'team_id')) {
-        const v = patch.team_id;
-        this.teamId.set(v == null || v === '' ? '' : String(v));
-      }
-      this.alertSvc.showSuccess('Task updated successfully');
-      this.refreshActivities();
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
-    }
-  }
-
-  protected onTeamChange(event: any) {
-    const val = event.target.value;
-    void this.update({ team_id: val || null });
-  }
-
-  // Inline name editing trigger & save
-  protected startEditingName() {
-    this.tempName.set(this.task()?.name || '');
-    this.isEditingName.set(true);
-  }
-
-  protected async saveName() {
-    const nextName = this.tempName().trim();
-    if (!nextName) {
-      this.isEditingName.set(false);
-      return;
-    }
-    await this.update({ name: nextName });
-    this.isEditingName.set(false);
-  }
-
-  protected cancelEditingName() {
-    this.isEditingName.set(false);
-  }
-
-  // Inline details (Quill description) editing trigger & save
-  protected startEditingDetails() {
-    this.tempDetails.set(this.task()?.details || '');
-    this.isEditingDetails.set(true);
-  }
-
-  protected async saveDetails() {
-    await this.update({ details: this.tempDetails() });
-    this.isEditingDetails.set(false);
-  }
-
-  protected cancelEditingDetails() {
-    this.isEditingDetails.set(false);
-  }
-
-  // Subtask Actions
-  protected async addSubtask() {
-    const name = this.subtaskName().trim();
-    if (!name) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addSubtask.mutate({ task_id: this.id(), name });
-      this.subtaskName.set('');
-      await this.loadSubtasks();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  protected async toggleSubtask(s: any, isDone: boolean) {
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.updateSubtask.mutate({
-        id: String(s.id),
-        data: { status: isDone ? 'done' : 'todo' },
-      });
-      await this.loadSubtasks();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Comment Actions
-  protected async addComment() {
-    const plain = this.newComment().trim();
-    if (!plain) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
-      this.newComment.set('');
-      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Attachment Actions
-  protected async addAttachment() {
-    const name = this.attName().trim();
-    const url = this.attUrl().trim();
-    if (!name) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
-      this.attName.set('');
-      this.attUrl.set('');
-      await this.loadAttachments();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Status and Priority Dropdown Handlers
-  protected onStatusChange(event: any) {
-    const status = event.target.value;
-    void this.update({ status });
-  }
-
-  protected onPriorityChange(event: any) {
-    const priority = event.target.value;
-    void this.update({ priority });
-  }
-
-  protected onDueDateChange(event: any) {
-    const value = this.normalizeCalendarValue(event);
-    void this.update({ due_at: value });
-  }
-
-  protected onAssignedChange(v: string) {
-    this.assignedTo.set(v);
-    void this.update({ assigned_to: v || null });
-  }
-
-  protected assignToMe() {
-    const me = this.auth.getUser();
-    if (!me?.id) return;
-    void this.update({ assigned_to: me.id });
-  }
-
-  protected isArchived() {
-    return (this.task()?.status || '') === 'archived';
-  }
-
-  protected async archiveTask() {
-    await this.update({ status: 'archived' });
-  }
-
-  protected async unarchiveTask() {
-    await this.update({ status: 'todo' });
-  }
-
-  protected async deleteTask() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Task',
-      message: 'Are you sure you want to delete this task? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-
-    if (confirmed) {
-      const end = this._loading.begin();
-      try {
-        const deleted = await this.tasks.delete(this.id());
-        if (deleted) {
-          this.tasks.triggerRefresh();
-          this.alertSvc.showSuccess('Task deleted successfully');
-          void this.router.navigate(['/tasks']);
-        } else {
-          this.alertSvc.showError('Failed to delete task.');
-        }
-      } catch (err) {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
-      } finally {
-        end();
-      }
-    }
-  }
-
-  // User display name helpers
-  protected userName(id: string | null | undefined): string {
-    if (!id) return 'Unknown';
-    const uid = String(id);
-    const u = this.users().find((x) => String(x.id) === uid);
-    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'Unknown';
-  }
-
-  protected userAvatar(id: string | null | undefined): string | null {
-    if (!id) return null;
-    const uid = String(id);
-    const u = this.users().find((x) => String(x.id) === uid);
-    return u ? this.userService.resolveAvatarUrl(u.avatar_url) : null;
-  }
-
-  protected myUserId(): string | null {
-    return this.auth.getUser()?.id ?? null;
-  }
-
-  // Mention autocomplete text area inputs
-  protected onComposerInput(ev: Event) {
-    const el = ev.target as HTMLTextAreaElement;
-    this.newComment.set(el.value);
-    const caret = el.selectionStart ?? this.newComment().length;
-    this.mc.updateFromInput(this.newComment(), caret);
-  }
-
-  protected onComposerClick(ev: Event) {
-    const el = ev.target as HTMLTextAreaElement;
-    const caret = el.selectionStart ?? 0;
-    this.mc.updateFromInput(this.newComment(), caret);
-  }
-
-  protected onComposerKeydown(ev: KeyboardEvent) {
-    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      void this.addComment();
-      return;
-    }
-    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
-  }
-
-  protected selectMention(u: IAuthUser, ev?: Event) {
-    ev?.preventDefault();
-    const res = this.mc.select(u, this.newComment());
-    this.newComment.set(res.text);
-    const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
-    setTimeout(() => {
-      if (el) {
-        el.focus();
-        el.setSelectionRange(res.caret, res.caret);
-      }
-    });
-  }
-
-  protected userDisplay = userDisplay;
-
-  private normalizeCalendarValue(event: any): string | null {
-    const raw =
-      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
-      (event?.detail?.value != null && event.detail.value) ||
-      (event?.target?.value != null && event.target.value) ||
-      (event?.value != null && event.value) ||
-      (typeof event === 'string' ? event : null);
-
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  }
-
-  protected statusLabel(status: string): string {
-    return isTaskStatus(status) ? TASK_STATUS_LABELS[status] : this.toTitleCase(status);
-  }
-
-  // Styling helper classes
-  protected getStatusBadgeClass(status: string): string {
-    if (!isTaskStatus(status)) return 'badge-ghost'; // unrecognized/corrupt data — neutral, not a crash
-    switch (status) {
-      case 'done':
-        return 'badge-success text-success-content';
-      case 'in_progress':
-        return 'badge-info text-info-content';
-      case 'waiting':
-        return 'badge-error text-error-content';
-      case 'archived':
-        return 'badge-neutral text-neutral-content';
-      case 'todo':
-        return 'badge-ghost';
-      default: {
-        const _exhaustive: never = status;
-        return _exhaustive;
-      }
-    }
-  }
-
-  protected getPriorityBadgeClass(priority: string): string {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'badge-error text-error-content';
-      case 'high':
-        return 'badge-warning text-warning-content';
-      case 'medium':
-        return 'badge-info text-info-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected toTitleCase(s: string): string {
-    if (!s) return '';
-    return s
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
 
 ```typescript
@@ -15751,251 +15269,6 @@ export class TeamFormComponent implements OnInit {
       default:
         return 'badge-ghost';
     }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-user-edit',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
-  templateUrl: './user-edit.html',
-})
-export class UserEditComponent {
-  readonly id = input.required<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: '',
-    verified: false,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-    disabled(p.verified, () => true);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Users', route: '/users' },
-    { label: this.displayName() || 'User', route: ['/users', this.id()] },
-    { label: 'Edit' },
-  ]);
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid() || !this.id()) {
-      return;
-    }
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.users.update(this.id(), payload);
-      this.alerts.showSuccess('User updated');
-      this.users.triggerRefresh();
-      await this.load();
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected readonly resettingPassword = signal(false);
-
-  protected async triggerPasswordReset() {
-    if (!this.id()) return;
-    this.resettingPassword.set(true);
-    try {
-      await this.users.adminTriggerPasswordReset(this.id());
-      this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to trigger password reset';
-      this.alerts.showError(message);
-    } finally {
-      this.resettingPassword.set(false);
-    }
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-      role: user.role ?? '',
-      verified: Boolean(user.verified),
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-      role: normalize(raw.role),
-      verified: Boolean(raw.verified),
-    } as UpdateAuthUserType;
   }
 }
 
@@ -21526,104 +20799,6 @@ export class SingleselectFilterComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
-
-```typescript
-import type { Provider } from '@angular/core';
-import { InjectionToken } from '@angular/core';
-import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
-import type { QueueExportInputType } from '../../../../../../../libs/common/src';
-
-export interface DataGridConfig {
-  filterToolPanelId: string;
-  messages: {
-    noDeletePermission: string;
-    editBlocked: string;
-    editFailed: string;
-    loadFailed: string;
-
-    deleteConfirmTitle: string;
-    deleteConfirmMessage: string;
-    deleteConfirmIcon: BaseDialogOptions['icon'];
-    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
-    deleteConfirmText: string;
-    deleteCancelText: string;
-    deleteNoneSelected: string;
-    deleteSystemValues: string;
-    deleteFailed: string;
-    deleteSuccess: string;
-
-    exportTitle: string;
-    exportMessage: string;
-    exportIcon: BaseDialogOptions['icon'];
-    exportConfirmText: string;
-    exportCancelText: string;
-    exportFailed: string;
-    exportInProgress: string;
-    exportReady: string;
-    exportNavigateWarning: string;
-    exportFileName: string;
-    exportEntity: QueueExportInputType['entity'] | '';
-
-    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
-    entityNoun?: string;
-    entityNounPlural?: string;
-  };
-  pageSize: number;
-}
-
-export function provideDataGridConfig(
-  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
-): Provider {
-  const merged: DataGridConfig = {
-    ...DEFAULT_DATA_GRID_CONFIG,
-    ...overrides,
-    messages: {
-      ...DEFAULT_DATA_GRID_CONFIG.messages,
-      ...(overrides?.messages ?? {}),
-    },
-  };
-  return { provide: DATA_GRID_CONFIG, useValue: merged };
-}
-
-export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
-
-export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
-  pageSize: 25,
-  filterToolPanelId: 'filters-new',
-  messages: {
-    noDeletePermission: 'You do not have the permission to delete rows from this table.',
-    editBlocked: 'This cell cannot be edited or deleted.',
-    editFailed: 'Could not edit the row. Please try again later.',
-    loadFailed: 'Could not load the data. Please try again later.',
-
-    deleteConfirmTitle: 'Are you sure?',
-    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
-    deleteConfirmIcon: 'trash',
-    deleteConfirmVariant: 'danger',
-    deleteConfirmText: 'Delete',
-    deleteCancelText: 'Cancel',
-    deleteNoneSelected: 'Please select at least one row to delete.',
-    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
-    deleteFailed: 'Could not delete. Please try again later.',
-    deleteSuccess: 'Selected rows were successfully deleted.',
-
-    exportTitle: 'Choose export scope',
-    exportMessage:
-      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
-    exportIcon: 'arrow-down-tray',
-    exportConfirmText: 'All rows',
-    exportCancelText: 'Displayed rows',
-    exportFailed: 'Export failed. Please try again.',
-    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
-    exportReady: 'Export ready. Your download should begin momentarily.',
-    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
-    exportFileName: 'grid-export.csv',
-    exportEntity: '',
-  },
-};
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/types.ts
 
 ```typescript
@@ -21874,85 +21049,6 @@ export class UndoManager {
       }
     }
     return diffs;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
-
-```typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { CompaniesService } from '@experiences/companies/services/companies-service';
-import { HouseholdsService } from '@experiences/households/services/households-service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-/**
- * The People grain tabs (spec §5): one row under the grid header that switches the
- * grid between the three grains of the same dataset — People · Households · Companies —
- * with per-grain totals in the labels (tabular-nums). Rendered on all three grid pages
- * via the datagrid's `[pcGridBelowHeader]` projection slot; deep links to each grain's
- * detail/edit routes are untouched.
- *
- * Counts load once per instantiation; until a count arrives the label renders without
- * a number (never a fake or stale one).
- */
-@Component({
-  selector: 'pc-grain-tabs',
-  imports: [RouterLink, RouterLinkActive],
-  template: `
-    <nav class="border-line -mt-1 mb-2 flex items-center gap-1 border-b" aria-label="People, households and companies">
-      @for (tab of tabs(); track tab.route) {
-        <a
-          [routerLink]="tab.route"
-          routerLinkActive="!text-primary !font-semibold !border-primary"
-          [routerLinkActiveOptions]="{ exact: true }"
-          class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
-        >
-          {{ tab.label }}
-          @if (tab.count !== null) {
-            <span class="text-xs tabular-nums opacity-70">{{ tab.count }}</span>
-          }
-        </a>
-      }
-    </nav>
-  `,
-})
-export class GrainTabs {
-  private readonly personsSvc = inject(PersonsService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly companiesSvc = inject(CompaniesService);
-
-  private readonly formatter = new Intl.NumberFormat();
-
-  private readonly peopleCount = signal<number | null>(null);
-  private readonly householdsCount = signal<number | null>(null);
-  private readonly companiesCount = signal<number | null>(null);
-
-  protected readonly tabs = computed(() => [
-    { label: 'People', route: '/people', count: this.format(this.peopleCount()) },
-    { label: 'Households', route: '/households', count: this.format(this.householdsCount()) },
-    { label: 'Companies', route: '/companies', count: this.format(this.companiesCount()) },
-  ]);
-
-  constructor() {
-    void this.loadCounts();
-  }
-
-  private format(count: number | null): string | null {
-    return count === null ? null : this.formatter.format(count);
-  }
-
-  private async loadCounts(): Promise<void> {
-    // Each count fails independently; a failed count simply leaves that label bare.
-    const [people, households, companies] = await Promise.allSettled([
-      this.personsSvc.count(),
-      this.householdsSvc.count(),
-      this.companiesSvc.count(),
-    ]);
-    if (people.status === 'fulfilled') this.peopleCount.set(people.value);
-    if (households.status === 'fulfilled') this.householdsCount.set(households.value);
-    if (companies.status === 'fulfilled') this.companiesCount.set(companies.value);
   }
 }
 ```
@@ -22407,30 +21503,6 @@ export const appRoutes = [
     loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
   },
 ] as const satisfies Routes;
-```
-
-## File: apps/frontend/src/app/app.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
-
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-
-@Component({
-  selector: 'pc-root',
-  imports: [RouterModule, ConfirmDialogHost],
-  template: `
-    <pc-dialog-host></pc-dialog-host>
-    <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
-      <router-outlet></router-outlet>
-    </div>
-  `,
-})
-export class AppComponent {
-  protected themeSvc = inject(ThemeService);
-}
 ```
 
 ## File: apps/frontend/src/app/environment-token.ts
@@ -24177,85 +23249,361 @@ export class CampaignViewComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
 
 ```typescript
-import { Service } from '@angular/core';
+import { Component, type OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 
-import type {
-  AddTurfType,
-  AssignTurfType,
-  CutTurfsType,
-  FieldReportRangeType,
-  UpdateTurfType,
-} from '../../../../../../../libs/common/src';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
-import { TRPCService } from '../../../services/api/trpc-service';
-import type { RouterOutputs } from '../../../services/api/trpc-types';
+import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
+import {
+  CanvassingService,
+  type Coverage,
+  type FieldReport,
+  type FieldSummary,
+  type InFieldToday,
+  type TurfListItem,
+} from '../services/canvassing-service';
+import { CutTurfsDialog } from './cut-turfs-dialog';
 
-export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
-export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
-export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
-export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
-export type Coverage = RouterOutputs['canvassing']['getCoverage'];
-export type CutPreview = RouterOutputs['canvassing']['previewCut'];
+type TurfStatus = TurfListItem['status'];
+type Tab = 'turfs' | 'report';
+type ReportRange = FieldReportRangeType['range'];
+type CoverageStatus = Coverage['doors'][number]['status'];
+type CoverageView = 'map' | 'ward';
 
-@Service()
-export class CanvassingService extends TRPCService<unknown> {
-  public getTurfs(): Promise<TurfListItem[]> {
-    return this.api.canvassing.getTurfs.query();
+/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
+const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
+  conversation: 'success',
+  attempted: 'warning',
+  not_yet: 'muted',
+};
+
+const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
+  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
+  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
+  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
+];
+
+const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_field: 'success',
+  complete: 'primary',
+  retired: 'muted',
+};
+
+const STATUS_LABEL: Record<TurfStatus, string> = {
+  draft: 'Draft — unassigned',
+  assigned: 'Sent to app',
+  in_field: 'In field now',
+  complete: 'Complete',
+  retired: 'Retired',
+};
+
+const STATUS_BADGE: Record<TurfStatus, string> = {
+  draft: 'badge-ghost',
+  assigned: 'badge-info',
+  in_field: 'badge-success',
+  complete: 'badge-primary',
+  retired: 'badge-ghost opacity-60',
+};
+
+const RANGES: { key: ReportRange; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
+  { key: 'campaign', label: 'Campaign' },
+];
+
+@Component({
+  selector: 'pc-canvassing-page',
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog],
+  templateUrl: './canvassing-page.html',
+})
+export class CanvassingPage implements OnInit {
+  private readonly svc = inject(CanvassingService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialog = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly tab = signal<Tab>('turfs');
+
+  protected readonly pageTabs: PcTabOption[] = [
+    { id: 'turfs', label: 'Turfs & assignments' },
+    { id: 'report', label: 'Field report' },
+  ];
+  protected readonly turfs = signal<TurfListItem[]>([]);
+  protected readonly summary = signal<FieldSummary | null>(null);
+  protected readonly today = signal<InFieldToday | null>(null);
+
+  protected readonly reportRange = signal<ReportRange>('week');
+  protected readonly report = signal<FieldReport | null>(null);
+  protected readonly coverage = signal<Coverage | null>(null);
+  protected readonly coverageView = signal<CoverageView>('map');
+
+  protected readonly cutOpen = signal(false);
+
+  protected readonly ranges = RANGES;
+  protected readonly statusLabel = STATUS_LABEL;
+  protected readonly statusBadge = STATUS_BADGE;
+  protected readonly coverageLegend = COVERAGE_LEGEND;
+
+  ngOnInit(): void {
+    void this.loadTurfs();
   }
 
-  public getFieldSummary(): Promise<FieldSummary> {
-    return this.api.canvassing.getFieldSummary.query();
+  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
+  protected readonly headline = computed<string>(() => {
+    const s = this.summary();
+    if (!s) return '';
+    const parts = [
+      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
+      `${s.inFieldCount} in the field now`,
+      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
+      `${s.waitingCount} waiting for a canvasser`,
+    ];
+    return parts.join(' · ');
+  });
+
+  /** Response-mix stacked bar segments for the "in the field today" card. */
+  protected readonly todaySegments = computed(() => {
+    const t = this.today();
+    if (!t) return [];
+    const m = t.responseMix;
+    return [
+      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
+      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
+      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
+      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
+      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
+    ].filter((s) => s.value > 0);
+  });
+
+  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
+
+  /**
+   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
+   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
+   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
+   */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    return this.turfs()
+      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
+      .map((t) => ({
+        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
+        variant: this.variantFor(t.status),
+        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
+        id: t.id,
+        payload: t.id,
+      }));
+  });
+
+  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
+
+  protected variantFor(status: TurfStatus): PcMapVariant {
+    return STATUS_VARIANT[status];
   }
 
-  public getInFieldToday(): Promise<InFieldToday> {
-    return this.api.canvassing.getInFieldToday.query();
+  protected progressPct(t: TurfListItem): number {
+    if (t.door_count <= 0) return 0;
+    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
   }
 
-  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
-    return this.api.canvassing.getFieldReport.query(input);
+  protected async loadTurfs(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [turfs, summary, today] = await Promise.all([
+        this.svc.getTurfs(),
+        this.svc.getFieldSummary(),
+        this.svc.getInFieldToday(),
+      ]);
+      this.turfs.set(turfs);
+      this.summary.set(summary);
+      this.today.set(today);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
+    } finally {
+      end();
+    }
   }
 
-  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
-    return this.api.canvassing.exportFieldReport.query(input);
+  protected async loadReport(): Promise<void> {
+    const end = this._loading.begin();
+    const range = { range: this.reportRange(), from: null, to: null };
+    try {
+      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
+      this.report.set(report);
+      this.coverage.set(coverage);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
+    } finally {
+      end();
+    }
   }
 
-  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
-    return this.api.canvassing.getCoverage.query(input);
+  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
+  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.doors.map((d) => ({
+      position: { lat: d.lat, lng: d.lng },
+      variant: COVERAGE_VARIANT[d.status],
+    }));
+  });
+
+  /** Dashed turf boundaries (convex hull of each turf's doors). */
+  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.turfs.map((t) => ({
+      path: t.path,
+      variant: 'neutral' as const,
+      dashed: true,
+      label: t.name,
+      id: t.id,
+    }));
+  });
+
+  protected selectTab(tab: string): void {
+    if (tab !== 'turfs' && tab !== 'report') return;
+    this.tab.set(tab);
+    if (tab === 'report' && !this.report()) void this.loadReport();
   }
 
-  public previewCut(input: CutTurfsType): Promise<CutPreview> {
-    return this.api.canvassing.previewCut.query(input);
+  protected setRange(range: ReportRange): void {
+    this.reportRange.set(range);
+    void this.loadReport();
   }
 
-  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
-    return this.api.canvassing.cutTurfs.mutate(input);
+  protected openCut(): void {
+    this.cutOpen.set(true);
   }
 
-  public assign(input: AssignTurfType): Promise<{ token: string }> {
-    return this.api.canvassing.assign.mutate(input);
+  protected onCutDone(created: number): void {
+    this.cutOpen.set(false);
+    if (created > 0) {
+      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
+      void this.loadTurfs();
+    }
   }
 
-  public getCompanionLink(turfId: string): Promise<{ token: string }> {
-    return this.api.canvassing.getCompanionLink.mutate(turfId);
+  /** Assign a turf as a shareable Companion link and copy it. */
+  protected async assign(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
+      await this.copyCompanionLink(token);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
+    } finally {
+      end();
+    }
   }
 
-  public retire(turfId: string): Promise<void> {
-    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
+  protected async copyLink(t: TurfListItem): Promise<void> {
+    if (t.token) {
+      await this.copyCompanionLink(t.token);
+      return;
+    }
+    await this.assign(t);
   }
 
-  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
-    return this.api.canvassing.refreshFromList.mutate(turfId);
+  private async copyCompanionLink(token: string): Promise<void> {
+    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
+    } catch {
+      this.alerts.showSuccess(`Companion link: ${url}`);
+    }
   }
 
-  public addTurf(input: AddTurfType): Promise<{ id: string }> {
-    return this.api.canvassing.addTurf.mutate(input);
+  protected async refresh(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.svc.refreshFromList(t.id);
+      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
+    } finally {
+      end();
+    }
   }
 
-  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
-    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
+  protected async retire(t: TurfListItem): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Retire this turf?',
+      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
+      confirmText: 'Retire turf',
+    });
+    if (!ok) return;
+    const end = this._loading.begin();
+    try {
+      await this.svc.retire(t.id);
+      this.alerts.showSuccess('Turf retired.');
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async exportReport(): Promise<void> {
+    try {
+      const { filename, content } = await this.svc.exportFieldReport({
+        range: this.reportRange(),
+        from: null,
+        to: null,
+      });
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
+    }
+  }
+
+  protected hourLabel(h: number): string {
+    const am = h < 12;
+    const base = h % 12 === 0 ? 12 : h % 12;
+    return `${base}${am ? 'am' : 'pm'}`;
+  }
+
+  protected barPct(value: number, max: number): number {
+    if (max <= 0) return 0;
+    return Math.round((value / max) * 100);
+  }
+
+  protected maxPerDay(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
+  }
+
+  protected maxByHour(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.byHour.map((h) => h.attempts));
   }
 }
 ```
@@ -25369,6 +24717,104 @@ export class RecordDonationDialog {
     this.method.set('card');
     this.submitting.set(false);
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
+
+```typescript
+import { Component, effect, inject, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+
+@Component({
+  selector: 'pc-duplicate-page-shell',
+  imports: [RouterLink, Icon],
+  templateUrl: './merge-summary.html',
+})
+export class DuplicatePageShellComponent {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  title = input.required<string>();
+  icon = input.required<PcIconNameType>();
+  description = input.required<string>();
+  entityRoute = input.required<string>();
+  isLoading = input.required<boolean>();
+  isEmpty = input.required<boolean>();
+  currentPage = input.required<number>();
+  totalPages = input.required<number>();
+  totalGroups = input.required<number>();
+  /** "N possible duplicates waiting · found by the nightly sweep — ... · last sweep TIME"
+   * (spec §9.3) — see `BaseDuplicateManager.sweepSentence`. */
+  sweepSentence = input<string | null>(null);
+
+  next = output<void>();
+  prev = output<void>();
+
+  constructor() {
+    // Navbar trail is the way back to the Duplicates hub — no in-body back link.
+    effect(() => {
+      this.breadcrumbs.setCrumbs([
+        { label: 'Duplicates', route: '/duplicates' },
+        { label: `Duplicate ${this.title().toLowerCase()}` },
+      ]);
+    });
+  }
+}
+
+@Component({
+  selector: 'pc-merge-summary',
+  imports: [Icon],
+  template: `
+    <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between h-full">
+      <div class="card-body p-5">
+        <h4 class="font-bold text-base-content mb-2 flex items-center gap-2">
+          <pc-icon name="information-circle" class="text-warning" [size]="5"></pc-icon>
+          Merge Summary
+        </h4>
+
+        <div class="space-y-3 text-sm flex-1">
+          @if (!hasSelections()) {
+            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
+              Select which record to Keep and which to Merge.
+            </div>
+          } @else {
+            <div class="space-y-3">
+              <div class="alert alert-info py-2 text-[11px] leading-relaxed">
+                <span>{{ mergeDescription() }}</span>
+              </div>
+              <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
+                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
+                <div class="flex justify-between text-success gap-2">
+                  <span i18n class="flex-shrink-0">Keep Primary:</span>
+                  <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
+                </div>
+                <div class="flex justify-between text-error gap-2">
+                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
+                  <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="card-actions mt-4 pt-3 border-t border-base-300">
+          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="merge.emit()">
+            <pc-icon name="merge" [size]="4"></pc-icon> Merge Records
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class MergeSummaryComponent {
+  hasSelections = input.required<boolean>();
+  targetName = input<string>('');
+  sourceName = input<string>('');
+  mergeDescription = input.required<string>();
+  merge = output<void>();
 }
 ```
 
@@ -28737,97 +28183,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks — list and board',
-    summary:
-      'Track the work — assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
-    related: ['dashboard', 'teams', 'automations'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
-      },
-      { kind: 'h2', id: 'views', text: 'List or board — one dataset, two views' },
-      {
-        kind: 'list',
-        items: [
-          '[Tasks](/tasks) — the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) — one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
-          'Every header carries a swap button — Open board / Open list — so you never have to hunt for the sidebar to switch.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'A task with no assignee shows a dashed Unassigned pill — one click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).",
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one — "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Storage & attachments',
-    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
-    related: ['grid-basics', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
-      },
-      { kind: 'h2', id: 'attach', text: 'Attach a file' },
-      {
-        kind: 'p',
-        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
-      },
-      { kind: 'h2', id: 'storage', text: 'Check total usage' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Workspace settings → Storage](/workspace/storage)',
-            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
-          },
-          {
-            title: 'Delete a large file',
-            detail:
-              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Quota affects newsletter sending',
-        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
 
 ```typescript
@@ -29828,841 +29183,6 @@ export class ListView implements OnDestroy {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-
-import {
-  MarketingEmailType,
-  NewsletterReportBounceType,
-  NewsletterReportType,
-} from '../../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { NewslettersService } from '../services/newsletters-service';
-import { FilesService } from '../../files/services/files.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-const STATUS_TONE: Record<string, PcStatusType> = {
-  archived: 'ghost',
-  draft: 'ghost',
-  paused: 'warning',
-  queuing: 'info',
-  scheduled: 'info',
-  sending: 'info',
-  sent: 'success',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  archived: 'Archived',
-  draft: 'Draft',
-  paused: 'Paused',
-  queuing: 'Sending',
-  scheduled: 'Scheduled',
-  sending: 'Sending',
-  sent: 'Sent',
-};
-
-const BOUNCE_KIND_LABEL: Record<NewsletterReportBounceType['kind'], string> = {
-  hard: 'Hard',
-  soft: 'Soft',
-  dropped: 'Dropped',
-};
-
-/** The 48-hour engagement chart: sixteen 3-hour buckets from the send moment. */
-const CHART_BUCKET_HOURS = 3;
-const CHART_BUCKETS = 16;
-const MS_PER_HOUR = 3_600_000;
-/** Providers throttle senders whose spam-report rate crosses ~0.1% of delivered. */
-const SPAM_RATE_DANGER_PCT = 0.1;
-/** Bounce rows shown inline; the full set goes through the CSV export. */
-const BOUNCE_ROWS_SHOWN = 6;
-
-interface NewsletterAttachment {
-  id: string;
-  filename: string;
-  size_bytes: number | null;
-}
-
-interface StatTile {
-  label: string;
-  value: string;
-  valueClass: string;
-  sub: string;
-}
-
-interface FunnelRow {
-  label: string;
-  count: string;
-  share: string;
-  width: number;
-}
-
-interface ChartBucket {
-  opens: number;
-  clicks: number;
-  opensPct: number;
-  clicksPct: number;
-  tip: string;
-}
-
-interface CompareRow {
-  label: string;
-  current: string;
-  delta: string | null;
-  deltaClass: string;
-  bars: { height: number; isCurrent: boolean }[];
-}
-
-@Component({
-  selector: 'pc-newsletter-detail',
-  imports: [Icon, RouterLink, StatusBadge],
-  templateUrl: './newsletter-detail.html',
-})
-export class NewsletterDetailComponent {
-  readonly id = input.required<string>();
-
-  private readonly service = inject(NewslettersService);
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly router = inject(Router);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly email = signal<MarketingEmailType | null>(null);
-  protected readonly report = signal<NewsletterReportType | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly attachments = signal<NewsletterAttachment[]>([]);
-  protected readonly isUploadingAttachment = signal(false);
-  protected readonly isCreatingList = signal(false);
-  protected readonly isDuplicating = signal(false);
-  protected readonly emailExpanded = signal(false);
-
-  /** Attachments can only be managed before a newsletter has gone out. */
-  protected readonly canManageAttachments = computed(() => {
-    const status = this.email()?.status;
-    return status === 'draft' || status === 'scheduled';
-  });
-
-  /** A "report" only exists once a send is (or was) underway; before that this page is plain details. */
-  protected readonly isUnsent = computed(() => {
-    const status = this.email()?.status;
-    return status === 'draft' || status === 'scheduled';
-  });
-
-  protected readonly eyebrow = computed(() => (this.isUnsent() ? 'Newsletter details' : 'Newsletter report'));
-
-  protected readonly sentSentence = computed(() => {
-    const email = this.email();
-    if (!email) return '';
-    const from = this.report()?.from;
-    const fromPart = from?.email ? ` · from ${from.name ? `${from.name} ` : ''}<${from.email}>` : '';
-    if (email.status === 'sent' && email.send_date) return `Sent ${this.formatDateTime(email.send_date)}${fromPart}`;
-    if (email.status === 'scheduled' && email.send_date) {
-      return `Scheduled for ${this.formatDateTime(email.send_date)}${fromPart}`;
-    }
-    return `Not sent yet${fromPart}`;
-  });
-
-  protected readonly tiles = computed<StatTile[]>(() => {
-    const email = this.email();
-    if (!email) return [];
-    const report = this.report();
-    const sent = email.total_recipients;
-    const delivered = email.delivered_count;
-
-    // Averages across the earlier sends in this campaign (excludes this one).
-    const history = (report?.previous_sends ?? []).filter((s) => s.id !== email.id);
-    const avg = (values: number[]) => (values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null);
-    const avgOpen = avg(history.map((s) => s.open_rate));
-    const avgClick = avg(history.map((s) => s.click_rate));
-
-    const bounceTotal = report ? report.bounces.total : email.bounce_count;
-    const bounceSubParts: string[] = [];
-    if (report && report.bounces.total > 0) {
-      bounceSubParts.push(`${report.bounces.hard} hard · ${report.bounces.soft} soft`);
-      if (report.bounces.dropped > 0) bounceSubParts.push(`${report.bounces.dropped} dropped`);
-    }
-
-    return [
-      {
-        label: 'Delivered',
-        value: this.formatNumber(delivered),
-        valueClass: 'text-base-content',
-        sub: sent > 0 ? `${this.pct(delivered, sent)} of ${this.formatNumber(sent)} sent` : 'No recipients yet',
-      },
-      {
-        label: 'Open rate',
-        value: this.formatPercent(email.open_rate),
-        valueClass: email.open_rate > 0 ? 'text-primary' : 'text-base-content',
-        sub:
-          `${this.formatNumber(email.unique_opens)} unique opens` +
-          (avgOpen != null ? ` · avg ${this.formatPercent(avgOpen)}` : ''),
-      },
-      {
-        label: 'Click rate',
-        value: this.formatPercent(email.click_rate),
-        valueClass: email.click_rate > 0 ? 'text-secondary' : 'text-base-content',
-        sub:
-          `${this.formatNumber(report?.unique_clickers ?? email.unique_clicks)} unique clickers` +
-          (avgClick != null ? ` · avg ${this.formatPercent(avgClick)}` : ''),
-      },
-      {
-        label: 'Replies',
-        value: this.formatNumber(email.reply_count),
-        valueClass: 'text-base-content',
-        sub: email.reply_count > 0 ? 'Landed in the Inbox' : 'None yet',
-      },
-      {
-        label: 'Bounces',
-        value: this.formatNumber(bounceTotal),
-        valueClass: bounceTotal > 0 ? 'text-warning' : 'text-base-content',
-        sub: bounceSubParts.length > 0 ? bounceSubParts.join(' · ') : 'Every address accepted mail',
-      },
-    ];
-  });
-
-  protected readonly funnel = computed<FunnelRow[]>(() => {
-    const email = this.email();
-    if (!email) return [];
-    const sent = email.total_recipients;
-    const delivered = email.delivered_count;
-    const opened = email.unique_opens;
-    const clicked = this.report()?.unique_clickers ?? email.unique_clicks;
-    if (sent === 0) return [];
-    return [
-      { label: 'Sent', count: this.formatNumber(sent), share: '100%', width: 100 },
-      {
-        label: 'Delivered',
-        count: this.formatNumber(delivered),
-        share: `${this.pct(delivered, sent)} of sent`,
-        width: (delivered / sent) * 100,
-      },
-      {
-        label: 'Opened',
-        count: this.formatNumber(opened),
-        share: delivered > 0 ? `${this.pct(opened, delivered)} of delivered` : '—',
-        width: (opened / sent) * 100,
-      },
-      {
-        label: 'Clicked',
-        count: this.formatNumber(clicked),
-        share: opened > 0 ? `${this.pct(clicked, opened)} of opens` : '—',
-        width: (clicked / sent) * 100,
-      },
-    ];
-  });
-
-  protected readonly bounceRowsShown = computed<NewsletterReportBounceType[]>(
-    () => this.report()?.bounces.rows.slice(0, BOUNCE_ROWS_SHOWN) ?? [],
-  );
-
-  protected readonly engagementChart = computed<ChartBucket[] | null>(() => {
-    const report = this.report();
-    if (!report || report.timeline.length === 0) return null;
-    const email = this.email();
-    const firstBucket = report.timeline[0];
-    if (!firstBucket) return null;
-    const start = email?.send_date ? new Date(email.send_date).getTime() : this.bucketTime(firstBucket.time);
-
-    const buckets = Array.from({ length: CHART_BUCKETS }, () => ({ opens: 0, clicks: 0 }));
-    for (const point of report.timeline) {
-      const index = Math.floor((this.bucketTime(point.time) - start) / (CHART_BUCKET_HOURS * MS_PER_HOUR));
-      if (index < 0 || index >= CHART_BUCKETS) continue; // engagement past 48h isn't in this chart
-      const bucket = buckets[index];
-      if (!bucket) continue;
-      bucket.opens += point.opens;
-      bucket.clicks += point.clicks;
-    }
-    const max = Math.max(1, ...buckets.map((b) => Math.max(b.opens, b.clicks)));
-    return buckets.map((b, i) => ({
-      opens: b.opens,
-      clicks: b.clicks,
-      opensPct: (b.opens / max) * 100,
-      clicksPct: (b.clicks / max) * 100,
-      tip: `${i * CHART_BUCKET_HOURS}–${(i + 1) * CHART_BUCKET_HOURS}h: ${b.opens} opens · ${b.clicks} clicks`,
-    }));
-  });
-
-  protected readonly opensIn24hSentence = computed(() => {
-    const pctValue = this.report()?.opens_in_24h_pct;
-    if (pctValue == null) return null;
-    return `${Math.round(pctValue)}% of opens came within 24 hours of send.`;
-  });
-
-  protected readonly topLinks = computed(() => {
-    const report = this.report();
-    if (!report || report.top_links.length === 0) return [];
-    const max = Math.max(1, ...report.top_links.map((l) => l.clicks));
-    return report.top_links.map((l) => ({
-      ...l,
-      display: l.url.replace(/^https?:\/\//, ''),
-      width: (l.clicks / max) * 100,
-    }));
-  });
-
-  protected readonly linksSentence = computed(() => {
-    const report = this.report();
-    if (!report) return '';
-    return (
-      `${this.formatNumber(report.total_clicks)} clicks from ${this.formatNumber(report.unique_clickers)} ` +
-      `people · ${report.tracked_links} tracked link${report.tracked_links === 1 ? '' : 's'}`
-    );
-  });
-
-  protected readonly comparison = computed<CompareRow[]>(() => {
-    const report = this.report();
-    const sends = report?.previous_sends ?? [];
-    if (sends.length < 2) return [];
-    const previous = sends[sends.length - 2];
-    const metrics: { label: string; values: number[]; higherIsBetter: boolean }[] = [
-      { label: 'Open rate', values: sends.map((s) => s.open_rate), higherIsBetter: true },
-      { label: 'Click rate', values: sends.map((s) => s.click_rate), higherIsBetter: true },
-      { label: 'Unsubscribe rate', values: sends.map((s) => s.unsubscribe_rate), higherIsBetter: false },
-      { label: 'Bounce rate', values: sends.map((s) => s.bounce_rate), higherIsBetter: false },
-    ];
-    return metrics.map((m) => {
-      const current = m.values[m.values.length - 1] ?? 0;
-      const prior = m.values[m.values.length - 2] ?? 0;
-      const delta = current - prior;
-      const good = m.higherIsBetter ? delta > 0 : delta < 0;
-      const max = Math.max(0.1, ...m.values);
-      return {
-        label: m.label,
-        current: this.formatPercent(current),
-        delta: previous ? `${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} pts vs "${previous.name}"` : null,
-        deltaClass: Math.abs(delta) < 0.05 ? 'text-base-content/50' : good ? 'text-success' : 'text-error',
-        bars: m.values.map((v, i) => ({
-          height: Math.max(8, (v / max) * 100),
-          isCurrent: i === m.values.length - 1,
-        })),
-      };
-    });
-  });
-
-  protected readonly previousSendCount = computed(() => (this.report()?.previous_sends.length ?? 1) - 1);
-
-  protected readonly mostEngaged = computed(() => {
-    const report = this.report();
-    if (!report) return [];
-    return report.most_engaged.map((e) => {
-      const displayName = e.person?.name ?? e.email;
-      const parts: string[] = [];
-      if (e.opens > 0) parts.push(`Opened ${e.opens}×`);
-      if (e.links > 0) parts.push(`clicked ${e.links} link${e.links === 1 ? '' : 's'}`);
-      else if (e.clicks > 0) parts.push(`clicked ${e.clicks}×`);
-      return {
-        ...e,
-        displayName,
-        initials: this.initials(displayName),
-        summary: parts.join(' · '),
-      };
-    });
-  });
-
-  protected readonly audienceSinceSend = computed(() => {
-    const email = this.email();
-    const report = this.report();
-    if (!email || !report) return null;
-    const parts: string[] = [];
-    if (report.unsubscribes.total > 0) parts.push(`${report.unsubscribes.total} unsubscribed`);
-    if (report.bounces.total > 0) parts.push(`${report.bounces.total} joined the bounce list`);
-    if (report.spam_reports.total > 0) {
-      parts.push(`${report.spam_reports.total} spam report${report.spam_reports.total === 1 ? '' : 's'}`);
-    }
-    return parts.length > 0 ? `Since the send: ${parts.join(' · ')}.` : null;
-  });
-
-  protected readonly unsubscribeReasons = computed(() => {
-    const report = this.report();
-    if (!report || report.unsubscribes.total === 0) return [];
-    return report.unsubscribes.reasons.map((r) => ({
-      label: r.reason ?? 'No reason given',
-      count: r.count,
-      width: (r.count / report.unsubscribes.total) * 100,
-    }));
-  });
-
-  protected readonly unsubscribeRate = computed(() => {
-    const email = this.email();
-    const total = this.report()?.unsubscribes.total ?? 0;
-    if (!email || email.delivered_count === 0) return null;
-    return this.pct(total, email.delivered_count);
-  });
-
-  protected readonly spamRate = computed(() => {
-    const email = this.email();
-    const total = this.report()?.spam_reports.total ?? 0;
-    if (!email || email.delivered_count === 0) return null;
-    return (total / email.delivered_count) * 100;
-  });
-
-  protected readonly spamRateIsSafe = computed(() => {
-    const rate = this.spamRate();
-    return rate != null && rate < SPAM_RATE_DANGER_PCT;
-  });
-
-  protected readonly spamRows = computed(() => {
-    const report = this.report();
-    const email = this.email();
-    if (!report) return [];
-    return report.spam_reports.rows.map((r) => {
-      let timing = '';
-      if (r.occurred_at && email?.send_date) {
-        const hours = Math.round(
-          (new Date(r.occurred_at).getTime() - new Date(email.send_date).getTime()) / MS_PER_HOUR,
-        );
-        if (hours >= 0) timing = `${hours}h after send`;
-      }
-      return {
-        email: r.email || 'Address withheld by the provider',
-        timing: timing || (r.occurred_at ? this.formatDateTime(r.occurred_at) : ''),
-      };
-    });
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.load(currentId));
-    });
-    // Navbar trail with the newsletter's real name once loaded (until then the
-    // route default — Newsletters — is showing).
-    effect(() => {
-      const email = this.email();
-      if (!email) return;
-      this.breadcrumbs.setCrumbs([
-        { label: 'Newsletters', route: '/newsletters' },
-        { label: email.name || 'Untitled newsletter' },
-      ]);
-    });
-  }
-
-  protected statusLabel(status: string | undefined): string {
-    if (!status) return '—';
-    return STATUS_LABEL[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
-  }
-
-  protected statusTone(status: string | undefined): PcStatusType {
-    return (status && STATUS_TONE[status]) || 'ghost';
-  }
-
-  protected bounceKindLabel(kind: NewsletterReportBounceType['kind']): string {
-    return BOUNCE_KIND_LABEL[kind];
-  }
-
-  protected bounceKindTone(kind: NewsletterReportBounceType['kind']): PcStatusType {
-    return kind === 'hard' ? 'warning' : 'ghost';
-  }
-
-  protected personRoute(person: { id: string; public_id: string | null }): string[] {
-    return ['/people', person.public_id ?? person.id];
-  }
-
-  protected async createClickersList(): Promise<void> {
-    const report = this.report();
-    if (!report || report.unique_clickers === 0 || this.isCreatingList()) return;
-    this.isCreatingList.set(true);
-    try {
-      const result = await this.service.createClickersList(this.id());
-      this.alertSvc.showSuccess(`List "${result.name}" created with ${this.formatNumber(result.members)} people`);
-      await this.router.navigate(['/lists', result.id]);
-    } catch (err: unknown) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to create the list'));
-    } finally {
-      this.isCreatingList.set(false);
-    }
-  }
-
-  protected async duplicateNewsletter(): Promise<void> {
-    const email = this.email();
-    if (!email || this.isDuplicating()) return;
-    this.isDuplicating.set(true);
-    try {
-      await this.service.add({
-        name: `${email.name} (copy)`,
-        status: 'draft',
-        subject: email.subject ?? null,
-        preview_text: email.preview_text ?? null,
-        summary: email.summary ?? null,
-        audience_description: email.audience_description ?? null,
-        target_lists: email.target_lists ?? null,
-        segments: email.segments ?? null,
-        html_content: email.html_content ?? null,
-        plain_text_content: email.plain_text_content ?? null,
-      });
-      this.alertSvc.showSuccess(`Draft "${email.name} (copy)" created`);
-      await this.router.navigate(['/newsletters']);
-    } catch (err: unknown) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to duplicate the newsletter'));
-    } finally {
-      this.isDuplicating.set(false);
-    }
-  }
-
-  protected exportReportCsv(): void {
-    const email = this.email();
-    const report = this.report();
-    if (!email) return;
-    const lines: string[][] = [
-      ['Metric', 'Value'],
-      ['Newsletter', email.name],
-      ['Status', this.statusLabel(email.status)],
-      ['Sent', email.send_date ? new Date(email.send_date).toISOString() : ''],
-      ['Recipients', String(email.total_recipients)],
-      ['Delivered', String(email.delivered_count)],
-      ['Open rate', this.formatPercent(email.open_rate)],
-      ['Unique opens', String(email.unique_opens)],
-      ['Click rate', this.formatPercent(email.click_rate)],
-      ['Unique clickers', String(report?.unique_clickers ?? email.unique_clicks)],
-      ['Replies', String(email.reply_count)],
-      ['Bounces', String(report?.bounces.total ?? email.bounce_count)],
-      ['Unsubscribes', String(report?.unsubscribes.total ?? email.unsubscribe_count)],
-      ['Spam reports', String(report?.spam_reports.total ?? email.spam_complaint_count)],
-    ];
-    if (report && report.top_links.length > 0) {
-      lines.push([], ['Link', 'Clicks', 'People']);
-      for (const link of report.top_links) {
-        lines.push([link.url, String(link.clicks), link.people != null ? String(link.people) : '']);
-      }
-    }
-    this.downloadCsv(this.csvFileName('report'), lines);
-  }
-
-  protected exportBouncesCsv(): void {
-    const report = this.report();
-    if (!report || report.bounces.rows.length === 0) return;
-    const lines: string[][] = [['Email', 'Kind', 'Reason', 'Occurred at', 'CRM match']];
-    for (const bounce of report.bounces.rows) {
-      lines.push([
-        bounce.email,
-        this.bounceKindLabel(bounce.kind),
-        bounce.reason ?? '',
-        bounce.occurred_at ? new Date(bounce.occurred_at).toISOString() : '',
-        bounce.person?.name ?? '',
-      ]);
-    }
-    this.downloadCsv(this.csvFileName('bounces'), lines);
-  }
-
-  protected async onAttachmentSelected(event: Event): Promise<void> {
-    const inputEl = event.target as HTMLInputElement;
-    const file = inputEl?.files?.[0];
-    const newsletterId = this.id();
-    if (!file || !newsletterId) return;
-
-    this.isUploadingAttachment.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
-      this.alertSvc.showSuccess(`"${file.name}" attached`);
-      await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to attach file');
-    } finally {
-      this.isUploadingAttachment.set(false);
-      inputEl.value = '';
-    }
-  }
-
-  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: `Remove "${attachment.filename}"?`,
-      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(attachment.id);
-      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
-      const newsletterId = this.id();
-      if (newsletterId) await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to remove attachment');
-    }
-  }
-
-  protected formatBytes(value: number | null | undefined): string {
-    if (!value) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let unitIndex = 0;
-    let size = value;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-  }
-
-  protected formatNumber(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return new Intl.NumberFormat().format(value);
-  }
-
-  protected formatPercent(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return `${value.toFixed(1)}%`;
-  }
-
-  protected formatSpamRate(value: number | null): string {
-    if (value == null) return '—';
-    return `${value.toFixed(2)}%`;
-  }
-
-  private pct(part: number, whole: number): string {
-    return whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '—';
-  }
-
-  private formatDateTime(value: Date | string): string {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  }
-
-  /** Timeline bucket keys are 'YYYY-MM-DD HH24:00' strings; parse as local time. */
-  private bucketTime(bucket: string): number {
-    return new Date(bucket.replace(' ', 'T')).getTime();
-  }
-
-  private initials(name: string): string {
-    const words = name
-      .replace(/[^\p{L}\p{N}@ ]/gu, '')
-      .split(/\s+/)
-      .filter(Boolean);
-    if (words.length === 0) return '?';
-    const first = words[0]?.charAt(0) ?? '';
-    const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
-    return (first + last).toUpperCase() || '?';
-  }
-
-  private csvFileName(kind: string): string {
-    const name = (this.email()?.name ?? 'newsletter')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    return `${name || 'newsletter'}-${kind}.csv`;
-  }
-
-  private downloadCsv(filename: string, rows: string[][]): void {
-    const escapeCell = (cell: string) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
-    const csv = rows.map((row) => row.map(escapeCell).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  private async load(id: string): Promise<void> {
-    if (!id) {
-      this.error.set('Newsletter not found.');
-      return;
-    }
-    const end = this.loading.begin();
-    try {
-      const record = (await this.service.getById(id)) as MarketingEmailType | null;
-      if (!record) {
-        this.error.set('Newsletter not found.');
-        return;
-      }
-      this.email.set(record);
-
-      const reportData = await this.service.getReport(id);
-      this.report.set(reportData);
-
-      await this.loadAttachments(id);
-    } catch (err: unknown) {
-      console.error(err);
-      this.error.set('Unable to load newsletter.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadAttachments(id: string): Promise<void> {
-    try {
-      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
-      this.attachments.set(
-        (rows as Record<string, unknown>[]).map((r) => ({
-          id: String(r['id']),
-          filename: String(r['filename']),
-          size_bytes: r['size_bytes'] as number | null,
-        })),
-      );
-    } catch {
-      // Non-fatal — attachments are supplementary to the newsletter report.
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Newsletters" [totalSentence]="headerSentence()">
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New newsletter
-    </a>
-  </pc-grid-header>
-
-  <!-- All-time engagement stat tiles -->
-  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Sent campaigns</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatNumber(stats().sentCount) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">All time</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatNumber(stats().delivered) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Successful deliveries</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg open rate</div>
-        <div
-          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
-          [class.text-success]="stats().avgOpenRate > 0"
-          [class.text-base-content]="stats().avgOpenRate === 0"
-        >
-          {{ formatPercent(stats().avgOpenRate) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Opens per delivery</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg click rate</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatPercent(stats().avgClickRate) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Clicks per delivery</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-        <div
-          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
-          [class.text-warning]="stats().bounces > 0"
-          [class.text-base-content]="stats().bounces === 0"
-        >
-          {{ formatNumber(stats().bounces) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Auto-skipped on next send</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Campaign table -->
-  <pc-table [loading]="loading.visible()" [columns]="7">
-    <ng-container pcTableHead>
-      <th>Campaign</th>
-      <th>Status</th>
-      <th>Audience</th>
-      <th>Open</th>
-      <th>Click</th>
-      <th>Date</th>
-      <th class="w-44"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="7" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="megaphone" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No newsletters in this workspace yet.</p>
-          <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-            <pc-icon name="plus" [size]="4"></pc-icon>
-            New newsletter
-          </a>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
-      </td>
-      <td>
-        <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.total_recipients > 0) { {{ formatNumber(row.total_recipients) }} recipients } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.status === 'sent') { {{ formatPercent(row.open_rate) }} } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.status === 'sent') { {{ formatPercent(row.click_rate) }} } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        @if (row.send_date) { {{ row.send_date | date: (row.status === 'scheduled' ? 'MMM d, h:mm a' : 'MMM d, y') }} }
-        @else {
-        <span class="text-base-content/40">Not scheduled</span>
-        }
-      </td>
-      <td class="text-right">
-        <!-- A report only exists once a send is (or was) underway; unsent rows open plain details. -->
-        @if (row.status === 'draft' || row.status === 'scheduled') {
-        <div class="flex items-center justify-end gap-2">
-          <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View details</a>
-          @if (row.status === 'draft') {
-          <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
-            <button
-              type="button"
-              class="btn btn-primary btn-xs"
-              [disabled]="sendBlocker(row) !== null"
-              (click)="sendDraft(row)"
-            >
-              Send…
-            </button>
-          </span>
-          }
-        </div>
-        } @else {
-        <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
-        }
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
@@ -36058,6 +34578,506 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
+
+```typescript
+import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
+import {
+  Component,
+  CUSTOM_ELEMENTS_SCHEMA,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { TeamsService } from '../../teams/services/teams-service';
+import { QuillModule } from 'ngx-quill';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { Icon } from '@icons/icon';
+import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
+import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { UserService } from '../../../services/user.service';
+
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-task-view',
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    SlicePipe,
+    DetailLayout,
+    FormsModule,
+    RouterModule,
+    QuillModule,
+    Icon,
+    SanitizeHtmlPipe,
+    MentionifyPipe,
+    TimeAgoPipe,
+    RecordActivities,
+    UserAvatarComponent,
+  ],
+  templateUrl: './task-view.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class TaskView {
+  readonly id = input.required<string>();
+
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly tasks = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly teams = inject(TeamsService);
+  private readonly userService = inject(UserService);
+
+  protected readonly task = signal<any | null>(null);
+  protected readonly comments = signal<any[]>([]);
+  protected readonly attachments = signal<any[]>([]);
+  protected readonly subtasks = signal<any[]>([]);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly assignedTo = signal<string>('');
+  protected readonly teamsList = signal<any[]>([]);
+  protected readonly teamId = signal<string>('');
+
+  /** "N of M filtered" pager + J/K keys when the grid handed off a filtered set. */
+  protected readonly recordNav = injectRecordNavigation('task', this.id);
+
+  /** Entity noun while loading; the record's real name once loaded. */
+  protected readonly pageTitle = computed(() => {
+    const task = this.task();
+    if (!task) return 'Task';
+    return task.name || '(No name)';
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Tasks', route: '/tasks' },
+    { label: this.pageTitle() },
+  ]);
+
+  // Form Fields & Inline Editing State
+  protected isEditingDetails = signal(false);
+  protected isEditingDueDate = signal(false);
+  protected tempDetails = signal('');
+  protected readonly defaultDetails =
+    '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
+  private readonly activityHistory = viewChild<RecordActivities>('activityHistory');
+
+  private refreshActivities() {
+    const component = this.activityHistory();
+    if (component) {
+      void component.loadActivities();
+    }
+  }
+
+  protected newComment = signal('');
+  protected attName = signal('');
+  protected attUrl = signal('');
+  protected subtaskName = signal('');
+
+  // Expand / collapse sections
+  protected showComments = signal(true);
+  protected showSubtasks = signal(true);
+  protected showAttachments = signal(true);
+
+  // Autocomplete mentions (shared controller)
+  private readonly taskComposer = viewChild<{ nativeElement: HTMLTextAreaElement }>('taskComposer');
+  public mc = new MentionController(() => this.users());
+
+  // Priority classes and options for display/inputs
+  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
+
+  constructor() {
+    effect(() => {
+      void untracked(() => this.load());
+    });
+  }
+
+  // Load task and its children
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const [t, us, ts] = await Promise.all([
+        this.tasks.getById(this.id()),
+        this.userService.getUsers(),
+        this.teams.getAll({ limit: 1000 }),
+      ]);
+      if (!t) {
+        this.alertSvc.showError('Task not found.');
+        return;
+      }
+      this.task.set(t as any);
+      this.users.set(us || []);
+      this.teamsList.set(ts?.rows ?? []);
+      const assigned = (t as any)?.assigned_to;
+      this.assignedTo.set(assigned == null ? '' : String(assigned));
+      const team = (t as any)?.team_id;
+      this.teamId.set(team == null ? '' : String(team));
+
+      // Load subtasks, comments, attachments
+      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  private async loadComments() {
+    const list = await this.tasks.api.tasks.getComments.query(this.id());
+    this.comments.set(list);
+  }
+
+  private async loadAttachments() {
+    const list = await this.tasks.api.tasks.getAttachments.query(this.id());
+    this.attachments.set(list);
+  }
+
+  private async loadSubtasks() {
+    const list = await this.tasks.api.tasks.getSubtasks.query(this.id());
+    this.subtasks.set(list);
+  }
+
+  protected asDate(v: any) {
+    return v ? new Date(v) : null;
+  }
+
+  protected dateOnly(v: any) {
+    if (!v) return '';
+    const s = typeof v === 'string' ? v : new Date(v).toISOString();
+    return s.slice(0, 10);
+  }
+
+  protected async update(patch: any) {
+    if (!this.task()) return;
+    const id = this.id();
+    try {
+      await this.tasks.update(id, patch);
+      this.tasks.triggerRefresh();
+      this.task.update((t) => ({ ...(t ?? {}), ...patch }));
+      if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
+        const v = patch.assigned_to;
+        this.assignedTo.set(v == null || v === '' ? '' : String(v));
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'team_id')) {
+        const v = patch.team_id;
+        this.teamId.set(v == null || v === '' ? '' : String(v));
+      }
+      this.alertSvc.showSuccess('Task updated successfully');
+      this.refreshActivities();
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
+    }
+  }
+
+  protected onTeamChange(event: any) {
+    const val = event.target.value;
+    void this.update({ team_id: val || null });
+  }
+
+  /** Rename via prompt dialog — the header owns the title, so there is no in-body name field. */
+  protected async renameTask() {
+    const name = await this.dialogs.prompt({
+      title: 'Rename task',
+      message: 'Enter a new name for this task.',
+      defaultValue: this.task()?.name || '',
+      inputPlaceholder: 'Task name',
+      confirmText: 'Rename',
+    });
+    const nextName = name?.trim();
+    if (!nextName || nextName === this.task()?.name) return;
+    await this.update({ name: nextName });
+  }
+
+  // Inline details (Quill description) editing trigger & save
+  protected startEditingDetails() {
+    this.tempDetails.set(this.task()?.details || '');
+    this.isEditingDetails.set(true);
+  }
+
+  protected async saveDetails() {
+    await this.update({ details: this.tempDetails() });
+    this.isEditingDetails.set(false);
+  }
+
+  protected cancelEditingDetails() {
+    this.isEditingDetails.set(false);
+  }
+
+  // Subtask Actions
+  protected async addSubtask() {
+    const name = this.subtaskName().trim();
+    if (!name) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addSubtask.mutate({ task_id: this.id(), name });
+      this.subtaskName.set('');
+      await this.loadSubtasks();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  protected async toggleSubtask(s: any, isDone: boolean) {
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.updateSubtask.mutate({
+        id: String(s.id),
+        data: { status: isDone ? 'done' : 'todo' },
+      });
+      await this.loadSubtasks();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Comment Actions
+  protected async addComment() {
+    const plain = this.newComment().trim();
+    if (!plain) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
+      this.newComment.set('');
+      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Attachment Actions
+  protected async addAttachment() {
+    const name = this.attName().trim();
+    const url = this.attUrl().trim();
+    if (!name) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
+      this.attName.set('');
+      this.attUrl.set('');
+      await this.loadAttachments();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Status and Priority Dropdown Handlers
+  protected onStatusChange(event: any) {
+    const status = event.target.value;
+    void this.update({ status });
+  }
+
+  protected onPriorityChange(event: any) {
+    const priority = event.target.value;
+    void this.update({ priority });
+  }
+
+  protected onDueDateChange(event: any) {
+    const value = this.normalizeCalendarValue(event);
+    void this.update({ due_at: value });
+  }
+
+  protected onAssignedChange(v: string) {
+    this.assignedTo.set(v);
+    void this.update({ assigned_to: v || null });
+  }
+
+  protected assignToMe() {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    void this.update({ assigned_to: me.id });
+  }
+
+  protected isArchived() {
+    return (this.task()?.status || '') === 'archived';
+  }
+
+  protected async archiveTask() {
+    await this.update({ status: 'archived' });
+  }
+
+  protected async unarchiveTask() {
+    await this.update({ status: 'todo' });
+  }
+
+  protected async deleteTask() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+
+    if (confirmed) {
+      const end = this._loading.begin();
+      try {
+        const deleted = await this.tasks.delete(this.id());
+        if (deleted) {
+          this.tasks.triggerRefresh();
+          this.alertSvc.showSuccess('Task deleted successfully');
+          void this.router.navigate(['/tasks']);
+        } else {
+          this.alertSvc.showError('Failed to delete task.');
+        }
+      } catch (err) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
+      } finally {
+        end();
+      }
+    }
+  }
+
+  // User display name helpers
+  protected userName(id: string | null | undefined): string {
+    if (!id) return 'Unknown';
+    const uid = String(id);
+    const u = this.users().find((x) => String(x.id) === uid);
+    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'Unknown';
+  }
+
+  protected userAvatar(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const uid = String(id);
+    const u = this.users().find((x) => String(x.id) === uid);
+    return u ? this.userService.resolveAvatarUrl(u.avatar_url) : null;
+  }
+
+  protected myUserId(): string | null {
+    return this.auth.getUser()?.id ?? null;
+  }
+
+  // Mention autocomplete text area inputs
+  protected onComposerInput(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    this.newComment.set(el.value);
+    const caret = el.selectionStart ?? this.newComment().length;
+    this.mc.updateFromInput(this.newComment(), caret);
+  }
+
+  protected onComposerClick(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    const caret = el.selectionStart ?? 0;
+    this.mc.updateFromInput(this.newComment(), caret);
+  }
+
+  protected onComposerKeydown(ev: KeyboardEvent) {
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      void this.addComment();
+      return;
+    }
+    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
+  }
+
+  protected selectMention(u: IAuthUser, ev?: Event) {
+    ev?.preventDefault();
+    const res = this.mc.select(u, this.newComment());
+    this.newComment.set(res.text);
+    const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(res.caret, res.caret);
+      }
+    });
+  }
+
+  protected userDisplay = userDisplay;
+
+  private normalizeCalendarValue(event: any): string | null {
+    const raw =
+      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
+      (event?.detail?.value != null && event.detail.value) ||
+      (event?.target?.value != null && event.target.value) ||
+      (event?.value != null && event.value) ||
+      (typeof event === 'string' ? event : null);
+
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  protected statusLabel(status: string): string {
+    return isTaskStatus(status) ? TASK_STATUS_LABELS[status] : this.toTitleCase(status);
+  }
+
+  // Styling helper classes
+  protected getStatusBadgeClass(status: string): string {
+    if (!isTaskStatus(status)) return 'badge-ghost'; // unrecognized/corrupt data — neutral, not a crash
+    switch (status) {
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'waiting':
+        return 'badge-error text-error-content';
+      case 'archived':
+        return 'badge-neutral text-neutral-content';
+      case 'todo':
+        return 'badge-ghost';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  }
+
+  protected getPriorityBadgeClass(priority: string): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected toTitleCase(s: string): string {
+    if (!s) return '';
+    return s
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
 
 ```html
@@ -36251,85 +35271,6 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
-  protected override readonly endpointName = 'authusers';
-
-  public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(_rows: InviteAuthUserType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.authusers.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: Record<string, unknown>[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
-  }
-
-  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
-    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
-  }
-
-  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
-    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('User export is not available'));
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/invite-user-dialog.ts
 
 ```typescript
@@ -36471,325 +35412,88 @@ export class InviteUserDialog {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-view.html
-
-```html
-<pc-detail-layout
-  [title]="displayName() || 'User'"
-  [eyebrow]="'User'"
-  [crumbs]="crumbs()"
-  [isLoading]="loading()"
-  [error]="error()"
-  [hasRecord]="!initialized() || !!detail()"
-  [showDelete]="true"
-  [deleteText]="'Delete user'"
-  [btn1Text]="'Edit user'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editUser()"
-  (delete)="deleteUser()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (detail()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: User Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-          <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ roleLabel() }}
-        </pc-status-badge>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
-            <span>Verified:</span>
-            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
-              {{ detail()?.verified ? 'Yes' : 'No' }}
-            </pc-status-badge>
-          </pc-detail-row>
-        </div>
-
-        <pc-system-metadata
-          [createdAt]="detail()?.created_at"
-          [updatedAt]="detail()?.updated_at"
-          layout="col"
-          dateFormat="medium"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Metadata & Activity -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Cards Grid -->
-      @if (stats()) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        @for (card of activityCards(); track card.key) {
-        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
-          @if (card.asOf) {
-          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
-          }
-        </pc-stat-card>
-        }
-      </div>
-      }
-
-      <!-- Account Metadata -->
-      <!-- Account Metadata -->
-      <pc-card title="Account Metadata">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="roleLabel()"></pc-detail-item>
-          <pc-detail-item
-            label="Created"
-            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Last updated"
-            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
-          ></pc-detail-item>
-        </div>
-      </pc-card>
-
-      <!-- Activity log track -->
-      <pc-card title="Activity Log">
-        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+## File: apps/frontend/src/app/experiences/users/user-status.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 
-@Component({
-  selector: 'pc-user-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-    DetailItem,
-    SystemMetadata,
-    PcCard,
-  ],
-  templateUrl: './user-view.html',
-})
-export class UserViewComponent {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('user', this.id);
-
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly avatarUrl = computed(() => {
-    const user = this.detail();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  /** Product name for the stored role value — the working role 'user' is shown as "Editor". */
-  protected readonly roleLabel = computed(() => {
-    const role = this.detail()?.role;
-    if (!role) return '—';
-    return { owner: 'Owner', admin: 'Admin', user: 'Editor', viewer: 'Viewer' }[role] ?? role;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Users', route: '/users' },
-    { label: this.displayName() || 'User' },
-  ]);
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  protected editUser() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    if (String(this.id()) === String(this.currentUserId())) {
-      this.alerts.showError('You cannot delete yourself.');
-      return;
-    }
-    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
-      this.alerts.showError('Admins cannot delete owner accounts.');
-      return;
-    }
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      end();
-    }
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(d);
-    } catch {
-      return date.toString();
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.stats.set(user.stats);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
+/**
+ * Lifecycle/role derivations shared by the Users list and the user detail page,
+ * so the two surfaces can never disagree about what "Deactivated" or a locked
+ * role means. Date fields accept ISO strings (list rows) or Dates (detail).
+ */
+export interface UserStatusSource {
+  verified: boolean;
+  deletion_scheduled_at?: string | Date | null;
+  deactivated_at?: string | Date | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** Admin-deactivated OR self-scheduled deletion: either way the account is out of service. */
+export function userIsDeactivated(u: UserStatusSource): boolean {
+  return !!u.deactivated_at || !!u.deletion_scheduled_at;
+}
+
+export function userStatus(u: UserStatusSource): { label: string; tone: PcStatusType } {
+  if (userIsDeactivated(u)) return { label: 'Deactivated', tone: 'ghost' };
+  if (!u.verified) return { label: 'Invited', tone: 'warning' };
+  return { label: 'Active', tone: 'success' };
+}
+
+/** Why this user's role can't be changed — null when it can. Doubles as the visible reason (§2 explained-disabled). */
+export function userRoleLockReason(opts: {
+  isSelf: boolean;
+  callerRole: string | null | undefined;
+  targetRole: string | null | undefined;
+  deactivated: boolean;
+}): string | null {
+  if (opts.isSelf) return "You can't change your own role";
+  if (opts.deactivated) return 'Deactivated accounts keep their role';
+  if (opts.callerRole === 'admin' && opts.targetRole === 'owner') return "Only an owner can change an owner's role";
+  return null;
+}
+
+/** Roles the caller may assign; includes the target's current role so the select never shows blank. */
+export function userRoleOptions(
+  callerRole: string | null | undefined,
+  targetRole: string | null | undefined,
+): string[] {
+  const options = callerRole === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
+  if (targetRole && !options.includes(targetRole)) return [targetRole, ...options];
+  return options;
+}
+
+export function userShortDate(value: string | Date | null | undefined): string {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+export function userRelativeTime(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  const diff = Date.now() - date.getTime();
+  if (Number.isNaN(diff)) return '—';
+  if (diff < MINUTE) return 'Just now';
+  if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
+  if (diff < 2 * DAY) return 'Yesterday';
+  return userShortDate(date);
+}
+
+/** "Last active" cell/fact: invited accounts show when the invite went out instead of a dash. */
+export function userLastActiveLabel(
+  u: UserStatusSource & { created_at?: string | Date | null; last_active_at?: string | Date | null },
+): string {
+  if (!u.verified && !userIsDeactivated(u)) {
+    const sent = userShortDate(u.created_at);
+    return sent ? `Invite sent ${sent}` : 'Invite sent';
+  }
+  if (!u.last_active_at) return '—';
+  return userRelativeTime(u.last_active_at);
 }
 ```
 
@@ -38472,175 +37176,346 @@ function isStoredRecordNavContext(value: unknown): value is StoredRecordNavConte
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 
 ```typescript
-import { Injectable } from '@angular/core';
-import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { loadingGate } from '@uxcommon/loading-gate';
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
-import { DataGridConfig } from '../datagrid.tokens';
-import type { GridRow } from '../types';
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
 
-@Injectable({ providedIn: 'root' })
-export class DataGridActionsService {
-  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
-    const { messages } = ctx.config;
+  private readonly countFormatter = new Intl.NumberFormat();
 
-    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : ctx.config.messages.deleteConfirmMessage;
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
 
-    const ok = await ctx.dialogs.confirm({
-      title: messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: messages.deleteConfirmVariant,
-      icon: messages.deleteConfirmIcon,
-      confirmText: messages.deleteConfirmText,
-      cancelText: messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return;
+  /**
+   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
+   * count-sentence: "matching" only when a filter narrows the set, singular noun
+   * at 1, and just "Export people" before the first load resolves a count.
+   */
+  readonly exportLabel = computed<string>(() => {
+    const count = this.grid.totalCountAll();
+    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
+    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
+    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
+    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
+  });
 
-    const rows = ctx.getSelectedRows();
-    if (!rows.length) {
-      ctx.alertSvc.showError(messages.deleteNoneSelected);
-      return;
-    }
+  /** Solid-primary create-button label (UX-GUIDELINES "Buttons"), e.g. "New person". Falls back
+   *  to "New" when the grid config carries no specific entity noun. */
+  readonly addLabel = computed(() => {
+    const noun = this.grid.entityNoun;
+    return noun && noun !== 'row' ? `New ${noun}` : 'New';
+  });
 
-    const isNonDeletable = (row: Record<string, unknown>) => {
-      if (!('deletable' in row)) return false;
-      const value = (row as { deletable?: unknown }).deletable;
-      if (typeof value === 'boolean') return value === false;
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        return normalized === 'false' || normalized === '0';
-      }
-      if (typeof value === 'number') return value === 0;
-      return false;
-    };
-
-    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
-    const containsNonDeletable = deletableRows.length !== rows.length;
-    if (containsNonDeletable) {
-      ctx.alertSvc.showError(messages.deleteSystemValues);
-      return;
-    }
-    if (!deletableRows.length) {
-      return;
-    }
-
-    const end = ctx._loading.begin();
-    try {
-      const ids = deletableRows.map((r) => r.id);
-      const ok2 = await ctx.gridSvc.deleteMany(ids);
-      if (!ok2) {
-        ctx.alertSvc.showError(messages.deleteFailed);
-        return;
-      }
-      ctx.alertSvc.showSuccess(messages.deleteSuccess);
-    } finally {
-      end();
-    }
+  public onAdd() {
+    this.grid.doAdd();
   }
 
-  public async doExportCsv(deps: {
-    dialogs: ConfirmDialogService;
-    alertSvc: AlertService;
-    config: DataGridConfig;
-    getRowsForExport?: () => GridRow[];
-    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
-    queueFullExport?: () => Promise<void>;
-    logInstantExport?: (rowCount: number) => void;
-    displayedCount?: number;
-    totalCount?: number;
-  }) {
-    const { messages } = deps.config;
+  public onClone() {
+    this.grid.doClone();
+  }
 
-    const displayedCount = deps.displayedCount ?? 0;
-    const totalCount = deps.totalCount ?? displayedCount;
-    const hasAllRowsVisible = totalCount <= displayedCount;
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
 
-    let exportAllData = false;
-    if (!hasAllRowsVisible) {
-      const parts: string[] = [];
-      if (totalCount > 0 && displayedCount > 0) {
-        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
-      }
-      parts.push(messages.exportMessage);
-      parts.push(messages.exportNavigateWarning);
-      const wantsAll = await deps.dialogs.confirm({
-        title: messages.exportTitle,
-        message: parts.filter(Boolean).join('\n\n'),
-        variant: 'info',
-        icon: messages.exportIcon,
-        confirmText: messages.exportConfirmText,
-        cancelText: messages.exportCancelText,
-        allowBackdropClose: false,
-      });
-      exportAllData = wantsAll === true;
-    }
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
 
-    // --- "All rows" path: queue background job, return immediately ---
-    if (exportAllData) {
-      if (deps.queueFullExport) {
-        try {
-          await deps.queueFullExport();
-          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
-        } catch {
-          deps.alertSvc.showError(messages.exportFailed);
-        }
-        return;
-      }
-      // fallback: no queue callback, fall through to synchronous path
-    }
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
 
-    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
-    if (!deps.getRowsForExport) return;
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
 
-    try {
-      const rows = deps.getRowsForExport();
-      if (!rows.length) {
-        deps.alertSvc.showInfo('No rows to export.');
-        return;
-      }
-      const rowCount = rows.length;
-      const headers = Object.keys(rows[0]!);
-      const escape = (v: unknown) => {
-        const s = v == null ? '' : String(v);
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-      };
-      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
+  public onRedo() {
+    this.grid.redo();
+  }
 
-      const fileName = messages.exportFileName || 'export.csv';
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      deps.logInstantExport?.(rowCount);
-      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
-    } catch {
-      deps.alertSvc.showError(messages.exportFailed);
-    }
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
   }
 }
+```
 
-type DeleteCtx = {
-  _loading: loadingGate;
-  alertSvc: AlertService;
-  config: DataGridConfig;
-  dialogs: ConfirmDialogService;
-  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
 
-  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
+```typescript
+import type { Provider } from '@angular/core';
+import { InjectionToken } from '@angular/core';
+import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
+import type { QueueExportInputType } from '../../../../../../../libs/common/src';
+
+export interface DataGridConfig {
+  filterToolPanelId: string;
+  messages: {
+    noDeletePermission: string;
+    editBlocked: string;
+    editFailed: string;
+    loadFailed: string;
+
+    deleteConfirmTitle: string;
+    deleteConfirmMessage: string;
+    deleteConfirmIcon: BaseDialogOptions['icon'];
+    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
+    deleteConfirmText: string;
+    deleteCancelText: string;
+    deleteNoneSelected: string;
+    deleteSystemValues: string;
+    deleteFailed: string;
+    deleteSuccess: string;
+
+    exportTitle: string;
+    exportMessage: string;
+    exportIcon: BaseDialogOptions['icon'];
+    exportConfirmText: string;
+    exportCancelText: string;
+    exportFailed: string;
+    exportInProgress: string;
+    exportReady: string;
+    exportNavigateWarning: string;
+    exportFileName: string;
+    exportEntity: QueueExportInputType['entity'] | '';
+
+    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
+    entityNoun?: string;
+    entityNounPlural?: string;
+  };
+  pageSize: number;
+}
+
+export function provideDataGridConfig(
+  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
+): Provider {
+  const merged: DataGridConfig = {
+    ...DEFAULT_DATA_GRID_CONFIG,
+    ...overrides,
+    messages: {
+      ...DEFAULT_DATA_GRID_CONFIG.messages,
+      ...(overrides?.messages ?? {}),
+    },
+  };
+  return { provide: DATA_GRID_CONFIG, useValue: merged };
+}
+
+export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
+
+/**
+ * Counted delete-confirm copy: "3 people will be deleted permanently. You cannot undo this."
+ * Falls back to the configured `deleteConfirmMessage` when the count is unknown.
+ */
+export function deleteConfirmMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (!count) return messages.deleteConfirmMessage;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `${count} ${noun} will be deleted permanently. You cannot undo this.`;
+}
+
+/**
+ * Counted delete-success toast: "Deleted 1 person." — result toasts count what changed
+ * (UX doctrine). A grid that overrides `deleteSuccess` keeps its custom text verbatim.
+ */
+export function deleteSuccessMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (messages.deleteSuccess !== DEFAULT_DATA_GRID_CONFIG.messages.deleteSuccess) return messages.deleteSuccess;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `Deleted ${count} ${noun}.`;
+}
+
+export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
+  pageSize: 25,
+  filterToolPanelId: 'filters-new',
+  messages: {
+    noDeletePermission: 'You do not have the permission to delete rows from this table.',
+    editBlocked: 'This cell cannot be edited or deleted.',
+    editFailed: 'Could not edit the row. Please try again later.',
+    loadFailed: 'Could not load the data. Please try again later.',
+
+    deleteConfirmTitle: 'Are you sure?',
+    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
+    deleteConfirmIcon: 'trash',
+    deleteConfirmVariant: 'danger',
+    deleteConfirmText: 'Delete',
+    deleteCancelText: 'Cancel',
+    deleteNoneSelected: 'Please select at least one row to delete.',
+    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
+    deleteFailed: 'Could not delete. Please try again later.',
+    deleteSuccess: 'Selected rows were successfully deleted.',
+
+    exportTitle: 'Choose export scope',
+    exportMessage:
+      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
+    exportIcon: 'arrow-down-tray',
+    exportConfirmText: 'All rows',
+    exportCancelText: 'Displayed rows',
+    exportFailed: 'Export failed. Please try again.',
+    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
+    exportReady: 'Export ready. Your download should begin momentarily.',
+    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
+    exportFileName: 'grid-export.csv',
+    exportEntity: '',
+  },
 };
+```
+
+## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
+
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { CompaniesService } from '@experiences/companies/services/companies-service';
+import { HouseholdsService } from '@experiences/households/services/households-service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+
+/**
+ * The People grain tabs (spec §5): one row under the grid header that switches the
+ * grid between the three grains of the same dataset — People · Households · Companies —
+ * with per-grain totals in the labels (tabular-nums). Rendered on all three grid pages
+ * via the datagrid's `[pcGridBelowHeader]` projection slot; deep links to each grain's
+ * detail/edit routes are untouched.
+ *
+ * Counts load once per instantiation; until a count arrives the label renders without
+ * a number (never a fake or stale one).
+ */
+@Component({
+  selector: 'pc-grain-tabs',
+  imports: [RouterLink, RouterLinkActive],
+  template: `
+    <nav class="border-line -mt-1 mb-2 flex items-center gap-1 border-b" aria-label="People, households and companies">
+      @for (tab of tabs(); track tab.route) {
+        <a
+          [routerLink]="tab.route"
+          routerLinkActive="!text-primary !font-semibold !border-primary"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
+        >
+          {{ tab.label }}
+          @if (tab.count !== null) {
+            <span class="text-xs tabular-nums opacity-70">{{ tab.count }}</span>
+          }
+        </a>
+      }
+    </nav>
+  `,
+})
+export class GrainTabs {
+  private readonly personsSvc = inject(PersonsService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly companiesSvc = inject(CompaniesService);
+
+  private readonly formatter = new Intl.NumberFormat();
+
+  private readonly peopleCount = signal<number | null>(null);
+  private readonly householdsCount = signal<number | null>(null);
+  private readonly companiesCount = signal<number | null>(null);
+
+  protected readonly tabs = computed(() => [
+    { label: 'People', route: '/people', count: this.format(this.peopleCount()) },
+    { label: 'Households', route: '/households', count: this.format(this.householdsCount()) },
+    { label: 'Companies', route: '/companies', count: this.format(this.companiesCount()) },
+  ]);
+
+  constructor() {
+    void this.loadCounts();
+  }
+
+  /** Re-query the per-grain totals (e.g. after a delete on the hosting grid). */
+  public reloadCounts(): void {
+    void this.loadCounts();
+  }
+
+  private format(count: number | null): string | null {
+    return count === null ? null : this.formatter.format(count);
+  }
+
+  private async loadCounts(): Promise<void> {
+    // Each count fails independently; a failed count simply leaves that label bare.
+    const [people, households, companies] = await Promise.allSettled([
+      this.personsSvc.count(),
+      this.householdsSvc.count(),
+      this.companiesSvc.count(),
+    ]);
+    if (people.status === 'fulfilled') this.peopleCount.set(people.value);
+    if (households.status === 'fulfilled') this.householdsCount.set(households.value);
+    if (companies.status === 'fulfilled') this.companiesCount.set(companies.value);
+  }
+}
+```
+
+## File: apps/frontend/src/app/app.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
+
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+
+@Component({
+  selector: 'pc-root',
+  imports: [RouterModule, ConfirmDialogHost],
+  template: `
+    <!-- Dialog host lives inside the themed div so modals inherit data-theme (dark mode). -->
+    <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
+      <pc-dialog-host></pc-dialog-host>
+      <router-outlet></router-outlet>
+    </div>
+  `,
+})
+export class AppComponent {
+  protected themeSvc = inject(ThemeService);
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/campaigns/ui/campaigns-page.html
@@ -38825,365 +37700,6 @@ export class CampaignsPageComponent implements OnInit {
       this.loaded.set(true);
       end();
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
-
-```typescript
-import { Component, type OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-
-import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
-import {
-  CanvassingService,
-  type Coverage,
-  type FieldReport,
-  type FieldSummary,
-  type InFieldToday,
-  type TurfListItem,
-} from '../services/canvassing-service';
-import { CutTurfsDialog } from './cut-turfs-dialog';
-
-type TurfStatus = TurfListItem['status'];
-type Tab = 'turfs' | 'report';
-type ReportRange = FieldReportRangeType['range'];
-type CoverageStatus = Coverage['doors'][number]['status'];
-type CoverageView = 'map' | 'ward';
-
-/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
-const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
-  conversation: 'success',
-  attempted: 'warning',
-  not_yet: 'muted',
-};
-
-const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
-  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
-  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
-  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
-];
-
-const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
-  draft: 'neutral',
-  assigned: 'info',
-  in_field: 'success',
-  complete: 'primary',
-  retired: 'muted',
-};
-
-const STATUS_LABEL: Record<TurfStatus, string> = {
-  draft: 'Draft — unassigned',
-  assigned: 'Sent to app',
-  in_field: 'In field now',
-  complete: 'Complete',
-  retired: 'Retired',
-};
-
-const STATUS_BADGE: Record<TurfStatus, string> = {
-  draft: 'badge-ghost',
-  assigned: 'badge-info',
-  in_field: 'badge-success',
-  complete: 'badge-primary',
-  retired: 'badge-ghost opacity-60',
-};
-
-const RANGES: { key: ReportRange; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-  { key: 'campaign', label: 'Campaign' },
-];
-
-@Component({
-  selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog],
-  templateUrl: './canvassing-page.html',
-})
-export class CanvassingPage implements OnInit {
-  private readonly svc = inject(CanvassingService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialog = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly tab = signal<Tab>('turfs');
-
-  protected readonly pageTabs: PcTabOption[] = [
-    { id: 'turfs', label: 'Turfs & assignments' },
-    { id: 'report', label: 'Field report' },
-  ];
-  protected readonly turfs = signal<TurfListItem[]>([]);
-  protected readonly summary = signal<FieldSummary | null>(null);
-  protected readonly today = signal<InFieldToday | null>(null);
-
-  protected readonly reportRange = signal<ReportRange>('week');
-  protected readonly report = signal<FieldReport | null>(null);
-  protected readonly coverage = signal<Coverage | null>(null);
-  protected readonly coverageView = signal<CoverageView>('map');
-
-  protected readonly cutOpen = signal(false);
-
-  protected readonly ranges = RANGES;
-  protected readonly statusLabel = STATUS_LABEL;
-  protected readonly statusBadge = STATUS_BADGE;
-  protected readonly coverageLegend = COVERAGE_LEGEND;
-
-  ngOnInit(): void {
-    void this.loadTurfs();
-  }
-
-  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
-  protected readonly headline = computed<string>(() => {
-    const s = this.summary();
-    if (!s) return '';
-    const parts = [
-      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
-      `${s.inFieldCount} in the field now`,
-      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
-      `${s.waitingCount} waiting for a canvasser`,
-    ];
-    return parts.join(' · ');
-  });
-
-  /** Response-mix stacked bar segments for the "in the field today" card. */
-  protected readonly todaySegments = computed(() => {
-    const t = this.today();
-    if (!t) return [];
-    const m = t.responseMix;
-    return [
-      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
-      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
-      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
-      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
-      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
-    ].filter((s) => s.value > 0);
-  });
-
-  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
-
-  /**
-   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
-   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
-   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
-   */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    return this.turfs()
-      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
-      .map((t) => ({
-        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
-        variant: this.variantFor(t.status),
-        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
-        id: t.id,
-        payload: t.id,
-      }));
-  });
-
-  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
-
-  protected variantFor(status: TurfStatus): PcMapVariant {
-    return STATUS_VARIANT[status];
-  }
-
-  protected progressPct(t: TurfListItem): number {
-    if (t.door_count <= 0) return 0;
-    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
-  }
-
-  protected async loadTurfs(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [turfs, summary, today] = await Promise.all([
-        this.svc.getTurfs(),
-        this.svc.getFieldSummary(),
-        this.svc.getInFieldToday(),
-      ]);
-      this.turfs.set(turfs);
-      this.summary.set(summary);
-      this.today.set(today);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async loadReport(): Promise<void> {
-    const end = this._loading.begin();
-    const range = { range: this.reportRange(), from: null, to: null };
-    try {
-      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
-      this.report.set(report);
-      this.coverage.set(coverage);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
-    } finally {
-      end();
-    }
-  }
-
-  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
-  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.doors.map((d) => ({
-      position: { lat: d.lat, lng: d.lng },
-      variant: COVERAGE_VARIANT[d.status],
-    }));
-  });
-
-  /** Dashed turf boundaries (convex hull of each turf's doors). */
-  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.turfs.map((t) => ({
-      path: t.path,
-      variant: 'neutral' as const,
-      dashed: true,
-      label: t.name,
-      id: t.id,
-    }));
-  });
-
-  protected selectTab(tab: string): void {
-    if (tab !== 'turfs' && tab !== 'report') return;
-    this.tab.set(tab);
-    if (tab === 'report' && !this.report()) void this.loadReport();
-  }
-
-  protected setRange(range: ReportRange): void {
-    this.reportRange.set(range);
-    void this.loadReport();
-  }
-
-  protected openCut(): void {
-    this.cutOpen.set(true);
-  }
-
-  protected onCutDone(created: number): void {
-    this.cutOpen.set(false);
-    if (created > 0) {
-      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
-      void this.loadTurfs();
-    }
-  }
-
-  /** Assign a turf as a shareable Companion link and copy it. */
-  protected async assign(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
-      await this.copyCompanionLink(token);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async copyLink(t: TurfListItem): Promise<void> {
-    if (t.token) {
-      await this.copyCompanionLink(t.token);
-      return;
-    }
-    await this.assign(t);
-  }
-
-  private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
-    } catch {
-      this.alerts.showSuccess(`Companion link: ${url}`);
-    }
-  }
-
-  protected async refresh(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const res = await this.svc.refreshFromList(t.id);
-      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async retire(t: TurfListItem): Promise<void> {
-    const ok = await this.dialog.confirm({
-      title: 'Retire this turf?',
-      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
-      confirmText: 'Retire turf',
-    });
-    if (!ok) return;
-    const end = this._loading.begin();
-    try {
-      await this.svc.retire(t.id);
-      this.alerts.showSuccess('Turf retired.');
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async exportReport(): Promise<void> {
-    try {
-      const { filename, content } = await this.svc.exportFieldReport({
-        range: this.reportRange(),
-        from: null,
-        to: null,
-      });
-      const blob = new Blob([content], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
-    }
-  }
-
-  protected hourLabel(h: number): string {
-    const am = h < 12;
-    const base = h % 12 === 0 ? 12 : h % 12;
-    return `${base}${am ? 'am' : 'pm'}`;
-  }
-
-  protected barPct(value: number, max: number): number {
-    if (max <= 0) return 0;
-    return Math.round((value / max) * 100);
-  }
-
-  protected maxPerDay(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
-  }
-
-  protected maxByHour(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.byHour.map((h) => h.attempts));
   }
 }
 ```
@@ -39486,133 +38002,6 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    <pc-detail-header
-      [title]="isNewMode() ? 'New company' : company()?.name || 'Edit company'"
-      [eyebrow]="isNewMode() ? 'New company' : 'Edit company'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
-      [showDelete]="!isNewMode()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete company"
-      (save)="save($event)"
-      (delete)="deleteCompany()"
-    ></pc-detail-header>
-
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
-
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <!-- Form Section -->
-      <form (submit)="save($event)" novalidate class="lg:col-span-2">
-        <fieldset [disabled]="isLoading()">
-          <pc-card>
-            <!-- Name -->
-            <div class="flex flex-col gap-1.5">
-              <pc-input
-                label="Company name"
-                placeholder="e.g. Acme Corp"
-                [formField]="form.name"
-                (blurred)="onNameBlur()"
-              ></pc-input>
-              @if (lookingUp()) {
-              <p class="flex items-center gap-1 pl-1 text-xs text-base-content/60">
-                <span class="loading loading-spinner loading-xs"></span>
-                Looking up details on Google…
-              </p>
-              } @else if (duplicateName()) {
-              <p class="flex items-center gap-1 pl-1 text-xs text-warning">
-                <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-                A company with this name already exists — you can still save if this is a separate record.
-              </p>
-              }
-            </div>
-
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input
-                label="Website"
-                type="url"
-                placeholder="https://example.com"
-                [formField]="form.website"
-              ></pc-input>
-              <pc-input label="Industry" placeholder="e.g. Healthcare" [formField]="form.industry"></pc-input>
-            </div>
-
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
-              <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-            </div>
-
-            <!-- Description -->
-            <div class="flex flex-col gap-1.5">
-              <pc-textarea
-                label="Description"
-                placeholder="Company description…"
-                [formField]="form.description"
-                [rows]="3"
-              ></pc-textarea>
-              <p class="pl-1 text-xs text-base-content/55">
-                Shown on the company page. Google enrichment fills this if left blank.
-              </p>
-            </div>
-
-            <!-- Internal notes -->
-            <pc-textarea
-              label="Internal notes"
-              placeholder="Any additional notes…"
-              [formField]="form.notes"
-              [rows]="4"
-            ></pc-textarea>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail -->
-      <div class="flex flex-col gap-6">
-        @if (!isNewMode()) {
-        <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">People</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">{{ employeeCount() }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Enrichment</dt>
-              <dd>
-                @if (isEnriched()) {
-                <pc-status-badge type="success">Enriched</pc-status-badge>
-                } @else {
-                <pc-status-badge type="neutral">Not enriched</pc-status-badge>
-                }
-              </dd>
-            </div>
-          </dl>
-        </pc-card>
-        }
-      </div>
-    </div>
-
-    <!-- Back to the company record -->
-    @if (!isNewMode() && id()) {
-    <a
-      [routerLink]="['/companies', id()]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ company()?.name || 'company' }}
-    </a>
-    }
-  </div>
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
@@ -40305,73 +38694,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
-  <div class="flex flex-wrap items-end justify-end gap-3">
-    <h1 class="sr-only">Routes</h1>
-    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
-      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
-    </a>
-  </div>
-
-  <pc-table [loading]="loading.visible()" [columns]="7">
-    <ng-container pcTableHead>
-      <th>Name</th>
-      <th>Status</th>
-      <th>Stops</th>
-      <th>Est. time</th>
-      <th>Volunteer</th>
-      <th>Scheduled</th>
-      <th>Created</th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="7" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
-          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <a
-          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/deliveries/routes', row.id]"
-        >
-          {{ row.name }}
-        </a>
-      </td>
-      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-      <td class="text-sm tabular-nums">{{ stopsLabel(row) }}</td>
-      <td class="text-sm tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-      <td class="text-sm">
-        @if (row.volunteer_person_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
-          >{{ row.volunteer_name || 'Volunteer' }}</a
-        >
-        } @else {
-        <span class="text-base-content/40">Unassigned</span>
-        }
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
 
 ```html
@@ -40738,89 +39060,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </div>
   }
 </pc-duplicate-page-shell>
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <div class="mb-4">
-    <a
-      routerLink="/duplicates"
-      class="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content px-0 no-underline"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to Duplicate Types
-    </a>
-  </div>
-
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon [name]="icon()" class="text-primary" [size]="7"></pc-icon>
-        Manage Duplicate {{ title() }}
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">{{ description() }}</p>
-      @if (!isLoading() && !isEmpty() && sweepSentence()) {
-      <p class="text-sm text-base-content/50 mt-1 tabular-nums">{{ sweepSentence() }}</p>
-      }
-    </div>
-  </div>
-
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4 font-light">Scanning database...</p>
-  </div>
-  } @if (!isLoading() && isEmpty()) {
-  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
-    <div class="card-body items-center text-center py-16">
-      <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
-        <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
-      </div>
-      <h2 class="card-title text-xl font-bold text-success">No duplicates waiting</h2>
-      <p class="text-base-content/60 mt-2 max-w-sm">
-        The sweep runs nightly at 3:00 AM. Imports catch most duplicates on the way in — this queue is for what slips
-        through.
-      </p>
-      <div class="card-actions mt-6">
-        <a [routerLink]="['/', entityRoute()]" class="btn btn-primary">Go to {{ title() }}</a>
-      </div>
-    </div>
-  </div>
-  } @if (!isLoading() && !isEmpty()) {
-  <div class="grid gap-6">
-    <ng-content></ng-content>
-  </div>
-
-  @if (totalPages() > 1) {
-  <div
-    class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
-  >
-    <div class="text-sm text-base-content/60 font-light">
-      Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
-      <span class="font-semibold text-base-content">{{ totalPages() }}</span>
-      ({{ totalGroups() }} duplicate groups total)
-    </div>
-    <div class="join">
-      <button
-        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
-        [disabled]="currentPage() === 1"
-        (click)="prev.emit()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
-      </button>
-      <button
-        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
-        [disabled]="currentPage() >= totalPages()"
-        (click)="next.emit()"
-      >
-        Next <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  } }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
@@ -43166,196 +41405,99 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
 
-```html
-<!-- Template for household edit form -->
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    @if (household()?.is_placeholder) {
-    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
-      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
-      <div class="flex flex-col">
-        <span class="font-bold">System Placeholder Household</span>
-        <span class="text-xs font-light"
-          >This household is a permanent placeholder for people with no address and cannot be edited.</span
-        >
-      </div>
-    </div>
-    } @else {
-    <pc-detail-header
-      [title]="id() ? addressString() || 'Edit household' : 'New household'"
-      [eyebrow]="id() ? 'Edit household' : 'New household'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="household()?.id ? 'two' : 'three'"
-      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
-      [showDelete]="!isNewMode()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete household"
-      (save)="save($event)"
-      (delete)="deleteHousehold()"
-    ></pc-detail-header>
+```typescript
+import type { HelpArticle } from '../help-types';
 
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
-
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <!-- Form Section -->
-      <form (submit)="$event.preventDefault()" class="flex flex-col gap-6 lg:col-span-2">
-        <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)" class="flex flex-col gap-6">
-          <!-- Segmentation (tags & issues) — first section, standalone card -->
-          <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
-
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
-              <pc-tags
-                [tags]="tags"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Add a tag — Enter"
-                [readonly]="household()?.is_placeholder ?? false"
-                [canDelete]="!(household()?.is_placeholder ?? false)"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="Add an issue — Enter"
-                [readonly]="household()?.is_placeholder ?? false"
-                [canDelete]="!(household()?.is_placeholder ?? false)"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-            </div>
-          </pc-card>
-
-          <!-- Address -->
-          <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Address</h3>
-
-            <!-- Current Address Display -->
-            @if (!household()?.is_placeholder && addressString()) {
-            <div class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-200 p-3">
-              <pc-icon name="map-pin" class="mt-0.5 shrink-0 text-primary" [size]="5"></pc-icon>
-              <div class="flex flex-col">
-                <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-                  Current address
-                </span>
-                <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
-              </div>
-            </div>
-            }
-
-            <!-- Autocomplete Address Search (§6 — Google Places) -->
-            <div class="flex flex-col gap-2">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Search address</label>
-              <pc-address-autocomplete
-                (addressSelected)="handleAddressChange($event)"
-                [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
-              ></pc-address-autocomplete>
-              <p class="pl-1 text-xs leading-snug text-base-content/55">
-                Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
-                update automatically.
-                <span class="text-base-content/35">Powered by Google.</span>
-              </p>
-            </div>
-
-            <!-- Collapsible manual entry -->
-            <details class="group">
-              <summary
-                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-              >
-                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                Enter address manually
-              </summary>
-              <div class="mt-4 flex flex-col gap-3 border-l-2 border-base-300 pl-3">
-                <p class="text-xs leading-snug text-base-content/55">
-                  Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
-                  address verifies.
-                </p>
-                <pc-address-form-group [form]="form"></pc-address-form-group>
-              </div>
-            </details>
-          </pc-card>
-
-          <!-- Door notes -->
-          <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
-            <pc-textarea
-              placeholder="What a canvasser should know at this door…"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail: first seen · members · geocode status · ward/district/precinct (§6) -->
-      <div class="flex flex-col gap-6">
-        @if (!isNewMode() && household(); as h) {
-        <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
-
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">First seen</dt>
-              <dd class="text-right font-medium text-base-content">
-                {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Members</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">{{ peopleCount() }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Geocoding</dt>
-              <dd><pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip></dd>
-            </div>
-          </dl>
-
-          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Ward</dt>
-              <dd class="font-medium tabular-nums">{{ h.ward || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">District</dt>
-              <dd class="font-medium tabular-nums">{{ h.district || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Precinct</dt>
-              <dd class="font-medium tabular-nums">{{ h.precinct || '—' }}</dd>
-            </div>
-          </dl>
-
-          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            Electoral boundaries come from the geocoder — they refresh in the background after save.
-          </p>
-        </pc-card>
-        }
-      </div>
-    </div>
-
-    <!-- Back to the household record -->
-    @if (household()?.id) {
-    <a
-      [routerLink]="['/households', household()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ addressString() || 'household' }}
-    </a>
-    } }
-  </div>
-</div>
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks — list and board',
+    summary:
+      'Track the work — assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+      },
+      { kind: 'h2', id: 'views', text: 'List or board — one dataset, two views' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) — the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) — one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          'Every header carries a swap button — Open board / Open list — so you never have to hunt for the sidebar to switch.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record — subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill — one click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).",
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one — "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
+      },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
@@ -43996,158 +42138,6 @@ export class ImportWizard {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
-
-```typescript
-import { Service, inject } from '@angular/core';
-import {
-  AddMarketingEmailType,
-  CreateClickersListResultType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  UpdateMarketingEmailType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-
-@Service()
-export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
-  protected override readonly endpointName = 'newsletters';
-
-  private readonly campaignContext = inject(CampaignContextService);
-
-  public add(row: AddMarketingEmailType) {
-    // A newsletter is created in the context the user is working in (§15);
-    // the backend falls back to the office context when none is known.
-    const campaignId = this.campaignContext.activeCampaignId();
-    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
-  }
-
-  public addMany(_rows: AddMarketingEmailType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.newsletters.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    // Campaigns §15 — the newsletters grid shows the active context's sends.
-    const campaignId = this.campaignContext.activeCampaignId();
-    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
-    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
-    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
-    const count = result?.count != null ? Number(result.count) : rows.length;
-    return { rows, count };
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getById(id: string) {
-    const record = await this.api.newsletters.getById.query(id);
-    return this.normalize(record);
-  }
-
-  public getReport(id: string): Promise<NewsletterReportType> {
-    return this.api.newsletters.getReport.query(id);
-  }
-
-  public createClickersList(id: string): Promise<CreateClickersListResultType> {
-    return this.api.newsletters.createClickersList.mutate(id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateMarketingEmailType) {
-    return this.api.newsletters.update.mutate({ id, data });
-  }
-
-  public send(id: string): Promise<any> {
-    return this.api.newsletters.send.mutate(id);
-  }
-
-  public sendTest(input: {
-    subject: string;
-    html: string;
-    text?: string;
-    to: string;
-    fromName?: string;
-    fromEmail?: string;
-  }): Promise<{ to: string; delivered: number }> {
-    return this.api.newsletters.sendTest.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.newsletters.exportCsv.mutate(input);
-  }
-
-  private normalize(record: any) {
-    if (!record) return record;
-    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const asNumber = (value: unknown) => {
-      if (value === null || value === undefined || value === '') return null;
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-    const asDate = (value: unknown) => {
-      if (!value) return null;
-      if (value instanceof Date) return value;
-      const date = new Date(value as string);
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    return {
-      ...record,
-      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
-      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
-      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
-      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
-      total_recipients: asNumber(record.total_recipients) ?? 0,
-      delivered_count: asNumber(record.delivered_count) ?? 0,
-      bounce_count: asNumber(record.bounce_count) ?? 0,
-      open_rate: asNumber(record.open_rate) ?? 0,
-      click_rate: asNumber(record.click_rate) ?? 0,
-      unique_opens: asNumber(record.unique_opens) ?? 0,
-      unique_clicks: asNumber(record.unique_clicks) ?? 0,
-      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
-      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
-      reply_count: asNumber(record.reply_count) ?? 0,
-      send_date: asDate(record.send_date),
-      last_engagement_at: asDate(record.last_engagement_at),
-      created_at: asDate(record.created_at) ?? new Date(),
-      updated_at: asDate(record.updated_at) ?? new Date(),
-      top_links,
-    };
-  }
-
-  private parseJsonArray<T>(value: unknown): T[] | null {
-    if (!value) return null;
-    if (Array.isArray(value)) return value as T[];
-    try {
-      const parsed = JSON.parse(String(value));
-      return Array.isArray(parsed) ? (parsed as T[]) : null;
-    } catch {
-      return null;
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
 
 ```html
@@ -44769,6 +42759,156 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   </main>
 </div>
 }
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Newsletters" [totalSentence]="headerSentence()">
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New newsletter
+    </a>
+  </pc-grid-header>
+
+  <!-- All-time engagement stat tiles -->
+  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Sent campaigns</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().sentCount) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">All time</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().delivered) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Successful deliveries</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg open rate</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-success]="stats().avgOpenRate > 0"
+          [class.text-base-content]="stats().avgOpenRate === 0"
+        >
+          {{ formatPercent(stats().avgOpenRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Opens per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg click rate</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatPercent(stats().avgClickRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Clicks per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-warning]="stats().bounces > 0"
+          [class.text-base-content]="stats().bounces === 0"
+        >
+          {{ formatNumber(stats().bounces) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Auto-skipped on next send</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign table -->
+  <pc-table [loading]="loading.visible()" [columns]="7">
+    <ng-container pcTableHead>
+      <th>Campaign</th>
+      <th>Status</th>
+      <th>Audience</th>
+      <th>Open</th>
+      <th>Click</th>
+      <th>Date</th>
+      <th class="w-28"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="7" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="megaphone" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No newsletters in this workspace yet.</p>
+          <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+            <pc-icon name="plus" [size]="4"></pc-icon>
+            New newsletter
+          </a>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
+      </td>
+      <td>
+        <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.total_recipients > 0) { {{ formatNumber(row.total_recipients) }} recipients } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.open_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.click_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        @if (row.send_date) { {{ row.send_date | date: (row.status === 'scheduled' ? 'MMM d, h:mm a' : 'MMM d, y') }} }
+        @else {
+        <span class="text-base-content/40">Not scheduled</span>
+        }
+      </td>
+      <td class="text-right">
+        <!-- A report only exists once a send is (or was) underway. -->
+        @if (row.status === 'draft') {
+        <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="sendBlocker(row) !== null"
+            (click)="sendDraft(row)"
+          >
+            Send…
+          </button>
+        </span>
+        } @else if (row.status !== 'scheduled') {
+        <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
+        }
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
@@ -45565,524 +43705,6 @@ export class PersonForm implements OnInit {
     }
   }
 }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
-
-```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
-import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
-
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-  });
-
-  // Instant-apply card: each email-notification toggle persists immediately (no Save button).
-  protected readonly notifPrefs = signal<NotifPrefs>({
-    mention_in_comment: true,
-    task_assigned: true,
-    task_due: true,
-    person_assigned: true,
-    export_ready: true,
-    import_summary: true,
-  });
-  protected readonly savingNotif = signal<NotifKey | null>(null);
-
-  // Grouped per §20: work-facing alerts vs data-job outcomes.
-  protected readonly notifGroups: ReadonlyArray<{
-    heading: string;
-    items: ReadonlyArray<{ key: NotifKey; title: string; description: string }>;
-  }> = [
-    {
-      heading: 'About your work',
-      items: [
-        {
-          key: 'mention_in_comment',
-          title: 'Mentioned in a comment',
-          description: 'When someone @-mentions you in a thread',
-        },
-        { key: 'task_assigned', title: 'Task assigned to you', description: 'When a task is assigned to you' },
-        { key: 'task_due', title: 'Task due today or overdue', description: 'A daily reminder of tasks that need you' },
-        {
-          key: 'person_assigned',
-          title: 'Contact assigned to you',
-          description: 'When a contact’s ownership moves to you',
-        },
-      ],
-    },
-    {
-      heading: 'About your data',
-      items: [
-        { key: 'export_ready', title: 'Export ready', description: 'A download link when your CSV export finishes' },
-        { key: 'import_summary', title: 'Import summary', description: 'Completion stats after a spreadsheet import' },
-      ],
-    },
-  ];
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  // Narrate unsaved identity edits (§2 disclosure).
-  protected readonly dirtyFieldCount = computed(() => {
-    const f = this.form;
-    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        icon: 'envelope' as const,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        icon: 'users' as const,
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        icon: 'arrow-down-tray' as const,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        icon: 'arrow-up-tray' as const,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const user = this.detail();
-    if (!user) return;
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(new Date(date));
-    } catch {
-      return date.toString();
-    }
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    const prefs = user.notification_preferences;
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-    });
-    this.notifPrefs.set({
-      mention_in_comment: prefs?.mention_in_comment ?? true,
-      task_assigned: prefs?.task_assigned ?? true,
-      task_due: prefs?.task_due ?? true,
-      person_assigned: prefs?.person_assigned ?? true,
-      export_ready: prefs?.export_ready ?? true,
-      import_summary: prefs?.import_summary ?? true,
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    // Identity only — notification preferences are persisted instantly by their own card.
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-    } as UpdateAuthUserType;
-  }
-
-  // Instant-apply: flip one toggle and persist just the notification preferences.
-  protected async toggleNotif(key: NotifKey): Promise<void> {
-    if (this.isViewer() || this.savingNotif()) return;
-    const user = this.detail();
-    if (!user) return;
-
-    const previous = this.notifPrefs();
-    const next: NotifPrefs = { ...previous, [key]: !previous[key] };
-    this.notifPrefs.set(next);
-    this.savingNotif.set(key);
-    // Profile only toggles the 6 email prefs; preserve the untouched in-app
-    // variants (and default any missing) so the full 12-field shape stays valid.
-    const fullPrefs: NonNullable<IAuthUserDetail['notification_preferences']> = {
-      ...FULL_NOTIF_DEFAULTS,
-      ...user.notification_preferences,
-      ...next,
-    };
-    try {
-      await this.userService.updateUserProfile(user.id, {
-        notification_preferences: fullPrefs,
-      } as UpdateAuthUserType);
-      this.detail.set({ ...user, notification_preferences: fullPrefs });
-    } catch (err) {
-      // Roll the toggle back so the UI never lies about what's stored.
-      this.notifPrefs.set(previous);
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Could not save your notification preference',
-      );
-    } finally {
-      this.savingNotif.set(null);
-    }
-  }
-}
-
-type NotifPrefs = {
-  mention_in_comment: boolean;
-  task_assigned: boolean;
-  task_due: boolean;
-  person_assigned: boolean;
-  export_ready: boolean;
-  import_summary: boolean;
-};
-
-type NotifKey = keyof NotifPrefs;
-
-// Complete 12-field default (email + in-app variants) so a persisted preferences
-// object always satisfies the canonical shape even when the source is undefined.
-const FULL_NOTIF_DEFAULTS: NonNullable<IAuthUserDetail['notification_preferences']> = {
-  mention_in_comment: true,
-  mention_in_comment_in_app: true,
-  task_assigned: true,
-  task_assigned_in_app: true,
-  task_due: true,
-  task_due_in_app: true,
-  person_assigned: true,
-  person_assigned_in_app: true,
-  export_ready: true,
-  export_ready_in_app: true,
-  import_summary: true,
-  import_summary_in_app: true,
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -47269,536 +44891,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <!-- Top Navigation Bar & Action Buttons -->
-    <div
-      class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4"
-    >
-      <div class="flex flex-wrap items-center gap-2">
-        <a routerLink="/tasks" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="arrow-left" [size]="4"></pc-icon>
-          Back to List
-        </a>
-        <a routerLink="/board" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="view-kanban" [size]="4"></pc-icon>
-          Task Board
-        </a>
-      </div>
-      <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-        @if (!isArchived()) {
-        <button (click)="archiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
-          <pc-icon name="archive-box" [size]="4"></pc-icon>
-          Archive
-        </button>
-        } @else {
-        <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
-          <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
-          Unarchive
-        </button>
-        }
-        <button (click)="deleteTask()" class="btn btn-outline btn-error btn-sm gap-2">
-          <pc-icon name="trash" [size]="4"></pc-icon>
-          Delete Task
-        </button>
-      </div>
-    </div>
-
-    @if (isLoading() && !task()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else { @if (task(); as t) {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Elegant Title & Description Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
-
-          <div class="p-6">
-            <!-- Inline Edit Task Name -->
-            <div class="group relative mb-4">
-              @if (isEditingName()) {
-              <div class="flex gap-2 items-center">
-                <input
-                  type="text"
-                  class="input input-bordered input-md font-bold text-2xl grow text-base-content"
-                  [(ngModel)]="tempName"
-                  (keydown.enter)="saveName()"
-                  (keydown.escape)="cancelEditingName()"
-                  placeholder="Task name"
-                  autofocus
-                />
-                <button (click)="saveName()" class="btn btn-primary btn-square btn-md" title="Save">
-                  <pc-icon name="save" [size]="5"></pc-icon>
-                </button>
-                <button (click)="cancelEditingName()" class="btn btn-ghost btn-square btn-md" title="Cancel">
-                  <pc-icon name="x-mark" [size]="5"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div class="flex items-start justify-between gap-4">
-                <h1
-                  (click)="startEditingName()"
-                  class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow"
-                >
-                  {{ t.name || '(No Name)' }}
-                  <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                    <pc-icon name="pencil-square" [size]="4" class="text-base-content/40 inline"></pc-icon>
-                  </span>
-                </h1>
-                <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getStatusBadgeClass(t.status)"
-                  >
-                    {{ statusLabel(t.status) }}
-                  </span>
-                  @if (t.priority) {
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getPriorityBadgeClass(t.priority)"
-                  >
-                    {{ toTitleCase(t.priority) }}
-                  </span>
-                  }
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Inline Edit Description -->
-            <div class="border-t border-base-200 mt-4 pt-4">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
-                @if (!isEditingDetails()) {
-                <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
-                  <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
-                </button>
-                }
-              </div>
-
-              @if (isEditingDetails()) {
-              <div class="grid gap-2">
-                <quill-editor
-                  [styles]="{ height: '220px' }"
-                  [(ngModel)]="tempDetails"
-                  placeholder="Describe this task..."
-                ></quill-editor>
-                <div class="flex justify-end gap-2 mt-2">
-                  <button (click)="cancelEditingDetails()" class="btn btn-outline btn-accent btn-sm">Cancel</button>
-                  <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
-                </div>
-              </div>
-              } @else {
-              <div
-                (click)="startEditingDetails()"
-                class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
-                [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
-              ></div>
-              }
-            </div>
-          </div>
-        </div>
-
-        <!-- Subtasks Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
-              Subtasks ({{ subtasks().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
-              {{ showSubtasks() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showSubtasks()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (subtasks().length > 0) {
-            <div class="grid gap-2.5">
-              @for (s of subtasks(); track s.id) {
-              <label
-                class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary checkbox-sm"
-                  [checked]="s.status === 'done'"
-                  (change)="toggleSubtask(s, $any($event.target).checked)"
-                />
-                <span
-                  class="text-sm font-medium text-base-content"
-                  [class.line-through]="s.status === 'done'"
-                  [class.opacity-50]="s.status === 'done'"
-                >
-                  {{ s.name }}
-                </span>
-              </label>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No subtasks defined. Add one below to break this task down.
-            </div>
-            }
-
-            <div class="flex gap-2 mt-2">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="Add a subtask..."
-                [(ngModel)]="subtaskName"
-                (keydown.enter)="addSubtask()"
-              />
-              <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
-                Add Subtask
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Comments / Collaboration Panel -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
-              Discussion ({{ comments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
-              {{ showComments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showComments()) {
-          <div class="p-6 flex flex-col gap-6">
-            @if (comments().length > 0) {
-            <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-              @for (c of comments(); track c.id) {
-              <div
-                class="chat"
-                [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
-                [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
-              >
-                <div class="chat-image">
-                  <pc-user-avatar
-                    [name]="userName(c.author_id || c.createdby_id)"
-                    [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
-                    [size]="8"
-                  />
-                </div>
-
-                <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
-                  <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
-                  @if (c.created_at) {
-                  <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
-                    {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
-                  </span>
-                  }
-                </div>
-
-                <div
-                  class="chat-bubble text-sm font-light shadow-sm"
-                  [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
-                  [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
-                ></div>
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No comments yet. Start the conversation!
-            </div>
-            }
-
-            <!-- Comment Composer with User Mentions -->
-            <div class="form-control relative mt-2 border-t border-base-200 pt-4">
-              <textarea
-                #taskComposer
-                [ngModel]="newComment()"
-                (ngModelChange)="newComment.set($event)"
-                placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
-                class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
-                (input)="onComposerInput($event)"
-                (keydown)="onComposerKeydown($event)"
-                (click)="onComposerClick($event)"
-              ></textarea>
-
-              <!-- Mentions Dropdown -->
-              @if (mc.open() && mc.candidates().length) {
-              <div
-                class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
-              >
-                @for (u of mc.candidates(); track u.id; let i = $index) {
-                <div
-                  class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
-                  [class.bg-base-200]="i === mc.index()"
-                  (mousedown)="selectMention(u, $event)"
-                >
-                  <div
-                    class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold"
-                  >
-                    {{ (u.first_name || u.email || '?') | slice:0:1 }}
-                  </div>
-                  <div class="truncate">
-                    <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
-                    <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
-                  </div>
-                </div>
-                }
-              </div>
-              }
-
-              <div class="mt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-ghost"
-                  (click)="newComment.set('')"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-primary px-4 gap-1.5"
-                  (click)="addComment()"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
-                </button>
-              </div>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Attachments Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
-              Attachments ({{ attachments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
-              {{ showAttachments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showAttachments()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (attachments().length > 0) {
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              @for (a of attachments(); track a.id) {
-              <div
-                class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
-                  <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
-                    {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
-                  </div>
-                </div>
-                @if (a.url) {
-                <a
-                  class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
-                  [href]="a.url"
-                  target="_blank"
-                  title="Open Attachment"
-                >
-                  <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                </a>
-                }
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
-            }
-
-            <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="File Name (e.g. report.pdf)"
-                [(ngModel)]="attName"
-              />
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="URL (e.g. https://...)"
-                [(ngModel)]="attUrl"
-              />
-              <button class="btn btn-primary btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
-                Attach File
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Task Status & Detail Settings Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
-          </div>
-
-          <div class="p-6 flex flex-col gap-4">
-            <!-- Status Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.status || 'todo'"
-                (change)="onStatusChange($event)"
-              >
-                @for (s of statuses; track s) {
-                <option [value]="s">{{ statusLabels[s] }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Priority Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.priority || 'medium'"
-                (change)="onPriorityChange($event)"
-              >
-                @for (p of priorities; track p) {
-                <option [value]="p">{{ toTitleCase(p) }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Due Date Calendar Picker -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
-              >
-              @if (!isEditingDueDate()) {
-              <div
-                (click)="isEditingDueDate.set(true)"
-                class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
-                  <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
-                </div>
-                <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
-              </div>
-              } @else {
-              <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
-                <calendar-date
-                  class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
-                  [value]="dateOnly(t.due_at)"
-                  (change)="onDueDateChange($event)"
-                >
-                  <calendar-month></calendar-month>
-                </calendar-date>
-                <div class="flex justify-end gap-1.5 mt-1">
-                  <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Assigned User Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
-              >
-              <div class="flex gap-2">
-                <select
-                  class="select select-bordered select-sm grow font-medium"
-                  [ngModel]="assignedTo()"
-                  (ngModelChange)="onAssignedChange($event)"
-                >
-                  <option value="">Unassigned</option>
-                  @for (u of users(); track u.id) {
-                  <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </select>
-                <button (click)="assignToMe()" class="btn btn-outline btn-secondary btn-sm" title="Assign to me">
-                  Me
-                </button>
-              </div>
-            </div>
-
-            <!-- Associated Team Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="teamId()"
-                (change)="onTeamChange($event)"
-              >
-                <option value="">No Team</option>
-                @for (team of teamsList(); track team.id) {
-                <option [value]="'' + team.id">{{ team.name }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Divider -->
-            <div class="divider my-1"></div>
-
-            <!-- System Information Metadata -->
-            <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
-              <div class="flex justify-between">
-                <span>Created By:</span>
-                <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Created On:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Last Updated:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Task Audit Log Component -->
-        @if (id()) {
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
-              Activity History
-            </h3>
-          </div>
-          <div class="p-4 max-h-[350px] overflow-y-auto">
-            <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Task not found or failed to load.</span>
-    </div>
-    } }
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
 
 ```typescript
@@ -48191,480 +45283,791 @@ export class TeamsGridComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
-
-```html
-@if (error() && !detail()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading user…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="displayName()"
-    [eyebrow]="'Editing'"
-    [crumbs]="crumbs()"
-    [subtitle]="detail()?.email"
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    btn1Text="Save user"
-    [showDelete]="true"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    deleteText="Delete user"
-    (save)="save($event)"
-    (delete)="deleteUser()"
-  >
-    <button
-      pc-actions-prefix
-      class="btn btn-outline btn-secondary btn-sm gap-2"
-      type="button"
-      (click)="triggerPasswordReset()"
-      [disabled]="resettingPassword() || saving()"
-    >
-      <pc-icon name="lock-closed"></pc-icon>
-      {{ resettingPassword() ? 'Sending link…' : 'Send password reset link' }}
-    </button>
-  </pc-detail-header>
-
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <pc-card title="Profile">
-    <form class="space-y-4" (submit)="save($event)" novalidate>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-        <pc-select label="Role" [formField]="form.role">
-          @if (currentUserRole() !== 'admin') {
-          <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">Editor</option>
-          <option value="viewer">Viewer</option>
-        </pc-select>
-
-        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-      </div>
-
-      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
-    </form>
-  </pc-card>
-</section>
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
-    <span
-      class="tooltip-left"
-      [class.tooltip]="seatsRemaining() === 0"
-      [attr.data-tip]="
-        seatsRemaining() === 0
-          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
-          : null
-      "
-    >
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
-        <pc-icon name="user-plus" [size]="4"></pc-icon>
-        Invite user
-      </button>
-    </span>
-  </pc-grid-header>
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="6">
-    <ng-container pcTableHead>
-      <th>User</th>
-      <th>Role</th>
-      <th>Status</th>
-      <th>MFA</th>
-      <th>Last active</th>
-      <th class="w-10"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="6" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
-          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="!!row.deletion_scheduled_at">
-      <td>
-        <div class="flex items-center gap-3">
-          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <a
-                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-                [routerLink]="['/users', row.id]"
-              >
-                {{ displayName(row) }}
-              </a>
-              @if (isSelf(row)) {
-              <span class="text-xs text-base-content/50">(you)</span>
-              }
-            </div>
-            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
-          </div>
-        </div>
-      </td>
-      <td>
-        @if (roleLockReason(row); as reason) {
-        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
-          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
-            <option>{{ roleLabel(row.role) }}</option>
-          </select>
-        </span>
-        } @else {
-        <select
-          class="select select-bordered select-sm w-32"
-          [disabled]="savingIds().has(row.id)"
-          [attr.aria-label]="'Role for ' + displayName(row)"
-          (change)="changeRole(row, $event)"
-        >
-          @for (r of roleOptions(row); track r) {
-          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
-          }
-        </select>
-        }
-      </td>
-      <td>
-        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
-      </td>
-      <td>
-        @if (row.two_factor_enabled) {
-        <span class="tooltip" data-tip="MFA enabled">
-          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
-        </span>
-        } @else {
-        <span class="text-base-content/30">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
-      <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
-          >
-            <li>
-              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
-            </li>
-            <li>
-              <a (click)="sendPasswordReset(row)">
-                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
-              </a>
-            </li>
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-
-    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
-      Users are staff logins — volunteers live in
-      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
-      and don't need an account.
-    </div>
-  </pc-table>
-
-  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
 
 ```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { UserService } from '@frontend/services/user.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserAdminService } from '../services/useradmin-service';
-import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+@Service()
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
 
-export interface UserRow {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: string | null;
-  last_active_at: string | null;
-  created_at: string | null;
-  avatar_url: string | null;
+  public add(row: InviteAuthUserType) {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(_rows: InviteAuthUserType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.authusers.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: Record<string, unknown>[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateAuthUserType) {
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
+  }
+
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  /** Admin deactivation — blocks sign-in and revokes sessions until reactivated. */
+  public deactivate(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.deactivateUser.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  /** Clears admin deactivation (and any self-scheduled deletion). */
+  public reactivate(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.reactivateUser.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  /** Re-sends the invitation email with a fresh temp password + activation code. */
+  public resendInvite(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.resendInvite.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  public getSeatUsage(): Promise<{ plan: string; seatLimit: number; seatsUsed: number }> {
+    return this.api.authusers.getSeatUsage.query() as Promise<{ plan: string; seatLimit: number; seatsUsed: number }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('User export is not available'));
+  }
 }
+```
 
-// The stored role value for the working role is 'user'; the product name for it is "Editor"
-// (see the Users & roles help article and the approved design).
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  user: 'Editor',
-  viewer: 'Viewer',
-};
+## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
+```html
+<pc-detail-layout
+  [title]="displayName() || 'User'"
+  [eyebrow]="'User'"
+  [subtitle]="detail()?.email"
+  [avatarText]="initials()"
+  [crumbs]="crumbs()"
+  [isLoading]="loading()"
+  [error]="error()"
+  [hasRecord]="!initialized() || !!detail()"
+  [showActions]="false"
+  [showDelete]="canDelete()"
+  [deleteText]="'Delete user'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (delete)="deleteUser()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (status(); as chip) {
+  <pc-status-badge pc-title-suffix [type]="chip.tone">{{ chip.label }}</pc-status-badge>
+  }
+
+  <button
+    pc-actions-prefix
+    class="btn btn-outline btn-secondary btn-sm gap-2"
+    type="button"
+    (click)="triggerPasswordReset()"
+    [disabled]="resettingPassword()"
+  >
+    <pc-icon name="lock-closed" [size]="4"></pc-icon>
+    {{ resettingPassword() ? 'Sending link…' : 'Send password reset' }}
+  </button>
+
+  @if (showDeactivateAction()) {
+  <li pc-overflow-extra>
+    <button type="button" class="text-warning" (click)="deactivateUser()" [disabled]="lifecycleBusy()">
+      <pc-icon name="archive-box" [size]="4"></pc-icon>
+      Deactivate user
+    </button>
+  </li>
+  } @if (detail()) {
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left column: identity form, stats, activity log -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-card title="Profile" subtitle="Their name appears on tasks, notes and the Activity log.">
+        <form class="space-y-4" (submit)="save($event)" novalidate>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <pc-input
+              id="first_name"
+              label="First name"
+              [formField]="form.first_name"
+              autocomplete="given-name"
+            ></pc-input>
+            <pc-input
+              id="last_name"
+              label="Last name"
+              [formField]="form.last_name"
+              autocomplete="family-name"
+            ></pc-input>
+            <div class="sm:col-span-2">
+              <pc-input
+                id="email"
+                label="Email address"
+                type="email"
+                [formField]="form.email"
+                autocomplete="email"
+              ></pc-input>
+              <p class="mt-1 text-xs text-base-content/50">
+                Email is how they sign in — changing it sends a confirmation to the new address first.
+              </p>
+            </div>
+          </div>
+
+          <!-- Dirty state narrated, not implied (§2) -->
+          <div class="flex items-center justify-between gap-3 border-t border-base-200 pt-4">
+            <p class="text-xs text-base-content/60">
+              @if (unsavedChanges.dirtyCount() > 0) {
+              <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                Unsaved changes · {{ unsavedChanges.dirtyCount() }} {{ unsavedChanges.dirtyCount() === 1 ? 'field' :
+                'fields' }}
+              </span>
+              } @else {
+              <span>All changes saved.</span>
+              }
+            </p>
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-outline btn-accent btn-sm"
+                type="button"
+                (click)="resetForm()"
+                [disabled]="saving() || !form().dirty()"
+              >
+                Reset
+              </button>
+              <button class="btn btn-primary btn-sm" type="submit" [disabled]="saving() || !form().dirty()">
+                @if (saving()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } Save user
+              </button>
+            </div>
+          </div>
+        </form>
+      </pc-card>
+
+      @if (stats()) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        @for (card of activityCards(); track card.key) {
+        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+          @if (card.asOf) {
+          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </pc-stat-card>
+        }
+      </div>
+      }
+
+      <pc-card title="Activity log">
+        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right column: access + account -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-card title="Access" subtitle="Role, security and sign-in facts.">
+        <!-- Lifecycle context strip: names the limbo state, offers its one exit (§3) -->
+        @if (lifecycleStrip(); as strip) {
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-xs"
+          [class]="strip.tone === 'warning' ? 'bg-warning/15' : 'bg-base-200 text-base-content/70'"
+        >
+          <span>{{ strip.text }}</span>
+          @if (strip.action === 'resend') {
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-xs gap-1"
+            (click)="resendInvite()"
+            [disabled]="lifecycleBusy()"
+          >
+            <pc-icon name="paper-airplane" [size]="3"></pc-icon>
+            {{ strip.actionLabel }}
+          </button>
+          } @else if (strip.action === 'reactivate') {
+          <button
+            type="button"
+            class="btn btn-outline btn-warning btn-xs gap-1"
+            (click)="reactivateUser()"
+            [disabled]="lifecycleBusy()"
+          >
+            <pc-icon name="arrow-path" [size]="3"></pc-icon>
+            {{ strip.actionLabel }}
+          </button>
+          }
+        </div>
+        }
+
+        <!-- Role: instant-apply with explained locks (§2) -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-base-content/70" for="user-role">Role</label>
+          @if (roleLock(); as reason) {
+          <select
+            id="user-role"
+            class="select select-bordered select-sm w-full"
+            disabled
+            [attr.aria-label]="'Role — ' + reason"
+          >
+            <option>{{ roleLabel() }}</option>
+          </select>
+          <p class="mt-1 text-xs text-warning">{{ reason }}</p>
+          } @else {
+          <select
+            id="user-role"
+            class="select select-bordered select-sm w-full"
+            [class.animate-saved-flash]="roleFlash()"
+            [disabled]="roleSaving()"
+            [attr.aria-label]="'Role for ' + displayName()"
+            (change)="changeRole($event)"
+          >
+            @for (r of roleChoices(); track r) {
+            <option [value]="r" [selected]="r === detail()?.role">{{ roleLabelFor(r) }}</option>
+            }
+          </select>
+          <p class="mt-1 text-xs text-base-content/50">Applies immediately — no save needed.</p>
+          }
+        </div>
+
+        <div class="border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Two-factor auth"
+            [value]="detail()?.two_factor_enabled ? 'Enabled' : 'Not set up'"
+            [icon]="detail()?.two_factor_enabled ? 'check-circle' : 'x-circle'"
+          ></pc-detail-item>
+          <pc-detail-item label="Last active" [value]="lastActiveLabel()"></pc-detail-item>
+          <pc-detail-item
+            label="Email verified"
+            [value]="detail()?.verified ? 'Yes' : 'Not yet'"
+            [icon]="detail()?.verified ? 'check-circle' : 'x-circle'"
+          ></pc-detail-item>
+        </div>
+      </pc-card>
+
+      <pc-card title="Account" subtitle="System identifiers and timestamps.">
+        <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+        <pc-detail-item
+          label="Member since"
+          [value]="detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : null"
+        ></pc-detail-item>
+        <pc-detail-item
+          label="Last updated"
+          [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+        ></pc-detail-item>
+      </pc-card>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Router } from '@angular/router';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email } from '@angular/forms/signals';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '../../../services/api/user-message';
+import {
+  userIsDeactivated,
+  userLastActiveLabel,
+  userRoleLockReason,
+  userRoleOptions,
+  userShortDate,
+  userStatus,
+} from '../user-status';
 
 /**
- * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
- * inline role select with explained locks, honest status/MFA/last-active columns derived from
- * real session data, and the seat-aware "Invite user" dialog.
+ * The one user page — view and edit in place, no separate edit route (approved design,
+ * 2026-07-10 mockup). Rolodex records keep the view/edit split; account-ish pages
+ * (Profile, Users) edit in place:
+ * - identity fields save explicitly with narrated dirty state (the Profile-page idiom),
+ * - role applies instantly with explained locks (the Users-list idiom),
+ * - lifecycle actions (password reset, resend invite, deactivate/reactivate, delete)
+ *   live where the doctrine puts them (§4).
  */
 @Component({
-  selector: 'pc-users-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog, GridHeaderComponent],
-  templateUrl: './users-page.html',
+  selector: 'pc-user-view',
+  imports: [DatePipe, Icon, RecordActivities, DetailLayout, StatCard, StatusBadge, DetailItem, PcCard, PcInput],
+  templateUrl: './user-view.html',
 })
-export class UsersPageComponent implements OnInit {
+export class UserViewComponent {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('user', this.id);
+
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
   private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
 
-  protected readonly loading = createLoadingGate();
-  protected readonly loaded = signal(false);
-  protected readonly rows = signal<UserRow[]>([]);
-  protected readonly seatUsage = signal<SeatUsage | null>(null);
+  protected readonly saving = signal(false);
+  protected readonly resettingPassword = signal(false);
+  protected readonly roleSaving = signal(false);
+  /** One-shot saved flash on the role select after an instant-apply role change. */
+  protected readonly roleFlash = signal(false);
+  /** In-flight resend-invite / deactivate / reactivate action. */
+  protected readonly lifecycleBusy = signal(false);
 
-  /** Row that just saved a role change — drives the one-shot saved flash. */
-  protected readonly flashedId = signal<string | null>(null);
-  /** Rows with an in-flight role change; their select is disabled while saving. */
-  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly payload = signal({ email: '', first_name: '', last_name: '' });
 
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
   protected readonly currentUserId = computed(() => {
     const id = this.auth.getUser()?.id;
     return id != null ? String(id) : null;
   });
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
 
-  protected readonly activeCount = computed(
-    () => this.rows().filter((r) => r.verified && !r.deletion_scheduled_at).length,
-  );
-  protected readonly invitedCount = computed(
-    () => this.rows().filter((r) => !r.verified && !r.deletion_scheduled_at).length,
-  );
-  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => !!r.deletion_scheduled_at).length);
-  protected readonly adminCount = computed(
-    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !r.deletion_scheduled_at).length,
-  );
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  protected readonly isSelf = computed(() => String(this.id()) === this.currentUserId());
+  protected readonly isDeactivated = computed(() => {
+    const user = this.detail();
+    return !!user && userIsDeactivated(user);
+  });
+  protected readonly isInvited = computed(() => {
+    const user = this.detail();
+    return !!user && !user.verified && !userIsDeactivated(user);
   });
 
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  /** Admins may not manage owner accounts — only another owner can. */
+  protected readonly canManageTarget = computed(
+    () => !(this.currentUserRole() === 'admin' && this.detail()?.role === 'owner'),
+  );
+  protected readonly canDelete = computed(() => !!this.detail() && !this.isSelf() && this.canManageTarget());
+  protected readonly showDeactivateAction = computed(
+    () => !!this.detail() && !this.isSelf() && this.canManageTarget() && !this.isDeactivated(),
+  );
+
+  protected readonly status = computed(() => {
+    const user = this.detail();
+    return user ? userStatus(user) : null;
   });
 
-  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
-  protected readonly headerSentence = computed(() => {
-    const total = this.rows().length;
-    const parts = [`${total} user${total === 1 ? '' : 's'}`];
-    const statusBits = [`${this.activeCount()} active`];
-    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
-    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
-    parts.push(statusBits.join(', '));
-    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
-    const usage = this.seatUsage();
-    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
-    return parts.join(' · ');
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  protected readonly roleLock = computed(() => {
+    const user = this.detail();
+    if (!user) return null;
+    return userRoleLockReason({
+      isSelf: this.isSelf(),
+      callerRole: this.currentUserRole(),
+      targetRole: user.role,
+      deactivated: this.isDeactivated(),
+    });
   });
 
-  public ngOnInit(): void {
-    void this.load();
+  protected readonly roleChoices = computed(() => userRoleOptions(this.currentUserRole(), this.detail()?.role));
+
+  protected roleLabelFor(role: string): string {
+    return authRoleLabel(role);
   }
 
-  protected openInvite(): void {
-    this.inviteDlg().open();
-  }
+  protected readonly lastActiveLabel = computed(() => {
+    const user = this.detail();
+    return user ? userLastActiveLabel(user) : '—';
+  });
 
-  protected onInvited(): void {
-    void this.load();
-  }
-
-  protected displayName(row: UserRow): string {
-    return `${row.first_name} ${row.last_name}`.trim() || row.email;
-  }
-
-  protected avatarUrl(row: UserRow): string | null {
-    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
-  }
-
-  protected isSelf(row: UserRow): boolean {
-    return row.id === this.currentUserId();
-  }
-
-  protected roleLabel(role: string | null): string {
-    return role ? (ROLE_LABELS[role] ?? role) : '—';
-  }
-
-  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
-  protected roleOptions(row: UserRow): string[] {
-    const options =
-      this.currentUserRole() === 'owner' ? ['owner', 'admin', 'user', 'viewer'] : ['admin', 'user', 'viewer'];
-    if (row.role && !options.includes(row.role)) return [row.role, ...options];
-    return options;
-  }
-
-  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected roleLockReason(row: UserRow): string | null {
-    if (this.isSelf(row)) return "You can't change your own role";
-    if (row.deletion_scheduled_at) return 'Deactivated accounts keep their role';
-    if (this.currentUserRole() === 'admin' && row.role === 'owner') return "Only an owner can change an owner's role";
-    return null;
-  }
-
-  protected status(row: UserRow): { label: string; tone: PcStatusType } {
-    if (row.deletion_scheduled_at) return { label: 'Deactivated', tone: 'ghost' };
-    if (!row.verified) return { label: 'Invited', tone: 'warning' };
-    return { label: 'Active', tone: 'success' };
-  }
-
-  protected lastActiveText(row: UserRow): string {
-    if (!row.verified && !row.deletion_scheduled_at) {
-      return row.created_at ? `Invite sent ${this.shortDate(row.created_at)}` : 'Invite sent';
+  /**
+   * Lifecycle context strip in the Access card: names the limbo state and carries its one
+   * next step (§3 offer the exit). Null for active accounts.
+   */
+  protected readonly lifecycleStrip = computed<{
+    tone: 'warning' | 'ghost';
+    text: string;
+    action: 'resend' | 'reactivate' | null;
+    actionLabel: string;
+  } | null>(() => {
+    const user = this.detail();
+    if (!user) return null;
+    const canAct = this.canManageTarget();
+    if (user.deactivated_at) {
+      const since = userShortDate(user.deactivated_at);
+      return {
+        tone: 'ghost',
+        text: `Deactivated${since ? ` ${since}` : ''} — can't sign in`,
+        action: canAct ? 'reactivate' : null,
+        actionLabel: 'Reactivate user',
+      };
     }
-    if (!row.last_active_at) return '—';
-    return this.relativeTime(new Date(row.last_active_at));
+    if (user.deletion_scheduled_at) {
+      const when = userShortDate(user.deletion_scheduled_at);
+      return {
+        tone: 'ghost',
+        text: `Deletion scheduled${when ? ` for ${when}` : ''} — signing back in cancels it`,
+        action: canAct ? 'reactivate' : null,
+        actionLabel: 'Reactivate user',
+      };
+    }
+    if (!user.verified) {
+      const sent = userShortDate(user.created_at);
+      return {
+        tone: 'warning',
+        text: `Invite sent${sent ? ` ${sent}` : ''} — hasn't signed in yet`,
+        action: canAct ? 'resend' : null,
+        actionLabel: 'Resend invite',
+      };
+    }
+    return null;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly initials = computed(() => {
+    const user = this.detail();
+    if (!user) return null;
+    const letters = [user.first_name, user.last_name]
+      .map((t) => (t ?? '').trim().charAt(0))
+      .filter(Boolean)
+      .join('')
+      .toUpperCase();
+    return letters || user.email.charAt(0).toUpperCase();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
+  ]);
+
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    return [
+      {
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        asOf: null,
+      },
+      {
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        asOf: s.contacts_added.last_created_at,
+      },
+      {
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        asOf: s.files_imported.last_activity_at,
+      },
+      {
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        asOf: s.files_exported.last_activity_at,
+      },
+    ];
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
   }
 
-  protected async changeRole(row: UserRow, event: Event): Promise<void> {
-    const select = event.target as HTMLSelectElement;
-    const role = select.value;
-    if (!role || role === row.role) return;
+  /** Route-level unsaved-changes guard (the edit form lives on this page now). */
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
+  }
 
-    this.savingIds.update((ids) => new Set(ids).add(row.id));
+  protected async save(event?: Event) {
+    event?.preventDefault();
+
+    this.form().markAsTouched();
+    if (this.form().invalid() || !this.id()) {
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
     try {
-      await this.users.update(row.id, { role });
-      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
-      this.flashRow(row.id);
-      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+      await this.users.update(this.id(), this.buildPayload());
+      this.alerts.showSuccess('User updated');
+      this.users.triggerRefresh();
+      await this.load();
     } catch (err) {
-      select.value = row.role ?? '';
-      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      const message = getUserErrorMessage(err, 'Unable to update user');
+      this.error.set(message);
       this.alerts.showError(message);
     } finally {
-      this.savingIds.update((ids) => {
-        const next = new Set(ids);
-        next.delete(row.id);
-        return next;
-      });
+      this.saving.set(false);
     }
   }
 
-  protected async sendPasswordReset(row: UserRow): Promise<void> {
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  /**
+   * Role is instant-apply (same idiom as the Users list) so a role change never gets
+   * tangled with unsaved identity edits. The detail signal is patched in place rather
+   * than reloaded, to keep any in-progress form edits intact.
+   */
+  protected async changeRole(eventTarget: Event) {
+    const select = eventTarget.target as HTMLSelectElement;
+    const role = select.value;
+    const user = this.detail();
+    if (!role || !user || role === user.role) return;
+
+    this.roleSaving.set(true);
     try {
-      await this.users.adminTriggerPasswordReset(row.id);
-      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+      await this.users.update(this.id(), { role } as UpdateAuthUserType);
+      this.detail.update((d) => (d ? { ...d, role } : d));
+      this.users.triggerRefresh();
+      this.flashRole();
+      this.alerts.showSuccess(`Role updated — ${this.displayName()} is now ${authRoleLabel(role)}`);
     } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
-      this.alerts.showError(message);
+      select.value = user.role ?? '';
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to update the role'));
+    } finally {
+      this.roleSaving.set(false);
     }
   }
 
-  private async load(): Promise<void> {
-    const end = this.loading.begin();
+  protected async triggerPasswordReset() {
+    if (!this.id()) return;
+    this.resettingPassword.set(true);
     try {
-      const [list, seats] = await Promise.all([
-        this.users.getAll({ startRow: 0, endRow: 500 }),
-        this.users.getSeatUsage(),
-      ]);
-      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
-      this.seatUsage.set(seats);
-      this.loaded.set(true);
-    } catch {
-      this.alerts.showError('Unable to load users — try refreshing the page');
+      await this.users.adminTriggerPasswordReset(this.id());
+      this.alerts.showSuccess(`Password reset email sent to ${this.detail()?.email ?? 'the user'}`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to trigger password reset'));
+    } finally {
+      this.resettingPassword.set(false);
+    }
+  }
+
+  protected async resendInvite() {
+    if (!this.id() || this.lifecycleBusy()) return;
+    this.lifecycleBusy.set(true);
+    try {
+      await this.users.resendInvite(this.id());
+      this.alerts.showSuccess(`Invitation email sent to ${this.detail()?.email ?? 'the user'}`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to resend the invitation'));
+    } finally {
+      this.lifecycleBusy.set(false);
+    }
+  }
+
+  protected async deactivateUser() {
+    const user = this.detail();
+    if (!user || this.lifecycleBusy()) return;
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Deactivate user',
+      message: `${this.displayName()} won't be able to sign in until an admin or owner reactivates them. Their role and history are kept.`,
+      variant: 'warning',
+      confirmText: 'Deactivate user',
+    });
+    if (!confirmed) return;
+
+    this.lifecycleBusy.set(true);
+    try {
+      await this.users.deactivate(this.id());
+      this.detail.update((d) => (d ? { ...d, deactivated_at: new Date() } : d));
+      this.users.triggerRefresh();
+      this.alerts.showSuccess(`${this.displayName()} deactivated — they can no longer sign in`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to deactivate user'));
+    } finally {
+      this.lifecycleBusy.set(false);
+    }
+  }
+
+  protected async reactivateUser() {
+    if (!this.id() || this.lifecycleBusy()) return;
+    this.lifecycleBusy.set(true);
+    try {
+      await this.users.reactivate(this.id());
+      this.detail.update((d) => (d ? { ...d, deactivated_at: null, deletion_scheduled_at: null } : d));
+      this.users.triggerRefresh();
+      this.alerts.showSuccess(`${this.displayName()} reactivated — they can sign in again`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to reactivate user'));
+    } finally {
+      this.lifecycleBusy.set(false);
+    }
+  }
+
+  protected async deleteUser() {
+    if (!this.id() || !this.canDelete()) return;
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete user',
+      message: `Delete ${this.displayName()}? Their sign-in is removed permanently — this cannot be undone. To keep their history but block access, deactivate instead.`,
+      variant: 'danger',
+      confirmText: 'Delete user',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Unable to delete user'));
     } finally {
       end();
     }
   }
 
-  private toRow(raw: Record<string, unknown>): UserRow {
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(d);
+    } catch {
+      return date.toString();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.stats.set(user.stats);
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message = getUserErrorMessage(err, 'Failed to load user');
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const lastName = raw.last_name?.trim() ?? '';
     return {
-      id: raw['id'] != null ? String(raw['id']) : '',
-      email: typeof raw['email'] === 'string' ? raw['email'] : '',
-      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
-      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
-      role: typeof raw['role'] === 'string' ? raw['role'] : null,
-      verified: raw['verified'] === true,
-      two_factor_enabled: raw['two_factor_enabled'] === true,
-      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
-      last_active_at: this.toIso(raw['last_active_at']),
-      created_at: this.toIso(raw['created_at']),
-      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
-    };
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: lastName.length ? lastName : null,
+    } as UpdateAuthUserType;
   }
 
-  private toIso(value: unknown): string | null {
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && value) return value;
-    return null;
-  }
-
-  private flashRow(id: string): void {
-    this.flashedId.set(id);
+  private flashRole(): void {
+    this.roleFlash.set(true);
     const FLASH_MS = 1300;
-    setTimeout(() => {
-      if (this.flashedId() === id) this.flashedId.set(null);
-    }, FLASH_MS);
-  }
-
-  private relativeTime(date: Date): string {
-    const diff = Date.now() - date.getTime();
-    if (Number.isNaN(diff)) return '—';
-    if (diff < MINUTE) return 'Just now';
-    if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min ago`;
-    if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
-    if (diff < 2 * DAY) return 'Yesterday';
-    return this.shortDate(date.toISOString());
-  }
-
-  private shortDate(value: string): string {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    setTimeout(() => this.roleFlash.set(false), FLASH_MS);
   }
 }
 ```
@@ -48883,6 +46286,174 @@ export class Sidebar {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
+
+import { DataGridConfig, deleteConfirmMessageFor, deleteSuccessMessageFor } from '../datagrid.tokens';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridActionsService {
+  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+    const { messages } = ctx.config;
+
+    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
+
+    const ok = await ctx.dialogs.confirm({
+      title: messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(messages, selectedCount),
+      variant: messages.deleteConfirmVariant,
+      icon: messages.deleteConfirmIcon,
+      confirmText: messages.deleteConfirmText,
+      cancelText: messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return;
+
+    const rows = ctx.getSelectedRows();
+    if (!rows.length) {
+      ctx.alertSvc.showError(messages.deleteNoneSelected);
+      return;
+    }
+
+    const isNonDeletable = (row: Record<string, unknown>) => {
+      if (!('deletable' in row)) return false;
+      const value = (row as { deletable?: unknown }).deletable;
+      if (typeof value === 'boolean') return value === false;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'false' || normalized === '0';
+      }
+      if (typeof value === 'number') return value === 0;
+      return false;
+    };
+
+    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
+    const containsNonDeletable = deletableRows.length !== rows.length;
+    if (containsNonDeletable) {
+      ctx.alertSvc.showError(messages.deleteSystemValues);
+      return;
+    }
+    if (!deletableRows.length) {
+      return;
+    }
+
+    const end = ctx._loading.begin();
+    try {
+      const ids = deletableRows.map((r) => r.id);
+      const ok2 = await ctx.gridSvc.deleteMany(ids);
+      if (!ok2) {
+        ctx.alertSvc.showError(messages.deleteFailed);
+        return;
+      }
+      ctx.alertSvc.showSuccess(deleteSuccessMessageFor(messages, ids.length));
+    } finally {
+      end();
+    }
+  }
+
+  public async doExportCsv(deps: {
+    dialogs: ConfirmDialogService;
+    alertSvc: AlertService;
+    config: DataGridConfig;
+    getRowsForExport?: () => GridRow[];
+    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
+    queueFullExport?: () => Promise<void>;
+    logInstantExport?: (rowCount: number) => void;
+    displayedCount?: number;
+    totalCount?: number;
+  }) {
+    const { messages } = deps.config;
+
+    const displayedCount = deps.displayedCount ?? 0;
+    const totalCount = deps.totalCount ?? displayedCount;
+    const hasAllRowsVisible = totalCount <= displayedCount;
+
+    let exportAllData = false;
+    if (!hasAllRowsVisible) {
+      const parts: string[] = [];
+      if (totalCount > 0 && displayedCount > 0) {
+        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
+      }
+      parts.push(messages.exportMessage);
+      parts.push(messages.exportNavigateWarning);
+      const wantsAll = await deps.dialogs.confirm({
+        title: messages.exportTitle,
+        message: parts.filter(Boolean).join('\n\n'),
+        variant: 'info',
+        icon: messages.exportIcon,
+        confirmText: messages.exportConfirmText,
+        cancelText: messages.exportCancelText,
+        allowBackdropClose: false,
+      });
+      exportAllData = wantsAll === true;
+    }
+
+    // --- "All rows" path: queue background job, return immediately ---
+    if (exportAllData) {
+      if (deps.queueFullExport) {
+        try {
+          await deps.queueFullExport();
+          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
+        } catch {
+          deps.alertSvc.showError(messages.exportFailed);
+        }
+        return;
+      }
+      // fallback: no queue callback, fall through to synchronous path
+    }
+
+    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
+    if (!deps.getRowsForExport) return;
+
+    try {
+      const rows = deps.getRowsForExport();
+      if (!rows.length) {
+        deps.alertSvc.showInfo('No rows to export.');
+        return;
+      }
+      const rowCount = rows.length;
+      const headers = Object.keys(rows[0]!);
+      const escape = (v: unknown) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
+
+      const fileName = messages.exportFileName || 'export.csv';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      deps.logInstantExport?.(rowCount);
+      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
+    } catch {
+      deps.alertSvc.showError(messages.exportFailed);
+    }
+  }
+}
+
+type DeleteCtx = {
+  _loading: loadingGate;
+  alertSvc: AlertService;
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
+  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+
+  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
+};
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
 
 ```html
@@ -48964,121 +46535,6 @@ export class Sidebar {
     </div>
   </aside>
 </div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  /**
-   * Export menu label, e.g. "Export 5,012 matching people" — mirrors the
-   * count-sentence: "matching" only when a filter narrows the set, singular noun
-   * at 1, and just "Export people" before the first load resolves a count.
-   */
-  readonly exportLabel = computed<string>(() => {
-    const count = this.grid.totalCountAll();
-    if (count <= 0) return `Export ${this.grid.entityNounPlural}`;
-    const noun = count === 1 ? this.grid.entityNoun : this.grid.entityNounPlural;
-    const matching = this.grid.anyFilterActive() ? 'matching ' : '';
-    return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
-  });
-
-  /** Solid-primary create-button label (UX-GUIDELINES "Buttons"), e.g. "New person". Falls back
-   *  to "New" when the grid config carries no specific entity noun. */
-  readonly addLabel = computed(() => {
-    const noun = this.grid.entityNoun;
-    return noun && noun !== 'row' ? `New ${noun}` : 'New';
-  });
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
@@ -50256,6 +47712,122 @@ export class ActivityFeed implements OnInit {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <pc-detail-header
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Edit company'"
+      [eyebrow]="isNewMode() ? 'New company' : 'Edit company'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <!-- Form Section -->
+      <form (submit)="save($event)" novalidate class="lg:col-span-2">
+        <fieldset [disabled]="isLoading()">
+          <pc-card>
+            <!-- Name -->
+            <div class="flex flex-col gap-1.5">
+              <pc-input
+                label="Company name"
+                placeholder="e.g. Acme Corp"
+                [formField]="form.name"
+                (blurred)="onNameBlur()"
+              ></pc-input>
+              @if (lookingUp()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-base-content/60">
+                <span class="loading loading-spinner loading-xs"></span>
+                Looking up details on Google…
+              </p>
+              } @else if (duplicateName()) {
+              <p class="flex items-center gap-1 pl-1 text-xs text-warning">
+                <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+                A company with this name already exists — you can still save if this is a separate record.
+              </p>
+              }
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Website"
+                type="url"
+                placeholder="https://example.com"
+                [formField]="form.website"
+              ></pc-input>
+              <pc-input label="Industry" placeholder="e.g. Healthcare" [formField]="form.industry"></pc-input>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+              <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+            </div>
+
+            <!-- Description -->
+            <div class="flex flex-col gap-1.5">
+              <pc-textarea
+                label="Description"
+                placeholder="Company description…"
+                [formField]="form.description"
+                [rows]="3"
+              ></pc-textarea>
+              <p class="pl-1 text-xs text-base-content/55">
+                Shown on the company page. Google enrichment fills this if left blank.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Any additional notes…"
+              [formField]="form.notes"
+              [rows]="4"
+            ></pc-textarea>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail -->
+      <div class="flex flex-col gap-6">
+        @if (!isNewMode()) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">{{ employeeCount() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Enrichment</dt>
+              <dd>
+                @if (isEnriched()) {
+                <pc-status-badge type="success">Enriched</pc-status-badge>
+                } @else {
+                <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+                }
+              </dd>
+            </div>
+          </dl>
+        </pc-card>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.ts
 
 ```typescript
@@ -50412,6 +47984,73 @@ export class DeliveriesRequests implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
+  <div class="flex flex-wrap items-end justify-end gap-3">
+    <h1 class="sr-only">Routes</h1>
+    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
+      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
+    </a>
+  </div>
+
+  <pc-table [loading]="loading.visible()" [columns]="7">
+    <ng-container pcTableHead>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Stops</th>
+      <th>Est. time</th>
+      <th>Volunteer</th>
+      <th>Scheduled</th>
+      <th>Created</th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="7" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
+          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <a
+          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/deliveries/routes', row.id]"
+        >
+          {{ row.name }}
+        </a>
+      </td>
+      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
+      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td>
+        @if (row.volunteer_person_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
+          >{{ row.volunteer_name || 'Volunteer' }}</a
+        >
+        } @else {
+        <span class="text-base-content/40">Unassigned</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.ts
@@ -50774,6 +48413,79 @@ export class PledgesGridComponent implements OnInit {
 </pc-duplicate-page-shell>
 ```
 
+## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon [name]="icon()" class="text-primary" [size]="7"></pc-icon>
+        Manage Duplicate {{ title() }}
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">{{ description() }}</p>
+      @if (!isLoading() && !isEmpty() && sweepSentence()) {
+      <p class="text-sm text-base-content/50 mt-1 tabular-nums">{{ sweepSentence() }}</p>
+      }
+    </div>
+  </div>
+
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4 font-light">Scanning database...</p>
+  </div>
+  } @if (!isLoading() && isEmpty()) {
+  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-xl mx-auto mt-10">
+    <div class="card-body items-center text-center py-16">
+      <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
+        <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
+      </div>
+      <h2 class="card-title text-xl font-bold text-success">No duplicates waiting</h2>
+      <p class="text-base-content/60 mt-2 max-w-sm">
+        The sweep runs nightly at 3:00 AM. Imports catch most duplicates on the way in — this queue is for what slips
+        through.
+      </p>
+      <div class="card-actions mt-6">
+        <a [routerLink]="['/', entityRoute()]" class="btn btn-primary">Go to {{ title() }}</a>
+      </div>
+    </div>
+  </div>
+  } @if (!isLoading() && !isEmpty()) {
+  <div class="grid gap-6">
+    <ng-content></ng-content>
+  </div>
+
+  @if (totalPages() > 1) {
+  <div
+    class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
+  >
+    <div class="text-sm text-base-content/60 font-light">
+      Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
+      <span class="font-semibold text-base-content">{{ totalPages() }}</span>
+      ({{ totalGroups() }} duplicate groups total)
+    </div>
+    <div class="join">
+      <button
+        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
+        [disabled]="currentPage() === 1"
+        (click)="prev.emit()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
+      </button>
+      <button
+        class="join-item btn btn-outline btn-secondary btn-sm gap-1"
+        [disabled]="currentPage() >= totalPages()"
+        (click)="next.emit()"
+      >
+        Next <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  } }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
 
 ```html
@@ -50987,6 +48699,189 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.recomputeAddressFingerprints.mutate();
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+
+```html
+<!-- Template for household edit form -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    @if (household()?.is_placeholder) {
+    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
+      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
+      <div class="flex flex-col">
+        <span class="font-bold">System Placeholder Household</span>
+        <span class="text-xs font-light"
+          >This household is a permanent placeholder for people with no address and cannot be edited.</span
+        >
+      </div>
+    </div>
+    } @else {
+    <pc-detail-header
+      [title]="id() ? addressString() || 'Edit household' : 'New household'"
+      [eyebrow]="id() ? 'Edit household' : 'New household'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="household()?.id ? 'two' : 'three'"
+      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete household"
+      (save)="save($event)"
+      (delete)="deleteHousehold()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <!-- Form Section -->
+      <form (submit)="$event.preventDefault()" class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)" class="flex flex-col gap-6">
+          <!-- Segmentation (tags & issues) — first section, standalone card -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
+              <pc-tags
+                [tags]="tags"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Add a tag — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="Add an issue — Enter"
+                [readonly]="household()?.is_placeholder ?? false"
+                [canDelete]="!(household()?.is_placeholder ?? false)"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+            </div>
+          </pc-card>
+
+          <!-- Address -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Address</h3>
+
+            <!-- Current Address Display -->
+            @if (!household()?.is_placeholder && addressString()) {
+            <div class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-200 p-3">
+              <pc-icon name="map-pin" class="mt-0.5 shrink-0 text-primary" [size]="5"></pc-icon>
+              <div class="flex flex-col">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+                  Current address
+                </span>
+                <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
+              </div>
+            </div>
+            }
+
+            <!-- Autocomplete Address Search (§6 — Google Places) -->
+            <div class="flex flex-col gap-2">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Search address</label>
+              <pc-address-autocomplete
+                (addressSelected)="handleAddressChange($event)"
+                [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
+              ></pc-address-autocomplete>
+              <p class="pl-1 text-xs leading-snug text-base-content/55">
+                Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
+                update automatically.
+                <span class="text-base-content/35">Powered by Google.</span>
+              </p>
+            </div>
+
+            <!-- Collapsible manual entry -->
+            <details class="group">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                Enter address manually
+              </summary>
+              <div class="mt-4 flex flex-col gap-3 border-l-2 border-base-300 pl-3">
+                <p class="text-xs leading-snug text-base-content/55">
+                  Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
+                  address verifies.
+                </p>
+                <pc-address-form-group [form]="form"></pc-address-form-group>
+              </div>
+            </details>
+          </pc-card>
+
+          <!-- Door notes -->
+          <pc-card>
+            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
+            <pc-textarea
+              placeholder="What a canvasser should know at this door…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · members · geocode status · ward/district/precinct (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (!isNewMode() && household(); as h) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Members</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">{{ peopleCount() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Geocoding</dt>
+              <dd><pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip></dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Ward</dt>
+              <dd class="font-medium tabular-nums">{{ h.ward || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">District</dt>
+              <dd class="font-medium tabular-nums">{{ h.district || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Precinct</dt>
+              <dd class="font-medium tabular-nums">{{ h.precinct || '—' }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            Electoral boundaries come from the geocoder — they refresh in the background after save.
+          </p>
+        </pc-card>
+        }
+      </div>
+    </div>
+
+    }
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/household-view.html
@@ -52078,6 +49973,840 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </div>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
+
+```typescript
+import { Service, inject } from '@angular/core';
+import {
+  AddMarketingEmailType,
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  UpdateMarketingEmailType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+
+@Service()
+export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
+  protected override readonly endpointName = 'newsletters';
+
+  private readonly campaignContext = inject(CampaignContextService);
+
+  public add(row: AddMarketingEmailType) {
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
+  }
+
+  public addMany(_rows: AddMarketingEmailType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.newsletters.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
+    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
+    const count = result?.count != null ? Number(result.count) : rows.length;
+    return { rows, count };
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getById(id: string) {
+    const record = await this.api.newsletters.getById.query(id);
+    return this.normalize(record);
+  }
+
+  public getReport(id: string): Promise<NewsletterReportType> {
+    return this.api.newsletters.getReport.query(id);
+  }
+
+  public createClickersList(id: string): Promise<CreateClickersListResultType> {
+    return this.api.newsletters.createClickersList.mutate(id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateMarketingEmailType) {
+    return this.api.newsletters.update.mutate({ id, data });
+  }
+
+  public send(id: string): Promise<any> {
+    return this.api.newsletters.send.mutate(id);
+  }
+
+  public sendTest(input: {
+    subject: string;
+    html: string;
+    text?: string;
+    to: string;
+    fromName?: string;
+    fromEmail?: string;
+  }): Promise<{ to: string; delivered: number }> {
+    return this.api.newsletters.sendTest.mutate(input);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.newsletters.exportCsv.mutate(input);
+  }
+
+  private normalize(record: any) {
+    if (!record) return record;
+    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
+    const asNumber = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const asDate = (value: unknown) => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const date = new Date(value as string);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    return {
+      ...record,
+      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
+      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
+      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
+      total_recipients: asNumber(record.total_recipients) ?? 0,
+      delivered_count: asNumber(record.delivered_count) ?? 0,
+      bounce_count: asNumber(record.bounce_count) ?? 0,
+      open_rate: asNumber(record.open_rate) ?? 0,
+      click_rate: asNumber(record.click_rate) ?? 0,
+      unique_opens: asNumber(record.unique_opens) ?? 0,
+      unique_clicks: asNumber(record.unique_clicks) ?? 0,
+      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
+      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
+      reply_count: asNumber(record.reply_count) ?? 0,
+      send_date: asDate(record.send_date),
+      last_engagement_at: asDate(record.last_engagement_at),
+      created_at: asDate(record.created_at) ?? new Date(),
+      updated_at: asDate(record.updated_at) ?? new Date(),
+      top_links,
+    };
+  }
+
+  private parseJsonArray<T>(value: unknown): T[] | null {
+    if (!value) return null;
+    if (Array.isArray(value)) return value as T[];
+    try {
+      const parsed = JSON.parse(String(value));
+      return Array.isArray(parsed) ? (parsed as T[]) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+
+import {
+  MarketingEmailType,
+  NewsletterReportBounceType,
+  NewsletterReportType,
+} from '../../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { NewslettersService } from '../services/newsletters-service';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+const STATUS_TONE: Record<string, PcStatusType> = {
+  archived: 'ghost',
+  draft: 'ghost',
+  paused: 'warning',
+  queuing: 'info',
+  scheduled: 'info',
+  sending: 'info',
+  sent: 'success',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  archived: 'Archived',
+  draft: 'Draft',
+  paused: 'Paused',
+  queuing: 'Sending',
+  scheduled: 'Scheduled',
+  sending: 'Sending',
+  sent: 'Sent',
+};
+
+const BOUNCE_KIND_LABEL: Record<NewsletterReportBounceType['kind'], string> = {
+  hard: 'Hard',
+  soft: 'Soft',
+  dropped: 'Dropped',
+};
+
+/** The 48-hour engagement chart: sixteen 3-hour buckets from the send moment. */
+const CHART_BUCKET_HOURS = 3;
+const CHART_BUCKETS = 16;
+const MS_PER_HOUR = 3_600_000;
+/** Providers throttle senders whose spam-report rate crosses ~0.1% of delivered. */
+const SPAM_RATE_DANGER_PCT = 0.1;
+/** Bounce rows shown inline; the full set goes through the CSV export. */
+const BOUNCE_ROWS_SHOWN = 6;
+
+interface NewsletterAttachment {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+}
+
+interface StatTile {
+  label: string;
+  value: string;
+  valueClass: string;
+  sub: string;
+}
+
+interface FunnelRow {
+  label: string;
+  count: string;
+  share: string;
+  width: number;
+}
+
+interface ChartBucket {
+  opens: number;
+  clicks: number;
+  opensPct: number;
+  clicksPct: number;
+  tip: string;
+}
+
+interface CompareRow {
+  label: string;
+  current: string;
+  delta: string | null;
+  deltaClass: string;
+  bars: { height: number; isCurrent: boolean }[];
+}
+
+@Component({
+  selector: 'pc-newsletter-detail',
+  imports: [DetailLayout, Icon, RouterLink, StatusBadge],
+  templateUrl: './newsletter-detail.html',
+})
+export class NewsletterDetailComponent {
+  readonly id = input.required<string>();
+
+  private readonly service = inject(NewslettersService);
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly router = inject(Router);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly report = signal<NewsletterReportType | null>(null);
+  protected readonly error = signal<string | null>(null);
+  protected readonly attachments = signal<NewsletterAttachment[]>([]);
+  protected readonly isUploadingAttachment = signal(false);
+  protected readonly isCreatingList = signal(false);
+  protected readonly isDuplicating = signal(false);
+  protected readonly emailExpanded = signal(false);
+
+  /** Attachments can only be managed before a newsletter has gone out. */
+  protected readonly canManageAttachments = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
+
+  /** A "report" only exists once a send is (or was) underway; before that this page is plain details. */
+  protected readonly isUnsent = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
+
+  protected readonly eyebrow = computed(() => (this.isUnsent() ? 'Newsletter details' : 'Newsletter report'));
+
+  /** Entity noun while loading; the record's real name (or explicit "Untitled") once loaded. */
+  protected readonly pageTitle = computed(() => {
+    const email = this.email();
+    if (!email) return 'Newsletter';
+    return email.name || 'Untitled newsletter';
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Newsletters', route: '/newsletters' },
+    { label: this.pageTitle() },
+  ]);
+
+  protected readonly sentSentence = computed(() => {
+    const email = this.email();
+    if (!email) return '';
+    const from = this.report()?.from;
+    const fromPart = from?.email ? ` · from ${from.name ? `${from.name} ` : ''}<${from.email}>` : '';
+    if (email.status === 'sent' && email.send_date) return `Sent ${this.formatDateTime(email.send_date)}${fromPart}`;
+    if (email.status === 'scheduled' && email.send_date) {
+      return `Scheduled for ${this.formatDateTime(email.send_date)}${fromPart}`;
+    }
+    return `Not sent yet${fromPart}`;
+  });
+
+  protected readonly tiles = computed<StatTile[]>(() => {
+    const email = this.email();
+    if (!email) return [];
+    const report = this.report();
+    const sent = email.total_recipients;
+    const delivered = email.delivered_count;
+
+    // Averages across the earlier sends in this campaign (excludes this one).
+    const history = (report?.previous_sends ?? []).filter((s) => s.id !== email.id);
+    const avg = (values: number[]) => (values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null);
+    const avgOpen = avg(history.map((s) => s.open_rate));
+    const avgClick = avg(history.map((s) => s.click_rate));
+
+    const bounceTotal = report ? report.bounces.total : email.bounce_count;
+    const bounceSubParts: string[] = [];
+    if (report && report.bounces.total > 0) {
+      bounceSubParts.push(`${report.bounces.hard} hard · ${report.bounces.soft} soft`);
+      if (report.bounces.dropped > 0) bounceSubParts.push(`${report.bounces.dropped} dropped`);
+    }
+
+    return [
+      {
+        label: 'Delivered',
+        value: this.formatNumber(delivered),
+        valueClass: 'text-base-content',
+        sub: sent > 0 ? `${this.pct(delivered, sent)} of ${this.formatNumber(sent)} sent` : 'No recipients yet',
+      },
+      {
+        label: 'Open rate',
+        value: this.formatPercent(email.open_rate),
+        valueClass: email.open_rate > 0 ? 'text-primary' : 'text-base-content',
+        sub:
+          `${this.formatNumber(email.unique_opens)} unique opens` +
+          (avgOpen != null ? ` · avg ${this.formatPercent(avgOpen)}` : ''),
+      },
+      {
+        label: 'Click rate',
+        value: this.formatPercent(email.click_rate),
+        valueClass: email.click_rate > 0 ? 'text-secondary' : 'text-base-content',
+        sub:
+          `${this.formatNumber(report?.unique_clickers ?? email.unique_clicks)} unique clickers` +
+          (avgClick != null ? ` · avg ${this.formatPercent(avgClick)}` : ''),
+      },
+      {
+        label: 'Replies',
+        value: this.formatNumber(email.reply_count),
+        valueClass: 'text-base-content',
+        sub: email.reply_count > 0 ? 'Landed in the Inbox' : 'None yet',
+      },
+      {
+        label: 'Bounces',
+        value: this.formatNumber(bounceTotal),
+        valueClass: bounceTotal > 0 ? 'text-warning' : 'text-base-content',
+        sub: bounceSubParts.length > 0 ? bounceSubParts.join(' · ') : 'Every address accepted mail',
+      },
+    ];
+  });
+
+  protected readonly funnel = computed<FunnelRow[]>(() => {
+    const email = this.email();
+    if (!email) return [];
+    const sent = email.total_recipients;
+    const delivered = email.delivered_count;
+    const opened = email.unique_opens;
+    const clicked = this.report()?.unique_clickers ?? email.unique_clicks;
+    if (sent === 0) return [];
+    return [
+      { label: 'Sent', count: this.formatNumber(sent), share: '100%', width: 100 },
+      {
+        label: 'Delivered',
+        count: this.formatNumber(delivered),
+        share: `${this.pct(delivered, sent)} of sent`,
+        width: (delivered / sent) * 100,
+      },
+      {
+        label: 'Opened',
+        count: this.formatNumber(opened),
+        share: delivered > 0 ? `${this.pct(opened, delivered)} of delivered` : '—',
+        width: (opened / sent) * 100,
+      },
+      {
+        label: 'Clicked',
+        count: this.formatNumber(clicked),
+        share: opened > 0 ? `${this.pct(clicked, opened)} of opens` : '—',
+        width: (clicked / sent) * 100,
+      },
+    ];
+  });
+
+  protected readonly bounceRowsShown = computed<NewsletterReportBounceType[]>(
+    () => this.report()?.bounces.rows.slice(0, BOUNCE_ROWS_SHOWN) ?? [],
+  );
+
+  protected readonly engagementChart = computed<ChartBucket[] | null>(() => {
+    const report = this.report();
+    if (!report || report.timeline.length === 0) return null;
+    const email = this.email();
+    const firstBucket = report.timeline[0];
+    if (!firstBucket) return null;
+    const start = email?.send_date ? new Date(email.send_date).getTime() : this.bucketTime(firstBucket.time);
+
+    const buckets = Array.from({ length: CHART_BUCKETS }, () => ({ opens: 0, clicks: 0 }));
+    for (const point of report.timeline) {
+      const index = Math.floor((this.bucketTime(point.time) - start) / (CHART_BUCKET_HOURS * MS_PER_HOUR));
+      if (index < 0 || index >= CHART_BUCKETS) continue; // engagement past 48h isn't in this chart
+      const bucket = buckets[index];
+      if (!bucket) continue;
+      bucket.opens += point.opens;
+      bucket.clicks += point.clicks;
+    }
+    const max = Math.max(1, ...buckets.map((b) => Math.max(b.opens, b.clicks)));
+    return buckets.map((b, i) => ({
+      opens: b.opens,
+      clicks: b.clicks,
+      opensPct: (b.opens / max) * 100,
+      clicksPct: (b.clicks / max) * 100,
+      tip: `${i * CHART_BUCKET_HOURS}–${(i + 1) * CHART_BUCKET_HOURS}h: ${b.opens} opens · ${b.clicks} clicks`,
+    }));
+  });
+
+  protected readonly opensIn24hSentence = computed(() => {
+    const pctValue = this.report()?.opens_in_24h_pct;
+    if (pctValue == null) return null;
+    return `${Math.round(pctValue)}% of opens came within 24 hours of send.`;
+  });
+
+  protected readonly topLinks = computed(() => {
+    const report = this.report();
+    if (!report || report.top_links.length === 0) return [];
+    const max = Math.max(1, ...report.top_links.map((l) => l.clicks));
+    return report.top_links.map((l) => ({
+      ...l,
+      display: l.url.replace(/^https?:\/\//, ''),
+      width: (l.clicks / max) * 100,
+    }));
+  });
+
+  protected readonly linksSentence = computed(() => {
+    const report = this.report();
+    if (!report) return '';
+    return (
+      `${this.formatNumber(report.total_clicks)} clicks from ${this.formatNumber(report.unique_clickers)} ` +
+      `people · ${report.tracked_links} tracked link${report.tracked_links === 1 ? '' : 's'}`
+    );
+  });
+
+  protected readonly comparison = computed<CompareRow[]>(() => {
+    const report = this.report();
+    const sends = report?.previous_sends ?? [];
+    if (sends.length < 2) return [];
+    const previous = sends[sends.length - 2];
+    const metrics: { label: string; values: number[]; higherIsBetter: boolean }[] = [
+      { label: 'Open rate', values: sends.map((s) => s.open_rate), higherIsBetter: true },
+      { label: 'Click rate', values: sends.map((s) => s.click_rate), higherIsBetter: true },
+      { label: 'Unsubscribe rate', values: sends.map((s) => s.unsubscribe_rate), higherIsBetter: false },
+      { label: 'Bounce rate', values: sends.map((s) => s.bounce_rate), higherIsBetter: false },
+    ];
+    return metrics.map((m) => {
+      const current = m.values[m.values.length - 1] ?? 0;
+      const prior = m.values[m.values.length - 2] ?? 0;
+      const delta = current - prior;
+      const good = m.higherIsBetter ? delta > 0 : delta < 0;
+      const max = Math.max(0.1, ...m.values);
+      return {
+        label: m.label,
+        current: this.formatPercent(current),
+        delta: previous ? `${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} pts vs "${previous.name}"` : null,
+        deltaClass: Math.abs(delta) < 0.05 ? 'text-base-content/50' : good ? 'text-success' : 'text-error',
+        bars: m.values.map((v, i) => ({
+          height: Math.max(8, (v / max) * 100),
+          isCurrent: i === m.values.length - 1,
+        })),
+      };
+    });
+  });
+
+  protected readonly previousSendCount = computed(() => (this.report()?.previous_sends.length ?? 1) - 1);
+
+  protected readonly mostEngaged = computed(() => {
+    const report = this.report();
+    if (!report) return [];
+    return report.most_engaged.map((e) => {
+      const displayName = e.person?.name ?? e.email;
+      const parts: string[] = [];
+      if (e.opens > 0) parts.push(`Opened ${e.opens}×`);
+      if (e.links > 0) parts.push(`clicked ${e.links} link${e.links === 1 ? '' : 's'}`);
+      else if (e.clicks > 0) parts.push(`clicked ${e.clicks}×`);
+      return {
+        ...e,
+        displayName,
+        initials: this.initials(displayName),
+        summary: parts.join(' · '),
+      };
+    });
+  });
+
+  protected readonly audienceSinceSend = computed(() => {
+    const email = this.email();
+    const report = this.report();
+    if (!email || !report) return null;
+    const parts: string[] = [];
+    if (report.unsubscribes.total > 0) parts.push(`${report.unsubscribes.total} unsubscribed`);
+    if (report.bounces.total > 0) parts.push(`${report.bounces.total} joined the bounce list`);
+    if (report.spam_reports.total > 0) {
+      parts.push(`${report.spam_reports.total} spam report${report.spam_reports.total === 1 ? '' : 's'}`);
+    }
+    return parts.length > 0 ? `Since the send: ${parts.join(' · ')}.` : null;
+  });
+
+  protected readonly unsubscribeReasons = computed(() => {
+    const report = this.report();
+    if (!report || report.unsubscribes.total === 0) return [];
+    return report.unsubscribes.reasons.map((r) => ({
+      label: r.reason ?? 'No reason given',
+      count: r.count,
+      width: (r.count / report.unsubscribes.total) * 100,
+    }));
+  });
+
+  protected readonly unsubscribeRate = computed(() => {
+    const email = this.email();
+    const total = this.report()?.unsubscribes.total ?? 0;
+    if (!email || email.delivered_count === 0) return null;
+    return this.pct(total, email.delivered_count);
+  });
+
+  protected readonly spamRate = computed(() => {
+    const email = this.email();
+    const total = this.report()?.spam_reports.total ?? 0;
+    if (!email || email.delivered_count === 0) return null;
+    return (total / email.delivered_count) * 100;
+  });
+
+  protected readonly spamRateIsSafe = computed(() => {
+    const rate = this.spamRate();
+    return rate != null && rate < SPAM_RATE_DANGER_PCT;
+  });
+
+  protected readonly spamRows = computed(() => {
+    const report = this.report();
+    const email = this.email();
+    if (!report) return [];
+    return report.spam_reports.rows.map((r) => {
+      let timing = '';
+      if (r.occurred_at && email?.send_date) {
+        const hours = Math.round(
+          (new Date(r.occurred_at).getTime() - new Date(email.send_date).getTime()) / MS_PER_HOUR,
+        );
+        if (hours >= 0) timing = `${hours}h after send`;
+      }
+      return {
+        email: r.email || 'Address withheld by the provider',
+        timing: timing || (r.occurred_at ? this.formatDateTime(r.occurred_at) : ''),
+      };
+    });
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.load(currentId));
+    });
+  }
+
+  protected statusLabel(status: string | undefined): string {
+    if (!status) return '—';
+    return STATUS_LABEL[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  protected statusTone(status: string | undefined): PcStatusType {
+    return (status && STATUS_TONE[status]) || 'ghost';
+  }
+
+  protected bounceKindLabel(kind: NewsletterReportBounceType['kind']): string {
+    return BOUNCE_KIND_LABEL[kind];
+  }
+
+  protected bounceKindTone(kind: NewsletterReportBounceType['kind']): PcStatusType {
+    return kind === 'hard' ? 'warning' : 'ghost';
+  }
+
+  protected personRoute(person: { id: string; public_id: string | null }): string[] {
+    return ['/people', person.public_id ?? person.id];
+  }
+
+  protected async createClickersList(): Promise<void> {
+    const report = this.report();
+    if (!report || report.unique_clickers === 0 || this.isCreatingList()) return;
+    this.isCreatingList.set(true);
+    try {
+      const result = await this.service.createClickersList(this.id());
+      this.alertSvc.showSuccess(`List "${result.name}" created with ${this.formatNumber(result.members)} people`);
+      await this.router.navigate(['/lists', result.id]);
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to create the list'));
+    } finally {
+      this.isCreatingList.set(false);
+    }
+  }
+
+  protected async duplicateNewsletter(): Promise<void> {
+    const email = this.email();
+    if (!email || this.isDuplicating()) return;
+    this.isDuplicating.set(true);
+    try {
+      await this.service.add({
+        name: `${email.name} (copy)`,
+        status: 'draft',
+        subject: email.subject ?? null,
+        preview_text: email.preview_text ?? null,
+        summary: email.summary ?? null,
+        audience_description: email.audience_description ?? null,
+        target_lists: email.target_lists ?? null,
+        segments: email.segments ?? null,
+        html_content: email.html_content ?? null,
+        plain_text_content: email.plain_text_content ?? null,
+      });
+      this.alertSvc.showSuccess(`Draft "${email.name} (copy)" created`);
+      await this.router.navigate(['/newsletters']);
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to duplicate the newsletter'));
+    } finally {
+      this.isDuplicating.set(false);
+    }
+  }
+
+  protected exportReportCsv(): void {
+    const email = this.email();
+    const report = this.report();
+    if (!email) return;
+    const lines: string[][] = [
+      ['Metric', 'Value'],
+      ['Newsletter', email.name],
+      ['Status', this.statusLabel(email.status)],
+      ['Sent', email.send_date ? new Date(email.send_date).toISOString() : ''],
+      ['Recipients', String(email.total_recipients)],
+      ['Delivered', String(email.delivered_count)],
+      ['Open rate', this.formatPercent(email.open_rate)],
+      ['Unique opens', String(email.unique_opens)],
+      ['Click rate', this.formatPercent(email.click_rate)],
+      ['Unique clickers', String(report?.unique_clickers ?? email.unique_clicks)],
+      ['Replies', String(email.reply_count)],
+      ['Bounces', String(report?.bounces.total ?? email.bounce_count)],
+      ['Unsubscribes', String(report?.unsubscribes.total ?? email.unsubscribe_count)],
+      ['Spam reports', String(report?.spam_reports.total ?? email.spam_complaint_count)],
+    ];
+    if (report && report.top_links.length > 0) {
+      lines.push([], ['Link', 'Clicks', 'People']);
+      for (const link of report.top_links) {
+        lines.push([link.url, String(link.clicks), link.people != null ? String(link.people) : '']);
+      }
+    }
+    this.downloadCsv(this.csvFileName('report'), lines);
+  }
+
+  protected exportBouncesCsv(): void {
+    const report = this.report();
+    if (!report || report.bounces.rows.length === 0) return;
+    const lines: string[][] = [['Email', 'Kind', 'Reason', 'Occurred at', 'CRM match']];
+    for (const bounce of report.bounces.rows) {
+      lines.push([
+        bounce.email,
+        this.bounceKindLabel(bounce.kind),
+        bounce.reason ?? '',
+        bounce.occurred_at ? new Date(bounce.occurred_at).toISOString() : '',
+        bounce.person?.name ?? '',
+      ]);
+    }
+    this.downloadCsv(this.csvFileName('bounces'), lines);
+  }
+
+  protected async onAttachmentSelected(event: Event): Promise<void> {
+    const inputEl = event.target as HTMLInputElement;
+    const file = inputEl?.files?.[0];
+    const newsletterId = this.id();
+    if (!file || !newsletterId) return;
+
+    this.isUploadingAttachment.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
+      this.alertSvc.showSuccess(`"${file.name}" attached`);
+      await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to attach file');
+    } finally {
+      this.isUploadingAttachment.set(false);
+      inputEl.value = '';
+    }
+  }
+
+  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Remove "${attachment.filename}"?`,
+      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(attachment.id);
+      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
+      const newsletterId = this.id();
+      if (newsletterId) await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to remove attachment');
+    }
+  }
+
+  protected formatBytes(value: number | null | undefined): string {
+    if (!value) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let size = value;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  protected formatNumber(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return new Intl.NumberFormat().format(value);
+  }
+
+  protected formatPercent(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return `${value.toFixed(1)}%`;
+  }
+
+  protected formatSpamRate(value: number | null): string {
+    if (value == null) return '—';
+    return `${value.toFixed(2)}%`;
+  }
+
+  private pct(part: number, whole: number): string {
+    return whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '—';
+  }
+
+  private formatDateTime(value: Date | string): string {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+
+  /** Timeline bucket keys are 'YYYY-MM-DD HH24:00' strings; parse as local time. */
+  private bucketTime(bucket: string): number {
+    return new Date(bucket.replace(' ', 'T')).getTime();
+  }
+
+  private initials(name: string): string {
+    const words = name
+      .replace(/[^\p{L}\p{N}@ ]/gu, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    if (words.length === 0) return '?';
+    const first = words[0]?.charAt(0) ?? '';
+    const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
+    return (first + last).toUpperCase() || '?';
+  }
+
+  private csvFileName(kind: string): string {
+    const name = (this.email()?.name ?? 'newsletter')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    return `${name || 'newsletter'}-${kind}.csv`;
+  }
+
+  private downloadCsv(filename: string, rows: string[][]): void {
+    const escapeCell = (cell: string) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
+    const csv = rows.map((row) => row.map(escapeCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private async load(id: string): Promise<void> {
+    if (!id) {
+      this.error.set('Newsletter not found.');
+      return;
+    }
+    const end = this.loading.begin();
+    try {
+      const record = (await this.service.getById(id)) as MarketingEmailType | null;
+      if (!record) {
+        this.error.set('Newsletter not found.');
+        return;
+      }
+      this.email.set(record);
+
+      const reportData = await this.service.getReport(id);
+      this.report.set(reportData);
+
+      await this.loadAttachments(id);
+    } catch (err: unknown) {
+      console.error(err);
+      this.error.set('Unable to load newsletter.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadAttachments(id: string): Promise<void> {
+    try {
+      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
+      this.attachments.set(
+        (rows as Record<string, unknown>[]).map((r) => ({
+          id: String(r['id']),
+          filename: String(r['filename']),
+          size_bytes: r['size_bytes'] as number | null,
+        })),
+      );
+    } catch {
+      // Non-fatal — attachments are supplementary to the newsletter report.
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
@@ -53207,733 +51936,418 @@ export class PersonConnections implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
-```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
+```typescript
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
+import { FormsModule } from '@angular/forms';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
 
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+@Component({
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  templateUrl: './profile-page.html',
+})
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
 
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
-        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
-          <!-- Tags & issues — standalone card, first section -->
-          <pc-card>
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
 
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-          </pc-card>
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
 
-          <pc-card>
-            @if (!person()?.id) {
-            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
-            }
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
 
-            <!-- Name -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
-              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
-            </div>
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+  });
 
-            <!-- Emails -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input
-                label="Primary email"
-                type="email"
-                placeholder="name@example.com"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                label="Secondary email"
-                type="email"
-                placeholder="Optional"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+  });
 
-            <!-- Phones -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
-              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
-            </div>
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
 
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
 
-            <!-- Address & Household Assignment -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
-              @if (householdId() && !isPlaceholderHousehold()) {
-              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
-                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
-                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
-                  Edit on household
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
-                  data-tip="Change household"
-                  (click)="openAssignDrawer()"
-                >
-                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
-                  data-tip="Remove address"
-                  (click)="removeAddress()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div
-                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                  <span class="italic text-base-content/50">No address assigned</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Assign household
-                </button>
-              </div>
-              }
-              <p class="pl-1 text-xs text-base-content/50">
-                Addresses belong to households, so everyone at the same address stays in sync.
-              </p>
-            </div>
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner — full access',
+      admin: 'Admin — users & workspace settings',
+      user: 'Editor — day-to-day work',
+      viewer: 'Viewer — read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
 
-            <!-- Internal notes -->
-            <pc-textarea
-              label="Internal notes"
-              placeholder="Anything the team should know about this person…"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
 
-            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
-            <details class="group border-t border-base-200 pt-3">
-              <summary
-                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-              >
-                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                More details
-              </summary>
-              <div class="mt-4 flex flex-col gap-4">
-                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
 
-                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
-                  @for (u of users(); track u.id) {
-                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </pc-select>
-
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
-                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
-                </div>
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
-                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
-                </div>
-              </div>
-            </details>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
-      <div class="flex flex-col gap-6">
-        @if (person()?.id && person(); as p) {
-        <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
-
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">First seen</dt>
-              <dd class="text-right font-medium text-base-content">
-                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">People in home</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">
-                {{ householdMembersResource.value() ?? '—' }}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Company</dt>
-              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
-            </div>
-          </dl>
-
-          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Contact owner</dt>
-              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Preferred contact</dt>
-              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
-            </div>
-          </dl>
-
-          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            People in home counts everyone sharing this person's address — edit it from the household record.
-          </p>
-        </pc-card>
-
-        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
-        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
-        }
-      </div>
-    </div>
-
-    <!-- Back to the person record -->
-    @if (person()?.id) {
-    <a
-      [routerLink]="['/people', person()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ formName() || 'person' }}
-    </a>
+  protected readonly initials = computed(() => {
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
     }
-  </div>
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
+  });
 
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
-        }
-      </div>
-    </div>
-  </pc-side-drawer>
-</div>
-```
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you — all open'
+          : emails.open === 0
+            ? 'assigned to you — all closed'
+            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
+    return [
+      {
+        key: 'emails',
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
+      },
+      {
+        key: 'contacts',
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
+      },
+      {
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
+      },
+    ];
+  });
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+  public ngOnInit(): void {
+    void this.load();
+  }
 
-```html
-<!-- Template for persons grid -->
-<div class="flex h-full min-h-0 flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const user = this.detail();
+    if (!user) return;
+
+    const payload = this.buildPayload();
+
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
       }
-    </div>
-  </pc-datagrid>
-</div>
 
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn btn-outline btn-accent">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
-  </div>
-</dialog>
-```
-
-## File: apps/frontend/src/app/experiences/profile/profile-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <!-- Loading State -->
-  @if (error() && !detail()) {
-  <div class="alert alert-error m-4 shadow-sm rounded-xl">
-    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!detail()) {
-  <div
-    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
-  >
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="font-medium text-sm">Loading your profile…</p>
-    </div>
-  </div>
-  } @else {
-
-  <!-- Main Grid Layout -->
-  <div class="space-y-8">
-    <!-- Profile Header Card -->
-    <div class="relative overflow-hidden rounded-2xl border border-base-200/60 bg-base-100 shadow-sm">
-      <!-- Decorative Gradient Banner -->
-      <div class="h-32 w-full bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-
-      <!-- User Summary Section -->
-      <div class="flex flex-col gap-6 px-6 pb-6 md:flex-row md:items-end md:px-8 md:pb-8 -mt-10">
-        <!-- Avatar (click to upload) -->
-        <div class="relative group shrink-0">
-          <!-- Hidden file input -->
-          <input
-            id="avatar-file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            class="sr-only"
-            (change)="onAvatarFileChange($event)"
-          />
-
-          <!-- Avatar display -->
-          <label
-            for="avatar-file-input"
-            class="cursor-pointer block relative"
-            [class.pointer-events-none]="uploadingAvatar()"
-          >
-            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="24" />
-
-            <!-- Hover overlay: camera icon -->
-            @if (!uploadingAvatar()) {
-            <div
-              class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-            >
-              <pc-icon name="user-circle" [size]="8" class="text-white" />
-            </div>
-            }
-
-            <!-- Upload spinner overlay -->
-            @if (uploadingAvatar()) {
-            <div class="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
-              <span class="loading loading-spinner loading-sm text-white"></span>
-            </div>
-            }
-          </label>
-
-          <!-- Remove photo link -->
-          @if (avatarUrl() && !uploadingAvatar()) {
-          <button
-            type="button"
-            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
-            (click)="removeAvatar()"
-          >
-            Remove photo
-          </button>
-          }
-        </div>
-
-        <!-- User Identity Info -->
-        <div class="flex-1 space-y-1 mt-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-3xl font-bold tracking-tight">{{ displayName() }}</h1>
-            <div class="flex items-center gap-1.5">
-              @if (detail()?.role) {
-              <span class="badge badge-primary badge-outline font-medium capitalize text-xs px-2.5 py-1.5">
-                {{ detail()?.role }}
-              </span>
-              } @if (detail()?.verified) {
-              <span class="badge badge-success gap-1 text-xs font-semibold px-2.5 py-1.5">
-                <pc-icon name="check-circle" [size]="3"></pc-icon>
-                Verified
-              </span>
-              }
-            </div>
-          </div>
-          <p class="text-base-content/60">{{ detail()?.email }}</p>
-        </div>
-      </div>
-    </div>
-
-    @if (detail()?.previous_email) {
-    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center mb-4">
-      <div class="flex items-center gap-3">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <div>
-          <h3 i18n class="font-bold text-warning-content">Verification Pending</h3>
-          <div i18n class="text-xs text-warning-content/80">
-            A verification link was sent to your new email. You will not be able to make changes until verified.
-          </div>
-        </div>
-      </div>
-      <button
-        i18n
-        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
-        (click)="cancelEmailChange()"
-      >
-        Undo Change
-      </button>
-    </div>
-    } @if (error()) {
-    <div class="alert alert-error shadow-sm rounded-xl">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
     }
-
-    <!-- Content Sections -->
-    <div class="grid gap-8 lg:grid-cols-3">
-      <!-- Edit Profile Card (takes 2 cols on lg) -->
-      <div class="lg:col-span-2 space-y-6 rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-xl font-semibold tracking-tight">Your profile</h2>
-          <p class="text-sm text-base-content/60 mt-0.5">Your name appears on tasks, notes and the Activity log.</p>
-        </header>
-
-        <form (submit)="save($event)" class="space-y-6" novalidate>
-          <div class="grid gap-6 md:grid-cols-2">
-            <pc-input
-              label="First Name"
-              placeholder="Your first name"
-              [formField]="form.first_name"
-              autocomplete="given-name"
-            ></pc-input>
-
-            <pc-input
-              label="Last Name"
-              placeholder="Your last name"
-              [formField]="form.last_name"
-              autocomplete="family-name"
-            ></pc-input>
-
-            <pc-input
-              class="md:col-span-2"
-              label="Email Address"
-              type="email"
-              placeholder="you@example.com"
-              [formField]="form.email"
-              autocomplete="email"
-            ></pc-input>
-          </div>
-
-          <!-- Form Action Footer: dirty state narrated, save/reset dim when clean (§2) -->
-          <div class="border-t border-base-200 pt-5 flex items-center justify-between gap-3">
-            <p class="text-xs text-base-content/60">
-              @if (dirtyFieldCount() > 0) {
-              <span class="inline-flex items-center gap-1.5 text-warning font-medium">
-                <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
-              </span>
-              } @else {
-              <span>All changes saved.</span>
-              }
-            </p>
-            <div class="flex items-center gap-3">
-              <button
-                class="btn btn-ghost hover:bg-base-200"
-                type="button"
-                (click)="resetForm()"
-                [disabled]="saving() || !form().dirty()"
-              >
-                Reset
-              </button>
-              <button
-                class="btn btn-primary min-w-[120px]"
-                type="submit"
-                [disabled]="saving() || loading() || form().invalid() || !form().dirty() || isViewer()"
-              >
-                @if (saving()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Save
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-
-      <!-- Account Metadata Card (takes 1 col on lg) -->
-      <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8 flex flex-col justify-between">
-        <div>
-          <header class="border-b border-base-200 pb-5 mb-6">
-            <h2 class="text-xl font-semibold tracking-tight">Account Metadata</h2>
-            <p class="text-sm text-base-content/60 mt-0.5">System identifier details and timestamps.</p>
-          </header>
-
-          <div class="space-y-5">
-            <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-            <pc-detail-item label="Assigned Role" [value]="detail()?.role"></pc-detail-item>
-            <pc-detail-item
-              label="Member Since"
-              [value]="detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : null"
-            ></pc-detail-item>
-            <pc-detail-item
-              label="Last Profile Update"
-              [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
-            ></pc-detail-item>
-          </div>
-
-          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
-          <p class="mt-5 border-t border-base-200 pt-4 text-[11px] leading-relaxed text-base-content/50">
-            Roles are managed in Users — you can’t demote yourself.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Email notifications — instant-apply card (§20): each toggle saves on change, no Save button -->
-    <div class="rounded-2xl border border-base-200/60 bg-base-100 p-6 shadow-sm md:p-8">
-      <header class="border-b border-base-200 pb-5">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-xl font-semibold tracking-tight">Email notifications</h2>
-          <span class="text-xs font-medium text-base-content/50">Changes apply immediately.</span>
-        </div>
-        <p class="text-sm text-base-content/60 mt-0.5">Choose which emails pplcrm sends you.</p>
-      </header>
-
-      <div class="mt-6 grid gap-8 sm:grid-cols-2">
-        @for (group of notifGroups; track group.heading) {
-        <div class="space-y-3">
-          <h3 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/45">{{ group.heading }}</h3>
-          <div class="space-y-2">
-            @for (item of group.items; track item.key) {
-            <label
-              class="flex items-center justify-between gap-3 rounded-xl border border-base-200 bg-base-100 p-3 transition-colors duration-200 hover:bg-base-200/40"
-              [class.cursor-pointer]="!isViewer()"
-              [class.opacity-60]="isViewer()"
-            >
-              <div class="flex flex-col">
-                <span class="text-xs font-semibold text-base-content">{{ item.title }}</span>
-                <span class="text-[11px] text-base-content/60 mt-0.5">{{ item.description }}</span>
-              </div>
-              <span class="flex items-center gap-2 shrink-0">
-                @if (savingNotif() === item.key) {
-                <span class="loading loading-spinner loading-xs text-primary"></span>
-                }
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-sm"
-                  [checked]="notifPrefs()[item.key]"
-                  [disabled]="isViewer() || savingNotif() !== null"
-                  (change)="toggleNotif(item.key)"
-                />
-              </span>
-            </label>
-            }
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-
-    <!-- Statistics Section -->
-    @if (stats()) {
-    <div class="space-y-5">
-      <h2 class="text-xl font-bold tracking-tight">Your Activity & Impact</h2>
-      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        @for (card of activityCards(); track card.key) {
-        <div class="card bg-base-100 border border-base-200/60 shadow-sm hover:shadow-md transition-all duration-300">
-          <div class="card-body p-6 flex flex-row items-center gap-4">
-            <div class="p-3 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-              <pc-icon [name]="card.icon" [size]="6"></pc-icon>
-            </div>
-            <div class="flex-1 space-y-0.5">
-              <p class="text-xs font-medium text-base-content/50 uppercase tracking-wide">{{ card.title }}</p>
-              <h3 class="text-2xl font-bold text-base-content/95 tabular-nums">{{ card.value }}</h3>
-              <p class="text-xs text-base-content/60">{{ card.subtitle }}</p>
-              @if (card.asOf) {
-              <span class="text-[10px] text-base-content/40 block mt-0.5">As of {{ formatAsOf(card.asOf) }}</span>
-              }
-            </div>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
   }
 
-  <!-- Cropping Modal -->
-  @if (cropImageSrc()) {
-  <dialog class="modal modal-open">
-    <div
-      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
-    >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop Profile Picture</h3>
-
-      <!-- Drag & Crop Container -->
-      <div
-        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
-        (mousedown)="onCropDragStart($event)"
-        (mousemove)="onCropDragMove($event)"
-        (mouseup)="onCropDragEnd()"
-        (mouseleave)="onCropDragEnd()"
-      >
-        <!-- The user drags this image around inside the container -->
-        <img
-          [src]="cropImageSrc()!"
-          [style.transform]="getCropTransformStyle()"
-          [style.width.px]="displayWidth()"
-          [style.height.px]="displayHeight()"
-          class="absolute top-1/2 left-1/2 max-w-none"
-          draggable="false"
-        />
-      </div>
-
-      <!-- Zoom Slider -->
-      <div class="form-control w-full max-w-xs mt-6">
-        <div class="flex justify-between items-center px-1 mb-1">
-          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
-          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number:'1.0-0' }}%</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="0.05"
-          [ngModel]="cropZoom()"
-          (ngModelChange)="cropZoom.set($event)"
-          class="range range-primary range-sm"
-        />
-      </div>
-
-      <!-- Action buttons -->
-      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm px-6" (click)="cropAndUpload()">Save Avatar</button>
-      </div>
-    </div>
-  </dialog>
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
   }
-</div>
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
@@ -54598,6 +53012,497 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
+
+```html
+<pc-detail-layout
+  [title]="pageTitle()"
+  eyebrow="Task"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading() && !task()"
+  [hasRecord]="!!task()"
+  [showActions]="false"
+  [showDelete]="!!task()"
+  deleteText="Delete task"
+  notFoundText="Task not found or failed to load."
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (delete)="deleteTask()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  <div pc-title-suffix class="flex shrink-0 items-center gap-1.5">
+    @if (task(); as t) {
+    <span class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2" [class]="getStatusBadgeClass(t.status)">
+      {{ statusLabel(t.status) }}
+    </span>
+    @if (t.priority) {
+    <span
+      class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+      [class]="getPriorityBadgeClass(t.priority)"
+    >
+      {{ toTitleCase(t.priority) }}
+    </span>
+    } }
+  </div>
+  <div pc-actions-suffix class="flex items-center gap-2">
+    @if (task()) { @if (!isArchived()) {
+    <button (click)="archiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+      <pc-icon name="archive-box" [size]="4"></pc-icon>
+      Archive
+    </button>
+    } @else {
+    <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+      <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
+      Unarchive
+    </button>
+    } }
+  </div>
+  <li pc-overflow-extra>
+    <button type="button" (click)="renameTask()">
+      <pc-icon name="pencil-square" [size]="4"></pc-icon>
+      Rename task…
+    </button>
+  </li>
+  <li pc-overflow-extra>
+    <a routerLink="/board">
+      <pc-icon name="view-kanban" [size]="4"></pc-icon>
+      Open task board
+    </a>
+  </li>
+
+  @if (task(); as t) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Elegant Title & Description Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
+
+        <div class="p-6">
+          <!-- Inline Edit Description -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
+              @if (!isEditingDetails()) {
+              <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
+                <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
+              </button>
+              }
+            </div>
+
+            @if (isEditingDetails()) {
+            <div class="grid gap-2">
+              <quill-editor
+                [styles]="{ height: '220px' }"
+                [(ngModel)]="tempDetails"
+                placeholder="Describe this task..."
+              ></quill-editor>
+              <div class="flex justify-end gap-2 mt-2">
+                <button (click)="cancelEditingDetails()" class="btn btn-outline btn-accent btn-sm">Cancel</button>
+                <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
+              </div>
+            </div>
+            } @else {
+            <div
+              (click)="startEditingDetails()"
+              class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
+              [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
+            ></div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtasks Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
+            Subtasks ({{ subtasks().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
+            {{ showSubtasks() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showSubtasks()) {
+        <div class="p-6 flex flex-col gap-4">
+          @if (subtasks().length > 0) {
+          <div class="grid gap-2.5">
+            @for (s of subtasks(); track s.id) {
+            <label
+              class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-sm"
+                [checked]="s.status === 'done'"
+                (change)="toggleSubtask(s, $any($event.target).checked)"
+              />
+              <span
+                class="text-sm font-medium text-base-content"
+                [class.line-through]="s.status === 'done'"
+                [class.opacity-50]="s.status === 'done'"
+              >
+                {{ s.name }}
+              </span>
+            </label>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">
+            No subtasks defined. Add one below to break this task down.
+          </div>
+          }
+
+          <div class="flex gap-2 mt-2">
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="Add a subtask..."
+              [(ngModel)]="subtaskName"
+              (keydown.enter)="addSubtask()"
+            />
+            <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
+              Add Subtask
+            </button>
+          </div>
+        </div>
+        }
+      </div>
+
+      <!-- Comments / Collaboration Panel -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
+            Discussion ({{ comments().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
+            {{ showComments() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showComments()) {
+        <div class="p-6 flex flex-col gap-6">
+          @if (comments().length > 0) {
+          <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            @for (c of comments(); track c.id) {
+            <div
+              class="chat"
+              [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
+              [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
+            >
+              <div class="chat-image">
+                <pc-user-avatar
+                  [name]="userName(c.author_id || c.createdby_id)"
+                  [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
+                  [size]="8"
+                />
+              </div>
+
+              <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
+                <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
+                @if (c.created_at) {
+                <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
+                  {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+                </span>
+                }
+              </div>
+
+              <div
+                class="chat-bubble text-sm font-light shadow-sm"
+                [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
+                [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
+              ></div>
+            </div>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">
+            No comments yet. Start the conversation!
+          </div>
+          }
+
+          <!-- Comment Composer with User Mentions -->
+          <div class="form-control relative mt-2 border-t border-base-200 pt-4">
+            <textarea
+              #taskComposer
+              [ngModel]="newComment()"
+              (ngModelChange)="newComment.set($event)"
+              placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
+              class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
+              (input)="onComposerInput($event)"
+              (keydown)="onComposerKeydown($event)"
+              (click)="onComposerClick($event)"
+            ></textarea>
+
+            <!-- Mentions Dropdown -->
+            @if (mc.open() && mc.candidates().length) {
+            <div
+              class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
+            >
+              @for (u of mc.candidates(); track u.id; let i = $index) {
+              <div
+                class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
+                [class.bg-base-200]="i === mc.index()"
+                (mousedown)="selectMention(u, $event)"
+              >
+                <div class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold">
+                  {{ (u.first_name || u.email || '?') | slice:0:1 }}
+                </div>
+                <div class="truncate">
+                  <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
+                  <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
+                </div>
+              </div>
+              }
+            </div>
+            }
+
+            <div class="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-ghost"
+                (click)="newComment.set('')"
+                [disabled]="!newComment() || isLoading()"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary px-4 gap-1.5"
+                (click)="addComment()"
+                [disabled]="!newComment() || isLoading()"
+              >
+                <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+      </div>
+
+      <!-- Attachments Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
+            Attachments ({{ attachments().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
+            {{ showAttachments() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showAttachments()) {
+        <div class="p-6 flex flex-col gap-4">
+          @if (attachments().length > 0) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            @for (a of attachments(); track a.id) {
+            <div
+              class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
+                <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
+                  {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
+                </div>
+              </div>
+              @if (a.url) {
+              <a
+                class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
+                [href]="a.url"
+                target="_blank"
+                title="Open Attachment"
+              >
+                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+              </a>
+              }
+            </div>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
+          }
+
+          <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="File Name (e.g. report.pdf)"
+              [(ngModel)]="attName"
+            />
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="URL (e.g. https://...)"
+              [(ngModel)]="attUrl"
+            />
+            <button class="btn btn-primary btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
+              Attach File
+            </button>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Task Status & Detail Settings Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
+        </div>
+
+        <div class="p-6 flex flex-col gap-4">
+          <!-- Status Dropdown Selector -->
+          <div class="form-control w-full">
+            <label class="label pt-0"
+              ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="t.status || 'todo'"
+              (change)="onStatusChange($event)"
+            >
+              @for (s of statuses; track s) {
+              <option [value]="s">{{ statusLabels[s] }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Priority Dropdown Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="t.priority || 'medium'"
+              (change)="onPriorityChange($event)"
+            >
+              @for (p of priorities; track p) {
+              <option [value]="p">{{ toTitleCase(p) }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Due Date Calendar Picker -->
+          <div class="form-control w-full">
+            <label class="label pt-0"
+              ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
+            >
+            @if (!isEditingDueDate()) {
+            <div
+              (click)="isEditingDueDate.set(true)"
+              class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
+                <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
+              </div>
+              <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
+            </div>
+            } @else {
+            <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
+              <calendar-date
+                class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
+                [value]="dateOnly(t.due_at)"
+                (change)="onDueDateChange($event)"
+              >
+                <calendar-month></calendar-month>
+              </calendar-date>
+              <div class="flex justify-end gap-1.5 mt-1">
+                <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
+              </div>
+            </div>
+            }
+          </div>
+
+          <!-- Assigned User Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
+            >
+            <div class="flex gap-2">
+              <select
+                class="select select-bordered select-sm grow font-medium"
+                [ngModel]="assignedTo()"
+                (ngModelChange)="onAssignedChange($event)"
+              >
+                <option value="">Unassigned</option>
+                @for (u of users(); track u.id) {
+                <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                }
+              </select>
+              <button (click)="assignToMe()" class="btn btn-outline btn-secondary btn-sm" title="Assign to me">
+                Me
+              </button>
+            </div>
+          </div>
+
+          <!-- Associated Team Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="teamId()"
+              (change)="onTeamChange($event)"
+            >
+              <option value="">No Team</option>
+              @for (team of teamsList(); track team.id) {
+              <option [value]="'' + team.id">{{ team.name }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Divider -->
+          <div class="divider my-1"></div>
+
+          <!-- System Information Metadata -->
+          <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
+            <div class="flex justify-between">
+              <span>Created By:</span>
+              <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Created On:</span>
+              <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Last Updated:</span>
+              <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task Audit Log Component -->
+      @if (id()) {
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
+            Activity History
+          </h3>
+        </div>
+        <div class="p-4 max-h-[350px] overflow-y-auto">
+          <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
 
 ```html
@@ -54781,6 +53686,389 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <button (click)="close()">close</button>
   </form>
 </dialog>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
+    <span
+      class="tooltip-left"
+      [class.tooltip]="seatsRemaining() === 0"
+      [attr.data-tip]="
+        seatsRemaining() === 0
+          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
+          : null
+      "
+    >
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon>
+        Invite user
+      </button>
+    </span>
+  </pc-grid-header>
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>User</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>MFA</th>
+      <th>Last active</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="isDeactivated(row)">
+      <td>
+        <div class="flex items-center gap-3">
+          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <a
+                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+                [routerLink]="['/users', row.id]"
+              >
+                {{ displayName(row) }}
+              </a>
+              @if (isSelf(row)) {
+              <span class="text-xs text-base-content/50">(you)</span>
+              }
+            </div>
+            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
+          </div>
+        </div>
+      </td>
+      <td>
+        @if (roleLockReason(row); as reason) {
+        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
+            <option>{{ roleLabel(row.role) }}</option>
+          </select>
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-32"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Role for ' + displayName(row)"
+          (change)="changeRole(row, $event)"
+        >
+          @for (r of roleOptions(row); track r) {
+          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
+          }
+        </select>
+        }
+      </td>
+      <td>
+        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
+      </td>
+      <td>
+        @if (row.two_factor_enabled) {
+        <span class="tooltip" data-tip="MFA enabled">
+          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
+        </span>
+        } @else {
+        <span class="text-base-content/30">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
+          >
+            <li>
+              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+            </li>
+            <li>
+              <a (click)="sendPasswordReset(row)">
+                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+
+    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
+      Users are staff logins — volunteers live in
+      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
+      and don't need an account.
+    </div>
+  </pc-table>
+
+  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UserService } from '@frontend/services/user.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { authRoleLabel } from '../../../../../../../libs/common/src';
+import { UserAdminService } from '../services/useradmin-service';
+import {
+  userIsDeactivated,
+  userLastActiveLabel,
+  userRoleLockReason,
+  userRoleOptions,
+  userStatus,
+} from '../user-status';
+import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+
+export interface UserRow {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: string | null;
+  deactivated_at: string | null;
+  last_active_at: string | null;
+  created_at: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
+ * inline role select with explained locks, honest status/MFA/last-active columns derived from
+ * real session data, and the seat-aware "Invite user" dialog.
+ */
+@Component({
+  selector: 'pc-users-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog, GridHeaderComponent],
+  templateUrl: './users-page.html',
+})
+export class UsersPageComponent implements OnInit {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly loaded = signal(false);
+  protected readonly rows = signal<UserRow[]>([]);
+  protected readonly seatUsage = signal<SeatUsage | null>(null);
+
+  /** Row that just saved a role change — drives the one-shot saved flash. */
+  protected readonly flashedId = signal<string | null>(null);
+  /** Rows with an in-flight role change; their select is disabled while saving. */
+  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly currentUserId = computed(() => {
+    const id = this.auth.getUser()?.id;
+    return id != null ? String(id) : null;
+  });
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly activeCount = computed(
+    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly invitedCount = computed(
+    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
+  protected readonly adminCount = computed(
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
+  );
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+  });
+
+  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
+  protected readonly headerSentence = computed(() => {
+    const total = this.rows().length;
+    const parts = [`${total} user${total === 1 ? '' : 's'}`];
+    const statusBits = [`${this.activeCount()} active`];
+    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
+    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
+    parts.push(statusBits.join(', '));
+    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
+    const usage = this.seatUsage();
+    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
+    return parts.join(' · ');
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openInvite(): void {
+    this.inviteDlg().open();
+  }
+
+  protected onInvited(): void {
+    void this.load();
+  }
+
+  protected displayName(row: UserRow): string {
+    return `${row.first_name} ${row.last_name}`.trim() || row.email;
+  }
+
+  protected avatarUrl(row: UserRow): string | null {
+    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
+  }
+
+  protected isSelf(row: UserRow): boolean {
+    return row.id === this.currentUserId();
+  }
+
+  protected roleLabel(role: string | null): string {
+    return authRoleLabel(role);
+  }
+
+  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
+  protected roleOptions(row: UserRow): string[] {
+    return userRoleOptions(this.currentUserRole(), row.role);
+  }
+
+  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected roleLockReason(row: UserRow): string | null {
+    return userRoleLockReason({
+      isSelf: this.isSelf(row),
+      callerRole: this.currentUserRole(),
+      targetRole: row.role,
+      deactivated: userIsDeactivated(row),
+    });
+  }
+
+  protected isDeactivated(row: UserRow): boolean {
+    return userIsDeactivated(row);
+  }
+
+  protected status(row: UserRow): { label: string; tone: PcStatusType } {
+    return userStatus(row);
+  }
+
+  protected lastActiveText(row: UserRow): string {
+    return userLastActiveLabel(row);
+  }
+
+  protected async changeRole(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const role = select.value;
+    if (!role || role === row.role) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { role });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+    } catch (err) {
+      select.value = row.role ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  protected async sendPasswordReset(row: UserRow): Promise<void> {
+    try {
+      await this.users.adminTriggerPasswordReset(row.id);
+      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
+      this.alerts.showError(message);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, seats] = await Promise.all([
+        this.users.getAll({ startRow: 0, endRow: 500 }),
+        this.users.getSeatUsage(),
+      ]);
+      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
+      this.seatUsage.set(seats);
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Unable to load users — try refreshing the page');
+    } finally {
+      end();
+    }
+  }
+
+  private toRow(raw: Record<string, unknown>): UserRow {
+    return {
+      id: raw['id'] != null ? String(raw['id']) : '',
+      email: typeof raw['email'] === 'string' ? raw['email'] : '',
+      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
+      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
+      role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      verified: raw['verified'] === true,
+      two_factor_enabled: raw['two_factor_enabled'] === true,
+      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      deactivated_at: this.toIso(raw['deactivated_at']),
+      last_active_at: this.toIso(raw['last_active_at']),
+      created_at: this.toIso(raw['created_at']),
+      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
+    };
+  }
+
+  private toIso(value: unknown): string | null {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && value) return value;
+    return null;
+  }
+
+  private flashRow(id: string): void {
+    this.flashedId.set(id);
+    const FLASH_MS = 1300;
+    setTimeout(() => {
+      if (this.flashedId() === id) this.flashedId.set(null);
+    }, FLASH_MS);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
@@ -56152,144 +55440,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
-  <div class="flex flex-wrap items-end justify-end gap-3">
-    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-    <h1 class="sr-only">Delivery requests</h1>
-    <div class="flex items-center gap-2">
-      <span
-        class="tooltip-left"
-        [class.tooltip]="readyCount() === 0"
-        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
-      >
-        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
-          <pc-icon name="map-pin" [size]="4"></pc-icon>
-          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-        </button>
-      </span>
-    </div>
-  </div>
-
-  <!-- Tabs with live counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
-
-  <!-- Bulk selection bar -->
-  @if (selectedCount() > 0) {
-  <div
-    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
-  >
-    <span class="text-sm text-base-content/70">
-      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
-      of {{ rows().length }} rows on this page selected
-    </span>
-    @if (newInView() > selectedCount()) {
-    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
-      Select all {{ newInView() }} new
-    </button>
-    }
-    <div class="ml-auto flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
-        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
-        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  }
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="8">
-    <ng-container pcTableHead>
-      <th class="w-8"></th>
-      <th>Requested by</th>
-      <th>Address</th>
-      <th>Status</th>
-      <th>Readiness</th>
-      <th>Source</th>
-      <th>Route</th>
-      <th>Requested</th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="8" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
-          @if (readyCount() > 0) {
-          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-          </button>
-          } @else {
-          <p class="max-w-sm text-xs text-base-content/45">
-            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
-          </p>
-          }
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
-          [checked]="isSelected(row.id)"
-          (change)="toggle(row.id)"
-          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
-        />
-      </td>
-      <td>
-        @if (row.person_id) {
-        <a
-          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/people', row.person_id]"
-        >
-          {{ row.person_name || 'Unnamed person' }}
-        </a>
-        } @else {
-        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
-        }
-      </td>
-      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
-      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
-      <td>
-        <div class="flex items-center gap-2">
-          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
-          @if (row.geocoding_status === 'failed') {
-          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
-            Edit household
-          </a>
-          }
-        </div>
-      </td>
-      <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
-      <td>
-        @if (row.route_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
-          {{ row.route_name || 'Route' }}
-        </a>
-        } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
 
 ```typescript
@@ -57267,6 +56417,320 @@ export const DATA_ARTICLES: HelpArticle[] = [
 ];
 ```
 
+## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically — configure the sender and template in Workspace settings → Donations.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page — your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms) — click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) — click **New form**, then **Create a volunteer shift** — with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance — how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe — any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft — unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve — nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions — nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot — green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet — with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut — even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state — **Located**, **Locating…**, or **Address problem** — and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically — the request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation — it doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop — there’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
 
 ```typescript
@@ -57593,754 +57057,669 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail — `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report — drafts and scheduled sends show **View details** instead, since there is nothing to report yet — and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe — the trigger and its steps — with how many times it ran in the last 30 days and how the last run went.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** — the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps** — what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** — optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused** — Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards — that’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact — someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list — a failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
 
 ```html
-@if (email(); as em) {
-<div class="mx-auto w-full max-w-7xl p-6">
-  <!-- Report header -->
-  <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <div class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">{{ eyebrow() }}</div>
-      <div class="mt-1 flex flex-wrap items-center gap-3">
-        <h1 class="text-[22px] font-bold leading-tight text-base-content">{{ em.name || 'Untitled newsletter' }}</h1>
-        <pc-status-badge [type]="statusTone(em.status)">{{ statusLabel(em.status) }}</pc-status-badge>
-      </div>
-      <p class="mt-1 text-xs text-base-content/60">{{ sentSentence() }}</p>
-    </div>
-    <div class="flex items-center gap-2">
-      @if (!isUnsent()) {
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
-        Export report CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-primary btn-sm gap-2"
-        [disabled]="isDuplicating()"
-        (click)="duplicateNewsletter()"
-      >
-        @if (isDuplicating()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } @else {
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        } Duplicate newsletter
-      </button>
-    </div>
-  </div>
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
 
-  <!-- Stat tiles -->
-  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-    @for (tile of tiles(); track tile.label) {
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ tile.label }}
-        </div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl" [class]="tile.valueClass">
-          {{ tile.value }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] tabular-nums text-base-content/40">{{ tile.sub }}</div>
-      </div>
-    </div>
-    }
-  </div>
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
 
-  <div class="grid items-start gap-6 lg:grid-cols-3">
-    <!-- ============================== main column ============================== -->
-    <div class="flex flex-col gap-6 lg:col-span-2">
-      <!-- How the send resolved -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-          How the send resolved
-        </h2>
-        @if (funnel().length > 0) {
-        <div class="mt-4 flex flex-col gap-3">
-          @for (row of funnel(); track row.label) {
-          <div class="flex items-center gap-4">
-            <span class="w-16 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
-            <div class="h-2 flex-1 overflow-hidden rounded-full bg-base-200">
-              <div class="h-full rounded-full bg-primary" [style.width.%]="row.width"></div>
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+          <!-- Tags & issues — standalone card, first section -->
+          <pc-card>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
             </div>
-            <span class="w-40 shrink-0 text-right text-xs tabular-nums">
-              <span class="font-bold text-base-content">{{ row.count }}</span>
-              <span class="text-base-content/50"> · {{ row.share }}</span>
-            </span>
-          </div>
-          }
-        </div>
-        @if (report(); as rep) { @if (rep.bounces.total > 0) {
-        <div class="mt-4 flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs">
-          <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-          <p class="text-base-content/80">
-            {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
-            }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}) — hard bounces joined
-            the suppression list and future sends skip them automatically per the
-            <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
-          </p>
-        </div>
-        } } } @else {
-        <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
-          <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
-          <p class="text-xs text-base-content/60">Nothing has been sent yet — delivery results will appear here.</p>
-        </div>
-        }
-      </section>
 
-      <!-- Bounced addresses -->
-      @if (report(); as rep) {
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Bounced addresses @if (rep.bounces.total > 0) { · {{ formatNumber(rep.bounces.total) }} }
-          </h2>
-          @if (rep.bounces.rows.length > 0) {
-          <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="exportBouncesCsv()">
-            Export {{ formatNumber(rep.bounces.total) }} bounces CSV
-          </button>
-          }
-        </div>
-        @if (bounceRowsShown().length > 0) {
-        <ul class="mt-3 divide-y divide-base-200">
-          @for (bounce of bounceRowsShown(); track bounce.email) {
-          <li class="flex items-center justify-between gap-3 py-2.5">
-            <div class="min-w-0">
-              <p class="truncate font-mono text-xs text-base-content">{{ bounce.email }}</p>
-              <p class="mt-0.5 text-[10px] text-base-content/50">
-                {{ bounce.reason || 'No reason recorded by the provider' }}
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+          </pc-card>
+
+          <pc-card>
+            @if (!person()?.id) {
+            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+            }
+
+            <!-- Name -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Primary email"
+                type="email"
+                placeholder="name@example.com"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                label="Secondary email"
+                type="email"
+                placeholder="Optional"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+            </div>
+
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
+              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
+
+            <!-- Address & Household Assignment -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+              @if (householdId() && !isPlaceholderHousehold()) {
+              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                  Edit on household
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                  data-tip="Change household"
+                  (click)="openAssignDrawer()"
+                >
+                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                  data-tip="Remove address"
+                  (click)="removeAddress()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div
+                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                  <span class="italic text-base-content/50">No address assigned</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Assign household
+                </button>
+              </div>
+              }
+              <p class="pl-1 text-xs text-base-content/50">
+                Addresses belong to households, so everyone at the same address stays in sync.
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-3">
-              <pc-status-badge [type]="bounceKindTone(bounce.kind)">{{ bounceKindLabel(bounce.kind) }}</pc-status-badge>
-              @if (bounce.person; as person) {
-              <a
-                class="link link-hover w-28 truncate text-right text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-                [routerLink]="personRoute(person)"
-              >
-                {{ person.name }}
-              </a>
-              } @else {
-              <span class="w-28 text-right text-xs text-base-content/40">No CRM match</span>
-              }
-            </div>
-          </li>
-          }
-        </ul>
-        <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-          Showing {{ bounceRowsShown().length }} of {{ formatNumber(rep.bounces.total) }} · hard bounces are suppressed
-          from future sends; soft bounces are retried by the provider.
-        </p>
-        } @else {
-        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-          <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
-          <p class="text-xs text-base-content/60">No bounces — every address accepted this send.</p>
-        </div>
-        }
-      </section>
-      }
 
-      <!-- Engagement · first 48 hours -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Engagement · first 48 hours
-          </h2>
-          <div class="flex items-center gap-3 text-[10px] font-semibold text-base-content/70">
-            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Opens</span>
-            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-secondary"></span> Clicks</span>
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Anything the team should know about this person…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+
+            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+            <details class="group border-t border-base-200 pt-3">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                More details
+              </summary>
+              <div class="mt-4 flex flex-col gap-4">
+                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                  @for (u of users(); track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </pc-select>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+                </div>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+                </div>
+              </div>
+            </details>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (person()?.id && person(); as p) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People in home</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">
+                {{ householdMembersResource.value() ?? '—' }}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Company</dt>
+              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Contact owner</dt>
+              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Preferred contact</dt>
+              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            People in home counts everyone sharing this person's address — edit it from the household record.
+          </p>
+        </pc-card>
+
+        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
+        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
           </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
         </div>
-        @if (engagementChart(); as chart) {
-        <div class="mt-4 flex h-32 items-end gap-1">
-          @for (bucket of chart; track $index) {
-          <div class="tooltip flex h-full flex-1 items-end justify-center gap-px" [attr.data-tip]="bucket.tip">
-            <div
-              class="w-1/3 rounded-t-sm bg-primary"
-              [style.height.%]="bucket.opensPct"
-              [style.minHeight.px]="bucket.opens > 0 ? 2 : 0"
-            ></div>
-            <div
-              class="w-1/3 rounded-t-sm bg-secondary"
-              [style.height.%]="bucket.clicksPct"
-              [style.minHeight.px]="bucket.clicks > 0 ? 2 : 0"
-            ></div>
-          </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+
+```html
+<!-- Template for persons grid -->
+<div class="flex h-full min-h-0 flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    (rowsDeleted)="onRowsDeleted()"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn btn-outline btn-accent">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/profile/profile-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <!-- Loading State -->
+  @if (error() && !detail()) {
+  <div class="alert alert-error m-4 shadow-sm rounded-xl">
+    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!detail()) {
+  <div
+    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
+  >
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="font-medium text-sm">Loading your profile…</p>
+    </div>
+  </div>
+  } @else {
+
+  <div class="space-y-6">
+    <!-- Identity header card -->
+    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div class="flex items-center gap-5">
+        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
+        <div class="relative shrink-0">
+          <input
+            id="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="sr-only"
+            (change)="onAvatarFileChange($event)"
+          />
+          <label
+            for="avatar-file-input"
+            class="block cursor-pointer"
+            [class.pointer-events-none]="uploadingAvatar()"
+            title="Change profile photo"
+          >
+            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
+            @if (uploadingAvatar()) {
+            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+              <span class="loading loading-spinner loading-sm text-white"></span>
+            </span>
+            } @else {
+            <span
+              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
+              aria-hidden="true"
+            >
+              <pc-icon name="pencil-square" [size]="3"></pc-icon>
+            </span>
+            }
+          </label>
+          @if (avatarUrl() && !uploadingAvatar()) {
+          <button
+            type="button"
+            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
+            (click)="removeAvatar()"
+          >
+            Remove photo
+          </button>
           }
         </div>
-        <div class="mt-1 flex justify-between border-t border-base-200 pt-1 text-[10px] text-base-content/40">
-          <span>Send</span><span>12h</span><span>24h</span><span>36h</span><span>48h</span>
-        </div>
-        @if (opensIn24hSentence(); as sentence) {
-        <p class="mt-3 text-[10px] text-base-content/50">{{ sentence }}</p>
-        } } @else {
-        <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
-          <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
-          <p class="text-xs text-base-content/60">
-            No hour-by-hour engagement to chart — opens and clicks appear here as they arrive.
+
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
+            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
+            @if (detail()?.verified) {
+            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Verified
+            </span>
+            }
+          </div>
+          <p class="mt-0.5 truncate text-sm text-base-content/60">
+            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
+            'mediumDate' }} }
           </p>
         </div>
-        }
-      </section>
-
-      <!-- Top links clicked -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Top links clicked
-          </h2>
-          @if (topLinks().length > 0) {
-          <span class="text-[10px] tabular-nums text-base-content/50">{{ linksSentence() }}</span>
-          }
-        </div>
-        @if (topLinks().length > 0) {
-        <ul class="mt-3 divide-y divide-base-200">
-          @for (link of topLinks(); track link.url) {
-          <li class="flex items-center gap-4 py-2.5">
-            <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content" [title]="link.url">
-              {{ link.display }}
-            </span>
-            <div class="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-base-200">
-              <div class="h-full rounded-full bg-secondary" [style.width.%]="link.width"></div>
-            </div>
-            <span class="w-36 shrink-0 text-right text-xs tabular-nums text-base-content/70">
-              {{ formatNumber(link.clicks) }} clicks@if (link.people != null) { · {{ formatNumber(link.people) }} people
-              }
-            </span>
-          </li>
-          }
-        </ul>
-        } @else {
-        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-          <pc-icon name="queue-list" [size]="6" class="text-base-content/30"></pc-icon>
-          <p class="text-xs text-base-content/60">No link clicks recorded for this send yet.</p>
-        </div>
-        }
-      </section>
-
-      <!-- Vs previous sends -->
-      @if (comparison().length > 0) {
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Vs previous sends</h2>
-        <div class="mt-4 flex flex-col gap-4">
-          @for (row of comparison(); track row.label) {
-          <div class="flex items-center gap-4">
-            <span class="w-32 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
-            <div class="flex h-9 items-end gap-1">
-              @for (bar of row.bars; track $index) {
-              <div
-                class="w-2.5 rounded-t-sm"
-                [class.bg-primary]="bar.isCurrent"
-                [class.bg-base-300]="!bar.isCurrent"
-                [style.height.%]="bar.height"
-              ></div>
-              }
-            </div>
-            <div class="flex-1 text-right">
-              <div class="text-sm font-bold tabular-nums text-base-content">{{ row.current }}</div>
-              @if (row.delta) {
-              <div class="text-[10px] tabular-nums" [class]="row.deltaClass">{{ row.delta }}</div>
-              }
-            </div>
-          </div>
-          }
-        </div>
-        <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-          The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest — this send is the solid bar.
-          Deltas compare against the send before it.
-        </p>
-      </section>
-      }
+      </div>
     </div>
 
-    <!-- ============================== side column ============================== -->
-    <div class="flex flex-col gap-6">
-      <!-- What to do next -->
-      @if (report(); as rep) {
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What to do next</h2>
-        <span
-          class="mt-3 block"
-          [class.tooltip]="rep.unique_clickers === 0"
-          data-tip="No one has clicked this newsletter yet"
-        >
-          <button
-            type="button"
-            class="btn btn-primary btn-sm w-full"
-            [disabled]="rep.unique_clickers === 0 || isCreatingList()"
-            (click)="createClickersList()"
-          >
-            @if (isCreatingList()) {
-            <span class="loading loading-spinner loading-xs"></span>
-            } Create list of {{ formatNumber(rep.unique_clickers) }} clickers
-          </button>
-        </span>
-        <p class="mt-2 text-[10px] text-base-content/50">
-          A static snapshot — target the next send at the people who acted on this one.
-        </p>
-
-        <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
-          <div>
-            <p class="text-xs font-semibold text-base-content">
-              {{ formatNumber(em.reply_count) }} {{ em.reply_count === 1 ? 'reply' : 'replies' }} landed in the Inbox
-            </p>
-            <p class="mt-0.5 text-[10px] text-base-content/50">Replies thread into conversations there</p>
+    @if (detail()?.previous_email) {
+    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <div>
+          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
+          <div i18n class="text-xs text-warning-content/80">
+            A verification link was sent to your new email. You will not be able to make changes until verified.
           </div>
-          <a routerLink="/inbox" class="btn btn-outline btn-secondary btn-xs shrink-0">Open Inbox</a>
         </div>
+      </div>
+      <button
+        i18n
+        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
+        (click)="cancelEmailChange()"
+      >
+        Undo change
+      </button>
+    </div>
+    } @if (error()) {
+    <div class="alert alert-error shadow-sm rounded-xl">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
 
-        @if (mostEngaged().length > 0) {
-        <div class="mt-4 border-t border-base-200 pt-4">
-          <h3 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Most engaged</h3>
-          <ul class="mt-2 flex flex-col gap-2.5">
-            @for (person of mostEngaged(); track person.email) {
-            <li class="flex items-center gap-3">
-              <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
-              >
-                {{ person.initials }}
-              </span>
-              <div class="min-w-0">
-                @if (person.person; as match) {
-                <a
-                  class="link link-hover block truncate text-xs font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-                  [routerLink]="personRoute(match)"
-                >
-                  {{ person.displayName }}
-                </a>
-                } @else {
-                <span class="block truncate text-xs font-semibold text-base-content" [title]="person.email">
-                  {{ person.displayName }}
-                </span>
-                }
-                <p class="truncate text-[10px] text-base-content/50">{{ person.summary }}</p>
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- Left column: profile form + notifications -->
+      <div class="space-y-6 lg:col-span-2">
+        <!-- Profile card (explicit save) -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
+
+          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
+            <div class="grid gap-4 md:grid-cols-2">
+              <pc-input
+                label="First name"
+                placeholder="Your first name"
+                [formField]="form.first_name"
+                autocomplete="given-name"
+              ></pc-input>
+
+              <pc-input
+                label="Last name"
+                placeholder="Your last name"
+                [formField]="form.last_name"
+                autocomplete="family-name"
+              ></pc-input>
+
+              <div class="md:col-span-2">
+                <pc-input
+                  label="Email address"
+                  type="email"
+                  placeholder="you@example.com"
+                  [formField]="form.email"
+                  autocomplete="email"
+                ></pc-input>
+                <p class="mt-1 text-xs text-base-content/50">
+                  Email is how you sign in — changing it sends a confirmation to the new address first.
+                </p>
               </div>
-            </li>
-            }
-          </ul>
-        </div>
-        }
-      </section>
-
-      <!-- Audience at send -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Audience at send</h2>
-        @if (rep.audience.lists.length > 0) {
-        <ul class="mt-3 flex flex-col gap-2 text-xs">
-          @for (list of rep.audience.lists; track list.id) {
-          <li class="flex items-center justify-between gap-3">
-            <span class="min-w-0 truncate text-base-content/80">
-              {{ list.mode === 'include' ? 'In list' : 'Excluding list' }} "{{ list.name }}"
-            </span>
-            <span class="shrink-0 font-semibold tabular-nums text-base-content">
-              {{ list.mode === 'include' ? '+' : '−' }}{{ formatNumber(list.members) }}
-            </span>
-          </li>
-          } @if (rep.audience.overlap_removed > 0) {
-          <li class="flex items-center justify-between gap-3">
-            <span class="text-base-content/60">Overlap removed</span>
-            <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
-              −{{ formatNumber(rep.audience.overlap_removed) }}
-            </span>
-          </li>
-          } @if (rep.audience.suppressed_skipped > 0) {
-          <li class="flex items-center justify-between gap-3">
-            <span class="text-base-content/60">Previously bounced skipped (Workspace setting)</span>
-            <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
-              −{{ formatNumber(rep.audience.suppressed_skipped) }}
-            </span>
-          </li>
-          }
-        </ul>
-        <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-200 pt-3 text-xs">
-          <span class="font-bold text-base-content">Total</span>
-          <span class="font-bold tabular-nums text-base-content">
-            {{ formatNumber(em.total_recipients) }} recipients
-          </span>
-        </div>
-        <p class="mt-3 text-[10px] text-base-content/50">
-          @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now — lists may have
-          changed since the send.
-        </p>
-        } @else {
-        <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-          <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
-          <p class="text-xs text-base-content/60">No lists were targeted — the audience came from tag segments.</p>
-        </div>
-        }
-      </section>
-
-      <!-- Unsubscribe reasons -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Unsubscribe reasons @if (rep.unsubscribes.total > 0) { · {{ formatNumber(rep.unsubscribes.total) }} }
-          </h2>
-          @if (unsubscribeRate(); as rate) {
-          <span class="text-[10px] tabular-nums text-base-content/50">{{ rate }} of delivered</span>
-          }
-        </div>
-        @if (unsubscribeReasons().length > 0) {
-        <ul class="mt-3 flex flex-col gap-2.5">
-          @for (reason of unsubscribeReasons(); track reason.label) {
-          <li class="flex items-center gap-3 text-xs">
-            <span class="min-w-0 flex-1 truncate text-base-content/80">{{ reason.label }}</span>
-            <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-base-200">
-              <div class="h-full rounded-full bg-base-content/30" [style.width.%]="reason.width"></div>
             </div>
-            <span class="w-6 shrink-0 text-right font-semibold tabular-nums text-base-content">
-              {{ reason.count }}
-            </span>
-          </li>
-          }
-        </ul>
-        <p class="mt-3 text-[10px] text-base-content/50">
-          The unsubscribe page doesn't ask why yet, so reasons aren't broken down.
-        </p>
-        } @else {
-        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No unsubscribes from this send.</p>
-        }
-      </section>
 
-      <!-- Spam reports -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Spam reports @if (rep.spam_reports.total > 0) { · {{ formatNumber(rep.spam_reports.total) }} }
-          </h2>
-          @if (spamRate() != null) {
-          <span class="text-[10px] tabular-nums text-base-content/50"
-            >{{ formatSpamRate(spamRate()) }} of delivered</span
-          >
-          }
-        </div>
-        @if (rep.spam_reports.total > 0) { @for (row of spamRows(); track $index) {
-        <div class="mt-3 flex items-center justify-between gap-3">
-          <div class="min-w-0">
-            <p class="truncate font-mono text-xs text-base-content">{{ row.email }}</p>
-            @if (row.timing) {
-            <p class="mt-0.5 text-[10px] text-base-content/50">Provider feedback loop · {{ row.timing }}</p>
-            }
-          </div>
-          <pc-status-badge type="neutral">Suppressed</pc-status-badge>
-        </div>
-        }
-        <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-          Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1% — @if
-          (spamRateIsSafe()) { this send is well clear. } @else { this send is over that line — review the audience
-          before the next send. }
-        </p>
-        } @else {
-        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No spam reports from this send.</p>
-        }
-      </section>
-      }
-
-      <!-- What was sent -->
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What was sent</h2>
-        <div class="mt-3 flex flex-col gap-3 text-xs">
-          <div>
-            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Subject</div>
-            <p class="mt-0.5 font-semibold text-base-content">{{ em.subject || '—' }}</p>
-          </div>
-          @if (em.preview_text) {
-          <div>
-            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Preview text</div>
-            <p class="mt-0.5 text-base-content/80">{{ em.preview_text }}</p>
-          </div>
-          } @if (report()?.from; as from) {
-          <div>
-            <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">From</div>
-            <p class="mt-0.5 text-base-content/80">{{ from.name }} @if (from.email) { &lt;{{ from.email }}&gt; }</p>
-          </div>
-          }
-        </div>
-        @if (em.html_content || em.plain_text_content) {
-        <div
-          class="mt-3 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-xs"
-          [class.max-h-56]="!emailExpanded()"
-        >
-          @if (em.html_content) {
-          <div [innerHTML]="em.html_content"></div>
-          } @else {
-          <pre class="whitespace-pre-wrap font-sans">{{ em.plain_text_content }}</pre>
-          }
-        </div>
-        <button
-          type="button"
-          class="btn btn-outline btn-secondary btn-xs mt-3 w-full"
-          (click)="emailExpanded.set(!emailExpanded())"
-        >
-          {{ emailExpanded() ? 'Collapse email' : 'View sent email' }}
-        </button>
-        } @else {
-        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No content stored for this newsletter.</p>
-        }
-      </section>
-
-      <!-- Attachments (manageable until the newsletter goes out) -->
-      @if (attachments().length > 0 || canManageAttachments()) {
-      <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
-            Attachments @if (attachments().length > 0) { · {{ attachments().length }} }
-          </h2>
-          @if (canManageAttachments()) {
-          <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
-          <button
-            type="button"
-            class="btn btn-outline btn-secondary btn-xs gap-1"
-            [disabled]="isUploadingAttachment()"
-            (click)="attachmentInput.click()"
-          >
-            @if (isUploadingAttachment()) {
-            <span class="loading loading-spinner loading-xs"></span>
-            Attaching… } @else {
-            <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
-            Attach file }
-          </button>
-          }
-        </div>
-        @if (attachments().length === 0) {
-        <p class="mt-3 py-4 text-center text-xs text-base-content/60">No files attached to this newsletter.</p>
-        } @else {
-        <ul class="mt-2 divide-y divide-base-200">
-          @for (attachment of attachments(); track attachment.id) {
-          <li class="flex items-center justify-between gap-3 py-2">
-            <div class="min-w-0">
-              <p class="truncate text-xs font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
-              @if (attachment.size_bytes) {
-              <p class="text-[10px] text-base-content/50">{{ formatBytes(attachment.size_bytes) }}</p>
-              }
+            <!-- Dirty state narrated, not implied (§2) -->
+            <div class="flex items-center justify-between gap-3 pt-2">
+              <p class="text-xs text-base-content/50">
+                @if (dirtyFieldCount() > 0) {
+                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
+                </span>
+                } @else {
+                <span>No unsaved changes</span>
+                }
+              </p>
+              <div class="flex items-center gap-2">
+                <button
+                  class="btn btn-outline btn-accent btn-sm"
+                  type="button"
+                  (click)="resetForm()"
+                  [disabled]="saving() || !form().dirty()"
+                >
+                  Reset
+                </button>
+                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
+                <button
+                  class="btn btn-primary btn-sm"
+                  type="submit"
+                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
+                >
+                  @if (saving()) {
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                  } Save changes
+                </button>
+              </div>
             </div>
-            @if (canManageAttachments()) {
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs btn-circle text-error"
-              title="Remove attachment"
-              (click)="removeAttachment(attachment)"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Right column: account facts + activity -->
+      <div class="space-y-6">
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
+          <div class="mt-2">
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Role</span>
+              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">User ID</span>
+              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Member since</span>
+              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
+              <span class="text-base-content/60">Last update</span>
+              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
+            </div>
+          </div>
+          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
+          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
+            Roles are managed in
+            <a routerLink="/users" class="link link-hover text-primary">Users</a>
+            — you can't demote yourself.
+          </p>
+        </div>
+
+        @if (stats()) {
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
+          <div class="mt-1">
+            @for (row of activityRows(); track row.key) {
+            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
+              </span>
+              <p class="leading-relaxed">
+                @if (row.link) {
+                <a
+                  [routerLink]="row.link"
+                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
+                  >{{ row.count }}</a
+                >
+                } @else {
+                <span class="font-semibold">{{ row.count }}</span>
+                } {{ row.rest }}
+              </p>
+            </div>
             }
-          </li>
-          }
-        </ul>
+          </div>
+        </div>
         }
-      </section>
-      }
+      </div>
     </div>
   </div>
-</div>
-} @else { @if (!error()) {
-<div class="mx-auto w-full max-w-7xl p-6">
-  <div class="flex flex-col gap-6">
-    <div class="skeleton h-16 w-80"></div>
-    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-      <div class="skeleton h-24"></div>
-      <div class="skeleton h-24"></div>
-      <div class="skeleton h-24"></div>
-      <div class="skeleton h-24"></div>
-      <div class="skeleton h-24"></div>
+  }
+
+  <!-- Cropping Modal -->
+  @if (cropImageSrc()) {
+  <dialog class="modal modal-open">
+    <div
+      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
+    >
+      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
+
+      <!-- Drag & Crop Container -->
+      <div
+        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
+        (mousedown)="onCropDragStart($event)"
+        (mousemove)="onCropDragMove($event)"
+        (mouseup)="onCropDragEnd()"
+        (mouseleave)="onCropDragEnd()"
+      >
+        <!-- The user drags this image around inside the container -->
+        <img
+          [src]="cropImageSrc()!"
+          [style.transform]="getCropTransformStyle()"
+          [style.width.px]="displayWidth()"
+          [style.height.px]="displayHeight()"
+          class="absolute top-1/2 left-1/2 max-w-none"
+          draggable="false"
+        />
+      </div>
+
+      <!-- Zoom Slider -->
+      <div class="form-control w-full max-w-xs mt-6">
+        <div class="flex justify-between items-center px-1 mb-1">
+          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
+          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.05"
+          [ngModel]="cropZoom()"
+          (ngModelChange)="cropZoom.set($event)"
+          class="range range-primary range-sm"
+        />
+      </div>
+
+      <!-- Action buttons -->
+      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
+        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+      </div>
     </div>
-    <div class="skeleton h-64 w-full"></div>
-  </div>
+  </dialog>
+  }
 </div>
-} @else {
-<div class="mx-auto w-full max-w-7xl p-6">
-  <div class="alert alert-error">
-    <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-    {{ error() }}
-  </div>
-</div>
-} }
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
@@ -59973,6 +59352,455 @@ export class TasksList implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.addRoute()"
+    [tip]="addLabel()"
+    [icon]="grid.plusIcon()"
+    (action)="onAdd()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canUndo()"
+    [tip]="'Undo'"
+    icon="arrow-uturn-left"
+    (action)="onUndo()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canRedo()"
+    [tip]="'Redo'"
+    icon="arrow-uturn-right"
+    (action)="onRedo()"
+  />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [touch]="true"
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
+    >
+      <!-- Grab handle — bottom-sheet affordance, touch only -->
+      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
+      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
+        Filters
+      </h3>
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onClone()">
+          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Clone</span>
+            @if (!grid.hasSingleSelection()) {
+            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
+          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Merge</span>
+            @if (grid.getCountRowSelected() !== 2) {
+            <span class="text-base-content/50 text-[11px]"
+              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+            >
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider divider-horizontal"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-end gap-3">
+    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+    <h1 class="sr-only">Delivery requests</h1>
+    <div class="flex items-center gap-2">
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- Tabs with live counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
+
+  <!-- Bulk selection bar -->
+  @if (selectedCount() > 0) {
+  <div
+    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
+  >
+    <span class="text-sm text-base-content/70">
+      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
+      of {{ rows().length }} rows on this page selected
+    </span>
+    @if (newInView() > selectedCount()) {
+    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
+      Select all {{ newInView() }} new
+    </button>
+    }
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
+        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
+        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th class="w-8"></th>
+      <th>Requested by</th>
+      <th>Address</th>
+      <th>Status</th>
+      <th>Readiness</th>
+      <th>Source</th>
+      <th>Route</th>
+      <th>Requested</th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
+          @if (readyCount() > 0) {
+          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+          </button>
+          } @else {
+          <p class="max-w-sm text-xs text-base-content/45">
+            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
+          </p>
+          }
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+          [checked]="isSelected(row.id)"
+          (change)="toggle(row.id)"
+          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+        />
+      </td>
+      <td>
+        @if (row.person_id) {
+        <a
+          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/people', row.person_id]"
+        >
+          {{ row.person_name || 'Unnamed person' }}
+        </a>
+        } @else {
+        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        }
+      </td>
+      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+          @if (row.geocoding_status === 'failed') {
+          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
+            Edit household
+          </a>
+          }
+        </div>
+      </td>
+      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td>
+        @if (row.route_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+          {{ row.route_name || 'Route' }}
+        </a>
+        } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
 
 ```html
@@ -60073,314 +59901,187 @@ export class TasksList implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
+## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
 
 ```typescript
 import type { HelpArticle } from '../help-types';
 
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+export const OUTREACH_ARTICLES: HelpArticle[] = [
   {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
     summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations'],
     blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically — configure the sender and template in Workspace settings → Donations.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page — your appeal, your branding.',
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
           },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
           {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
           },
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail — `{FirstName|there}` becomes "there" when the first name is blank.',
       },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
         kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms) — click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) — click **New form**, then **Create a volunteer shift** — with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
       },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
       {
         kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
       },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
       {
         kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report — it appears once a send is underway, since an unsent campaign has nothing to report — and each recipient’s profile lists the send under their **Newsletters** tab.',
       },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
       {
         kind: 'list',
         items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
       },
     ],
   },
   {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
     summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
+      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
     blocks: [
       {
         kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance — how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe — the trigger and its steps — with how many times it ran in the last 30 days and how the last run went.',
       },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** — the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps** — what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** — optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused** — Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe — any [smart list](/lists) of the people (or households) you want knocked.',
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards — that’s the event that enrolls people.',
           },
           {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
           },
           {
-            title: 'Confirm',
+            title: 'Name it and set it Active',
             detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft — unassigned.',
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
           },
         ],
       },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve — nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
       {
         kind: 'p',
-        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions — nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot — green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet — with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut — even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state — **Located**, **Locating…**, or **Address problem** — and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact — someone already in the sequence isn’t enrolled twice by the same trigger.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically — the request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation — it doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop — there’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list — a failure names the step that failed, so you can see exactly where to look.',
       },
     ],
   },
@@ -61158,456 +60859,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  SUPPORT_LEVEL_LABELS,
-  UpdatePersonsObj,
-  UpdatePersonsType,
-  VOTING_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon],
-  templateUrl: './persons-grid.html',
-  host: { class: 'block h-full' },
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    {
-      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
-      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
-      field: 'support_level',
-      headerName: 'Support (context)',
-      editable: false,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
-    },
-    {
-      field: 'voting_status',
-      headerName: 'Voting (context)',
-      editable: false,
-      hide: true,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
-    },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor/volunteer are just tag filters now — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
 
 ```typescript
@@ -61869,315 +61120,232 @@ export class TagsAdmin implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.addRoute()"
-    [tip]="addLabel()"
-    [icon]="grid.plusIcon()"
-    (action)="onAdd()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canUndo()"
-    [tip]="'Undo'"
-    icon="arrow-uturn-left"
-    (action)="onUndo()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canRedo()"
-    [tip]="'Redo'"
-    icon="arrow-uturn-right"
-    (action)="onRedo()"
-  />
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
 
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [touch]="true"
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
-         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
-    >
-      <!-- Grab handle — bottom-sheet affordance, touch only -->
-      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
-      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
-        Filters
-      </h3>
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
+   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
+  badgeCount?: number | null;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
 
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onClone()">
-          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Clone</span>
-            @if (!grid.hasSingleSelection()) {
-            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
-          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Merge</span>
-            @if (grid.getCountRowSelected() !== 2) {
-            <span class="text-base-content/50 text-[11px]"
-              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
-            >
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider divider-horizontal"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
-     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3 rounded-lg">
-  <ul
-    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
-  >
-    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-      [spinning]="grid.isRefreshing()"
-      [tip]="'Refresh the grid'"
-      icon="arrow-path"
-      (action)="onRefresh()"
-    />
-    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
-    <pc-grid-tool-btn
-      icon="arrows-up-down-tray"
-      tip="Import / export"
-      [hasDropdown]="true"
-      [dropdownEnd]="true"
-      [hideCaret]="true"
-      [hidden]="grid.disableImport() && grid.disableExport()"
-    >
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
-      >
-        @if (!grid.disableImport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
-            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">Import from CSV…</span>
-              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
-            </span>
-          </a>
-        </li>
-        } @if (!grid.disableExport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
-            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </pc-grid-tool-btn>
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
-    <pc-grid-tool-btn
-      icon="funnel"
-      tip="Advanced Filters"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.anyFilterActive()"
-      [enabled]="!grid.hasActiveAdvancedFilters()"
-      (action)="onToggleFilters()"
-    />
-    <pc-grid-tool-btn
-      icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-      (action)="grid.openAdvancedFilterBuilder()"
-    />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-      <pc-dg-columns-dropdown [grid]="grid" />
-    </pc-grid-tool-btn>
-
-    <pc-grid-tool-btn
-      [icon]="grid.archiveIcon()"
-      [tip]="grid.archiveTip()"
-      [hidden]="!grid.showArchiveIcon()"
-      [active]="grid.archiveModeState()"
-      (action)="onToggleArchive()"
-    />
-  </ul>
-
-  <!-- + Add — a solid-primary button outside the group (spec §5). -->
-  @if (grid.addRoute()) {
-  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
-    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
-    <span>{{ addLabel() }}</span>
-  </button>
-  }
-</div>
+// Sidebar IA follows the North Star module map (spec §0). Section order and
+// membership are load-bearing; do not reshuffle without checking the spec.
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/dashboard',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+    shortcut: 'h',
+  },
+  {
+    name: `PINS`,
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `WORK`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+        shortcut: 'i',
+        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
+        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
+      },
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
+        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
+      },
+      // Hidden: the board is reachable from the Tasks page via the header swap button
+      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
+      // `g b` chord, the pin button and the help overlay working.
+      {
+        name: `Task board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+        hidden: true,
+      },
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      // Hidden: Households and Companies are grains of the People grid (spec §5)
+      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
+      // pin button and the help overlay keep working.
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+        hidden: true,
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+        hidden: true,
+      },
+    ],
+  },
+  {
+    name: `OUTREACH`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'mailbox',
+        shortcut: 'n',
+      },
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+        shortcut: 'l',
+      },
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+        shortcut: 'o',
+      },
+    ],
+  },
+  {
+    name: `FIELD`,
+    type: 'subheading',
+    children: [
+      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
+      {
+        name: 'Canvassing',
+        route: '/canvassing',
+        icon: 'route',
+        shortcut: 'v',
+      },
+      {
+        name: 'Deliveries',
+        route: '/deliveries',
+        icon: 'house-modern',
+        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
+        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
+      },
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+    ],
+  },
+  {
+    name: `DATA`,
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
+        // CSV import wizard at /imports/new. Exports' standalone entry folded
+        // in here — see the redirect in dashboard.routes.ts.
+        name: 'Import / export',
+        route: '/imports',
+        icon: 'arrows-up-down-tray',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
+        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'chat-bubble-bottom-center-text',
+      },
+      {
+        name: `Automations`,
+        route: '/automations',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+    ],
+  },
+  {
+    name: `ADMIN`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Activity',
+        route: '/activity',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Workspace',
+        route: '/workspace',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
@@ -62298,10 +61466,10 @@ export class TagsAdmin implements OnInit {
               <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
               }
             </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
             <td>
               @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
+              <span>{{ t.team_name }}</span>
               } @else {
               <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
               }
@@ -62597,134 +61765,6 @@ export class TagsAdmin implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-
-```typescript
-import { Component, signal, inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { PersonsService } from '../../persons/services/persons-service';
-import { CompaniesService } from '../services/companies-service';
-
-@Component({
-  selector: 'pc-companies-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [grainLayout]="true"
-        [fitColumns]="true"
-        title="Companies"
-        i18n-title
-        description="Manage corporate contacts, associate people with companies, and track organization profiles."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        plusIcon="add-company"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          <pc-grain-tabs />
-        </div>
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'company',
-        entityNounPlural: 'companies',
-        exportEntity: 'companies',
-        exportFileName: 'companies-export.csv',
-      },
-    }),
-  ],
-})
-export class CompaniesGrid {
-  private readonly companiesService = inject(CompaniesService);
-  private readonly personsService = inject(PersonsService);
-  private readonly router = inject(Router);
-
-  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  constructor() {
-    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadGrainSentence();
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [people, companies] = await Promise.all([
-        this.personsService.countWithCompany(),
-        this.companiesService.count(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
-      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
-      this.totalSentence.set(`${peopleText} in ${companiesText}`);
-    } catch (err) {
-      console.error('Failed to load company grain counts', err);
-    }
-  }
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the company record. Non-editable and non-hidable identity column.
-      field: 'name',
-      headerName: 'Company Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 240,
-      minWidth: 180,
-    },
-    {
-      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
-      // the Company Name column is the door.
-      field: 'persons_count',
-      headerName: 'People',
-      editable: false,
-      width: 110,
-      minWidth: 90,
-      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
-    },
-    { field: 'website', headerName: 'Website', editable: true, width: 240 },
-    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
-  ];
-
-  /** Formats the employee count as "N people" (singular/plural). */
-  private formatPeopleCount(params: CellParams): string {
-    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-    return `${n} ${n === 1 ? 'person' : 'people'}`;
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
 
 ```html
@@ -62848,145 +61888,6 @@ export class CompaniesGrid {
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
-    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      Record donation
-    </button>
-    <button
-      routerLink="/donation-pages/add"
-      class="btn btn-primary btn-sm gap-2"
-      title="Create a public form that charges cards through Stripe and records every gift here"
-    >
-      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-      New donation form
-    </button>
-  </pc-grid-header>
-
-  <!-- Tabs (the standard pill tab bar; route-linked) -->
-  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] mt-1">
-          @if (monthOverMonthDelta() !== null) {
-          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
-            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
-          </span>
-          } @else {
-          <span class="text-base-content/40">No prior month to compare</span>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ monthlyDonorCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <pc-table [columns]="5">
-    <ng-container pcTableHead>
-      <th>Donor</th>
-      <th class="text-right">Amount</th>
-      <th>Method</th>
-      <th>Date</th>
-      <th>Receipt</th>
-    </ng-container>
-
-    @for (d of recentGifts(); track d.id) {
-    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
-      <td>
-        <div class="flex flex-col">
-          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
-            {{ d.person_first_name }} {{ d.person_last_name }}
-          </a>
-          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-        </div>
-      </td>
-      <td class="text-right font-bold text-base-content text-sm tabular-nums">{{ formatCurrency(d.amount) }}</td>
-      <td>
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
-      </td>
-      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-      <td>
-        @if (d.receipt_sent) {
-        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-          <pc-icon name="check-circle" [size]="3"></pc-icon>
-          Receipted
-        </span>
-        } @else {
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-        }
-      </td>
-    </tr>
-    } @empty {
-    <tr>
-      <td colspan="5" class="text-center py-16 text-base-content/50">
-        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-        <h3 class="font-semibold text-base-content/70">No donations found</h3>
-        <p class="text-xs text-base-content/50 mt-1 mb-3">
-          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-        </p>
-        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Record donation
-        </button>
-      </td>
-    </tr>
-    } @if (totalGiftCount() > recentGifts().length) {
-    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
-      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
-    </div>
-    }
-  </pc-table>
-</div>
-
-<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
@@ -63716,424 +62617,6 @@ export class CompaniesGrid {
 </dialog>
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
-
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        [grainLayout]="!inline()"
-        [fitColumns]="true"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        [rowCanSelect]="rowCanSelectFn"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          @if (!inline()) {
-            <pc-grain-tabs />
-          }
-        </div>
-        @if (!inline() && unhoused().count > 0) {
-          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
-            <button
-              type="button"
-              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
-              (click)="openUnhoused()"
-            >
-              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
-            </button>
-            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
-            matched to a door.
-          </p>
-        }
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'household',
-        entityNounPlural: 'households',
-        exportEntity: 'households',
-        exportFileName: 'households-export.csv',
-      },
-    }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly router = inject(Router);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the household record: a generated address string, just like
-      // the People grid's combined Name column. People count rides along as a muted subtitle.
-      field: 'household',
-      headerName: 'Household',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 260,
-      minWidth: 180,
-      valueGetter: (params: CellParams) => this.addressString(params.data),
-      doorSubtitle: (params: CellParams) => {
-        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-        return `${n} ${n === 1 ? 'person' : 'people'}`;
-      },
-    },
-    {
-      field: 'members',
-      headerName: 'Members',
-      editable: false,
-      // Grows to fill leftover width when no notes/description column is visible.
-      flex: true,
-      width: 320,
-      minWidth: 200,
-      // Each member name is a link to their person card. The renderer output is
-      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
-      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
-      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
-    },
-    { field: 'city', headerName: 'City', editable: true, width: 150 },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    {
-      field: 'updated_at',
-      headerName: 'Last touch',
-      editable: false,
-      minWidth: 120,
-      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      hide: true,
-      width: 280,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** People with no matchable address (the placeholder household) — footer note + link target. */
-  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
-    count: 0,
-    household_id: null,
-  });
-
-  public ngOnInit(): void {
-    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
-    // keep full contrast — they're a second focal point (the People-grain of the household).
-    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-  }
-
-  private async loadUnhoused(): Promise<void> {
-    try {
-      this.unhoused.set(await this.householdsService.getUnhoused());
-    } catch (err) {
-      console.error('Failed to load unhoused people count', err);
-    }
-  }
-
-  /** Opens the placeholder household, whose detail view lists everyone with no address. */
-  protected openUnhoused(): void {
-    const id = this.unhoused().household_id;
-    if (id) void this.router.navigate(['/households', id]);
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [total, wards] = await Promise.all([
-        this.householdsService.count(),
-        this.householdsService.countDistinctWards(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
-      // Ward data comes from geocoding; until any exists, fall back to a plain total.
-      this.totalSentence.set(
-        wards > 0
-          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
-          : `${households} total`,
-      );
-    } catch (err) {
-      console.error('Failed to load household grain counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  /** Renders member names as person-card links; a comma separator keeps them on one line. */
-  private renderMembers(value: unknown): string {
-    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
-    const links = members
-      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
-      .map((m) => {
-        const id = this.escapeHtml(String(m.id));
-        const name = this.escapeHtml(String(m.name));
-        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
-      });
-    if (!links.length) return '';
-    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
-    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
-  }
-
-  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
-  private onMemberClicked(event: Event | undefined): void {
-    const target = event?.target;
-    if (!(target instanceof HTMLElement)) return;
-    const anchor = target.closest('[data-person-id]');
-    const id = anchor?.getAttribute('data-person-id');
-    if (id) void this.router.navigate(['/people', id]);
-  }
-
-  private escapeHtml(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  /** Street number + name for the Household door column (city has its own column). */
-  private addressString(data: unknown): string {
-    const d = data as Record<string, unknown> | undefined;
-    if (!d) return '';
-    if (d['is_placeholder']) return 'People with no addresses';
-    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
-  }
-
-  /** Compact relative "last touch" — matches the household view's low-chrome style. */
-  private formatLastTouch(value: unknown): string {
-    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
 
 ```typescript
@@ -64485,6 +62968,560 @@ export class ImportsPage {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
+
+```html
+<pc-detail-layout
+  [title]="pageTitle()"
+  [eyebrow]="eyebrow()"
+  [subtitle]="sentSentence()"
+  [crumbs]="crumbs()"
+  [isLoading]="!email() && !error()"
+  [error]="error()"
+  [hasRecord]="!!email()"
+  [showActions]="false"
+>
+  <div pc-title-suffix class="flex min-w-0 items-center">
+    @if (email(); as em) {
+    <pc-status-badge [type]="statusTone(em.status)">{{ statusLabel(em.status) }}</pc-status-badge>
+    }
+  </div>
+  <div pc-actions-suffix class="flex items-center gap-2">
+    @if (email()) { @if (!isUnsent()) {
+    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
+      Export report CSV
+    </button>
+    }
+    <button
+      type="button"
+      class="btn btn-primary btn-sm gap-2"
+      [disabled]="isDuplicating()"
+      (click)="duplicateNewsletter()"
+    >
+      @if (isDuplicating()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      } Duplicate newsletter
+    </button>
+    }
+  </div>
+
+  @if (email(); as em) {
+  <div class="w-full">
+    <!-- Stat tiles -->
+    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      @for (tile of tiles(); track tile.label) {
+      <div class="stats border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            {{ tile.label }}
+          </div>
+          <div class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl" [class]="tile.valueClass">
+            {{ tile.value }}
+          </div>
+          <div class="stat-desc mt-1 text-[10px] tabular-nums text-base-content/40">{{ tile.sub }}</div>
+        </div>
+      </div>
+      }
+    </div>
+
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- ============================== main column ============================== -->
+      <div class="flex flex-col gap-6 lg:col-span-2">
+        <!-- How the send resolved -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            How the send resolved
+          </h2>
+          @if (funnel().length > 0) {
+          <div class="mt-4 flex flex-col gap-3">
+            @for (row of funnel(); track row.label) {
+            <div class="flex items-center gap-4">
+              <span class="w-16 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+              <div class="h-2 flex-1 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-primary" [style.width.%]="row.width"></div>
+              </div>
+              <span class="w-40 shrink-0 text-right text-xs tabular-nums">
+                <span class="font-bold text-base-content">{{ row.count }}</span>
+                <span class="text-base-content/50"> · {{ row.share }}</span>
+              </span>
+            </div>
+            }
+          </div>
+          @if (report(); as rep) { @if (rep.bounces.total > 0) {
+          <div class="mt-4 flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs">
+            <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-base-content/80">
+              {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
+              }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}) — hard bounces
+              joined the suppression list and future sends skip them automatically per the
+              <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
+            </p>
+          </div>
+          } } } @else {
+          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+            <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">Nothing has been sent yet — delivery results will appear here.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Bounced addresses -->
+        @if (report(); as rep) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Bounced addresses @if (rep.bounces.total > 0) { · {{ formatNumber(rep.bounces.total) }} }
+            </h2>
+            @if (rep.bounces.rows.length > 0) {
+            <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="exportBouncesCsv()">
+              Export {{ formatNumber(rep.bounces.total) }} bounces CSV
+            </button>
+            }
+          </div>
+          @if (bounceRowsShown().length > 0) {
+          <ul class="mt-3 divide-y divide-base-200">
+            @for (bounce of bounceRowsShown(); track bounce.email) {
+            <li class="flex items-center justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <p class="truncate font-mono text-xs text-base-content">{{ bounce.email }}</p>
+                <p class="mt-0.5 text-[10px] text-base-content/50">
+                  {{ bounce.reason || 'No reason recorded by the provider' }}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-3">
+                <pc-status-badge [type]="bounceKindTone(bounce.kind)"
+                  >{{ bounceKindLabel(bounce.kind) }}</pc-status-badge
+                >
+                @if (bounce.person; as person) {
+                <a
+                  class="link link-hover w-28 truncate text-right text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                  [routerLink]="personRoute(person)"
+                >
+                  {{ person.name }}
+                </a>
+                } @else {
+                <span class="w-28 text-right text-xs text-base-content/40">No CRM match</span>
+                }
+              </div>
+            </li>
+            }
+          </ul>
+          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            Showing {{ bounceRowsShown().length }} of {{ formatNumber(rep.bounces.total) }} · hard bounces are
+            suppressed from future sends; soft bounces are retried by the provider.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
+            <p class="text-xs text-base-content/60">No bounces — every address accepted this send.</p>
+          </div>
+          }
+        </section>
+        }
+
+        <!-- Engagement · first 48 hours -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Engagement · first 48 hours
+            </h2>
+            <div class="flex items-center gap-3 text-[10px] font-semibold text-base-content/70">
+              <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Opens</span>
+              <span class="flex items-center gap-1"
+                ><span class="h-2 w-2 rounded-full bg-secondary"></span> Clicks</span
+              >
+            </div>
+          </div>
+          @if (engagementChart(); as chart) {
+          <div class="mt-4 flex h-32 items-end gap-1">
+            @for (bucket of chart; track $index) {
+            <div class="tooltip flex h-full flex-1 items-end justify-center gap-px" [attr.data-tip]="bucket.tip">
+              <div
+                class="w-1/3 rounded-t-sm bg-primary"
+                [style.height.%]="bucket.opensPct"
+                [style.minHeight.px]="bucket.opens > 0 ? 2 : 0"
+              ></div>
+              <div
+                class="w-1/3 rounded-t-sm bg-secondary"
+                [style.height.%]="bucket.clicksPct"
+                [style.minHeight.px]="bucket.clicks > 0 ? 2 : 0"
+              ></div>
+            </div>
+            }
+          </div>
+          <div class="mt-1 flex justify-between border-t border-base-200 pt-1 text-[10px] text-base-content/40">
+            <span>Send</span><span>12h</span><span>24h</span><span>36h</span><span>48h</span>
+          </div>
+          @if (opensIn24hSentence(); as sentence) {
+          <p class="mt-3 text-[10px] text-base-content/50">{{ sentence }}</p>
+          } } @else {
+          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+            <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">
+              No hour-by-hour engagement to chart — opens and clicks appear here as they arrive.
+            </p>
+          </div>
+          }
+        </section>
+
+        <!-- Top links clicked -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Top links clicked
+            </h2>
+            @if (topLinks().length > 0) {
+            <span class="text-[10px] tabular-nums text-base-content/50">{{ linksSentence() }}</span>
+            }
+          </div>
+          @if (topLinks().length > 0) {
+          <ul class="mt-3 divide-y divide-base-200">
+            @for (link of topLinks(); track link.url) {
+            <li class="flex items-center gap-4 py-2.5">
+              <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content" [title]="link.url">
+                {{ link.display }}
+              </span>
+              <div class="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-secondary" [style.width.%]="link.width"></div>
+              </div>
+              <span class="w-36 shrink-0 text-right text-xs tabular-nums text-base-content/70">
+                {{ formatNumber(link.clicks) }} clicks@if (link.people != null) { · {{ formatNumber(link.people) }}
+                people }
+              </span>
+            </li>
+            }
+          </ul>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="queue-list" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">No link clicks recorded for this send yet.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Vs previous sends -->
+        @if (comparison().length > 0) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+            Vs previous sends
+          </h2>
+          <div class="mt-4 flex flex-col gap-4">
+            @for (row of comparison(); track row.label) {
+            <div class="flex items-center gap-4">
+              <span class="w-32 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+              <div class="flex h-9 items-end gap-1">
+                @for (bar of row.bars; track $index) {
+                <div
+                  class="w-2.5 rounded-t-sm"
+                  [class.bg-primary]="bar.isCurrent"
+                  [class.bg-base-300]="!bar.isCurrent"
+                  [style.height.%]="bar.height"
+                ></div>
+                }
+              </div>
+              <div class="flex-1 text-right">
+                <div class="text-sm font-bold tabular-nums text-base-content">{{ row.current }}</div>
+                @if (row.delta) {
+                <div class="text-[10px] tabular-nums" [class]="row.deltaClass">{{ row.delta }}</div>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest — this send is the solid
+            bar. Deltas compare against the send before it.
+          </p>
+        </section>
+        }
+      </div>
+
+      <!-- ============================== side column ============================== -->
+      <div class="flex flex-col gap-6">
+        <!-- What to do next -->
+        @if (report(); as rep) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What to do next</h2>
+          <span
+            class="mt-3 block"
+            [class.tooltip]="rep.unique_clickers === 0"
+            data-tip="No one has clicked this newsletter yet"
+          >
+            <button
+              type="button"
+              class="btn btn-primary btn-sm w-full"
+              [disabled]="rep.unique_clickers === 0 || isCreatingList()"
+              (click)="createClickersList()"
+            >
+              @if (isCreatingList()) {
+              <span class="loading loading-spinner loading-xs"></span>
+              } Create list of {{ formatNumber(rep.unique_clickers) }} clickers
+            </button>
+          </span>
+          <p class="mt-2 text-[10px] text-base-content/50">
+            A static snapshot — target the next send at the people who acted on this one.
+          </p>
+
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
+            <div>
+              <p class="text-xs font-semibold text-base-content">
+                {{ formatNumber(em.reply_count) }} {{ em.reply_count === 1 ? 'reply' : 'replies' }} landed in the Inbox
+              </p>
+              <p class="mt-0.5 text-[10px] text-base-content/50">Replies thread into conversations there</p>
+            </div>
+            <a routerLink="/inbox" class="btn btn-outline btn-secondary btn-xs shrink-0">Open Inbox</a>
+          </div>
+
+          @if (mostEngaged().length > 0) {
+          <div class="mt-4 border-t border-base-200 pt-4">
+            <h3 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Most engaged</h3>
+            <ul class="mt-2 flex flex-col gap-2.5">
+              @for (person of mostEngaged(); track person.email) {
+              <li class="flex items-center gap-3">
+                <span
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
+                >
+                  {{ person.initials }}
+                </span>
+                <div class="min-w-0">
+                  @if (person.person; as match) {
+                  <a
+                    class="link link-hover block truncate text-xs font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                    [routerLink]="personRoute(match)"
+                  >
+                    {{ person.displayName }}
+                  </a>
+                  } @else {
+                  <span class="block truncate text-xs font-semibold text-base-content" [title]="person.email">
+                    {{ person.displayName }}
+                  </span>
+                  }
+                  <p class="truncate text-[10px] text-base-content/50">{{ person.summary }}</p>
+                </div>
+              </li>
+              }
+            </ul>
+          </div>
+          }
+        </section>
+
+        <!-- Audience at send -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">Audience at send</h2>
+          @if (rep.audience.lists.length > 0) {
+          <ul class="mt-3 flex flex-col gap-2 text-xs">
+            @for (list of rep.audience.lists; track list.id) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="min-w-0 truncate text-base-content/80">
+                {{ list.mode === 'include' ? 'In list' : 'Excluding list' }} "{{ list.name }}"
+              </span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content">
+                {{ list.mode === 'include' ? '+' : '−' }}{{ formatNumber(list.members) }}
+              </span>
+            </li>
+            } @if (rep.audience.overlap_removed > 0) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="text-base-content/60">Overlap removed</span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+                −{{ formatNumber(rep.audience.overlap_removed) }}
+              </span>
+            </li>
+            } @if (rep.audience.suppressed_skipped > 0) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="text-base-content/60">Previously bounced skipped (Workspace setting)</span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+                −{{ formatNumber(rep.audience.suppressed_skipped) }}
+              </span>
+            </li>
+            }
+          </ul>
+          <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-200 pt-3 text-xs">
+            <span class="font-bold text-base-content">Total</span>
+            <span class="font-bold tabular-nums text-base-content">
+              {{ formatNumber(em.total_recipients) }} recipients
+            </span>
+          </div>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now — lists may have
+            changed since the send.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">No lists were targeted — the audience came from tag segments.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Unsubscribe reasons -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Unsubscribe reasons @if (rep.unsubscribes.total > 0) { · {{ formatNumber(rep.unsubscribes.total) }} }
+            </h2>
+            @if (unsubscribeRate(); as rate) {
+            <span class="text-[10px] tabular-nums text-base-content/50">{{ rate }} of delivered</span>
+            }
+          </div>
+          @if (unsubscribeReasons().length > 0) {
+          <ul class="mt-3 flex flex-col gap-2.5">
+            @for (reason of unsubscribeReasons(); track reason.label) {
+            <li class="flex items-center gap-3 text-xs">
+              <span class="min-w-0 flex-1 truncate text-base-content/80">{{ reason.label }}</span>
+              <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-base-content/30" [style.width.%]="reason.width"></div>
+              </div>
+              <span class="w-6 shrink-0 text-right font-semibold tabular-nums text-base-content">
+                {{ reason.count }}
+              </span>
+            </li>
+            }
+          </ul>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            The unsubscribe page doesn't ask why yet, so reasons aren't broken down.
+          </p>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No unsubscribes from this send.</p>
+          }
+        </section>
+
+        <!-- Spam reports -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Spam reports @if (rep.spam_reports.total > 0) { · {{ formatNumber(rep.spam_reports.total) }} }
+            </h2>
+            @if (spamRate() != null) {
+            <span class="text-[10px] tabular-nums text-base-content/50"
+              >{{ formatSpamRate(spamRate()) }} of delivered</span
+            >
+            }
+          </div>
+          @if (rep.spam_reports.total > 0) { @for (row of spamRows(); track $index) {
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate font-mono text-xs text-base-content">{{ row.email }}</p>
+              @if (row.timing) {
+              <p class="mt-0.5 text-[10px] text-base-content/50">Provider feedback loop · {{ row.timing }}</p>
+              }
+            </div>
+            <pc-status-badge type="neutral">Suppressed</pc-status-badge>
+          </div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1% — @if
+            (spamRateIsSafe()) { this send is well clear. } @else { this send is over that line — review the audience
+            before the next send. }
+          </p>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No spam reports from this send.</p>
+          }
+        </section>
+        }
+
+        <!-- What was sent -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">What was sent</h2>
+          <div class="mt-3 flex flex-col gap-3 text-xs">
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Subject</div>
+              <p class="mt-0.5 font-semibold text-base-content">{{ em.subject || '—' }}</p>
+            </div>
+            @if (em.preview_text) {
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Preview text</div>
+              <p class="mt-0.5 text-base-content/80">{{ em.preview_text }}</p>
+            </div>
+            } @if (report()?.from; as from) {
+            <div>
+              <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">From</div>
+              <p class="mt-0.5 text-base-content/80">{{ from.name }} @if (from.email) { &lt;{{ from.email }}&gt; }</p>
+            </div>
+            }
+          </div>
+          @if (em.html_content || em.plain_text_content) {
+          <div
+            class="mt-3 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-xs"
+            [class.max-h-56]="!emailExpanded()"
+          >
+            @if (em.html_content) {
+            <div [innerHTML]="em.html_content"></div>
+            } @else {
+            <pre class="whitespace-pre-wrap font-sans">{{ em.plain_text_content }}</pre>
+            }
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-xs mt-3 w-full"
+            (click)="emailExpanded.set(!emailExpanded())"
+          >
+            {{ emailExpanded() ? 'Collapse email' : 'View sent email' }}
+          </button>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No content stored for this newsletter.</p>
+          }
+        </section>
+
+        <!-- Attachments (manageable until the newsletter goes out) -->
+        @if (attachments().length > 0 || canManageAttachments()) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/50">
+              Attachments @if (attachments().length > 0) { · {{ attachments().length }} }
+            </h2>
+            @if (canManageAttachments()) {
+            <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+            <button
+              type="button"
+              class="btn btn-outline btn-secondary btn-xs gap-1"
+              [disabled]="isUploadingAttachment()"
+              (click)="attachmentInput.click()"
+            >
+              @if (isUploadingAttachment()) {
+              <span class="loading loading-spinner loading-xs"></span>
+              Attaching… } @else {
+              <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+              Attach file }
+            </button>
+            }
+          </div>
+          @if (attachments().length === 0) {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No files attached to this newsletter.</p>
+          } @else {
+          <ul class="mt-2 divide-y divide-base-200">
+            @for (attachment of attachments(); track attachment.id) {
+            <li class="flex items-center justify-between gap-3 py-2">
+              <div class="min-w-0">
+                <p class="truncate text-xs font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+                @if (attachment.size_bytes) {
+                <p class="text-[10px] text-base-content/50">{{ formatBytes(attachment.size_bytes) }}</p>
+                }
+              </div>
+              @if (canManageAttachments()) {
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-error"
+                title="Remove attachment"
+                (click)="removeAttachment(attachment)"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+              }
+            </li>
+            }
+          </ul>
+          }
+        </section>
+        }
+      </div>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
@@ -65035,6 +64072,460 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon],
+  templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
 
 ```html
@@ -65199,6 +64690,282 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
 </div>
 }
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
+
+```typescript
+import { Component, signal, inject, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { PersonsService } from '../../persons/services/persons-service';
+import { CompaniesService } from '../services/companies-service';
+
+@Component({
+  selector: 'pc-companies-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [grainLayout]="true"
+        [fitColumns]="true"
+        title="Companies"
+        i18n-title
+        description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        (rowsDeleted)="onRowsDeleted()"
+        plusIcon="add-company"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          <pc-grain-tabs />
+        </div>
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'company',
+        entityNounPlural: 'companies',
+        exportEntity: 'companies',
+        exportFileName: 'companies-export.csv',
+      },
+    }),
+  ],
+})
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly personsService = inject(PersonsService);
+  private readonly router = inject(Router);
+
+  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  constructor() {
+    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadGrainSentence();
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [people, companies] = await Promise.all([
+        this.personsService.countWithCompany(),
+        this.companiesService.count(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
+      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
+      this.totalSentence.set(`${peopleText} in ${companiesText}`);
+    } catch (err) {
+      console.error('Failed to load company grain counts', err);
+    }
+  }
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the company record. Non-editable and non-hidable identity column.
+      field: 'name',
+      headerName: 'Company Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 240,
+      minWidth: 180,
+    },
+    {
+      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
+      // the Company Name column is the door.
+      field: 'persons_count',
+      headerName: 'People',
+      editable: false,
+      width: 110,
+      minWidth: 90,
+      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
+    },
+    { field: 'website', headerName: 'Website', editable: true, width: 240 },
+    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
+  ];
+
+  /** Formats the employee count as "N people" (singular/plural). */
+  private formatPeopleCount(params: CellParams): string {
+    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
+    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      Record donation
+    </button>
+    <button
+      routerLink="/donation-pages/add"
+      class="btn btn-primary btn-sm gap-2"
+      title="Create a public form that charges cards through Stripe and records every gift here"
+    >
+      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+      New donation form
+    </button>
+  </pc-grid-header>
+
+  <!-- Tabs (the standard pill tab bar; route-linked) -->
+  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <pc-table [columns]="5">
+    <ng-container pcTableHead>
+      <th>Donor</th>
+      <th class="text-right">Amount</th>
+      <th>Method</th>
+      <th>Date</th>
+      <th>Receipt</th>
+    </ng-container>
+
+    @for (d of recentGifts(); track d.id) {
+    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
+      <td>
+        <div class="flex flex-col">
+          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline">
+            {{ d.person_first_name }} {{ d.person_last_name }}
+          </a>
+          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+        </div>
+      </td>
+      <td class="text-right font-bold text-base-content tabular-nums">{{ formatCurrency(d.amount) }}</td>
+      <td>
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
+      </td>
+      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+      <td>
+        @if (d.receipt_sent) {
+        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+          <pc-icon name="check-circle" [size]="3"></pc-icon>
+          Receipted
+        </span>
+        } @else {
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
+        }
+      </td>
+    </tr>
+    } @empty {
+    <tr>
+      <td colspan="5" class="text-center py-16 text-base-content/50">
+        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+        <h3 class="font-semibold text-base-content/70">No donations found</h3>
+        <p class="text-xs text-base-content/50 mt-1 mb-3">
+          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
+        </p>
+        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Record donation
+        </button>
+      </td>
+    </tr>
+    } @if (totalGiftCount() > recentGifts().length) {
+    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
+  </pc-table>
+</div>
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
@@ -65460,6 +65227,433 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
+        [fitColumns]="true"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        (rowsDeleted)="onRowsDeleted()"
+        [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+        @if (!inline() && unhoused().count > 0) {
+          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+            <button
+              type="button"
+              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
+              (click)="openUnhoused()"
+            >
+              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+            </button>
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
+            matched to a door.
+          </p>
+        }
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly router = inject(Router);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the household record: a generated address string, just like
+      // the People grid's combined Name column. People count rides along as a muted subtitle.
+      field: 'household',
+      headerName: 'Household',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 260,
+      minWidth: 180,
+      valueGetter: (params: CellParams) => this.addressString(params.data),
+      doorSubtitle: (params: CellParams) => {
+        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+        return `${n} ${n === 1 ? 'person' : 'people'}`;
+      },
+    },
+    {
+      field: 'members',
+      headerName: 'Members',
+      editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
+      minWidth: 200,
+      // Each member name is a link to their person card. The renderer output is
+      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
+      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
+      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
+    },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    {
+      field: 'updated_at',
+      headerName: 'Last touch',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      hide: true,
+      width: 280,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** People with no matchable address (the placeholder household) — footer note + link target. */
+  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
+    count: 0,
+    household_id: null,
+  });
+
+  public ngOnInit(): void {
+    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
+    // keep full contrast — they're a second focal point (the People-grain of the household).
+    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+  }
+
+  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  private async loadUnhoused(): Promise<void> {
+    try {
+      this.unhoused.set(await this.householdsService.getUnhoused());
+    } catch (err) {
+      console.error('Failed to load unhoused people count', err);
+    }
+  }
+
+  /** Opens the placeholder household, whose detail view lists everyone with no address. */
+  protected openUnhoused(): void {
+    const id = this.unhoused().household_id;
+    if (id) void this.router.navigate(['/households', id]);
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  /** Renders member names as person-card links; a comma separator keeps them on one line. */
+  private renderMembers(value: unknown): string {
+    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
+    const links = members
+      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
+      .map((m) => {
+        const id = this.escapeHtml(String(m.id));
+        const name = this.escapeHtml(String(m.name));
+        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
+      });
+    if (!links.length) return '';
+    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
+    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
+  }
+
+  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
+  private onMemberClicked(event: Event | undefined): void {
+    const target = event?.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('[data-person-id]');
+    const id = anchor?.getAttribute('data-person-id');
+    if (id) void this.router.navigate(['/people', id]);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** Street number + name for the Household door column (city has its own column). */
+  private addressString(data: unknown): string {
+    const d = data as Record<string, unknown> | undefined;
+    if (!d) return '';
+    if (d['is_placeholder']) return 'People with no addresses';
+    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
+  }
+
+  /** Compact relative "last touch" — matches the household view's low-chrome style. */
+  private formatLastTouch(value: unknown): string {
+    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
@@ -66067,234 +66261,6 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
 </div>
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
-   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
-  badgeCount?: number | null;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  /**
-   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
-   * A single lowercase letter, unique across all items. Rendered as a hint in the
-   * sidebar and consumed by KeyboardShortcutsService to route there.
-   */
-  shortcut?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-// Sidebar IA follows the North Star module map (spec §0). Section order and
-// membership are load-bearing; do not reshuffle without checking the spec.
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/dashboard',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-    shortcut: 'h',
-  },
-  {
-    name: `PINS`,
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `WORK`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-        shortcut: 'i',
-        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
-        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
-      },
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
-        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
-      },
-      // Hidden: the board is reachable from the Tasks page via the header swap button
-      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
-      // `g b` chord, the pin button and the help overlay working.
-      {
-        name: `Task board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-        hidden: true,
-      },
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      // Hidden: Households and Companies are grains of the People grid (spec §5)
-      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
-      // pin button and the help overlay keep working.
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-        hidden: true,
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-        hidden: true,
-      },
-    ],
-  },
-  {
-    name: `OUTREACH`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'mailbox',
-        shortcut: 'n',
-      },
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-        shortcut: 'l',
-      },
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-        shortcut: 'o',
-      },
-    ],
-  },
-  {
-    name: `FIELD`,
-    type: 'subheading',
-    children: [
-      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
-      {
-        name: 'Canvassing',
-        route: '/canvassing',
-        icon: 'route',
-        shortcut: 'v',
-      },
-      {
-        name: 'Deliveries',
-        route: '/deliveries',
-        icon: 'house-modern',
-        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
-        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
-      },
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
-      },
-    ],
-  },
-  {
-    name: `DATA`,
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
-        // CSV import wizard at /imports/new. Exports' standalone entry folded
-        // in here — see the redirect in dashboard.routes.ts.
-        name: 'Import / export',
-        route: '/imports',
-        icon: 'arrows-up-down-tray',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
-        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'chat-bubble-bottom-center-text',
-      },
-      {
-        name: `Automations`,
-        route: '/automations',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `ADMIN`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Activity',
-        route: '/activity',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Workspace',
-        route: '/workspace',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/dashboard.routes.ts
 
 ```typescript
@@ -66690,14 +66656,13 @@ export const dashboardRoutes: Routes = [
         data: { shouldReuse: true, key: 'usersgridroot' },
       },
       {
+        // View and edit merged into one page (approved 2026-07-10 design) — the
+        // unsaved-changes guard now protects the view, and old edit links redirect.
         path: ':id',
         loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
         canDeactivate: [unsavedChangesGuard],
       },
+      { path: ':id/edit', redirectTo: ':id' },
     ],
   },
   {
@@ -66858,8 +66823,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     id: 'profile',
     category: 'admin',
     title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    summary: 'Your photo, your details, and your account facts — plus a snapshot of your own activity.',
     keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
     related: ['users-roles', 'settings', 'getting-around'],
     blocks: [
@@ -66875,7 +66839,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page: choose, per event, whether you are alerted by email and in-app — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
@@ -66906,10 +66870,15 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page — everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role — it applies immediately, and locked roles say why — and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
       { kind: 'h2', id: 'invite', text: 'Inviting someone' },
       {
         kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, send the person a password reset from the row’s **⋯** menu to issue a fresh link. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
       },
       { kind: 'h2', id: 'roles', text: 'The roles' },
       {
@@ -66934,7 +66903,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access — deactivated accounts keep their role.',
       },
     ],
   },
@@ -67725,6 +67694,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // viewport handled by controller
 
   public readonly importCSV = output<string>();
+  /** Fires after a delete flow completes and the grid has refreshed, so pages can re-query header counts. */
+  public readonly rowsDeleted = output<void>();
   public readonly showArchiveIcon = input<boolean>(false);
   public readonly archiveIcon = input<PcIconNameType>('archive-box');
   public readonly archiveTip = input<string>('See archived tasks');
@@ -68599,6 +68570,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       if (handled !== false) {
         this.clearAllSelection();
         await this.refresh();
+        this.rowsDeleted.emit();
         return true;
       }
     }
@@ -68615,6 +68587,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
     await this.refresh();
+    this.rowsDeleted.emit();
     return true;
   }
   public doConfirmDelete() {
@@ -70294,6 +70267,7 @@ body {
 :root {
   --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
   --pc-table-header-tracking: 0.07em;
+  --pc-table-body-size: 0.75rem; /* text-xs — the default for ALL table body cells */
   --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
   --pc-table-radius: 0.75rem; /* rounded-xl */
 }
@@ -70320,6 +70294,12 @@ body {
   }
   .pc-table :where(th, td) {
     padding-block: var(--pc-table-cell-py);
+  }
+  /* Body cells are text-xs by default — DaisyUI's `.table` would otherwise
+     leave them at text-sm. Don't re-add `text-sm` on data cells; prose empty
+     states may still opt up per-instance from the utilities layer. */
+  .pc-table tbody {
+    font-size: var(--pc-table-body-size);
   }
   /* Subtle row hover (design §8: hover is a quiet secondary signal). The
      datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
@@ -71014,7 +70994,7 @@ body {
           }
         </tr>
       </thead>
-      <tbody class="bg-base-100 text-xs">
+      <tbody class="bg-base-100">
         @if (hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
