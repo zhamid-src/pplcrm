@@ -1,6 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Icon } from '@icons/icon';
@@ -41,7 +40,7 @@ const MS_PER_DAY = 86_400_000;
 
 @Component({
   selector: 'pc-tasks-list',
-  imports: [Icon, TabBar, CsvImportComponent],
+  imports: [Icon, TabBar],
   templateUrl: './tasks-list.html',
 })
 export class TasksList implements OnInit {
@@ -65,10 +64,6 @@ export class TasksList implements OnInit {
     slaBreaches: number;
     unassigned: number;
   } | null>(null);
-
-  protected readonly importerOpen = signal(false);
-  protected readonly importSummary = signal<CsvImportSummary | null>(null);
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
 
   private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
 
@@ -317,61 +312,9 @@ export class TasksList implements OnInit {
     void this.router.navigate(['/tasks/add']);
   }
 
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected openImportDialog(): void {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.svc.import(rows, skippedReported, fileName || undefined);
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`,
-      });
-      this.importerOpen.set(false);
-      await this.loadOnInit();
-    } catch (err) {
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped: skippedReported,
-        failed: true,
-        message: getUserErrorMessage(err, 'Import failed'),
-      });
-      this.importerOpen.set(false);
-    }
+  // The CSV import wizard (spec §17) replaced the old in-page import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'tasks' } });
   }
 }

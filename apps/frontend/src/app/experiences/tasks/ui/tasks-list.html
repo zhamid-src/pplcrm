@@ -8,7 +8,7 @@
       }
     </div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
         <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
         Import
       </button>
@@ -125,14 +125,3 @@
   </div>
   }
 </div>
-
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import tasks from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
-/>

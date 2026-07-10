@@ -60,11 +60,11 @@ export class ImportsPage {
   protected readonly deleteTasks = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
+  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
   protected readonly importsThisYear = computed(
     () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
   );
-  protected readonly peopleCreatedThisYear = computed(() =>
+  protected readonly recordsCreatedThisYear = computed(() =>
     this.items()
       .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
       .reduce((sum, item) => sum + item.insertedCount, 0),
@@ -76,9 +76,25 @@ export class ImportsPage {
   );
   protected readonly historySentence = computed(
     () =>
-      `${this.importsThisYear()} imports this year · ${this.peopleCreatedThisYear()} people created · ` +
+      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
       `${this.duplicatesMergedThisYear()} duplicates merged`,
   );
+
+  /** data_imports.source → the label the Type column shows. */
+  protected sourceLabel(source: string): string {
+    switch (source) {
+      case 'persons':
+        return 'People';
+      case 'companies':
+        return 'Companies';
+      case 'households':
+        return 'Households';
+      case 'tasks':
+        return 'Tasks';
+      default:
+        return source || '—';
+    }
+  }
 
   private pollInterval: ReturnType<typeof setInterval> | undefined;
 

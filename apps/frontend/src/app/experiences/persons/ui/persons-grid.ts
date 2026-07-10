@@ -343,7 +343,7 @@ export class PersonsGrid implements OnInit {
   // one idiom for the job instead of two. See libs/uxcommon/csv-import for
   // the shared header-mapping heuristic this grid used to own inline.
   protected openImportDialog() {
-    void this.router.navigate(['/imports/new']);
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
   }
 
   protected routeToHouseholds() {

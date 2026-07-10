@@ -4,23 +4,35 @@ export const DATA_ARTICLES: HelpArticle[] = [
   {
     id: 'import',
     category: 'data',
-    title: 'Import people from CSV',
+    title: 'Import from CSV',
     summary:
-      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
-    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
+      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps — matched, tagged, and deduplicated.',
+    keywords: [
+      'import',
+      'csv',
+      'spreadsheet',
+      'upload data',
+      'migrate',
+      'bulk add',
+      'excel',
+      'wizard',
+      'companies',
+      'households',
+      'tasks',
+    ],
     related: ['duplicates', 'export', 'tags-issues', 'add-people'],
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People grid toolbar (under the Import/export icon) — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
         kind: 'list',
         items: [
           'Use a CSV with a header row — column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
-          'A **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
-          'This wizard imports people (with their companies and households). Standalone company and task files still use their own grid-toolbar importer.',
+          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
+          'For companies and tasks the wizard needs a mapped **name** column — rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
           'Both UTF-8 and Excel-exported CSVs work as-is.',
         ],
       },
@@ -40,12 +52,12 @@ export const DATA_ARTICLES: HelpArticle[] = [
           {
             title: 'Review',
             detail:
-              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
+              'For people, duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
           },
           {
             title: 'Import',
             detail:
-              'Confirm the recap and click **Import N people**. The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
+              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
           },
         ],
       },
@@ -55,7 +67,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
         items: [
           'Spot-check a few records against the source file.',
           'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
-          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
+          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
         ],
       },
       {

@@ -1,7 +1,7 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CompaniesGrid } from './companies-grid';
 import { CompaniesService } from '../services/companies-service';
@@ -73,45 +73,12 @@ describe('CompaniesGrid', () => {
     expect(peopleCol?.valueFormatter?.({ data: {} } as any)).toBe('0 people');
   });
 
-  it('should map known CSV headers to company fields via autoMapHeader', () => {
-    expect(component['autoMapHeader']('Company Name')).toBe('name');
-    expect(component['autoMapHeader']('Website')).toBe('website');
-    expect(component['autoMapHeader']('Tel')).toBe('phone');
-    expect(component['autoMapHeader']('Unknown Column')).toBe('');
-  });
+  it('should send Import CSV to the shared wizard preselecting companies', () => {
+    const router = TestBed.inject(Router);
+    const navSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
-  it('should open the import dialog and reset the summary', () => {
-    component['importSummary'].set({ inserted: 1, errors: 0, skipped: 0, failed: false });
-    component['openImportDialog']();
+    component['openImportWizard']();
 
-    expect(component['importerOpen']()).toBe(true);
-    expect(component['importSummary']()).toBeNull();
-  });
-
-  it('should queue an import and refresh the grid on success', async () => {
-    mockCompaniesSvc.import.mockResolvedValue({ skipped: 2, file_name: 'companies.csv' });
-    const refreshSpy = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(component, 'grid', {
-      value: () => ({ refresh: refreshSpy }),
-      configurable: true,
-    });
-
-    await component['onImportSubmit']({ rows: [{ name: 'Acme' }], skipped: 2, fileName: 'companies.csv' });
-
-    expect(mockCompaniesSvc.import).toHaveBeenCalledWith([{ name: 'Acme' }], 2, 'companies.csv');
-    expect(component['importSummary']()).toEqual(expect.objectContaining({ skipped: 2, queued: true, failed: false }));
-    expect(component['importerOpen']()).toBe(false);
-    expect(refreshSpy).toHaveBeenCalled();
-  });
-
-  it('should surface an error summary when the import fails', async () => {
-    mockCompaniesSvc.import.mockRejectedValue(new Error('Import service unavailable'));
-
-    await component['onImportSubmit']({ rows: [], skipped: 0, fileName: 'bad.csv' });
-
-    expect(component['importSummary']()).toEqual(
-      expect.objectContaining({ failed: true, message: 'Import service unavailable' }),
-    );
-    expect(component['importerOpen']()).toBe(false);
+    expect(navSpy).toHaveBeenCalledWith(['/imports/new'], { queryParams: { type: 'companies' } });
   });
 });

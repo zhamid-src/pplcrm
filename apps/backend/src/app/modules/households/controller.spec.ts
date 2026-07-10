@@ -97,6 +97,7 @@ async function cleanTenant(db: any, tenantId: string) {
     .execute();
 
   await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('data_imports').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
@@ -304,5 +305,71 @@ describe('HouseholdsController', () => {
 
     const lastRun = await controller.getLastFingerprintRecomputation(tenantId);
     expect(lastRun.lastRunAt).not.toBeNull();
+  });
+
+  it('should import CSV rows, deduping by address and applying the batch tags', async () => {
+    const existing = (await controller.addHousehold(
+      { street_num: '12', street1: 'Oak St', city: 'Springfield', state: 'IL', zip: '62701' },
+      auth,
+    )) as { id: string };
+
+    const importRow = await db
+      .insertInto('data_imports')
+      .values({
+        tenant_id: tenantId,
+        createdby_id: userId,
+        updatedby_id: userId,
+        file_name: 'doors.csv',
+        source: 'households',
+        row_count: 4,
+        status: 'processing',
+        processed_at: new Date(),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const importId = String(importRow.id);
+
+    const result = await controller.processImportRows(importId, tenantId, userId, campaignId, ['yard-sign'], 0, [
+      // Duplicate of the household the tenant already has — skipped.
+      { street_num: '12', street1: 'Oak St', city: 'Springfield', state: 'IL', zip: '62701' },
+      { street_num: '34', street1: 'Elm St', city: 'Springfield', state: 'IL', zip: '62701' },
+      // Repeated within the file — skipped.
+      { street_num: '34', street1: 'Elm St', city: 'Springfield', state: 'IL', zip: '62701' },
+      // Blank row — skipped.
+      { street_num: '', street1: '' },
+    ]);
+
+    expect(result.inserted).toBe(1);
+    expect(result.skipped).toBe(3);
+    expect(result.errors).toBe(0);
+
+    const created = await db
+      .selectFrom('households')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('file_id', '=', importId)
+      .execute();
+    expect(created).toHaveLength(1);
+    expect(String(created[0].id)).not.toBe(String(existing.id));
+    expect(created[0].address_fp_full).not.toBeNull();
+    expect(created[0].slug).not.toBeNull();
+
+    // The batch tag landed on the created household.
+    const tags = await controller.getTags(String(created[0].id), auth, 'tag');
+    expect(tags.map((t) => t.name)).toContain('yard-sign');
+
+    // A geocoding job was queued for the new address (transactional outbox).
+    const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
+    const geocodeJobs = jobs.filter((j: any) => {
+      const payload = typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload;
+      return payload.type === 'geocode_household' && String(payload.household_id) === String(created[0].id);
+    });
+    expect(geocodeJobs).toHaveLength(1);
+
+    // The history row's counters were kept current.
+    const history = await db.selectFrom('data_imports').selectAll().where('id', '=', importId).executeTakeFirst();
+    expect(history.inserted_count).toBe(1);
+    expect(history.skipped_count).toBe(3);
+    expect(history.households_created).toBe(1);
   });
 });

@@ -189,6 +189,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       }>;
       skipped?: number;
       file_name?: string | null;
+      source_csv?: string | null;
     },
     auth: IAuthKeyPayload,
   ) {
@@ -242,11 +243,30 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       });
     }
 
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
     await this.importsRepo.update({
       tenant_id: auth.tenant_id,
       id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
       } as any,
     });
 

@@ -17,6 +17,34 @@ export const HouseholdsRouter = router({
 
   add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
 
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            street_num: z.string().trim().max(50).optional().nullable(),
+            apt: z.string().trim().max(50).optional().nullable(),
+            street1: z.string().trim().max(200).optional().nullable(),
+            street2: z.string().trim().max(200).optional().nullable(),
+            city: z.string().trim().max(100).optional().nullable(),
+            state: z.string().trim().max(100).optional().nullable(),
+            zip: z.string().trim().max(20).optional().nullable(),
+            country: z.string().trim().max(100).optional().nullable(),
+            home_phone: z.string().trim().max(50).optional().nullable(),
+            notes: z.string().trim().max(10000).optional().nullable(),
+          }),
+        ),
+        tags: z.array(z.string().trim().min(1).max(50)).optional(),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return households.importRows(input, ctx.auth);
+    }),
+
   deleteMany: authProcedure
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),

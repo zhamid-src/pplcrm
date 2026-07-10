@@ -2,10 +2,8 @@
   <!-- Where am I? / Where was I? -->
   <div class="mb-6">
     <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
-    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
-    <p class="text-sm text-base-content/60 mt-1">
-      Headers in the first row · duplicates are matched by email · nothing is written until the last step
-    </p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import {{ config().noun }} from CSV</h1>
+    <p class="text-sm text-base-content/60 mt-1">{{ config().subtitle }}</p>
   </div>
 
   <!-- Step indicator -->
@@ -24,53 +22,87 @@
 
   <!-- ============ UPLOAD ============ -->
   @if (step() === 'upload') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @if (!fileName()) {
-      <div
-        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
-        [class.border-primary]="dragOver()"
-        [class.bg-primary/5]="dragOver()"
-        [class.border-base-300]="!dragOver()"
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave()"
-        (drop)="onDrop($event)"
-      >
-        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
-        <label class="btn btn-primary gap-2 cursor-pointer">
-          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-          Drop a CSV here, or click to browse
-          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
-        </label>
-        @if (parsing()) {
-        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
-          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
-          Reading and parsing the file…
-        </p>
+  <div class="flex flex-col gap-4">
+    <!-- What are you importing? -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">What are you importing?</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          @for (t of entityTypes; track t) {
+          <button
+            type="button"
+            class="rounded-lg border p-3 text-left transition-colors duration-150 cursor-pointer flex flex-col gap-1.5"
+            [class.border-primary]="entity() === t"
+            [class.bg-primary/5]="entity() === t"
+            [class.border-base-300]="entity() !== t"
+            (click)="setEntity(t)"
+          >
+            <span class="flex items-center gap-2">
+              <pc-icon [name]="configs[t].icon" class="text-primary" [size]="5"></pc-icon>
+              <span class="text-sm font-medium text-base-content">{{ configs[t].label }}</span>
+              @if (entity() === t) {
+              <pc-icon name="check-circle" class="text-primary ml-auto" [size]="4"></pc-icon>
+              }
+            </span>
+            <span class="text-xs text-base-content/60">{{ configs[t].description }}</span>
+          </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        @if (!fileName()) {
+        <div
+          class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
+          [class.border-primary]="dragOver()"
+          [class.bg-primary/5]="dragOver()"
+          [class.border-base-300]="!dragOver()"
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave()"
+          (drop)="onDrop($event)"
+        >
+          <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
+          <label class="btn btn-primary gap-2 cursor-pointer">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Drop a CSV here, or click to browse
+            <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
+          </label>
+          @if (parsing()) {
+          <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
+            <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
+            Reading and parsing the file…
+          </p>
+          }
+        </div>
+        <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
+          <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
+          @if (config().supportsEmailReview) {
+          <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
+          } @if (config().reviewNote) {
+          <li>{{ config().reviewNote }}</li>
+          }
+          <li>UTF-8 and Excel both work.</li>
+        </ul>
+        } @else {
+        <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
+            <span class="font-mono text-sm text-base-content truncate">
+              {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
+            </span>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
+        </div>
+        <div class="flex justify-end">
+          <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
+            Continue to column mapping
+            <pc-icon name="chevron-right" [size]="4"></pc-icon>
+          </button>
+        </div>
         }
       </div>
-      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
-        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
-        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
-        <li>UTF-8 and Excel both work.</li>
-      </ul>
-      } @else {
-      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
-        <div class="flex items-center gap-3 min-w-0">
-          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
-          <span class="font-mono text-sm text-base-content truncate">
-            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
-          </span>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
-      </div>
-      <div class="flex justify-end">
-        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
-          Continue to column mapping
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-      }
     </div>
   </div>
   }
@@ -101,8 +133,10 @@
                    value is assigned before the @for options exist in the DOM, so an
                    auto-mapped field would otherwise render as unselected. -->
               <option value="" [selected]="!mapping()[idx]">— Skip this column —</option>
-              @for (field of mappableFields; track field) {
-              <option [value]="field" [selected]="mapping()[idx] === field">{{ fieldLabels[field] ?? field }}</option>
+              @for (field of config().mappableFields; track field) {
+              <option [value]="field" [selected]="mapping()[idx] === field">
+                {{ config().fieldLabels[field] ?? field }}
+              </option>
               }
             </select>
             @if (!mapping()[idx]) {
@@ -113,17 +147,21 @@
         }
       </div>
 
+      @if (mappedColumnCount() > 0 && missingRequiredFields().length > 0) {
+      <div class="alert bg-warning/10 border border-warning/30 gap-2 text-sm text-base-content">
+        <pc-icon name="exclamation-triangle" class="text-warning" [size]="5"></pc-icon>
+        <span
+          >Map a column to {{ missingRequiredFieldLabels() }} to continue — rows without one can't be imported.</span
+        >
+      </div>
+      }
+
       <div class="flex justify-between">
         <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
           <pc-icon name="chevron-left" [size]="4"></pc-icon>
           Back
         </button>
-        <button
-          type="button"
-          class="btn btn-primary gap-2"
-          [disabled]="mappedColumnCount() === 0"
-          (click)="goToReview()"
-        >
+        <button type="button" class="btn btn-primary gap-2" [disabled]="!canContinueToReview()" (click)="goToReview()">
           Continue to review
           <pc-icon name="chevron-right" [size]="4"></pc-icon>
         </button>
@@ -142,7 +180,26 @@
         <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
       </div>
     </div>
-    } @else { @if (reviewIsClean()) {
+    } @else {
+    <!-- What will happen, in numbers -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-2">
+        <p class="text-sm text-base-content">
+          <span class="font-medium">{{ finalRowCount() }}</span> of {{ rowCount() }} rows will be imported as {{
+          config().noun }}
+        </p>
+        @if (missingRequiredRowCount() > 0) {
+        <p class="text-xs text-base-content/60">
+          {{ missingRequiredRowCount() }} rows are missing {{ missingRequiredFieldLabels() || 'a required field' }} and
+          will be skipped
+        </p>
+        } @if (config().reviewNote) {
+        <p class="text-xs text-base-content/60">{{ config().reviewNote }}</p>
+        }
+      </div>
+    </div>
+
+    @if (config().supportsEmailReview) { @if (reviewIsClean()) {
     <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
       <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
       <span>No duplicate emails and no email problems found in this file.</span>
@@ -262,12 +319,15 @@
         </div>
       </div>
     </div>
-    }
+    } }
 
+    <!-- Tags / list options -->
+    @if (config().supportsTags || config().supportsList) {
     <div class="card bg-base-100 border border-base-300 shadow-xl">
       <div class="card-body gap-4">
+        @if (config().supportsTags) {
         <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
+          <span class="text-sm font-medium text-base-content">Tag everything in this import (optional)</span>
           <input
             type="text"
             class="input input-bordered"
@@ -276,6 +336,7 @@
             (input)="tagsText.set($any($event.target).value)"
           />
         </label>
+        } @if (config().supportsList) {
         <label class="form-control gap-1">
           <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
           <input
@@ -292,8 +353,10 @@
             }
           </datalist>
         </label>
+        }
       </div>
     </div>
+    }
 
     <div class="flex justify-between">
       <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
@@ -319,15 +382,19 @@
           {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
         </p>
         <ul class="list-disc list-inside text-base-content/70 space-y-1">
+          <li>Importing as {{ config().noun }}</li>
+          @if (config().supportsEmailReview) {
           <li>
             Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
             'skip duplicate rows' : 'import as new anyway' }}
           </li>
           @if (badEmailRows().length > 0) {
           <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
-          } @if (parsedTags().length > 0) {
+          } } @if (missingRequiredRowCount() > 0) {
+          <li>{{ missingRequiredRowCount() }} rows missing {{ missingRequiredFieldLabels() }} will be skipped</li>
+          } @if (parsedTags().length > 0 && config().supportsTags) {
           <li>Tags: {{ parsedTags().join(', ') }}</li>
-          } @if (listName().trim()) {
+          } @if (listName().trim() && config().supportsList) {
           <li>Added to list: {{ listName().trim() }}</li>
           }
         </ul>
@@ -343,14 +410,14 @@
         </button>
         <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
           <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-          Import {{ finalRowCount() }} people
+          Import {{ finalRowCount() }} {{ config().noun }}
         </button>
       </div>
       } @case ('running') {
       <div class="flex flex-col items-center gap-3 py-10">
         <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
         <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
-        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
+        <p class="text-sm text-base-content/60">{{ runningHint() }}</p>
         <p class="text-sm text-base-content/60">
           You can leave this page — the import keeps running in the background and its result lands in import history.
         </p>
@@ -363,7 +430,7 @@
       <div class="flex flex-col gap-4">
         <div class="flex items-center gap-3">
           <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
-          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
+          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} {{ config().noun }}</h2>
         </div>
         <ul class="text-sm text-base-content/70 space-y-1">
           <li>{{ r.inserted }} imported</li>
@@ -378,11 +445,11 @@
           }
         </ul>
         <div class="flex flex-wrap gap-2 mt-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
-            <pc-icon name="user-group" [size]="4"></pc-icon>
-            View imported people
+          <button type="button" class="btn btn-primary gap-2" (click)="viewImported()">
+            <pc-icon [name]="config().icon" [size]="4"></pc-icon>
+            View imported {{ config().noun }}
           </button>
-          <button type="button" class="btn btn-outline btn-warning gap-2" (click)="startOver()">
+          <button type="button" class="btn btn-outline btn-secondary gap-2" (click)="startOver()">
             <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
             Import another file
           </button>
