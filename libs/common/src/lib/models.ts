@@ -22,6 +22,12 @@ import type {
   EmailObj,
   MarketingEmailObj,
   marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
   EmailDraftObj,
   PersonsObj,
   SettingsEntryObj,
@@ -101,6 +107,18 @@ export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
 export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
 
 export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
 
 export type EmailDraftType = z.infer<typeof EmailDraftObj>;
 

@@ -85,20 +85,31 @@ describe('NewslettersRouter', () => {
     expect(result).toEqual(mockUpdated);
   });
 
-  it('should call getEngagementStats with tenant_id and id', async () => {
-    const mockStats = { activities: [], timeline: [] };
-    const spy = vi.spyOn(NewslettersController.prototype, 'getEngagementStats').mockResolvedValue(mockStats as any);
+  it('should call getReport with tenant_id and id', async () => {
+    const mockReport = { timeline: [], bounces: { total: 0, hard: 0, soft: 0, dropped: 0, rows: [] } };
+    const spy = vi.spyOn(NewslettersController.prototype, 'getReport').mockResolvedValue(mockReport as any);
 
     const caller = NewslettersRouter.createCaller({ auth } as any);
-    const result = await caller.getEngagementStats('3');
+    const result = await caller.getReport('3');
 
     expect(spy).toHaveBeenCalledWith('1', '3');
-    expect(result).toEqual(mockStats);
+    expect(result).toEqual(mockReport);
   });
 
-  it('should reject getEngagementStats with a non-numeric id', async () => {
+  it('should reject getReport with a non-numeric id', async () => {
     const caller = NewslettersRouter.createCaller({ auth } as any);
-    await expect(caller.getEngagementStats('bad-id')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(caller.getReport('bad-id')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('should call createClickersList with the auth payload and id', async () => {
+    const mockList = { id: '7', name: 'Clicked · Spring Update', members: 12 };
+    const spy = vi.spyOn(NewslettersController.prototype, 'createClickersList').mockResolvedValue(mockList as any);
+
+    const caller = NewslettersRouter.createCaller({ auth } as any);
+    const result = await caller.createClickersList('3');
+
+    expect(spy).toHaveBeenCalledWith(auth, '3');
+    expect(result).toEqual(mockList);
   });
 
   it('should call sendNewsletter on send', async () => {

@@ -12,7 +12,8 @@ describe('NewslettersService', () => {
         count: { query: vi.fn() },
         getAllWithCounts: { query: vi.fn() },
         getById: { query: vi.fn() },
-        getEngagementStats: { query: vi.fn() },
+        getReport: { query: vi.fn() },
+        createClickersList: { mutate: vi.fn() },
         update: { mutate: vi.fn() },
         send: { mutate: vi.fn() },
         exportCsv: { mutate: vi.fn() },
@@ -126,14 +127,24 @@ describe('NewslettersService', () => {
     expect(result).toBeNull();
   });
 
-  it('should get engagement stats for a newsletter', async () => {
-    const stats = { activities: [], timeline: [] };
-    mockApi.newsletters.getEngagementStats.query.mockResolvedValue(stats);
+  it('should get the report for a newsletter', async () => {
+    const report = { timeline: [], bounces: { total: 0, hard: 0, soft: 0, dropped: 0, rows: [] } };
+    mockApi.newsletters.getReport.query.mockResolvedValue(report);
 
-    const result = await service.getEngagementStats('1');
+    const result = await service.getReport('1');
 
-    expect(mockApi.newsletters.getEngagementStats.query).toHaveBeenCalledWith('1');
-    expect(result).toEqual(stats);
+    expect(mockApi.newsletters.getReport.query).toHaveBeenCalledWith('1');
+    expect(result).toEqual(report);
+  });
+
+  it('should create a clickers list for a newsletter', async () => {
+    const created = { id: '7', name: 'Clicked · Spring Update', members: 12 };
+    mockApi.newsletters.createClickersList.mutate.mockResolvedValue(created);
+
+    const result = await service.createClickersList('1');
+
+    expect(mockApi.newsletters.createClickersList.mutate).toHaveBeenCalledWith('1');
+    expect(result).toEqual(created);
   });
 
   it('should always resolve getTags with an empty array', async () => {
