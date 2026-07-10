@@ -34,6 +34,8 @@ import { FormActions } from '../form-actions/form-actions';
                   >{{ statusChip() }}</span
                 >
               }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
             </div>
             @if (dirtyFieldCount() > 0) {
               <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">

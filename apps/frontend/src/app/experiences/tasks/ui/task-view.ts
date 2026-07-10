@@ -1,5 +1,15 @@
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import {
+  Component,
+  CUSTOM_ELEMENTS_SCHEMA,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
@@ -11,6 +21,9 @@ import { QuillModule } from 'ngx-quill';
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { Icon } from '@icons/icon';
 import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
@@ -28,6 +41,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     DatePipe,
     DecimalPipe,
     SlicePipe,
+    DetailLayout,
     FormsModule,
     RouterModule,
     QuillModule,
@@ -63,11 +77,24 @@ export class TaskView {
   protected readonly teamsList = signal<any[]>([]);
   protected readonly teamId = signal<string>('');
 
+  /** "N of M filtered" pager + J/K keys when the grid handed off a filtered set. */
+  protected readonly recordNav = injectRecordNavigation('task', this.id);
+
+  /** Entity noun while loading; the record's real name once loaded. */
+  protected readonly pageTitle = computed(() => {
+    const task = this.task();
+    if (!task) return 'Task';
+    return task.name || '(No name)';
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Tasks', route: '/tasks' },
+    { label: this.pageTitle() },
+  ]);
+
   // Form Fields & Inline Editing State
-  protected isEditingName = signal(false);
   protected isEditingDetails = signal(false);
   protected isEditingDueDate = signal(false);
-  protected tempName = signal('');
   protected tempDetails = signal('');
   protected readonly defaultDetails =
     '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
@@ -187,24 +214,18 @@ export class TaskView {
     void this.update({ team_id: val || null });
   }
 
-  // Inline name editing trigger & save
-  protected startEditingName() {
-    this.tempName.set(this.task()?.name || '');
-    this.isEditingName.set(true);
-  }
-
-  protected async saveName() {
-    const nextName = this.tempName().trim();
-    if (!nextName) {
-      this.isEditingName.set(false);
-      return;
-    }
+  /** Rename via prompt dialog — the header owns the title, so there is no in-body name field. */
+  protected async renameTask() {
+    const name = await this.dialogs.prompt({
+      title: 'Rename task',
+      message: 'Enter a new name for this task.',
+      defaultValue: this.task()?.name || '',
+      inputPlaceholder: 'Task name',
+      confirmText: 'Rename',
+    });
+    const nextName = name?.trim();
+    if (!nextName || nextName === this.task()?.name) return;
     await this.update({ name: nextName });
-    this.isEditingName.set(false);
-  }
-
-  protected cancelEditingName() {
-    this.isEditingName.set(false);
   }
 
   // Inline details (Quill description) editing trigger & save

@@ -27,6 +27,10 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
       },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record — subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
       { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
       {
         kind: 'list',

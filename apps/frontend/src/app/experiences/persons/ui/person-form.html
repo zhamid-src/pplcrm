@@ -1,7 +1,6 @@
 <!-- Template for person edit/add view -->
 <div class="flex min-h-full flex-col bg-base-200/50 p-6">
   <div class="w-full max-w-7xl">
-    <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
       [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
@@ -265,17 +264,6 @@
         }
       </div>
     </div>
-
-    <!-- Back to the person record -->
-    @if (person()?.id) {
-    <a
-      [routerLink]="['/people', person()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ formName() || 'person' }}
-    </a>
-    }
   </div>
 
   <!-- Right-side drawer: Assign to a different household -->
