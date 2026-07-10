@@ -358,7 +358,7 @@
   >
     <table #gridTable class="table w-full">
       <thead>
-        <tr class="bg-base-100 text-sm">
+        <tr class="bg-base-100 text-xs">
           @if (enableSelection()) {
           <th
             class="pl-2 selection-col"
@@ -374,10 +374,11 @@
               (change)="onHeaderCheckbox($any($event.target).checked)"
             />
           </th>
-          } @for (h of leafHeaders(); track h.id) {
+          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
           <th
             role="columnheader"
-            class="cursor-grab pl-2 relative text-xs uppercase font-medium"
+            class="group cursor-grab pl-2 relative text-xs uppercase font-medium"
+            [class.pl-4]="hIdx === 0 && !enableSelection()"
             [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
@@ -396,9 +397,10 @@
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
                 <label
                   tabindex="0"
-                  class="btn btn-xs"
+                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                   [class.btn-ghost]="!isColFiltered(h.column.id)"
                   [class.btn-primary]="isColFiltered(h.column.id)"
+                  [class.!opacity-100]="isColFiltered(h.column.id)"
                   title="Column options"
                   i18n-title="@@datagrid.columns.optionsTitle"
                 >
@@ -536,7 +538,7 @@
           }
         </tr>
       </thead>
-      <tbody class="bg-base-100 text-sm">
+      <tbody class="bg-base-100 text-xs">
         @if (hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
@@ -626,9 +628,9 @@
               }
             </div>
           </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
+          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
+          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
+          && ec.id === toId(r.original) && ec.field === col.field;
           <td
             [pcEditable]="editableCfg(r.original, col)"
             [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
@@ -645,6 +647,7 @@
             [class.overflow-visible]="isTagColumn(col) && isEditing"
             [class]="cellClassFor(col, r.original)"
             class="min-w-0 px-2 relative"
+            [class.pl-4]="cellIdx === 0 && !enableSelection()"
             [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
