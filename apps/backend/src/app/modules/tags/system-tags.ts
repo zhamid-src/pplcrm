@@ -7,7 +7,7 @@
  * derived from the donations table. All were retired as tags by the
  * 2026-07-14/15/16 migrations.
  */
-export const SYSTEM_TAG_NAMES = ['volunteer', 'staff', 'vip'] as const;
+export const SYSTEM_TAG_NAMES = ['volunteer', 'staff'] as const;
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -26,7 +26,6 @@ export function isSystemTag(name: string) {
 const SYSTEM_TAG_COLOURS: Record<string, string> = {
   volunteer: '#0ea5e9',
   staff: '#2563eb',
-  vip: '#facc15',
 };
 
 export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({

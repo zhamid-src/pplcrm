@@ -36,6 +36,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/tasks/board',
   '/board',
   '/workspace/storage',
+  '/workspace/billing',
   '/imports',
   '/imports/new',
   '/exports',

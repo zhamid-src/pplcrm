@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
+import { assertNotDemoMode } from '../demo/demo-guard';
 
 let _oauthSvc: GoogleOAuthService | null = null;
 let _syncSvc: GoogleSyncService | null = null;
@@ -32,6 +33,8 @@ function getAuthUrl() {
   return authProcedure
     .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
     .query(async ({ ctx, input }) => {
+      // Mailbox sync is configuration — locked during the demo test drive.
+      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
       const { oauthSvc } = getServices();
       const state = encodeOAuthState({
         userId: ctx.auth.user_id,

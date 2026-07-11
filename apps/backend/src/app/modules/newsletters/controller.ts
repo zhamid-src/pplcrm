@@ -20,6 +20,7 @@ import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { ListsController } from '../lists/controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
@@ -342,6 +343,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    // Sending is locked during the demo test drive (no plan yet, no sender identity).
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const newsletter = (await this.getOneById({ tenant_id, id })) as any;
     if (!newsletter) {
       throw new NotFoundError('Newsletter not found');
@@ -397,6 +400,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const db = this.getRepo().db;
 
     // Resolve sender the same way the real newsletter send does: prefer the caller-supplied

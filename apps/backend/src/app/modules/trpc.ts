@@ -32,6 +32,7 @@ import { DuplicatesRouter } from './duplicates/trpc.router';
 import { CampaignsRouter } from './campaigns/trpc.router';
 import { CanvassingRouter } from './canvassing/trpc.router';
 import { DeliveriesRouter } from './deliveries/trpc.router';
+import { DemoRouter } from './demo/trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
 
@@ -70,6 +71,7 @@ export const trpcRouter = router({
   campaigns: CampaignsRouter,
   canvassing: CanvassingRouter,
   deliveries: DeliveriesRouter,
+  demo: DemoRouter,
 });
 
 // Re-export individual routers for convenience.

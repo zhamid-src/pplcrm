@@ -44,6 +44,9 @@ async function cleanup(db: any, user_id: any, tenant_id: any) {
 
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('companies').where('tenant_id', '=', tenant_id).execute();
+  // Demo seed data (signUp): inbox emails reference campaigns; children cascade.
+  await db.deleteFrom('emails').where('tenant_id', '=', tenant_id).execute();
 
   const tenantUserIds = db.selectFrom('authusers').select('id').where('tenant_id', '=', tenant_id);
 
@@ -300,10 +303,12 @@ describe('AuthController Integration', () => {
     expect(campaign?.admin_id).toBe(user.id);
     expect(campaign?.createdby_id).toBe(user.id);
 
-    // 2. Verify settings were created
+    // 2. Verify settings were created (current_campaign, notifications, and the
+    // demo-seed manifest written by the demo-mode seeder)
     const settings = await db.selectFrom('settings').selectAll().where('tenant_id', '=', user.tenant_id).execute();
 
-    expect(settings).toHaveLength(2);
+    expect(settings).toHaveLength(3);
+    expect(settings.some((s) => s.key === 'demo_seed_manifest')).toBe(true);
 
     const currentCampaignSetting = settings.find((s) => s.key === 'current_campaign');
     expect(currentCampaignSetting).toBeDefined();

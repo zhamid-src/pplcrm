@@ -375,7 +375,9 @@ apps/
           summary/
             services/
               dashboard.service.ts
+              demo.service.ts
               getting-started.service.ts
+            demo-mode-card.ts
             getting-started-card.ts
             sla-details.html
             sla-details.ts
@@ -13298,6 +13300,21 @@ export class DashboardService extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/summary/services/demo.service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from '../../../services/api/trpc-service';
+
+@Service()
+export class DemoService extends TRPCService<any> {
+  /** Deletes all seeded demo data (starter forms are kept) and clears the tenant's demo flag. */
+  public exitDemo() {
+    return this.api.demo.exit.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
 
 ```typescript
@@ -13417,6 +13434,109 @@ export class GettingStartedService {
       return localStorage.getItem(DISMISS_KEY) === '1';
     } catch {
       return false;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
+
+```typescript
+import { Component, computed, inject, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { ConfirmDialogService } from '../../services/shared-dialog.service';
+import { DemoService } from './services/demo.service';
+
+/**
+ * Demo-mode callout on the dashboard: explains what was seeded and hosts the
+ * one place to exit demo mode. Demo mode is the pre-plan test drive — the
+ * backend refuses to exit until the tenant has an active subscription, and it
+ * blocks outward-facing configuration (senders, domains, mailbox sync,
+ * newsletter sending) while the flag is set. Exiting deletes the seeded data
+ * (the six draft forms, the built-in tags, and anything the user created are
+ * kept) and refreshes the session so the shell banner disappears immediately.
+ */
+@Component({
+  selector: 'pc-demo-mode-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-info/40 bg-info/5 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-info">
+            <pc-icon name="information-circle" [size]="4"></pc-icon>
+            Demo mode
+          </div>
+
+          <p class="text-sm text-base-content/80">
+            You’re exploring PeopleCRM with realistic sample data — people and households across Ottawa, companies,
+            tags, issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a
+            full report. Everything here is safe to open, edit, and delete.
+          </p>
+          <p class="text-sm text-base-content/60">
+            Sending email and workspace configuration (sender identities, domains, mailbox sync) stay locked during the
+            demo. When you’re ready, choose a plan, then exit demo mode — your six draft forms, the built-in tags, and
+            anything you created yourself will be kept.
+          </p>
+
+          <div class="card-actions items-center gap-3">
+            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
+            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
+              @if (loading()) {
+                <span class="loading loading-spinner loading-xs"></span>
+              }
+              Exit demo mode
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+})
+export class DemoModeCard {
+  private readonly auth = inject(AuthService);
+  private readonly demoSvc = inject(DemoService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+
+  private readonly user = this.auth.getUserSignal();
+
+  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly loading = this._loading.visible;
+
+  /** Fires after the demo data is gone so the dashboard can reload its stats. */
+  public readonly exited = output<void>();
+
+  protected async exitDemo(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove all demo data?',
+      message:
+        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
+        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
+        'yourself will be kept.',
+      variant: 'danger',
+      confirmText: 'Remove demo data',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.demoSvc.exitDemo();
+      await this.auth.getCurrentUser();
+      this.alerts.showSuccess('Demo data removed — your workspace is ready for real contacts.');
+      this.exited.emit();
+    } catch (err) {
+      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
+      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
+    } finally {
+      end();
     }
   }
 }
@@ -15924,6 +16044,18 @@ export class CommandPalette {
         <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
       </div>
       <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
+    </div>
+    } @if (isDemo()) {
+    <div
+      class="alert alert-info border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon name="information-circle" [size]="5"></pc-icon>
+        <span>You’re exploring <strong>demo data</strong> — everything is safe to change or delete.</span>
+      </div>
+      <a routerLink="/dashboard" class="underline transition-colors text-xs font-semibold whitespace-nowrap"
+        >Exit from the dashboard</a
+      >
     </div>
     }
     <pc-alerts></pc-alerts>
@@ -33579,6 +33711,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { SlaDetails } from './sla-details';
 import { GettingStartedCard } from './getting-started-card';
+import { DemoModeCard } from './demo-mode-card';
 import { AuthService } from '../../auth/auth-service';
 
 interface UpcomingEvent {
@@ -33596,7 +33729,7 @@ interface DraftNewsletter {
 }
 
 @Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, RouterLink],
+  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })
@@ -36284,6 +36417,7 @@ export class Dashboard {
 
   protected readonly userSignal = this.auth.getUserSignal();
   protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
+  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
 
   constructor() {
     // Route-driven default breadcrumbs for every page the shell hosts.
@@ -37407,6 +37541,133 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     exportEntity: '',
   },
 };
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
+
+```typescript
+import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-grid-tool-btn',
+  template: `
+    <li
+      [class.tooltip-left]="placement() === 'left'"
+      [class.tooltip-right]="placement() === 'right'"
+      [class.tooltip-top]="placement() === 'top'"
+      [class.tooltip-bottom]="placement() === 'bottom'"
+      [class.hidden]="hidden()"
+      [class.disabled]="!enabled() || spinning()"
+      [class.cursor-not-allowed]="!enabled() || spinning()"
+      [class.text-neutral-400]="!enabled() || spinning()"
+      [class.opacity-50]="spinning()"
+      class="tooltip tooltip-accent "
+      [class.text-primary]="active()"
+      [attr.data-tip]="tip()"
+      (click)="onLiClick($event)"
+    >
+      @if (hasDropdown()) {
+        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
+          <summary
+            class="list-none cursor-pointer"
+            [class.pc-no-caret]="hideCaret()"
+            [class.touch-target]="touch()"
+            (click)="onSummaryClick($event)"
+          >
+            <div class="flex h-full items-center justify-center ">
+              <a role="button" class="relative pointer-events-none ">
+                <pc-icon
+                  [name]="icon()"
+                  [size]="4"
+                  class="group-hover:text-primary"
+                  [class]="spinning() ? 'animate-spin' : ''"
+                ></pc-icon>
+                @if (badge() && badge()! > 0) {
+                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
+                    {{ badge() }}
+                  </span>
+                }
+              </a>
+            </div>
+          </summary>
+          <ng-content></ng-content>
+        </details>
+      } @else {
+        <a class="flex items-center justify-center" [class.touch-target]="touch()"
+          ><pc-icon
+            [name]="icon()"
+            [size]="4"
+            class="group-hover:text-primary"
+            [class]="spinning() ? 'animate-spin' : ''"
+          ></pc-icon
+        ></a>
+      }
+    </li>
+  `,
+  imports: [Icon],
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
+         dropdown buttons that opt out via [hideCaret]. */
+      summary.pc-no-caret::after {
+        display: none;
+      }
+    `,
+  ],
+})
+export class GridActionComponent {
+  private readonly el = inject(ElementRef);
+
+  public readonly action = output<void>();
+
+  public enabled = input(true);
+  public hidden = input(false);
+  public active = input(false);
+  public spinning = input(false);
+  public icon = input.required<PcIconNameType>();
+  public tip = input.required<string>();
+  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
+  public hasDropdown = input(false);
+  public dropdownEnd = input(true);
+  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
+  public touch = input(false);
+  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
+  public hideCaret = input(false);
+  public badge = input<number | undefined>(undefined);
+
+  public emitClick() {
+    this.action.emit();
+  }
+
+  public onLiClick(_event: MouseEvent) {
+    if (this.hasDropdown()) {
+      return;
+    }
+    if (this.enabled() && !this.spinning()) {
+      this.emitClick();
+    }
+  }
+
+  public onSummaryClick(event: MouseEvent) {
+    if (!this.enabled() || this.spinning()) {
+      event.preventDefault();
+    }
+  }
+
+  @HostListener('document:click', ['$event'])
+  public onDocumentClick(event: MouseEvent) {
+    if (!this.hasDropdown()) return;
+    const detailsEl = this.el.nativeElement.querySelector('details');
+    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
+      detailsEl.removeAttribute('open');
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
@@ -46537,131 +46798,315 @@ type DeleteCtx = {
 </div>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
 
-```typescript
-import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.addRoute()"
+    [tip]="addLabel()"
+    [icon]="grid.plusIcon()"
+    (action)="onAdd()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canUndo()"
+    [tip]="'Undo'"
+    icon="arrow-uturn-left"
+    (action)="onUndo()"
+  />
+  <pc-grid-tool-btn
+    [touch]="true"
+    [enabled]="!!grid.canRedo()"
+    [tip]="'Redo'"
+    icon="arrow-uturn-right"
+    (action)="onRedo()"
+  />
 
-@Component({
-  selector: 'pc-grid-tool-btn',
-  template: `
-    <li
-      [class.tooltip-left]="placement() === 'left'"
-      [class.tooltip-right]="placement() === 'right'"
-      [class.tooltip-top]="placement() === 'top'"
-      [class.tooltip-bottom]="placement() === 'bottom'"
-      [class.hidden]="hidden()"
-      [class.disabled]="!enabled() || spinning()"
-      [class.cursor-not-allowed]="!enabled() || spinning()"
-      [class.text-neutral-400]="!enabled() || spinning()"
-      [class.opacity-50]="spinning()"
-      class="tooltip tooltip-accent "
-      [class.text-primary]="active()"
-      [attr.data-tip]="tip()"
-      (click)="onLiClick($event)"
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [touch]="true"
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
+         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
-      @if (hasDropdown()) {
-        <details class="dropdown group" [class.dropdown-end]="dropdownEnd()">
-          <summary
-            class="list-none cursor-pointer"
-            [class.pc-no-caret]="hideCaret()"
-            [class.touch-target]="touch()"
-            (click)="onSummaryClick($event)"
-          >
-            <div class="flex h-full items-center justify-center ">
-              <a role="button" class="relative pointer-events-none ">
-                <pc-icon
-                  [name]="icon()"
-                  [size]="4"
-                  class="group-hover:text-primary"
-                  [class]="spinning() ? 'animate-spin' : ''"
-                ></pc-icon>
-                @if (badge() && badge()! > 0) {
-                  <span class="badge badge-primary badge-xs absolute -top-0.5 -right-0.5 scale-75">
-                    {{ badge() }}
-                  </span>
-                }
-              </a>
-            </div>
-          </summary>
-          <ng-content></ng-content>
-        </details>
-      } @else {
-        <a class="flex items-center justify-center" [class.touch-target]="touch()"
-          ><pc-icon
-            [name]="icon()"
-            [size]="4"
-            class="group-hover:text-primary"
-            [class]="spinning() ? 'animate-spin' : ''"
-          ></pc-icon
-        ></a>
+      <!-- Grab handle — bottom-sheet affordance, touch only -->
+      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
+      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
+        Filters
+      </h3>
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
       }
-    </li>
-  `,
-  imports: [Icon],
-  styles: [
-    `
-      :host {
-        display: contents;
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onClone()">
+          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Clone</span>
+            @if (!grid.hasSingleSelection()) {
+            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
+          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
+          <span class="flex flex-col">
+            <span>Merge</span>
+            @if (grid.getCountRowSelected() !== 2) {
+            <span class="text-base-content/50 text-[11px]"
+              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+            >
+            }
+          </span>
+        </a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider divider-horizontal"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
       }
-      /* Suppress DaisyUI's .menu accordion caret (summary::after) on icon-only
-         dropdown buttons that opt out via [hideCaret]. */
-      summary.pc-no-caret::after {
-        display: none;
-      }
-    `,
-  ],
-})
-export class GridActionComponent {
-  private readonly el = inject(ElementRef);
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
 
-  public readonly action = output<void>();
+<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
+     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
+<div class="hidden lg:flex items-center gap-3 rounded-lg">
+  <ul
+    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
+  >
+    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+    <pc-grid-tool-btn
+      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+      [spinning]="grid.isRefreshing()"
+      [tip]="'Refresh the grid'"
+      icon="arrow-path"
+      (action)="onRefresh()"
+    />
+    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
-  public enabled = input(true);
-  public hidden = input(false);
-  public active = input(false);
-  public spinning = input(false);
-  public icon = input.required<PcIconNameType>();
-  public tip = input.required<string>();
-  public placement = input<'top' | 'bottom' | 'left' | 'right'>('bottom');
-  public hasDropdown = input(false);
-  public dropdownEnd = input(true);
-  /** Enlarge the tap surface to the 44×44px minimum touch target (mobile toolbar). */
-  public touch = input(false);
-  /** Hide the DaisyUI accordion caret for icon-only dropdown triggers. */
-  public hideCaret = input(false);
-  public badge = input<number | undefined>(undefined);
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
+    <pc-grid-tool-btn
+      icon="arrows-up-down-tray"
+      tip="Import / export"
+      [hasDropdown]="true"
+      [dropdownEnd]="true"
+      [hideCaret]="true"
+      [hidden]="grid.disableImport() && grid.disableExport()"
+    >
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
+      >
+        @if (!grid.disableImport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
+            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">Import from CSV…</span>
+              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
+            </span>
+          </a>
+        </li>
+        } @if (!grid.disableExport()) {
+        <li>
+          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
+            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </pc-grid-tool-btn>
 
-  public emitClick() {
-    this.action.emit();
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
+    <pc-grid-tool-btn
+      icon="funnel"
+      tip="Advanced Filters"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.anyFilterActive()"
+      [enabled]="!grid.hasActiveAdvancedFilters()"
+      (action)="onToggleFilters()"
+    />
+    <pc-grid-tool-btn
+      icon="adjustments-horizontal"
+      tip="Advanced Query Builder"
+      [hidden]="!grid.allowFilter()"
+      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+      (action)="grid.openAdvancedFilterBuilder()"
+    />
+
+    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
+
+    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+      <pc-dg-columns-dropdown [grid]="grid" />
+    </pc-grid-tool-btn>
+
+    <pc-grid-tool-btn
+      [icon]="grid.archiveIcon()"
+      [tip]="grid.archiveTip()"
+      [hidden]="!grid.showArchiveIcon()"
+      [active]="grid.archiveModeState()"
+      (action)="onToggleArchive()"
+    />
+  </ul>
+
+  <!-- + Add — a solid-primary button outside the group (spec §5). -->
+  @if (grid.addRoute()) {
+  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
+    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
+    <span>{{ addLabel() }}</span>
+  </button>
   }
-
-  public onLiClick(_event: MouseEvent) {
-    if (this.hasDropdown()) {
-      return;
-    }
-    if (this.enabled() && !this.spinning()) {
-      this.emitClick();
-    }
-  }
-
-  public onSummaryClick(event: MouseEvent) {
-    if (!this.enabled() || this.spinning()) {
-      event.preventDefault();
-    }
-  }
-
-  @HostListener('document:click', ['$event'])
-  public onDocumentClick(event: MouseEvent) {
-    if (!this.hasDropdown()) return;
-    const detailsEl = this.el.nativeElement.querySelector('details');
-    if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
-      detailsEl.removeAttribute('open');
-    }
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
@@ -54767,317 +55212,6 @@ export class FetchController {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30 gap-0.5">
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.addRoute()"
-    [tip]="addLabel()"
-    [icon]="grid.plusIcon()"
-    (action)="onAdd()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canUndo()"
-    [tip]="'Undo'"
-    icon="arrow-uturn-left"
-    (action)="onUndo()"
-  />
-  <pc-grid-tool-btn
-    [touch]="true"
-    [enabled]="!!grid.canRedo()"
-    [tip]="'Redo'"
-    icon="arrow-uturn-right"
-    (action)="onRedo()"
-  />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [touch]="true"
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <!-- Bottom sheet on touch (fixed to the bottom edge, full width, grab handle);
-         reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
-    >
-      <!-- Grab handle — bottom-sheet affordance, touch only -->
-      <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>
-      <h3 class="text-base-content/55 mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] sm:hidden">
-        Filters
-      </h3>
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [touch]="true" [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn [touch]="true" icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onClone()">
-          <pc-icon name="document-duplicate" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Clone</span>
-            @if (!grid.hasSingleSelection()) {
-            <span class="text-base-content/50 text-[11px]">Select exactly one row to clone</span>
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a class="flex items-start gap-2 py-2" (click)="onMergeSelected()">
-          <pc-icon name="merge" [size]="4" class="mt-0.5 shrink-0"></pc-icon>
-          <span class="flex flex-col">
-            <span>Merge</span>
-            @if (grid.getCountRowSelected() !== 2) {
-            <span class="text-base-content/50 text-[11px]"
-              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
-            >
-            }
-          </span>
-        </a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider divider-horizontal"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar: one rounded/bordered group + a separate solid-primary Add button (spec §5).
-     Tags / Issues / Lists left the toolbar — they are now the dashed pills in the filter-chip row. -->
-<div class="hidden lg:flex items-center gap-3 rounded-lg">
-  <ul
-    class="menu menu-horizontal bg-base-100 flex-row items-center rounded-lg border border-neutral px-0 py-0.5 relative z-30"
-  >
-    <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-    <pc-grid-tool-btn
-      [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-      [spinning]="grid.isRefreshing()"
-      [tip]="'Refresh the grid'"
-      icon="arrow-path"
-      (action)="onRefresh()"
-    />
-    <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-    <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-    <!-- Import + export merged into one dropdown (arrows-up-down-tray). -->
-    <pc-grid-tool-btn
-      icon="arrows-up-down-tray"
-      tip="Import / export"
-      [hasDropdown]="true"
-      [dropdownEnd]="true"
-      [hideCaret]="true"
-      [hidden]="grid.disableImport() && grid.disableExport()"
-    >
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box border-base-200 z-[50] w-72 gap-1 border p-2 shadow-lg"
-      >
-        @if (!grid.disableImport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onImportCsv()">
-            <pc-icon name="arrow-up-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">Import from CSV…</span>
-              <span class="text-base-content/60 text-xs">Upload, map columns, review duplicates</span>
-            </span>
-          </a>
-        </li>
-        } @if (!grid.disableExport()) {
-        <li>
-          <a class="flex items-start gap-3 py-2" (click)="onExportCsv()">
-            <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </pc-grid-tool-btn>
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <!-- Filter funnel — tinted primary whenever any filter is applied (spec §5). -->
-    <pc-grid-tool-btn
-      icon="funnel"
-      tip="Advanced Filters"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.anyFilterActive()"
-      [enabled]="!grid.hasActiveAdvancedFilters()"
-      (action)="onToggleFilters()"
-    />
-    <pc-grid-tool-btn
-      icon="adjustments-horizontal"
-      tip="Advanced Query Builder"
-      [hidden]="!grid.allowFilter()"
-      [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-      [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-      (action)="grid.openAdvancedFilterBuilder()"
-    />
-
-    <li class="pointer-events-none flex items-center px-0 text-neutral">|</li>
-
-    <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-      <pc-dg-columns-dropdown [grid]="grid" />
-    </pc-grid-tool-btn>
-
-    <pc-grid-tool-btn
-      [icon]="grid.archiveIcon()"
-      [tip]="grid.archiveTip()"
-      [hidden]="!grid.showArchiveIcon()"
-      [active]="grid.archiveModeState()"
-      (action)="onToggleArchive()"
-    />
-  </ul>
-
-  <!-- + Add — a solid-primary button outside the group (spec §5). -->
-  @if (grid.addRoute()) {
-  <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="onAdd()">
-    <pc-icon [name]="grid.plusIcon()" [size]="4"></pc-icon>
-    <span>{{ addLabel() }}</span>
-  </button>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
 
 ```css
@@ -56764,7 +56898,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     title: 'Welcome to PeopleCRM',
     summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
     keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['getting-around', 'add-people', 'grid-basics'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
     blocks: [
       {
         kind: 'p',
@@ -56817,6 +56951,87 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
+      },
+    ],
+  },
+  {
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of PeopleCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+      },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
+      {
+        kind: 'list',
+        items: [
+          '**60 people in 24 households** with real Ottawa street addresses — so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in — their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state — overdue, due this week, waiting, and done.',
+          '**A working inbox** — a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link — see [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+      },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription — pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms** — volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The built-in tags** (volunteer, staff).',
+          '**Anything you created yourself** while exploring — your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address.',
+        ],
       },
     ],
   },
@@ -58557,6 +58772,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       Reload stats
     </button>
   </div>
+
+  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
+  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
 
   <!-- First-run checklist — real account state; self-hides when complete (§3) -->
   <pc-getting-started-card></pc-getting-started-card>

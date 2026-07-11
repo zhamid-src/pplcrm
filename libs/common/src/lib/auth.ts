@@ -35,6 +35,9 @@ export interface IAuthUser {
 
   tenant_paused_at?: Date | null;
 
+  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
+  tenant_demo_mode_at?: Date | null;
+
   /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
   tenant_slug?: string | null;
 }

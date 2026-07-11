@@ -25,6 +25,9 @@ async function cleanup(db: any, user_id: string, tenant_id: string) {
   await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('companies').where('tenant_id', '=', tenant_id).execute();
+  // Demo seed data (signUp): inbox emails reference campaigns; children cascade.
+  await db.deleteFrom('emails').where('tenant_id', '=', tenant_id).execute();
 
   const tenantUserIds = db.selectFrom('authusers').select('id').where('tenant_id', '=', tenant_id);
 

@@ -38,6 +38,9 @@
     </button>
   </div>
 
+  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
+  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
+
   <!-- First-run checklist — real account state; self-hides when complete (§3) -->
   <pc-getting-started-card></pc-getting-started-card>
 
