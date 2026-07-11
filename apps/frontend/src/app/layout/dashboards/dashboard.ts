@@ -27,6 +27,7 @@ export class Dashboard {
 
   protected readonly userSignal = this.auth.getUserSignal();
   protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
+  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
 
   constructor() {
     // Route-driven default breadcrumbs for every page the shell hosts.

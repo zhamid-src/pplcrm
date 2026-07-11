@@ -51,23 +51,6 @@ apps/
       app/
         _migrations/
           0001_baseline.ts
-          2026-07-07-record-slugs.ts
-          2026-07-07-tasks-status-normalization.ts
-          2026-07-08-import-wizard-stats.ts
-          2026-07-09-dismissed-duplicate-groups.ts
-          2026-07-10-person-public-id.ts
-          2026-07-11-automations-step-kinds.ts
-          2026-07-11-canvassing.ts
-          2026-07-11-deliveries.ts
-          2026-07-12-donations-manual-entry.ts
-          2026-07-13-campaign-contexts.ts
-          2026-07-14-campaign-person-facts.ts
-          2026-07-15-campaign-subscriptions.ts
-          2026-07-16-domain-campaign-scoping.ts
-          2026-07-17-campaign-scoped-mailboxes.ts
-          2026-07-18-files-entity-linkage.ts
-          2026-07-19-newsletter-event-reasons.ts
-          2026-07-20-authusers-deactivated-at.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -194,6 +177,12 @@ apps/
             routes/
               deliveries-public.route.ts
             controller.ts
+            trpc.router.ts
+          demo/
+            controller.ts
+            demo-guard.ts
+            demo-seed-data.ts
+            demo-seed.ts
             trpc.router.ts
           donations/
             repositories/
@@ -630,908 +619,6 @@ export async function down(_db: Kysely<any>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/\_migrations/2026-07-07-record-slugs.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Record slugs for persons, households and companies (spec §1 security surface:
- * routes use record slugs — /people/amira-hassan — never internal IDs).
- *
- * Follows the existing slug shape used by events/web_forms/volunteer_events:
- * a `slug text` column with a `UNIQUE (tenant_id, slug)` btree index (compare
- * `events_tenant_slug_unique`). Generation on create/rename lives in the app
- * layer (`apps/backend/src/app/lib/slug.ts`, generalized from the web-forms
- * `uniqueSlug` pattern); this migration only adds the columns, backfills every
- * existing row with collision suffixes (-2, -3, … per tenant), and enforces
- * uniqueness.
- *
- * Slug sources: persons = first+last name (fallback "person"), households =
- * street number + street (fallback "household"), companies = name (fallback
- * "company"). An all-digit slug gets the fallback prefixed so a slug can never
- * be mistaken for a numeric-ID URL, which the frontend still accepts and
- * redirects. Pattern notes for later waves: docs/RECORD-SLUGS.md.
- */
-
-const TABLES = [
-  { table: 'persons', fallback: 'person', source: `coalesce(first_name, '') || ' ' || coalesce(last_name, '')` },
-  { table: 'households', fallback: 'household', source: `coalesce(street_num, '') || ' ' || coalesce(street1, '')` },
-  { table: 'companies', fallback: 'company', source: `coalesce(name, '')` },
-] as const;
-
-export async function up(db: Kysely<any>): Promise<void> {
-  for (const { table, fallback, source } of TABLES) {
-    await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
-
-    // Backfill: slugify the source, guard all-digit results, dedupe per tenant
-    // with -2, -3… suffixes (deterministic by id). This runs under the table's
-    // FORCE ROW LEVEL SECURITY; with no `app.tenant_id` GUC set the tenant
-    // policy's `NULLIF(...) IS NULL` escape permits every row, so the write
-    // reaches all rows (see the row_security strip in 0001_baseline.ts).
-    await sql`
-      WITH base AS (
-        SELECT id, tenant_id,
-          left(btrim(regexp_replace(lower(${sql.raw(source)}), '[^a-z0-9]+', '-', 'g'), '-'), 80) AS b
-        FROM ${sql.table(table)}
-        WHERE slug IS NULL
-      ),
-      named AS (
-        SELECT id, tenant_id,
-          CASE
-            WHEN b = '' THEN ${fallback}
-            WHEN b ~ '^[0-9]+$' THEN ${fallback} || '-' || b
-            ELSE b
-          END AS b
-        FROM base
-      ),
-      deduped AS (
-        SELECT id, b, row_number() OVER (PARTITION BY tenant_id, b ORDER BY id) AS rn
-        FROM named
-      )
-      UPDATE ${sql.table(table)} t
-      SET slug = CASE WHEN d.rn = 1 THEN d.b ELSE d.b || '-' || d.rn END
-      FROM deduped d
-      WHERE t.id = d.id
-    `.execute(db);
-
-    // Residual duplicates are possible when a real name slugifies to an
-    // already-suffixed value (e.g. a person literally named "Amira Hassan 2").
-    // Disambiguate those rare rows with the row id, which is always unique.
-    await sql`
-      UPDATE ${sql.table(table)} t
-      SET slug = t.slug || '-' || t.id
-      FROM (
-        SELECT id, row_number() OVER (PARTITION BY tenant_id, slug ORDER BY id) AS rn
-        FROM ${sql.table(table)}
-      ) d
-      WHERE t.id = d.id AND d.rn > 1
-    `.execute(db);
-
-    // Restore the tenant-isolation backstop dropped for the backfill above.
-    await sql`ALTER TABLE ${sql.table(table)} FORCE ROW LEVEL SECURITY`.execute(db);
-
-    // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
-    // not-yet-backfilled bulk row can exist mid-import without tripping it.
-    await sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}
-      ON ${sql.table(table)} USING btree (tenant_id, slug)
-      WHERE (slug IS NOT NULL)
-    `.execute(db);
-  }
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  for (const { table } of TABLES) {
-    await sql`DROP INDEX IF EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}`.execute(db);
-    await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
-  }
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-07-tasks-status-normalization.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Reconciles `tasks.status` to the spec §4 canonical vocabulary: todo, in_progress,
- * waiting, done, archived. Two renames:
- *
- * - `blocked` -> `waiting` (matches the board's "Waiting" column and the card/row's
- *   optional waiting-reason line).
- * - `canceled` -> `archived` (this app already has exactly one "hidden, not coming
- *   back to it" state — archived — reachable via the grid's Archived toggle; a
- *   canceled task is that state in practice, so this collapses a second one that the
- *   spec never asked for).
- *
- * Pre-ship: no production data to preserve (see pplcrm-migrations skill), so a data
- * backfill + constraint swap in one migration is safe.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  // These backfills run under tasks/task_subtasks' FORCE ROW LEVEL SECURITY;
-  // with no `app.tenant_id` GUC set the tenant policy's `NULLIF(...) IS NULL`
-  // escape permits every row (see the row_security strip in 0001_baseline.ts),
-  // so no per-migration RLS toggle is needed.
-  await sql`UPDATE public.tasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
-  await sql`UPDATE public.tasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
-  await sql`UPDATE public.task_subtasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
-  await sql`UPDATE public.task_subtasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
-
-  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
-  await sql`
-    ALTER TABLE public.tasks
-    ADD CONSTRAINT chk_tasks_status
-    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'waiting'::text, 'done'::text, 'archived'::text]))
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  // Best-effort only: `canceled` merged into `archived` and cannot be distinguished
-  // back out, so the down migration restores the old constraint and the `waiting` ->
-  // `blocked` rename, but archived rows stay archived rather than un-collapsing.
-  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
-  await sql`
-    ALTER TABLE public.tasks
-    ADD CONSTRAINT chk_tasks_status
-    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text]))
-  `.execute(db);
-  await sql`UPDATE public.tasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
-  await sql`UPDATE public.task_subtasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-08-import-wizard-stats.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * CSV import wizard (spec §17) needs a few extra facts per import that the
- * legacy `data_imports` table didn't track:
- *
- *  - merged_count: rows folded into an existing person ("Merge into existing"
- *    duplicate decision) rather than inserted as a new row.
- *  - tags_applied: the wizard lets a staffer apply several comma-separated
- *    tags in one run (data_imports.tag_name only ever held the single
- *    auto-generated "Imported-YYYYMMDD-HHmm" tag).
- *  - source_file_key / source_file_size: the History page keeps the original
- *    uploaded file downloadable for 90 days (§17 footer copy) — previously
- *    only the parsed-rows JSON payload was stored, and it was deleted right
- *    after processing.
- *  - skip_reasons: per-row reasons for skipped rows, so History can offer a
- *    "download skipped rows" CSV instead of just a count.
- *
- * All four are additive/nullable-with-defaults so existing rows stay valid.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS merged_count integer DEFAULT 0 NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS tags_applied jsonb DEFAULT '[]'::jsonb NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS source_file_key text`.execute(db);
-  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS source_file_size bigint`.execute(db);
-  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS skip_reasons jsonb DEFAULT '[]'::jsonb NOT NULL`.execute(
-    db,
-  );
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS skip_reasons`.execute(db);
-  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS source_file_size`.execute(db);
-  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS source_file_key`.execute(db);
-  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS tags_applied`.execute(db);
-  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS merged_count`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-09-dismissed-duplicate-groups.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-// Spec §9.3 Duplicates: "'Not duplicates' remembered so the pair isn't re-flagged." The nightly
-// sweep (`DuplicateMaintenanceService.recomputeAllDuplicates`) fully deletes and reinserts
-// `potential_duplicates` every run, so persisting a dismissal has to live outside that table.
-// One row per dismissed `group_key` per tenant; `recomputeAllDuplicates` anti-joins against this
-// table so a dismissed pair is never reinserted into the queue.
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    CREATE TABLE public.dismissed_duplicate_groups (
-      tenant_id bigint NOT NULL,
-      group_key text NOT NULL,
-      dismissed_by_id bigint NOT NULL,
-      dismissed_at timestamp with time zone DEFAULT now() NOT NULL,
-      PRIMARY KEY (tenant_id, group_key)
-    )
-  `.execute(db);
-
-  await sql`ALTER TABLE public.dismissed_duplicate_groups OWNER TO pplcrm_owner`.execute(db);
-
-  await sql`
-    ALTER TABLE public.dismissed_duplicate_groups
-      ADD CONSTRAINT fk_dismissed_duplicate_groups_tenant_id
-      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE
-  `.execute(db);
-
-  await sql`CREATE INDEX idx_dismissed_duplicate_groups_tenant ON public.dismissed_duplicate_groups USING btree (tenant_id)`.execute(
-    db,
-  );
-
-  // Same tenant-isolation policy shape as every other tenant_id table (S-1).
-  await sql`ALTER TABLE public.dismissed_duplicate_groups ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE ONLY public.dismissed_duplicate_groups FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql`
-    CREATE POLICY tenant_isolation ON public.dismissed_duplicate_groups
-    USING (
-      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-    )
-    WITH CHECK (
-      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-    )
-  `.execute(db);
-  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.dismissed_duplicate_groups TO pplcrm_app`.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.dismissed_duplicate_groups`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-10-person-public-id.ts
-
-```typescript
-import { randomBytes } from 'node:crypto';
-
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Persons switch from a name slug to an opaque public_id (spec §1 security
- * surface). At 100k+ people, name slugs collide (`amira-hassan-4787`), leak
- * counts, and put real names in URLs/logs — bad for a political CRM. Households
- * and companies KEEP their name slugs; this migration touches persons only.
- *
- * `public_id` = 8 Crockford Base32 chars (40 CSPRNG bits, `randomBytes(5)`),
- * stored uppercase-canonical (e.g. `4T9K2XPM`), unique per tenant via a partial
- * index that mirrors events_tenant_slug_unique's shape. The existing `slug`
- * column is repurposed to the URL display form `{name}-{xxxx}-{xxxx}` — the name
- * is decorative, resolution is by public_id (see lib/person-public-id.ts and the
- * shared decode helpers in @common). Pattern notes: docs/RECORD-SLUGS.md.
- *
- * The encode/slug helpers below are INLINED (not imported from @common): a
- * migration is loaded by Kysely's FileMigrationProvider via bare node ESM,
- * outside the app bundle, so it can only import packages (`kysely`) and node
- * builtins — an extensionless local import fails to resolve. The canonical,
- * unit-tested implementations live in `libs/common/src/lib/public-id.ts`; keep
- * these copies byte-for-byte in sync with them (`encodeCrockford` /
- * `buildPersonSlug` / `slugifyRecordName`).
- *
- * The backfill needs per-row random values with uniqueness, so it runs in JS:
- * per tenant, seed an in-memory used-set from any existing ids, then for each
- * remaining person generate a unique id (retrying against the set) and UPDATE
- * its public_id + slug in batches. Runs under the table's FORCE ROW LEVEL
- * SECURITY with no `app.tenant_id` GUC set — the tenant policy's
- * `NULLIF(...) IS NULL` escape permits every row, and 0001_baseline strips
- * `SET row_security = off`, so the writes reach all rows without any RLS toggle.
- */
-
-const PUBLIC_ID_BYTES = 5;
-const PUBLIC_ID_LENGTH = 8;
-const BATCH_SIZE = 1000;
-// Crockford Base32 — excludes I, L, O, U (see @common CROCKFORD_ALPHABET).
-const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-/** Mirror of @common encodeCrockford — 5 bytes → 8 chars. */
-function encodeCrockford(bytes: Uint8Array): string {
-  let bits = 0;
-  let value = 0;
-  let output = '';
-  for (const byte of bytes) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      bits -= 5;
-      output += CROCKFORD_ALPHABET[(value >>> bits) & 31];
-    }
-    value &= (1 << bits) - 1;
-  }
-  if (bits > 0) output += CROCKFORD_ALPHABET[(value << (5 - bits)) & 31];
-  return output;
-}
-
-/** Mirror of @common slugifyRecordName. */
-function slugifyRecordName(value: string, fallback: string): string {
-  const base = value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-    .replace(/-+$/g, '');
-  if (!base) return fallback;
-  if (/^\d+$/.test(base)) return `${fallback}-${base}`;
-  return base;
-}
-
-/** Mirror of @common buildPersonSlug — `{name}-{xxxx}-{xxxx}`. */
-function buildPersonSlug(firstName: string | null, lastName: string | null, publicId: string): string {
-  const source = (firstName ?? '').trim() || (lastName ?? '').trim();
-  const name = slugifyRecordName(source, 'person');
-  const id = publicId.toLowerCase();
-  return `${name}-${id.slice(0, 4)}-${id.slice(4, PUBLIC_ID_LENGTH)}`;
-}
-
-function generatePublicId(): string {
-  return encodeCrockford(randomBytes(PUBLIC_ID_BYTES));
-}
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // 1. Pure DDL: add the column and the partial per-tenant unique index.
-  await sql`ALTER TABLE public.persons ADD COLUMN IF NOT EXISTS public_id text`.execute(db);
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS persons_tenant_public_id_unique
-    ON public.persons USING btree (tenant_id, public_id)
-    WHERE (public_id IS NOT NULL)
-  `.execute(db);
-
-  // 2. Backfill per tenant so every DB query stays tenant-scoped.
-  const tenants = await sql<{ tenant_id: string }>`
-    SELECT DISTINCT tenant_id FROM public.persons WHERE public_id IS NULL
-  `.execute(db);
-
-  for (const { tenant_id } of tenants.rows) {
-    const takenRows = await sql<{ public_id: string }>`
-      SELECT public_id FROM public.persons WHERE tenant_id = ${tenant_id} AND public_id IS NOT NULL
-    `.execute(db);
-    const taken = new Set(takenRows.rows.map((r) => r.public_id));
-
-    for (;;) {
-      const batch = await sql<{ id: string; first_name: string | null; last_name: string | null }>`
-        SELECT id, first_name, last_name
-        FROM public.persons
-        WHERE tenant_id = ${tenant_id} AND public_id IS NULL
-        ORDER BY id
-        LIMIT ${BATCH_SIZE}
-      `.execute(db);
-      if (batch.rows.length === 0) break;
-
-      for (const row of batch.rows) {
-        let publicId = generatePublicId();
-        while (taken.has(publicId)) publicId = generatePublicId();
-        taken.add(publicId);
-        const slug = buildPersonSlug(row.first_name, row.last_name, publicId);
-        await sql`
-          UPDATE public.persons
-          SET public_id = ${publicId}, slug = ${slug}
-          WHERE tenant_id = ${tenant_id} AND id = ${row.id}
-        `.execute(db);
-      }
-    }
-  }
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  // Leaves the (now display-form) slug values in place — only public_id and its
-  // index are this migration's to remove.
-  await sql`DROP INDEX IF EXISTS public.persons_tenant_public_id_unique`.execute(db);
-  await sql`ALTER TABLE public.persons DROP COLUMN IF EXISTS public_id`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-11-automations-step-kinds.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-// Spec §16 Automations: rebuild the workflow editor from an email-only drip into a mixed
-// sequence of step KINDS (wait · send_email · add_tag · create_task · notify_team) with
-// ONLY-ENROLL-IF conditions and a per-run history feeding the list's "RUNS 30D / LAST RUN".
-//
-// This migration is additive on the existing workflows/workflow_steps/workflow_enrollments
-// tables (never edits an applied migration; the FORCE-RLS baseline lets a GUC-less backfill
-// reach every row, so no per-migration RLS toggle is needed):
-//
-//   1. workflow_steps.kind    — discriminates the step; the value it carries lives in `config`.
-//   2. workflow_steps.config  — jsonb payload per kind (tag_id/task title/team member/etc).
-//   3. workflow_steps.subject — was NOT NULL (email-only assumption); non-email steps have none.
-//   4. workflows.conditions   — jsonb QueryBuilder group for "ONLY ENROLL IF".
-//   5. workflow_runs          — one row per executed step, success or failure, for run history.
-export async function up(db: Kysely<any>): Promise<void> {
-  // --- workflow_steps: step kind + polymorphic config ------------------------------------
-  await sql`
-    ALTER TABLE public.workflow_steps
-      ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'send_email'
-  `.execute(db);
-  await sql`
-    ALTER TABLE public.workflow_steps
-      ADD CONSTRAINT chk_workflow_steps_kind
-      CHECK (kind = ANY (ARRAY['wait'::text, 'send_email'::text, 'add_tag'::text, 'create_task'::text, 'notify_team'::text]))
-  `.execute(db);
-  await sql`ALTER TABLE public.workflow_steps ADD COLUMN IF NOT EXISTS config jsonb`.execute(db);
-  // Non-email steps carry no subject; relax the historical NOT NULL.
-  await sql`ALTER TABLE public.workflow_steps ALTER COLUMN subject DROP NOT NULL`.execute(db);
-
-  // --- workflows: ONLY-ENROLL-IF conditions ----------------------------------------------
-  await sql`ALTER TABLE public.workflows ADD COLUMN IF NOT EXISTS conditions jsonb`.execute(db);
-
-  // --- workflow_runs: per-run history ----------------------------------------------------
-  await sql`
-    CREATE TABLE public.workflow_runs (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      workflow_id bigint NOT NULL,
-      enrollment_id bigint,
-      person_id bigint,
-      step_number integer,
-      step_kind text,
-      status text NOT NULL DEFAULT 'success',
-      error text,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_workflow_runs_status CHECK (status = ANY (ARRAY['success'::text, 'failed'::text]))
-    )
-  `.execute(db);
-
-  await sql`ALTER TABLE public.workflow_runs OWNER TO pplcrm_owner`.execute(db);
-
-  await sql`
-    ALTER TABLE public.workflow_runs
-      ADD CONSTRAINT fk_workflow_runs_tenant_id
-      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE
-  `.execute(db);
-  await sql`
-    ALTER TABLE public.workflow_runs
-      ADD CONSTRAINT fk_workflow_runs_workflow_id
-      FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE
-  `.execute(db);
-
-  // list stats (RUNS 30D / LAST RUN) scan by (tenant, workflow, created_at).
-  await sql`
-    CREATE INDEX idx_workflow_runs_tenant_workflow_created
-      ON public.workflow_runs USING btree (tenant_id, workflow_id, created_at DESC)
-  `.execute(db);
-
-  // Same tenant-isolation policy shape as every other tenant_id table (S-1).
-  await sql`ALTER TABLE public.workflow_runs ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE ONLY public.workflow_runs FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql`
-    CREATE POLICY tenant_isolation ON public.workflow_runs
-    USING (
-      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-    )
-    WITH CHECK (
-      (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-    )
-  `.execute(db);
-  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.workflow_runs TO pplcrm_app`.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.workflow_runs`.execute(db);
-  await sql`ALTER TABLE public.workflows DROP COLUMN IF EXISTS conditions`.execute(db);
-  await sql`ALTER TABLE public.workflow_steps DROP CONSTRAINT IF EXISTS chk_workflow_steps_kind`.execute(db);
-  await sql`ALTER TABLE public.workflow_steps DROP COLUMN IF EXISTS kind`.execute(db);
-  await sql`ALTER TABLE public.workflow_steps DROP COLUMN IF EXISTS config`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-11-canvassing.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Canvassing (§13) — turfs, their doors, team/tokenised assignments, and knocks.
- *
- * Every table follows the house multi-tenant conventions established in
- * `schema.sql`:
- *   - `bigint` id backed by its own sequence, `UNIQUE (id)` (so FKs can target
- *     `id` alone) plus a composite `PRIMARY KEY (id, tenant_id)`.
- *   - `ENABLE` + `FORCE ROW LEVEL SECURITY` with the standard `tenant_isolation`
- *     policy (an unset `app.tenant_id` GUC permits all rows, so migrations and
- *     backfills work — see pplcrm-migrations).
- *   - `GRANT`s to the least-privilege `pplcrm_app` role; the migration itself
- *     runs as `pplcrm_owner`.
- *
- * Multi-statement blocks run through `sql.raw(...)` (parameterless → simple
- * query protocol), exactly like `0001_baseline` executes the schema dump.
- *
- * Progress ("attempted", "conversations", "complete", "in field now") is DERIVED
- * from `turf_knocks` at read time — never stored twice (§22.6).
- */
-
-const tenantIsolation = (table: string): string => `
-  ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE ONLY public.${table} FORCE ROW LEVEL SECURITY;
-  CREATE POLICY tenant_isolation ON public.${table}
-    USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-    WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
-`;
-
-export async function up(db: Kysely<unknown>): Promise<void> {
-  // ---------------------------------------------------------------- turfs ----
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.turfs (
-      id            bigint  NOT NULL,
-      tenant_id     bigint  NOT NULL,
-      createdby_id  bigint  NOT NULL,
-      updatedby_id  bigint  NOT NULL,
-      name          text    NOT NULL,
-      status        text    NOT NULL DEFAULT 'draft',
-      list_id       bigint,
-      target_doors  integer,
-      centroid_lat  double precision,
-      centroid_lng  double precision,
-      ward          text,
-      notes         text,
-      created_at    timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at    timestamp with time zone DEFAULT now() NOT NULL
-    );
-    CREATE SEQUENCE public.turfs_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.turfs_id_seq OWNED BY public.turfs.id;
-    ALTER TABLE ONLY public.turfs ALTER COLUMN id SET DEFAULT nextval('public.turfs_id_seq'::regclass);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT turfs_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT turfs_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT fk_turfs_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT fk_turfs_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT fk_turfs_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turfs ADD CONSTRAINT fk_turfs_list FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE SET NULL;
-    CREATE INDEX idx_turfs_tenant ON public.turfs (tenant_id);
-    CREATE INDEX idx_turfs_tenant_list ON public.turfs (tenant_id, list_id);
-    CREATE INDEX idx_turfs_tenant_status ON public.turfs (tenant_id, status);
-    ${tenantIsolation('turfs')}
-  `,
-    )
-    .execute(db);
-
-  // ------------------------------------------------------- turf_households ---
-  // The "doors" of a turf. Junction; one row per household ("one door per
-  // household"). Re-syncable from the source list without touching knocks.
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.turf_households (
-      tenant_id     bigint  NOT NULL,
-      turf_id       bigint  NOT NULL,
-      household_id  bigint  NOT NULL,
-      createdby_id  bigint  NOT NULL,
-      updatedby_id  bigint  NOT NULL,
-      created_at    timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at    timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT turf_households_pk PRIMARY KEY (tenant_id, turf_id, household_id)
-    );
-    ALTER TABLE ONLY public.turf_households ADD CONSTRAINT fk_turf_households_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.turf_households ADD CONSTRAINT fk_turf_households_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.turf_households ADD CONSTRAINT fk_turf_households_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.turf_households ADD CONSTRAINT fk_turf_households_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turf_households ADD CONSTRAINT fk_turf_households_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    CREATE INDEX idx_turf_households_turf ON public.turf_households (tenant_id, turf_id);
-    CREATE INDEX idx_turf_households_household ON public.turf_households (tenant_id, household_id);
-    ${tenantIsolation('turf_households')}
-  `,
-    )
-    .execute(db);
-
-  // ----------------------------------------------------- turf_assignments ----
-  // A turf handed to a team AND/OR opened via a tokenised link (no account).
-  // The token is the Companion bearer credential; scoped to this turf + tenant.
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.turf_assignments (
-      id            bigint  NOT NULL,
-      tenant_id     bigint  NOT NULL,
-      createdby_id  bigint  NOT NULL,
-      updatedby_id  bigint  NOT NULL,
-      turf_id       bigint  NOT NULL,
-      team_id       bigint,
-      token         text    NOT NULL,
-      status        text    NOT NULL DEFAULT 'active',
-      assigned_at   timestamp with time zone DEFAULT now() NOT NULL,
-      created_at    timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at    timestamp with time zone DEFAULT now() NOT NULL
-    );
-    CREATE SEQUENCE public.turf_assignments_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.turf_assignments_id_seq OWNED BY public.turf_assignments.id;
-    ALTER TABLE ONLY public.turf_assignments ALTER COLUMN id SET DEFAULT nextval('public.turf_assignments_id_seq'::regclass);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT turf_assignments_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT turf_assignments_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT turf_assignments_token_key UNIQUE (token);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT fk_turf_assignments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT fk_turf_assignments_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT fk_turf_assignments_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT fk_turf_assignments_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.turf_assignments ADD CONSTRAINT fk_turf_assignments_team FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
-    CREATE INDEX idx_turf_assignments_turf ON public.turf_assignments (tenant_id, turf_id);
-    CREATE INDEX idx_turf_assignments_team ON public.turf_assignments (tenant_id, team_id);
-    ${tenantIsolation('turf_assignments')}
-  `,
-    )
-    .execute(db);
-
-  // ---------------------------------------------------------- turf_knocks ----
-  // The source of truth for canvass progress. One row per door interaction,
-  // synced live from Canvass Companions. `client_knock_id` de-dupes offline
-  // re-sends; `source`/`canvasser_name` carry honest attribution (§22.7).
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.turf_knocks (
-      id             bigint  NOT NULL,
-      tenant_id      bigint  NOT NULL,
-      createdby_id   bigint  NOT NULL,
-      updatedby_id   bigint  NOT NULL,
-      turf_id        bigint  NOT NULL,
-      household_id   bigint  NOT NULL,
-      person_id      bigint,
-      outcome        text    NOT NULL,
-      response       text,
-      notes          text,
-      source         text    NOT NULL DEFAULT 'companion',
-      canvasser_name text,
-      client_knock_id text,
-      knocked_at     timestamp with time zone DEFAULT now() NOT NULL,
-      created_at     timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at     timestamp with time zone DEFAULT now() NOT NULL
-    );
-    CREATE SEQUENCE public.turf_knocks_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.turf_knocks_id_seq OWNED BY public.turf_knocks.id;
-    ALTER TABLE ONLY public.turf_knocks ALTER COLUMN id SET DEFAULT nextval('public.turf_knocks_id_seq'::regclass);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT turf_knocks_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT turf_knocks_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.turf_knocks ADD CONSTRAINT fk_turf_knocks_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-    CREATE INDEX idx_turf_knocks_turf ON public.turf_knocks (tenant_id, turf_id);
-    CREATE INDEX idx_turf_knocks_household ON public.turf_knocks (tenant_id, household_id);
-    CREATE INDEX idx_turf_knocks_knocked_at ON public.turf_knocks (tenant_id, knocked_at);
-    CREATE UNIQUE INDEX uq_turf_knocks_client ON public.turf_knocks (tenant_id, turf_id, client_knock_id) WHERE client_knock_id IS NOT NULL;
-    ${tenantIsolation('turf_knocks')}
-  `,
-    )
-    .execute(db);
-
-  // Least-privilege grants to the app role (owner already has everything).
-  await sql
-    .raw(
-      `
-    GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE public.turfs TO pplcrm_app;
-    GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE public.turf_households TO pplcrm_app;
-    GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE public.turf_assignments TO pplcrm_app;
-    GRANT SELECT, INSERT, DELETE, UPDATE ON TABLE public.turf_knocks TO pplcrm_app;
-    GRANT SELECT, USAGE ON SEQUENCE public.turfs_id_seq TO pplcrm_app;
-    GRANT SELECT, USAGE ON SEQUENCE public.turf_assignments_id_seq TO pplcrm_app;
-    GRANT SELECT, USAGE ON SEQUENCE public.turf_knocks_id_seq TO pplcrm_app;
-  `,
-    )
-    .execute(db);
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  await sql
-    .raw(
-      `
-    DROP TABLE IF EXISTS public.turf_knocks CASCADE;
-    DROP TABLE IF EXISTS public.turf_assignments CASCADE;
-    DROP TABLE IF EXISTS public.turf_households CASCADE;
-    DROP TABLE IF EXISTS public.turfs CASCADE;
-  `,
-    )
-    .execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-11-deliveries.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-// Deliveries (spec §14): yard-sign delivery requests → routes → volunteer-driven stops.
-//
-// Three tables, all tenant-scoped with the same RLS + FORCE ROW LEVEL SECURITY shape as every
-// other tenant table (schema review S-1). Key modelling decisions come straight from the binding
-// spec (docs/spec/Deliveries Spec.dc.html §2):
-//   - "routed" is NOT a stored request status — it is derived from an active (pending) route stop.
-//     One source of truth; a partial unique index guarantees a request sits on at most one active
-//     stop at a time.
-//   - Route status uses the spec's American spelling "canceled".
-//   - The volunteer capability link is stored only as a sha256 hash of the raw token; the raw token
-//     is returned to staff once and never persisted.
-export async function up(db: Kysely<any>): Promise<void> {
-  // ---- delivery_requests ---------------------------------------------------
-  await sql`
-    CREATE TABLE public.delivery_requests (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      household_id bigint NOT NULL,
-      person_id bigint,
-      web_form_id uuid,
-      source text NOT NULL DEFAULT 'manual',
-      status text NOT NULL DEFAULT 'new',
-      notes text,
-      skip_reason text,
-      createdby_id bigint NOT NULL,
-      updatedby_id bigint,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_delivery_requests_source CHECK (source = ANY (ARRAY['web_form'::text, 'manual'::text])),
-      CONSTRAINT chk_delivery_requests_status CHECK (status = ANY (ARRAY['new'::text, 'approved'::text, 'declined'::text, 'delivered'::text]))
-    )
-  `.execute(db);
-  await sql`ALTER TABLE public.delivery_requests OWNER TO pplcrm_owner`.execute(db);
-  await sql`
-    ALTER TABLE public.delivery_requests
-      ADD CONSTRAINT fk_delivery_requests_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE,
-      ADD CONSTRAINT fk_delivery_requests_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE,
-      ADD CONSTRAINT fk_delivery_requests_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL,
-      ADD CONSTRAINT fk_delivery_requests_web_form FOREIGN KEY (web_form_id) REFERENCES public.web_forms(id) ON DELETE SET NULL
-  `.execute(db);
-  await sql`CREATE INDEX idx_delivery_requests_tenant_status ON public.delivery_requests USING btree (tenant_id, status)`.execute(
-    db,
-  );
-  await sql`CREATE INDEX idx_delivery_requests_tenant_household ON public.delivery_requests USING btree (tenant_id, household_id)`.execute(
-    db,
-  );
-
-  // ---- delivery_routes -----------------------------------------------------
-  await sql`
-    CREATE TABLE public.delivery_routes (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      name text NOT NULL,
-      status text NOT NULL DEFAULT 'draft',
-      volunteer_person_id bigint,
-      start_address text NOT NULL,
-      start_lat double precision NOT NULL,
-      start_lng double precision NOT NULL,
-      est_minutes double precision NOT NULL DEFAULT 0,
-      est_km double precision NOT NULL DEFAULT 0,
-      scheduled_for timestamp with time zone,
-      share_token_hash text,
-      share_token_expires_at timestamp with time zone,
-      params jsonb NOT NULL DEFAULT '{}'::jsonb,
-      createdby_id bigint NOT NULL,
-      updatedby_id bigint,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_delivery_routes_status CHECK (status = ANY (ARRAY['draft'::text, 'assigned'::text, 'in_progress'::text, 'completed'::text, 'canceled'::text]))
-    )
-  `.execute(db);
-  await sql`ALTER TABLE public.delivery_routes OWNER TO pplcrm_owner`.execute(db);
-  await sql`
-    ALTER TABLE public.delivery_routes
-      ADD CONSTRAINT fk_delivery_routes_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE,
-      ADD CONSTRAINT fk_delivery_routes_volunteer FOREIGN KEY (volunteer_person_id) REFERENCES public.persons(id) ON DELETE SET NULL
-  `.execute(db);
-  await sql`CREATE INDEX idx_delivery_routes_tenant_status ON public.delivery_routes USING btree (tenant_id, status)`.execute(
-    db,
-  );
-  // The public volunteer page resolves a route BY its token hash first (the token is the only
-  // credential), then scopes every follow-up query by the resolved tenant_id. This partial index
-  // keeps that exact-hash lookup fast without being a cross-tenant leak (S-1 RLS still applies to
-  // every other query in the handler).
-  await sql`CREATE INDEX idx_delivery_routes_share_token_hash ON public.delivery_routes USING btree (share_token_hash) WHERE share_token_hash IS NOT NULL`.execute(
-    db,
-  );
-
-  // ---- delivery_route_stops ------------------------------------------------
-  await sql`
-    CREATE TABLE public.delivery_route_stops (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      route_id bigint NOT NULL,
-      request_id bigint NOT NULL,
-      seq integer NOT NULL,
-      leg_minutes double precision NOT NULL DEFAULT 0,
-      status text NOT NULL DEFAULT 'pending',
-      reason text,
-      acted_at timestamp with time zone,
-      acted_via text,
-      createdby_id bigint NOT NULL,
-      updatedby_id bigint,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_delivery_route_stops_status CHECK (status = ANY (ARRAY['pending'::text, 'delivered'::text, 'skipped'::text])),
-      CONSTRAINT chk_delivery_route_stops_acted_via CHECK (acted_via IS NULL OR acted_via = ANY (ARRAY['volunteer_link'::text, 'staff'::text]))
-    )
-  `.execute(db);
-  await sql`ALTER TABLE public.delivery_route_stops OWNER TO pplcrm_owner`.execute(db);
-  await sql`
-    ALTER TABLE public.delivery_route_stops
-      ADD CONSTRAINT fk_delivery_route_stops_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE,
-      ADD CONSTRAINT fk_delivery_route_stops_route FOREIGN KEY (route_id) REFERENCES public.delivery_routes(id) ON DELETE CASCADE,
-      ADD CONSTRAINT fk_delivery_route_stops_request FOREIGN KEY (request_id) REFERENCES public.delivery_requests(id) ON DELETE CASCADE
-  `.execute(db);
-  await sql`CREATE INDEX idx_delivery_route_stops_tenant_route ON public.delivery_route_stops USING btree (tenant_id, route_id)`.execute(
-    db,
-  );
-  await sql`CREATE UNIQUE INDEX uq_delivery_route_stops_route_seq ON public.delivery_route_stops USING btree (route_id, seq)`.execute(
-    db,
-  );
-  // Single source of truth for "routed": a request can be on at most ONE active (pending) stop.
-  // Skipping/removing a stop flips it out of pending and frees the request back to the pool.
-  await sql`CREATE UNIQUE INDEX uq_delivery_route_stops_active_request ON public.delivery_route_stops USING btree (request_id) WHERE status = 'pending'`.execute(
-    db,
-  );
-
-  // ---- RLS (same policy shape as every tenant table, S-1) ------------------
-  for (const table of ['delivery_requests', 'delivery_routes', 'delivery_route_stops']) {
-    await sql`ALTER TABLE public.${sql.raw(table)} ENABLE ROW LEVEL SECURITY`.execute(db);
-    await sql`ALTER TABLE ONLY public.${sql.raw(table)} FORCE ROW LEVEL SECURITY`.execute(db);
-    await sql`
-      CREATE POLICY tenant_isolation ON public.${sql.raw(table)}
-      USING (
-        (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-        OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-      )
-      WITH CHECK (
-        (NULLIF(current_setting('app.tenant_id', true), '') IS NULL)
-        OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint)
-      )
-    `.execute(db);
-    await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.${sql.raw(table)} TO pplcrm_app`.execute(db);
-  }
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.delivery_route_stops`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.delivery_routes`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.delivery_requests`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-20-authusers-deactivated-at.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Admin deactivation for system users (§ Users).
- *
- * `deletion_scheduled_at` cannot double as a deactivation flag: the deletion
- * worker hard-deletes any authuser whose date has passed, and signIn/verify2FA
- * auto-clear it ("logging back in cancels deletion" is the self-service
- * contract). Admin deactivation needs the opposite semantics — indefinite,
- * blocks sign-in, and only an admin/owner can reverse it — so it gets its own
- * column. Nullable: NULL = active.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.authusers
-      ADD COLUMN IF NOT EXISTS deactivated_at timestamptz
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.authusers
-      DROP COLUMN IF EXISTS deactivated_at
-  `.execute(db);
-}
-```
-
 ## File: apps/backend/src/app/\_migrations/schema.sql
 
 ```sql
@@ -1539,10 +626,10 @@ export async function down(db: Kysely<any>): Promise<void> {
 -- PostgreSQL database dump
 --
 
-\restrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
+\restrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 
--- Dumped from database version 14.18 (Homebrew)
--- Dumped by pg_dump version 17.6
+-- Dumped from database version 18.4 (Homebrew)
+-- Dumped by pg_dump version 18.4 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -1573,24 +660,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner:
---
-
-COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
-
-
---
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
 --
@@ -1672,6 +745,7 @@ CREATE TABLE public.authusers (
     previous_role text,
     passkey_setup_dismissed_at timestamp with time zone,
     two_factor_attempts integer DEFAULT 0 NOT NULL,
+    deactivated_at timestamp with time zone,
     CONSTRAINT chk_authusers_role CHECK (((role IS NULL) OR (role = ANY (ARRAY['owner'::text, 'admin'::text, 'user'::text, 'viewer'::text]))))
 );
 
@@ -1749,6 +823,107 @@ ALTER SEQUENCE public.background_jobs_id_seq OWNED BY public.background_jobs.id;
 
 
 --
+-- Name: campaign_person_facts; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.campaign_person_facts (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    support_level text,
+    support_source text,
+    support_recorded_by bigint,
+    support_recorded_at timestamp with time zone,
+    voting_status text,
+    voting_source text,
+    voting_recorded_by bigint,
+    voting_recorded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_cpf_support_level CHECK (((support_level IS NULL) OR (support_level = ANY (ARRAY['strong'::text, 'leaning'::text, 'neutral'::text, 'leaning_against'::text, 'against'::text, 'undecided'::text])))),
+    CONSTRAINT chk_cpf_support_source CHECK (((support_source IS NULL) OR (support_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text, 'carryover'::text])))),
+    CONSTRAINT chk_cpf_voting_source CHECK (((voting_source IS NULL) OR (voting_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text])))),
+    CONSTRAINT chk_cpf_voting_status CHECK (((voting_status IS NULL) OR (voting_status = ANY (ARRAY['will_vote'::text, 'voted_advance'::text, 'voted_eday'::text, 'not_voting'::text, 'ineligible'::text]))))
+);
+
+ALTER TABLE ONLY public.campaign_person_facts FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.campaign_person_facts OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_person_facts_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.campaign_person_facts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.campaign_person_facts_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_person_facts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.campaign_person_facts_id_seq OWNED BY public.campaign_person_facts.id;
+
+
+--
+-- Name: campaign_subscriptions; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.campaign_subscriptions (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    email text NOT NULL,
+    status text DEFAULT 'subscribed'::text NOT NULL,
+    consent_source text DEFAULT 'manual'::text NOT NULL,
+    consent_at timestamp with time zone,
+    unsubscribed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_csub_source CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text]))),
+    CONSTRAINT chk_csub_status CHECK ((status = ANY (ARRAY['subscribed'::text, 'pending'::text, 'unsubscribed'::text])))
+);
+
+ALTER TABLE ONLY public.campaign_subscriptions FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.campaign_subscriptions OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.campaign_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.campaign_subscriptions_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_subscriptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.campaign_subscriptions_id_seq OWNED BY public.campaign_subscriptions.id;
+
+
+--
 -- Name: campaigns; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -1764,7 +939,11 @@ CREATE TABLE public.campaigns (
     enddate date,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updatedby_id bigint
+    updatedby_id bigint,
+    kind text DEFAULT 'office'::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    CONSTRAINT chk_campaigns_kind CHECK ((kind = ANY (ARRAY['office'::text, 'election'::text]))),
+    CONSTRAINT chk_campaigns_status CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
 );
 
 ALTER TABLE ONLY public.campaigns FORCE ROW LEVEL SECURITY;
@@ -1813,7 +992,8 @@ CREATE TABLE public.companies (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     file_id bigint,
-    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED
+    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED,
+    slug text
 );
 
 ALTER TABLE ONLY public.companies FORCE ROW LEVEL SECURITY;
@@ -1912,6 +1092,11 @@ CREATE TABLE public.data_imports (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
     error_message text,
+    merged_count integer DEFAULT 0 NOT NULL,
+    tags_applied jsonb DEFAULT '[]'::jsonb NOT NULL,
+    source_file_key text,
+    source_file_size bigint,
+    skip_reasons jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT chk_data_imports_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text]))))
 );
 
@@ -1919,13 +1104,6 @@ ALTER TABLE ONLY public.data_imports FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE public.data_imports OWNER TO pplcrm_owner;
-
---
--- Name: COLUMN data_imports.tag_name; Type: COMMENT; Schema: public; Owner: pplcrm_owner
---
-
-COMMENT ON COLUMN public.data_imports.tag_name IS 'Tag name requested at import time; label of record once the tag is deleted. While the tag exists, tags.name via tag_id is the source of truth (D-10)';
-
 
 --
 -- Name: data_imports_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
@@ -1949,6 +1127,152 @@ ALTER SEQUENCE public.data_imports_id_seq OWNED BY public.data_imports.id;
 
 
 --
+-- Name: delivery_requests; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_requests (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    person_id bigint,
+    web_form_id uuid,
+    source text DEFAULT 'manual'::text NOT NULL,
+    status text DEFAULT 'new'::text NOT NULL,
+    notes text,
+    skip_reason text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_delivery_requests_source CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text]))),
+    CONSTRAINT chk_delivery_requests_status CHECK ((status = ANY (ARRAY['new'::text, 'approved'::text, 'declined'::text, 'delivered'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_requests FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_requests OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_requests ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_requests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: delivery_route_stops; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_route_stops (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    route_id bigint NOT NULL,
+    request_id bigint NOT NULL,
+    seq integer NOT NULL,
+    leg_minutes double precision DEFAULT 0 NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    reason text,
+    acted_at timestamp with time zone,
+    acted_via text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_delivery_route_stops_acted_via CHECK (((acted_via IS NULL) OR (acted_via = ANY (ARRAY['volunteer_link'::text, 'staff'::text])))),
+    CONSTRAINT chk_delivery_route_stops_status CHECK ((status = ANY (ARRAY['pending'::text, 'delivered'::text, 'skipped'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_route_stops FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_route_stops OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_route_stops_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_route_stops ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_route_stops_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: delivery_routes; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_routes (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    volunteer_person_id bigint,
+    start_address text NOT NULL,
+    start_lat double precision NOT NULL,
+    start_lng double precision NOT NULL,
+    est_minutes double precision DEFAULT 0 NOT NULL,
+    est_km double precision DEFAULT 0 NOT NULL,
+    scheduled_for timestamp with time zone,
+    share_token_hash text,
+    share_token_expires_at timestamp with time zone,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_delivery_routes_status CHECK ((status = ANY (ARRAY['draft'::text, 'assigned'::text, 'in_progress'::text, 'completed'::text, 'canceled'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_routes FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_routes OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_routes_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_routes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_routes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: dismissed_duplicate_groups; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.dismissed_duplicate_groups (
+    tenant_id bigint NOT NULL,
+    group_key text NOT NULL,
+    dismissed_by_id bigint NOT NULL,
+    dismissed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.dismissed_duplicate_groups OWNER TO pplcrm_owner;
+
+--
 -- Name: donation_periods; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -1964,6 +1288,7 @@ CREATE TABLE public.donation_periods (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT donation_periods_dates_check CHECK (((end_date IS NULL) OR (end_date > start_date))),
     CONSTRAINT donation_periods_limit_check CHECK ((limit_amount > 0))
 );
@@ -2018,6 +1343,7 @@ CREATE TABLE public.donation_pledges (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT donation_pledges_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'cancelled'::text, 'unpaid'::text])))
 );
 
@@ -2069,7 +1395,11 @@ CREATE TABLE public.donations (
     state text,
     zip text,
     country text,
-    pledge_id bigint
+    pledge_id bigint,
+    method text DEFAULT 'card'::text NOT NULL,
+    receipt_sent boolean DEFAULT true NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_donations_method CHECK ((method = ANY (ARRAY['card'::text, 'check'::text, 'cash'::text, 'bank_transfer'::text])))
 );
 
 ALTER TABLE ONLY public.donations FORCE ROW LEVEL SECURITY;
@@ -2248,7 +1578,8 @@ CREATE TABLE public.email_drafts (
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.email_drafts FORCE ROW LEVEL SECURITY;
@@ -2383,6 +1714,46 @@ ALTER SEQUENCE public.email_recipients_id_seq OWNED BY public.email_recipients.i
 
 
 --
+-- Name: email_suppressions; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.email_suppressions (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email text NOT NULL,
+    reason text NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_esup_reason CHECK ((reason = ANY (ARRAY['hard_bounce'::text, 'spam_complaint'::text, 'manual'::text])))
+);
+
+ALTER TABLE ONLY public.email_suppressions FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.email_suppressions OWNER TO pplcrm_owner;
+
+--
+-- Name: email_suppressions_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.email_suppressions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_suppressions_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: email_suppressions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.email_suppressions_id_seq OWNED BY public.email_suppressions.id;
+
+
+--
 -- Name: email_trash; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -2445,6 +1816,7 @@ CREATE TABLE public.emails (
     updatedby_id bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_emails_folder_id CHECK ((folder_id = ANY (ARRAY[(3)::bigint, (4)::bigint, (5)::bigint, (7)::bigint, (10)::bigint, (11)::bigint]))),
     CONSTRAINT chk_emails_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['open'::text, 'closed'::text]))))
 );
@@ -2453,13 +1825,6 @@ ALTER TABLE ONLY public.emails FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE public.emails OWNER TO pplcrm_owner;
-
---
--- Name: COLUMN emails.to_email; Type: COMMENT; Schema: public; Owner: pplcrm_owner
---
-
-COMMENT ON COLUMN public.emails.to_email IS 'Display-only cache of the To list; email_recipients is the source of truth (D-10)';
-
 
 --
 -- Name: emails_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
@@ -2600,6 +1965,7 @@ CREATE TABLE public.events (
     updatedby_id bigint NOT NULL,
     search_vector tsvector GENERATED ALWAYS AS (((setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
     fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT events_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
     CONSTRAINT events_end_after_start_check CHECK ((end_time > start_time))
 );
@@ -2644,7 +2010,9 @@ CREATE TABLE public.files (
     sha256_hex text,
     uploaded_by bigint,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entity_type text,
+    entity_id bigint
 );
 
 ALTER TABLE ONLY public.files FORCE ROW LEVEL SECURITY;
@@ -2708,7 +2076,8 @@ CREATE TABLE public.google_oauth_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_sync_error text,
-    last_sync_error_at timestamp with time zone
+    last_sync_error_at timestamp with time zone,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.google_oauth_tokens FORCE ROW LEVEL SECURITY;
@@ -2723,7 +2092,7 @@ ALTER TABLE public.google_oauth_tokens OWNER TO pplcrm_owner;
 CREATE TABLE public.households (
     id bigint NOT NULL,
     tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
+    campaign_id bigint,
     createdby_id bigint NOT NULL,
     file_id bigint,
     home_phone text,
@@ -2751,6 +2120,7 @@ CREATE TABLE public.households (
     ward text,
     geocoding_status text DEFAULT 'pending'::text,
     search_vector tsvector GENERATED ALWAYS AS ((((((((((setweight(to_tsvector('simple'::regconfig, COALESCE(street1, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(city, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(address_fp_full, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(zip, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(state, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street_num, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(apt, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street2, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(country, ''::text)), 'C'::"char"))) STORED,
+    slug text,
     CONSTRAINT chk_households_geocoding_status CHECK (((geocoding_status IS NULL) OR (geocoding_status = ANY (ARRAY['pending'::text, 'success'::text, 'failed'::text]))))
 );
 
@@ -2822,6 +2192,7 @@ CREATE TABLE public.lists (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_refreshed_at timestamp with time zone,
     status text DEFAULT 'idle'::text NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_lists_status CHECK ((status = ANY (ARRAY['idle'::text, 'refreshing'::text, 'failed'::text]))),
     CONSTRAINT lists_object_check CHECK ((object = ANY (ARRAY['people'::text, 'households'::text])))
 );
@@ -3041,7 +2412,8 @@ CREATE TABLE public.ms_oauth_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_sync_error text,
-    last_sync_error_at timestamp with time zone
+    last_sync_error_at timestamp with time zone,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.ms_oauth_tokens FORCE ROW LEVEL SECURITY;
@@ -3065,7 +2437,9 @@ CREATE TABLE public.newsletter_events (
     ip text,
     user_agent text,
     "timestamp" timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    reason text,
+    bounce_type text
 );
 
 ALTER TABLE ONLY public.newsletter_events FORCE ROW LEVEL SECURITY;
@@ -3126,9 +2500,9 @@ CREATE TABLE public.newsletters (
     html_content text,
     plain_text_content text,
     top_links jsonb,
-    attachments jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_newsletters_click_rate_range CHECK (((click_rate >= (0)::numeric) AND (click_rate <= (100)::numeric))),
     CONSTRAINT chk_newsletters_open_rate_range CHECK (((open_rate >= (0)::numeric) AND (open_rate <= (100)::numeric)))
 );
@@ -3321,7 +2695,7 @@ ALTER TABLE public.person_newsletter_engagements OWNER TO pplcrm_owner;
 CREATE TABLE public.persons (
     id bigint NOT NULL,
     tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
+    campaign_id bigint,
     createdby_id bigint NOT NULL,
     household_id bigint NOT NULL,
     file_id bigint,
@@ -3343,9 +2717,11 @@ CREATE TABLE public.persons (
     instagram text,
     assigned_to bigint,
     search_vector tsvector GENERATED ALWAYS AS ((((((setweight(to_tsvector('simple'::regconfig, COALESCE(first_name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(last_name, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email2, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(mobile, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'C'::"char"))) STORED,
-    opt_in_status text,
-    opt_in_confirmed_at timestamp with time zone,
-    preferred_contact text
+    preferred_contact text,
+    slug text,
+    public_id text,
+    do_not_contact boolean DEFAULT false NOT NULL,
+    do_not_contact_channels text[]
 );
 
 ALTER TABLE ONLY public.persons FORCE ROW LEVEL SECURITY;
@@ -3753,7 +3129,7 @@ CREATE TABLE public.tasks (
     team_id bigint,
     file_id bigint,
     CONSTRAINT chk_tasks_priority CHECK (((priority IS NULL) OR (priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'urgent'::text])))),
-    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text])))
+    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'waiting'::text, 'done'::text, 'archived'::text])))
 );
 
 ALTER TABLE ONLY public.tasks FORCE ROW LEVEL SECURITY;
@@ -3864,7 +3240,8 @@ CREATE TABLE public.tenants (
     deletion_scheduled_at timestamp with time zone,
     suspended_at timestamp with time zone,
     paused_at timestamp with time zone,
-    slug text
+    slug text,
+    demo_mode_at timestamp with time zone
 );
 
 
@@ -3889,6 +3266,166 @@ ALTER SEQUENCE public.tenants_id_seq OWNER TO pplcrm_owner;
 --
 
 ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
+
+
+--
+-- Name: turf_assignments; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_assignments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    team_id bigint,
+    token text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_assignments FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_assignments OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turf_assignments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turf_assignments_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turf_assignments_id_seq OWNED BY public.turf_assignments.id;
+
+
+--
+-- Name: turf_households; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_households (
+    tenant_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_households FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_households OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_knocks (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    person_id bigint,
+    outcome text NOT NULL,
+    response text,
+    notes text,
+    source text DEFAULT 'companion'::text NOT NULL,
+    canvasser_name text,
+    client_knock_id text,
+    knocked_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_knocks FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_knocks OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turf_knocks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turf_knocks_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turf_knocks_id_seq OWNED BY public.turf_knocks.id;
+
+
+--
+-- Name: turfs; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turfs (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    list_id bigint,
+    target_doors integer,
+    centroid_lat double precision,
+    centroid_lng double precision,
+    ward text,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL
+);
+
+ALTER TABLE ONLY public.turfs FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turfs OWNER TO pplcrm_owner;
+
+--
+-- Name: turfs_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turfs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turfs_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turfs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turfs_id_seq OWNED BY public.turfs.id;
 
 
 --
@@ -4065,6 +3602,7 @@ CREATE TABLE public.web_forms (
     confirm_body text,
     notify_team_on boolean DEFAULT false NOT NULL,
     archived_at timestamp with time zone,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_web_forms_form_type CHECK (((form_type IS NULL) OR (form_type = ANY (ARRAY['standard'::text, 'donation'::text, 'recurring_donation'::text])))),
     CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
 );
@@ -4168,6 +3706,43 @@ ALTER SEQUENCE public.workflow_enrollments_id_seq OWNED BY public.workflow_enrol
 
 
 --
+-- Name: workflow_runs; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.workflow_runs (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    workflow_id bigint NOT NULL,
+    enrollment_id bigint,
+    person_id bigint,
+    step_number integer,
+    step_kind text,
+    status text DEFAULT 'success'::text NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_workflow_runs_status CHECK ((status = ANY (ARRAY['success'::text, 'failed'::text])))
+);
+
+ALTER TABLE ONLY public.workflow_runs FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.workflow_runs OWNER TO pplcrm_owner;
+
+--
+-- Name: workflow_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.workflow_runs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.workflow_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: workflow_steps; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4177,13 +3752,16 @@ CREATE TABLE public.workflow_steps (
     workflow_id bigint NOT NULL,
     step_number integer NOT NULL,
     delay_days integer NOT NULL,
-    subject text NOT NULL,
+    subject text,
     preview_text text,
     html_content text,
     plain_text_content text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    delay_unit text DEFAULT 'days'::text NOT NULL
+    delay_unit text DEFAULT 'days'::text NOT NULL,
+    kind text DEFAULT 'send_email'::text NOT NULL,
+    config jsonb,
+    CONSTRAINT chk_workflow_steps_kind CHECK ((kind = ANY (ARRAY['wait'::text, 'send_email'::text, 'add_tag'::text, 'create_task'::text, 'notify_team'::text])))
 );
 
 ALTER TABLE ONLY public.workflow_steps FORCE ROW LEVEL SECURITY;
@@ -4228,6 +3806,7 @@ CREATE TABLE public.workflows (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     trigger_event_id text,
+    conditions jsonb,
     CONSTRAINT chk_workflows_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['draft'::text, 'active'::text, 'paused'::text]))))
 );
 
@@ -4301,6 +3880,20 @@ ALTER TABLE ONLY public.authusers ALTER COLUMN id SET DEFAULT nextval('public.au
 --
 
 ALTER TABLE ONLY public.background_jobs ALTER COLUMN id SET DEFAULT nextval('public.background_jobs_id_seq'::regclass);
+
+
+--
+-- Name: campaign_person_facts id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts ALTER COLUMN id SET DEFAULT nextval('public.campaign_person_facts_id_seq'::regclass);
+
+
+--
+-- Name: campaign_subscriptions id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.campaign_subscriptions_id_seq'::regclass);
 
 
 --
@@ -4392,6 +3985,13 @@ ALTER TABLE ONLY public.email_headers ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.email_recipients ALTER COLUMN id SET DEFAULT nextval('public.email_recipients_id_seq'::regclass);
+
+
+--
+-- Name: email_suppressions id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions ALTER COLUMN id SET DEFAULT nextval('public.email_suppressions_id_seq'::regclass);
 
 
 --
@@ -4563,6 +4163,27 @@ ALTER TABLE ONLY public.tenants ALTER COLUMN id SET DEFAULT nextval('public.tena
 
 
 --
+-- Name: turf_assignments id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments ALTER COLUMN id SET DEFAULT nextval('public.turf_assignments_id_seq'::regclass);
+
+
+--
+-- Name: turf_knocks id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks ALTER COLUMN id SET DEFAULT nextval('public.turf_knocks_id_seq'::regclass);
+
+
+--
+-- Name: turfs id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs ALTER COLUMN id SET DEFAULT nextval('public.turfs_id_seq'::regclass);
+
+
+--
 -- Name: user_activity id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4636,6 +4257,38 @@ ALTER TABLE ONLY public.background_jobs
 
 
 --
+-- Name: campaign_person_facts campaign_person_facts_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT campaign_person_facts_id_key UNIQUE (id);
+
+
+--
+-- Name: campaign_person_facts campaign_person_facts_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT campaign_person_facts_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: campaign_subscriptions campaign_subscriptions_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT campaign_subscriptions_id_key UNIQUE (id);
+
+
+--
+-- Name: campaign_subscriptions campaign_subscriptions_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT campaign_subscriptions_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: campaigns campaigns_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4697,6 +4350,38 @@ ALTER TABLE ONLY public.data_imports
 
 ALTER TABLE ONLY public.data_imports
     ADD CONSTRAINT data_imports_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: delivery_requests delivery_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT delivery_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_route_stops delivery_route_stops_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT delivery_route_stops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_routes delivery_routes_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT delivery_routes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dismissed_duplicate_groups dismissed_duplicate_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups
+    ADD CONSTRAINT dismissed_duplicate_groups_pkey PRIMARY KEY (tenant_id, group_key);
 
 
 --
@@ -4812,6 +4497,22 @@ ALTER TABLE ONLY public.email_recipients
 
 
 --
+-- Name: email_suppressions email_suppressions_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT email_suppressions_id_key UNIQUE (id);
+
+
+--
+-- Name: email_suppressions email_suppressions_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT email_suppressions_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: email_trash email_trash_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4892,11 +4593,11 @@ ALTER TABLE ONLY public.google_oauth_tokens
 
 
 --
--- Name: google_oauth_tokens google_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: google_oauth_tokens google_oauth_tokens_tenant_campaign_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.google_oauth_tokens
-    ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+    ADD CONSTRAINT google_oauth_tokens_tenant_campaign_key UNIQUE (tenant_id, campaign_id);
 
 
 --
@@ -5028,11 +4729,11 @@ ALTER TABLE ONLY public.ms_oauth_tokens
 
 
 --
--- Name: ms_oauth_tokens ms_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: ms_oauth_tokens ms_oauth_tokens_tenant_campaign_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.ms_oauth_tokens
-    ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+    ADD CONSTRAINT ms_oauth_tokens_tenant_campaign_key UNIQUE (tenant_id, campaign_id);
 
 
 --
@@ -5268,6 +4969,70 @@ ALTER TABLE ONLY public.tenants
 
 
 --
+-- Name: turf_assignments turf_assignments_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_id_key UNIQUE (id);
+
+
+--
+-- Name: turf_assignments turf_assignments_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: turf_assignments turf_assignments_token_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_token_key UNIQUE (token);
+
+
+--
+-- Name: turf_households turf_households_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT turf_households_pk PRIMARY KEY (tenant_id, turf_id, household_id);
+
+
+--
+-- Name: turf_knocks turf_knocks_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT turf_knocks_id_key UNIQUE (id);
+
+
+--
+-- Name: turf_knocks turf_knocks_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT turf_knocks_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: turfs turfs_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT turfs_id_key UNIQUE (id);
+
+
+--
+-- Name: turfs turfs_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT turfs_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: email_bodies unique_email_bodies_email_id; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5281,6 +5046,30 @@ ALTER TABLE ONLY public.email_bodies
 
 ALTER TABLE ONLY public.email_headers
     ADD CONSTRAINT unique_email_headers_email_id UNIQUE (email_id);
+
+
+--
+-- Name: campaign_person_facts uq_cpf_campaign_person; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT uq_cpf_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
+
+
+--
+-- Name: campaign_subscriptions uq_csub_campaign_person; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT uq_csub_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
+
+
+--
+-- Name: email_suppressions uq_esup_email_reason; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT uq_esup_email_reason UNIQUE (tenant_id, email, reason);
 
 
 --
@@ -5380,6 +5169,14 @@ ALTER TABLE ONLY public.workflow_enrollments
 
 
 --
+-- Name: workflow_runs workflow_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: workflow_steps workflow_steps_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5426,6 +5223,13 @@ CREATE INDEX campaigns_tenant_index ON public.campaigns USING btree (tenant_id);
 
 
 --
+-- Name: companies_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX companies_tenant_slug_unique ON public.companies USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
+
+
+--
 -- Name: event_registrations_event_idx; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5451,6 +5255,20 @@ CREATE INDEX events_search_vector_idx ON public.events USING gin (search_vector)
 --
 
 CREATE UNIQUE INDEX events_tenant_slug_unique ON public.events USING btree (tenant_id, slug);
+
+
+--
+-- Name: files_entity_idx; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX files_entity_idx ON public.files USING btree (tenant_id, entity_type, entity_id);
+
+
+--
+-- Name: households_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX households_tenant_slug_unique ON public.households USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
 
 
 --
@@ -5510,6 +5328,34 @@ CREATE INDEX idx_companies_trgm_name ON public.companies USING gin (name public.
 
 
 --
+-- Name: idx_cpf_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_cpf_tenant_campaign ON public.campaign_person_facts USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_cpf_tenant_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_cpf_tenant_person ON public.campaign_person_facts USING btree (tenant_id, person_id);
+
+
+--
+-- Name: idx_csub_tenant_campaign_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_csub_tenant_campaign_status ON public.campaign_subscriptions USING btree (tenant_id, campaign_id, status);
+
+
+--
+-- Name: idx_csub_tenant_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_csub_tenant_person ON public.campaign_subscriptions USING btree (tenant_id, person_id);
+
+
+--
 -- Name: idx_data_exports_tenant_created; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5538,6 +5384,76 @@ CREATE INDEX idx_data_imports_tenant_processed ON public.data_imports USING btre
 
 
 --
+-- Name: idx_delivery_requests_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_campaign ON public.delivery_requests USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_delivery_requests_tenant_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_household ON public.delivery_requests USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_delivery_requests_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_status ON public.delivery_requests USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_delivery_route_stops_tenant_route; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_route_stops_tenant_route ON public.delivery_route_stops USING btree (tenant_id, route_id);
+
+
+--
+-- Name: idx_delivery_routes_share_token_hash; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_share_token_hash ON public.delivery_routes USING btree (share_token_hash) WHERE (share_token_hash IS NOT NULL);
+
+
+--
+-- Name: idx_delivery_routes_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_tenant_campaign ON public.delivery_routes USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_delivery_routes_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_tenant_status ON public.delivery_routes USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_dismissed_duplicate_groups_tenant; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_dismissed_duplicate_groups_tenant ON public.dismissed_duplicate_groups USING btree (tenant_id);
+
+
+--
+-- Name: idx_donation_periods_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donation_periods_tenant_campaign ON public.donation_periods USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_donation_pledges_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donation_pledges_tenant_campaign ON public.donation_pledges USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_donations_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5549,6 +5465,13 @@ CREATE INDEX idx_donations_person ON public.donations USING btree (tenant_id, pe
 --
 
 CREATE INDEX idx_donations_pledge ON public.donations USING btree (pledge_id) WHERE (pledge_id IS NOT NULL);
+
+
+--
+-- Name: idx_donations_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donations_tenant_campaign ON public.donations USING btree (tenant_id, campaign_id);
 
 
 --
@@ -5570,6 +5493,13 @@ CREATE INDEX idx_email_attachments_file_id ON public.email_attachments USING btr
 --
 
 CREATE INDEX idx_email_comments_email ON public.email_comments USING btree (email_id);
+
+
+--
+-- Name: idx_email_drafts_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_email_drafts_tenant_campaign ON public.email_drafts USING btree (tenant_id, campaign_id);
 
 
 --
@@ -5608,6 +5538,13 @@ CREATE INDEX idx_emails_tenant_assigned ON public.emails USING btree (tenant_id,
 
 
 --
+-- Name: idx_emails_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_emails_tenant_campaign ON public.emails USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_emails_tenant_folder; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5622,10 +5559,24 @@ CREATE INDEX idx_emails_tenant_status ON public.emails USING btree (tenant_id, s
 
 
 --
+-- Name: idx_esup_tenant_email; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_esup_tenant_email ON public.email_suppressions USING btree (tenant_id, email);
+
+
+--
 -- Name: idx_event_registrations_ticket; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
 CREATE INDEX idx_event_registrations_ticket ON public.event_registrations USING btree (ticket_type_id) WHERE (ticket_type_id IS NOT NULL);
+
+
+--
+-- Name: idx_events_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_events_tenant_campaign ON public.events USING btree (tenant_id, campaign_id);
 
 
 --
@@ -5734,6 +5685,13 @@ CREATE INDEX idx_households_trgm_zip ON public.households USING gin (zip public.
 
 
 --
+-- Name: idx_lists_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_lists_tenant_campaign ON public.lists USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_lists_tenant_is_dynamic; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5822,6 +5780,13 @@ CREATE INDEX idx_newsletter_events_newsletter_event ON public.newsletter_events 
 --
 
 CREATE INDEX idx_newsletter_events_type ON public.newsletter_events USING btree (tenant_id, newsletter_id, event_type);
+
+
+--
+-- Name: idx_newsletters_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_newsletters_tenant_campaign ON public.newsletters USING btree (tenant_id, campaign_id);
 
 
 --
@@ -6077,6 +6042,83 @@ CREATE UNIQUE INDEX idx_tenants_slug ON public.tenants USING btree (slug) WHERE 
 
 
 --
+-- Name: idx_turf_assignments_team; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_assignments_team ON public.turf_assignments USING btree (tenant_id, team_id);
+
+
+--
+-- Name: idx_turf_assignments_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_assignments_turf ON public.turf_assignments USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turf_households_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_households_household ON public.turf_households USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_turf_households_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_households_turf ON public.turf_households USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turf_knocks_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_household ON public.turf_knocks USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_turf_knocks_knocked_at; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_knocked_at ON public.turf_knocks USING btree (tenant_id, knocked_at);
+
+
+--
+-- Name: idx_turf_knocks_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_turf ON public.turf_knocks USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turfs_tenant; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant ON public.turfs USING btree (tenant_id);
+
+
+--
+-- Name: idx_turfs_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_campaign ON public.turfs USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_turfs_tenant_list; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_list ON public.turfs USING btree (tenant_id, list_id);
+
+
+--
+-- Name: idx_turfs_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_status ON public.turfs USING btree (tenant_id, status);
+
+
+--
 -- Name: idx_user_activity_tenant_entity; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6147,6 +6189,13 @@ CREATE INDEX idx_volunteer_shifts_person_ri ON public.volunteer_shifts USING btr
 
 
 --
+-- Name: idx_web_forms_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_web_forms_tenant_campaign ON public.web_forms USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_web_forms_tenant_slug; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6186,6 +6235,13 @@ CREATE INDEX idx_workflow_enrollments_tenant_id ON public.workflow_enrollments U
 --
 
 CREATE INDEX idx_workflow_enrollments_workflow_person ON public.workflow_enrollments USING btree (workflow_id, person_id);
+
+
+--
+-- Name: idx_workflow_runs_tenant_workflow_created; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_workflow_runs_tenant_workflow_created ON public.workflow_runs USING btree (tenant_id, workflow_id, created_at DESC);
 
 
 --
@@ -6252,10 +6308,45 @@ CREATE INDEX persons_tenant_campaign_household_index ON public.persons USING btr
 
 
 --
+-- Name: persons_tenant_public_id_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX persons_tenant_public_id_unique ON public.persons USING btree (tenant_id, public_id) WHERE (public_id IS NOT NULL);
+
+
+--
+-- Name: persons_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX persons_tenant_slug_unique ON public.persons USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
+
+
+--
 -- Name: sessions_user_index; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
 CREATE INDEX sessions_user_index ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: uq_delivery_route_stops_active_request; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_delivery_route_stops_active_request ON public.delivery_route_stops USING btree (request_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: uq_delivery_route_stops_route_seq; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_delivery_route_stops_route_seq ON public.delivery_route_stops USING btree (route_id, seq);
+
+
+--
+-- Name: uq_turf_knocks_client; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_turf_knocks_client ON public.turf_knocks USING btree (tenant_id, turf_id, client_knock_id) WHERE (client_knock_id IS NOT NULL);
 
 
 --
@@ -6681,18 +6772,18 @@ ALTER TABLE ONLY public.email_trash
 
 
 --
--- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
-
-
---
 -- Name: campaigns fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
 
 
@@ -6737,19 +6828,19 @@ ALTER TABLE ONLY public.households
 
 
 --
--- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-
-
---
 -- Name: map_campaigns_users fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.map_campaigns_users
     ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -6793,11 +6884,43 @@ ALTER TABLE ONLY public.companies
 
 
 --
--- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: campaign_person_facts fk_cpf_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_person_facts fk_cpf_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_person_facts fk_cpf_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_person_facts fk_cpf_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: campaign_person_facts fk_cpf_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
 
 
 --
@@ -6822,6 +6945,54 @@ ALTER TABLE ONLY public.households
 
 ALTER TABLE ONLY public.persons
     ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_subscriptions fk_csub_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_subscriptions fk_csub_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
 
 
 --
@@ -6873,6 +7044,110 @@ ALTER TABLE ONLY public.data_imports
 
 
 --
+-- Name: delivery_requests fk_delivery_requests_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_web_form; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_web_form FOREIGN KEY (web_form_id) REFERENCES public.web_forms(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_request; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_request FOREIGN KEY (request_id) REFERENCES public.delivery_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_route; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_route FOREIGN KEY (route_id) REFERENCES public.delivery_routes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_volunteer; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_volunteer FOREIGN KEY (volunteer_person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: dismissed_duplicate_groups fk_dismissed_duplicate_groups_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups
+    ADD CONSTRAINT fk_dismissed_duplicate_groups_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: donation_periods fk_donation_periods_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donation_periods
+    ADD CONSTRAINT fk_donation_periods_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: donation_periods fk_donation_periods_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6881,11 +7156,27 @@ ALTER TABLE ONLY public.donation_periods
 
 
 --
+-- Name: donation_pledges fk_donation_pledges_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT fk_donation_pledges_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: donation_pledges fk_donation_pledges_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.donation_pledges
     ADD CONSTRAINT fk_donation_pledges_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: donations fk_donations_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT fk_donations_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -6966,6 +7257,14 @@ ALTER TABLE ONLY public.email_comments
 
 ALTER TABLE ONLY public.email_comments
     ADD CONSTRAINT fk_email_comments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_drafts fk_email_drafts_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_email_drafts_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -7057,11 +7356,27 @@ ALTER TABLE ONLY public.emails
 
 
 --
+-- Name: emails fk_emails_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT fk_emails_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: emails fk_emails_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.emails
     ADD CONSTRAINT fk_emails_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_suppressions fk_esup_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT fk_esup_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -7094,6 +7409,14 @@ ALTER TABLE ONLY public.event_registrations
 
 ALTER TABLE ONLY public.event_ticket_types
     ADD CONSTRAINT fk_event_ticket_types_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: events fk_events_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT fk_events_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -7161,6 +7484,14 @@ ALTER TABLE ONLY public.google_oauth_tokens
 
 
 --
+-- Name: google_oauth_tokens fk_google_oauth_tokens_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.google_oauth_tokens
+    ADD CONSTRAINT fk_google_oauth_tokens_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: persons fk_household_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7182,6 +7513,14 @@ ALTER TABLE ONLY public.households
 
 ALTER TABLE ONLY public.households
     ADD CONSTRAINT fk_households_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: lists fk_lists_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT fk_lists_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -7353,6 +7692,14 @@ ALTER TABLE ONLY public.ms_oauth_tokens
 
 
 --
+-- Name: ms_oauth_tokens fk_ms_oauth_tokens_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.ms_oauth_tokens
+    ADD CONSTRAINT fk_ms_oauth_tokens_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: newsletter_events fk_newsletter_events_newsletter_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7366,6 +7713,14 @@ ALTER TABLE ONLY public.newsletter_events
 
 ALTER TABLE ONLY public.newsletter_events
     ADD CONSTRAINT fk_newsletter_events_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: newsletters fk_newsletters_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT fk_newsletters_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -7697,6 +8052,174 @@ ALTER TABLE ONLY public.teams
 
 
 --
+-- Name: turf_assignments fk_turf_assignments_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_team; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_team FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_households fk_turf_households_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_households fk_turf_households_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_households fk_turf_households_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_households fk_turf_households_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_households fk_turf_households_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turfs fk_turfs_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: turfs fk_turfs_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turfs fk_turfs_list; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_list FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turfs fk_turfs_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turfs fk_turfs_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
 -- Name: user_activity fk_user_activity_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7734,6 +8257,14 @@ ALTER TABLE ONLY public.user_activity
 
 ALTER TABLE ONLY public.map_campaigns_users
     ADD CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: web_forms fk_web_forms_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT fk_web_forms_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -7790,6 +8321,22 @@ ALTER TABLE ONLY public.workflow_enrollments
 
 ALTER TABLE ONLY public.workflow_enrollments
     ADD CONSTRAINT fk_workflow_enrollments_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs fk_workflow_runs_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT fk_workflow_runs_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs fk_workflow_runs_workflow_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT fk_workflow_runs_workflow_id FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
 
 
 --
@@ -8045,6 +8592,18 @@ ALTER TABLE public.authusers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.background_jobs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: campaign_person_facts; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.campaign_person_facts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: campaign_subscriptions; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.campaign_subscriptions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: campaigns; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8067,6 +8626,30 @@ ALTER TABLE public.data_exports ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.data_imports ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_requests; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_route_stops; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_route_stops ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_routes; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_routes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: dismissed_duplicate_groups; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.dismissed_duplicate_groups ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: donation_periods; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -8127,6 +8710,12 @@ ALTER TABLE public.email_read_states ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.email_recipients ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_suppressions; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.email_suppressions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: email_trash; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -8365,6 +8954,20 @@ CREATE POLICY tenant_isolation ON public.background_jobs USING (((NULLIF(current
 
 
 --
+-- Name: campaign_person_facts tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.campaign_person_facts USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: campaign_subscriptions tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.campaign_subscriptions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: campaigns tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8390,6 +8993,34 @@ CREATE POLICY tenant_isolation ON public.data_exports USING (((NULLIF(current_se
 --
 
 CREATE POLICY tenant_isolation ON public.data_imports USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_requests tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_requests USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_route_stops tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_route_stops USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_routes tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_routes USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: dismissed_duplicate_groups tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.dismissed_duplicate_groups USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
 
 --
@@ -8460,6 +9091,13 @@ CREATE POLICY tenant_isolation ON public.email_read_states USING (((NULLIF(curre
 --
 
 CREATE POLICY tenant_isolation ON public.email_recipients USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: email_suppressions tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.email_suppressions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
 
 --
@@ -8722,6 +9360,34 @@ CREATE POLICY tenant_isolation ON public.teams USING (((NULLIF(current_setting('
 
 
 --
+-- Name: turf_assignments tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_assignments USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turf_households tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_households USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turf_knocks tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_knocks USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turfs tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turfs USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: user_activity tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8764,6 +9430,13 @@ CREATE POLICY tenant_isolation ON public.workflow_enrollments USING (((NULLIF(cu
 
 
 --
+-- Name: workflow_runs tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.workflow_runs USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: workflow_steps tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8783,6 +9456,30 @@ CREATE POLICY tenant_isolation ON public.workflows USING (((NULLIF(current_setti
 
 CREATE POLICY tenant_isolation ON public.zapier_subscriptions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
+
+--
+-- Name: turf_assignments; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turf_households; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_households ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turf_knocks; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_knocks ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turfs; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turfs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: user_activity; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -8819,6 +9516,12 @@ ALTER TABLE public.webhook_events ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.workflow_enrollments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: workflow_runs; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.workflow_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: workflow_steps; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -8871,6 +9574,34 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.background_jobs TO pplcrm_app;
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.background_jobs_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE campaign_person_facts; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.campaign_person_facts TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE campaign_person_facts_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.campaign_person_facts_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE campaign_subscriptions; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.campaign_subscriptions TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE campaign_subscriptions_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.campaign_subscriptions_id_seq TO pplcrm_app;
 
 
 --
@@ -8927,6 +9658,55 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.data_imports TO pplcrm_app;
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.data_imports_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_requests; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_requests TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_requests_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_requests_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_route_stops; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_route_stops TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_route_stops_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_route_stops_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_routes; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_routes TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_routes_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_routes_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE dismissed_duplicate_groups; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.dismissed_duplicate_groups TO pplcrm_app;
 
 
 --
@@ -9060,6 +9840,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.email_recipients TO pplcrm_app
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.email_recipients_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE email_suppressions; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.email_suppressions TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE email_suppressions_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.email_suppressions_id_seq TO pplcrm_app;
 
 
 --
@@ -9518,6 +10312,55 @@ GRANT SELECT,USAGE ON SEQUENCE public.tenants_id_seq TO pplcrm_app;
 
 
 --
+-- Name: TABLE turf_assignments; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_assignments TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turf_assignments_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turf_assignments_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE turf_households; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_households TO pplcrm_app;
+
+
+--
+-- Name: TABLE turf_knocks; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_knocks TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turf_knocks_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turf_knocks_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE turfs; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turfs TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turfs_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turfs_id_seq TO pplcrm_app;
+
+
+--
 -- Name: TABLE user_activity; Type: ACL; Schema: public; Owner: pplcrm_owner
 --
 
@@ -9595,6 +10438,20 @@ GRANT SELECT,USAGE ON SEQUENCE public.workflow_enrollments_id_seq TO pplcrm_app;
 
 
 --
+-- Name: TABLE workflow_runs; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.workflow_runs TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE workflow_runs_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.workflow_runs_id_seq TO pplcrm_app;
+
+
+--
 -- Name: TABLE workflow_steps; Type: ACL; Schema: public; Owner: pplcrm_owner
 --
 
@@ -9654,7 +10511,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
+\unrestrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 ```
 
 ## File: apps/backend/src/app/config/email-folders.config.ts
@@ -14832,285 +15689,6 @@ export async function createTokens(
 }
 ```
 
-## File: apps/backend/src/app/modules/auth/passkey.controller.ts
-
-```typescript
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-} from '@simplewebauthn/server';
-import type {
-  AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
-  RegistrationResponseJSON,
-} from '@simplewebauthn/types';
-
-import { randomBytes } from 'crypto';
-
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
-import { env } from '../../../env';
-import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
-import { BaseRepository } from '../../lib/base.repo';
-import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
-import { createTokens } from './auth-tokens';
-
-export class PasskeyController {
-  private get db() {
-    return BaseRepository.dbInstance;
-  }
-
-  // ── Email Check ──────────────────────────────────────────────────────────
-  public async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
-    const user = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'tenant_id'])
-      .where('email', '=', email.trim().toLowerCase())
-      .executeTakeFirst();
-
-    if (!user) return { hasPasskeys: false };
-
-    const row = await this.db
-      .selectFrom('passkeys')
-      .select(this.db.fn.countAll<string>().as('count'))
-      .where('user_id', '=', user.id)
-      .where('tenant_id', '=', user.tenant_id)
-      .executeTakeFirst();
-
-    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
-  }
-
-  public async deletePasskey(auth: IAuthKeyPayload, id: string) {
-    const result = await this.db
-      .deleteFrom('passkeys')
-      .where('id', '=', id)
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numDeletedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
-  }
-
-  // ── Authentication ────────────────────────────────────────────────────────
-  public async getAuthenticationOptions() {
-    const nonce = randomBytes(16).toString('hex');
-
-    const options = await generateAuthenticationOptions({
-      rpID,
-      userVerification: 'preferred',
-      allowCredentials: [], // discoverable credential — browser prompts user to choose
-    });
-
-    storeChallenge(`auth:${nonce}`, options.challenge);
-    return { options, nonce };
-  }
-
-  // ── Registration ─────────────────────────────────────────────────────────
-  public async getRegistrationOptions(auth: IAuthKeyPayload) {
-    const user = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'email', 'first_name', 'last_name'])
-      .where('id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!user) throw new NotFoundError('User not found');
-
-    const existingPasskeys = await this.db
-      .selectFrom('passkeys')
-      .select(['credential_id', 'transports'])
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .execute();
-
-    const options = await generateRegistrationOptions({
-      rpName,
-      rpID,
-      userName: user.email,
-      userDisplayName: [user.first_name, (user as any).last_name].filter(Boolean).join(' '),
-      attestationType: 'none',
-      excludeCredentials: existingPasskeys.map((pk) => ({
-        id: pk.credential_id,
-        transports: (pk.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
-      })),
-      authenticatorSelection: {
-        residentKey: 'preferred',
-        userVerification: 'preferred',
-      },
-    });
-
-    storeChallenge(`reg:${auth.user_id}`, options.challenge);
-    return options;
-  }
-
-  // ── Management ────────────────────────────────────────────────────────────
-  public async listPasskeys(auth: IAuthKeyPayload) {
-    return this.db
-      .selectFrom('passkeys')
-      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .orderBy('created_at', 'asc')
-      .execute();
-  }
-
-  public async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
-    const result = await this.db
-      .updateTable('passkeys')
-      .set({ friendly_name: friendlyName })
-      .where('id', '=', id)
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numUpdatedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
-  }
-
-  public async verifyAuthentication(
-    response: AuthenticationResponseJSON,
-    nonce: string,
-    ipAddress?: string,
-    userAgent?: string,
-    rememberMe?: boolean,
-  ) {
-    const challenge = consumeChallenge(`auth:${nonce}`);
-    if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
-
-    // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const passkey = await this.db
-      .selectFrom('passkeys')
-      .selectAll()
-      .where('credential_id', '=', response.id)
-      .executeTakeFirst();
-
-    if (!passkey) throw new UnauthorizedError('Passkey not recognized.');
-
-    const verification = await verifyAuthenticationResponse({
-      response,
-      expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigins(),
-      expectedRPID: rpID,
-      credential: {
-        id: passkey.credential_id,
-        publicKey: Buffer.from(passkey.public_key, 'base64url'),
-        counter: Number(passkey.counter),
-        transports: (passkey.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
-      },
-      requireUserVerification: false,
-    });
-
-    if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
-
-    await this.db
-      .updateTable('passkeys')
-      .set({ counter: verification.authenticationInfo.newCounter as any })
-      .where('credential_id', '=', passkey.credential_id)
-      .where('tenant_id', '=', passkey.tenant_id)
-      .execute();
-
-    // Fetch the user
-    const user = await this.db
-      .selectFrom('authusers')
-      .select([
-        'id',
-        'email',
-        'first_name',
-        'last_name',
-        'tenant_id',
-        'role',
-        'verified',
-        'deletion_scheduled_at',
-        'deactivated_at',
-      ])
-      .where('id', '=', passkey.user_id)
-      .executeTakeFirst();
-
-    if (!user) throw new UnauthorizedError();
-    if (user.deactivated_at) {
-      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
-    }
-    if (!user.verified) throw new UnauthorizedError('Email not verified.');
-
-    const tenantId = String(user.tenant_id);
-    const userId = String(user.id);
-
-    return createTokens({
-      user_id: userId,
-      tenant_id: tenantId,
-      name: user.first_name,
-      ipAddress,
-      userAgent,
-      rememberMe,
-    });
-  }
-
-  public async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
-    const challenge = consumeChallenge(`reg:${auth.user_id}`);
-    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
-
-    const verification = await verifyRegistrationResponse({
-      response,
-      expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigins(),
-      expectedRPID: rpID,
-      requireUserVerification: false,
-    });
-
-    if (!verification.verified || !verification.registrationInfo) {
-      throw new BadRequestError('Passkey registration verification failed.');
-    }
-
-    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
-
-    const user = await this.db
-      .selectFrom('authusers')
-      .select('tenant_id')
-      .where('id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirstOrThrow();
-
-    await this.db
-      .insertInto('passkeys')
-      .values({
-        user_id: auth.user_id,
-        tenant_id: user.tenant_id,
-        credential_id: credential.id,
-        public_key: Buffer.from(credential.publicKey).toString('base64url'),
-        counter: credential.counter,
-        device_type: credentialDeviceType,
-        backed_up: credentialBackedUp,
-        transports: (credential.transports as string[] | undefined) ?? null,
-        aaguid: aaguid ?? null,
-        friendly_name: friendlyName ?? null,
-      })
-      .execute();
-
-    return { verified: true };
-  }
-}
-
-function getExpectedOrigins(): string[] {
-  const origins: string[] = [env.appUrl];
-  if (env.apiUrl !== env.appUrl) {
-    try {
-      origins.push(new URL(env.apiUrl).origin);
-    } catch {}
-  }
-  return origins;
-}
-
-const rpID = env.webAuthnRpId;
-const rpName = env.webAuthnRpName;
-```
-
 ## File: apps/backend/src/app/modules/billing/repositories/webhook-events.repo.ts
 
 ```typescript
@@ -17547,6 +18125,2885 @@ export const DeliveriesRouter = router({
   revokeShareLink: authProcedure
     .input(RouteIdObj)
     .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
+});
+```
+
+## File: apps/backend/src/app/modules/demo/controller.ts
+
+```typescript
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { ForbiddenError, InternalError, NotFoundError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { DEMO_MANIFEST_SETTINGS_KEY, DemoSeedManifestObj, deleteDemoData } from './demo-seed';
+import type { DemoSeedManifest } from './demo-seed';
+
+/**
+ * Exit demo mode: delete exactly the rows the signup seeder created (tracked in
+ * the demo_seed_manifest settings row), keep everything else — the six starter
+ * forms, the system tags, and anything the user created while exploring.
+ */
+export class DemoController extends BaseController<'settings', SettingsRepo> {
+  constructor() {
+    super(new SettingsRepo());
+  }
+
+  public async exitDemoMode(auth: IAuthKeyPayload) {
+    const manifest = await this.loadManifest(auth.tenant_id);
+
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['placeholder_household_id', 'subscription_status'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    // Demo mode is the pre-plan test drive: exiting (and the configuration it
+    // unlocks) requires a subscription first. Same active-status rule as billing.
+    const hasActiveSubscription = ['active', 'trialing'].includes(tenant?.subscription_status ?? '');
+    if (!hasActiveSubscription) {
+      throw new ForbiddenError(
+        'Choose a plan before exiting demo mode. Once you subscribe, you can remove the demo data and set up your workspace.',
+      );
+    }
+
+    const placeholderHouseholdId = tenant?.placeholder_household_id;
+    if (!placeholderHouseholdId) {
+      throw new InternalError('This workspace has no placeholder household — cannot exit demo mode.');
+    }
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await deleteDemoData(
+          {
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+            manifest,
+            placeholder_household_id: String(placeholderHouseholdId),
+          },
+          trx,
+        );
+      });
+
+    return { success: true };
+  }
+
+  private async loadManifest(tenant_id: string): Promise<DemoSeedManifest> {
+    const row = await this.getRepo().getByKey({ tenant_id, key: DEMO_MANIFEST_SETTINGS_KEY });
+    if (!row) {
+      throw new NotFoundError('The demo data has already been removed.');
+    }
+    const raw: unknown = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+    const parsed = DemoSeedManifestObj.safeParse(raw);
+    if (!parsed.success) {
+      throw new InternalError('The demo data record is malformed — please contact support.');
+    }
+    return parsed.data;
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/demo/demo-guard.ts
+
+```typescript
+import type { Kysely, Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { ForbiddenError } from '../../errors/app-errors';
+
+/**
+ * Demo mode is the pre-plan test drive: the tenant can explore and edit the
+ * seeded data freely, but must not touch outward-facing configuration (sender
+ * identities, domains, mailbox sync) or send email. Those unlock when they
+ * subscribe and exit demo mode. Enforced server-side at the mutation entry
+ * points — the UI copy is a courtesy, this guard is the contract.
+ */
+export const DEMO_MODE_BLOCKED_MESSAGE =
+  'This is part of the demo. Choose a plan on the Billing page, then exit demo mode to unlock configuration and sending.';
+
+export async function isDemoMode(db: Kysely<Models> | Transaction<Models>, tenant_id: string): Promise<boolean> {
+  const tenant = await db.selectFrom('tenants').select('demo_mode_at').where('id', '=', tenant_id).executeTakeFirst();
+  return tenant?.demo_mode_at != null;
+}
+
+/** Throws FORBIDDEN when the tenant is still in demo mode. */
+export async function assertNotDemoMode(db: Kysely<Models> | Transaction<Models>, tenant_id: string): Promise<void> {
+  if (await isDemoMode(db, tenant_id)) {
+    throw new ForbiddenError(DEMO_MODE_BLOCKED_MESSAGE);
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/demo/demo-seed-data.ts
+
+```typescript
+import type { SupportLevel, VotingStatus } from '../../../../../../libs/common/src';
+
+/**
+ * The hand-curated demo dataset seeded for every new tenant (demo mode).
+ *
+ * Ground rules (why the data looks the way it does):
+ * - Addresses are real Ottawa, ON streets with pre-baked coordinates and real
+ *   ward names, so map pins, the "Located" geocode chip, and ward-bounded turf
+ *   cutting all work with zero Google API calls at signup.
+ * - Emails are on RFC 2606 reserved domains (example.com/org/net) so nothing a
+ *   user does with the demo data — including actually sending the draft
+ *   newsletter — can ever reach a real inbox.
+ * - Phone numbers use the fictional 555 exchange in Ottawa area codes.
+ * - Tags are freeform organizational labels only. Donor / supporter /
+ *   subscriber are structured concepts in this product (donations table,
+ *   campaign_person_facts, campaign_subscriptions) and were retired as tags —
+ *   the demo data must not resurrect them (see modules/tags/system-tags.ts).
+ * - Newsletter aggregates are DERIVED from the engagement specs at seed time,
+ *   so the report page numbers always add up.
+ */
+
+export interface DemoCompanyDef {
+  key: string;
+  name: string;
+  description: string;
+  website: string;
+  email: string;
+  phone: string;
+  industry: string;
+}
+
+export interface DemoHouseholdDef {
+  key: string;
+  street_num: string;
+  street1: string;
+  zip: string;
+  lat: number;
+  lng: number;
+  ward: string;
+  home_phone?: string;
+  notes?: string;
+  /** Demo tag names attached via map_households_tags. */
+  tags?: string[];
+}
+
+export interface DemoPersonDef {
+  key: string;
+  first_name: string;
+  last_name: string;
+  /** Household key; omitted = lives on the tenant placeholder household (address unknown). */
+  household?: string;
+  /** Company key for persons.company_id. */
+  company?: string;
+  email?: string;
+  mobile?: string;
+  notes?: string;
+  /** Staggers persons.created_at so the dashboard growth chart draws a real curve. */
+  createdDaysAgo: number;
+  /** Tag names — demo tags or the system volunteer/vip tags. */
+  tags?: string[];
+  supportLevel?: SupportLevel;
+  votingStatus?: VotingStatus;
+  /** Seeds a campaign_subscriptions row (status subscribed, consent_source import). */
+  subscribed?: boolean;
+  doNotContact?: boolean;
+}
+
+export interface DemoTagDef {
+  name: string;
+  description: string;
+  color: string;
+}
+
+export interface DemoTaskDef {
+  name: string;
+  details: string;
+  status: 'todo' | 'in_progress' | 'waiting' | 'done';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  position: number;
+  dueInDays?: number;
+  completedDaysAgo?: number;
+  assignToOwner?: boolean;
+  /** Demo user key (DEMO_USERS) to assign the task to. */
+  assignToUser?: string;
+}
+
+export interface DemoListDef {
+  key: string;
+  name: string;
+  description: string;
+  members: string[];
+}
+
+export interface DemoTeamDef {
+  name: string;
+  description: string;
+  members: string[];
+}
+
+export interface DemoVolunteerEventDef {
+  key: string;
+  name: string;
+  description: string;
+  location_address: string;
+  slug: string;
+  /** Negative = in the past. */
+  startInDays: number;
+  durationHours: number;
+  capacity: number;
+  shifts: { person: string; status: 'signed_up' | 'attended' }[];
+}
+
+export interface DemoEngagementDef {
+  person: string;
+  opens: number;
+  /** URLs clicked (must come from the newsletter's links). */
+  clicks?: string[];
+  unsubscribed?: boolean;
+  bounce?: 'hard' | 'soft';
+}
+
+export interface DemoNewsletterDef {
+  key: string;
+  name: string;
+  status: 'sent' | 'draft';
+  subject: string;
+  preview_text: string;
+  audience_description: string;
+  html_content: string;
+  plain_text_content: string;
+  sentDaysAgo?: number;
+  links?: string[];
+  /** Person keys the send went to; engagement entries must be a subset. */
+  recipients?: string[];
+  engagement?: DemoEngagementDef[];
+}
+
+export interface DemoSubmissionDef {
+  /** Matches the starter form's slug (created by seedStarterForms). */
+  formSlug: 'newsletter-sign-up' | 'issues-survey';
+  person: string;
+  daysAgo: number;
+  answers: Record<string, unknown>;
+}
+
+/**
+ * Demo teammates — real authusers rows so the Users page, task assignment, and
+ * inbox triage look staffed. They get a random unguessable password at seed
+ * time and reserved-domain emails, so they can never actually sign in.
+ * `emailLocal` is composed with the tenant's slug at seed time
+ * (`<local>@<tenant-slug>.example.com`) because authusers.email is globally
+ * unique — a fixed address would break the second tenant's signup.
+ */
+export interface DemoUserDef {
+  key: string;
+  first_name: string;
+  last_name: string;
+  emailLocal: string;
+  role: 'admin' | 'user';
+}
+
+/** Issues are tags with type 'issue' — the structured what-do-they-care-about vocabulary. */
+export interface DemoIssueDef {
+  name: string;
+  description: string;
+  color: string;
+  /** Person keys this issue is attached to via map_peoples_tags. */
+  people: string[];
+}
+
+export interface DemoEmailDef {
+  folder: 'inbox' | 'sent';
+  /** Person key the email is from (inbox) or to (sent) — ties the thread to a CRM contact. */
+  person: string;
+  subject: string;
+  preview: string;
+  status: 'open' | 'closed';
+  /** 'owner' or a demo user key. */
+  assignTo?: string;
+  daysAgo: number;
+  is_favourite?: boolean;
+  body_html: string;
+}
+
+export const DEMO_CITY = 'Ottawa';
+export const DEMO_STATE = 'ON';
+export const DEMO_COUNTRY = 'Canada';
+
+export const DEMO_COMPANIES: DemoCompanyDef[] = [
+  {
+    key: 'co-bytown',
+    name: 'Bytown Coffee Roasters',
+    description: 'Small-batch roastery and café on Wellington West.',
+    website: 'https://bytowncoffee.example.com',
+    email: 'hello@bytowncoffee.example.com',
+    phone: '613-555-0181',
+    industry: 'Food & Beverage',
+  },
+  {
+    key: 'co-rideau-dental',
+    name: 'Rideau Valley Dental',
+    description: 'Family dental practice near the canal.',
+    website: 'https://rideauvalleydental.example.com',
+    email: 'reception@rideauvalleydental.example.com',
+    phone: '613-555-0114',
+    industry: 'Healthcare',
+  },
+  {
+    key: 'co-wwrealty',
+    name: 'Wellington West Realty',
+    description: 'Independent brokerage serving Kitchissippi and Westboro.',
+    website: 'https://wwrealty.example.com',
+    email: 'info@wwrealty.example.com',
+    phone: '613-555-0147',
+    industry: 'Real Estate',
+  },
+  {
+    key: 'co-capland',
+    name: 'Capital City Landscaping',
+    description: 'Residential landscaping and snow removal crew.',
+    website: 'https://capitalcitylandscaping.example.com',
+    email: 'office@capitalcitylandscaping.example.com',
+    phone: '613-555-0129',
+    industry: 'Landscaping',
+  },
+  {
+    key: 'co-glebephysio',
+    name: 'Glebe Physiotherapy Clinic',
+    description: 'Physiotherapy and sports rehab on Bank Street.',
+    website: 'https://glebephysio.example.com',
+    email: 'frontdesk@glebephysio.example.com',
+    phone: '613-555-0166',
+    industry: 'Healthcare',
+  },
+  {
+    key: 'co-sometech',
+    name: 'Somerset Tech Solutions',
+    description: 'Managed IT and web development for small businesses.',
+    website: 'https://somersettech.example.com',
+    email: 'contact@somersettech.example.com',
+    phone: '613-555-0192',
+    industry: 'Technology',
+  },
+  {
+    key: 'co-preston',
+    name: 'Preston Hardware & Home',
+    description: 'Third-generation hardware store in Little Italy.',
+    website: 'https://prestonhardware.example.com',
+    email: 'store@prestonhardware.example.com',
+    phone: '613-555-0153',
+    industry: 'Retail',
+  },
+  {
+    key: 'co-riverkeepers',
+    name: 'Ottawa Riverkeepers Alliance',
+    description: 'Non-profit protecting the Ottawa River watershed.',
+    website: 'https://riverkeepers.example.org',
+    email: 'volunteer@riverkeepers.example.org',
+    phone: '613-555-0175',
+    industry: 'Non-profit',
+  },
+  {
+    key: 'co-hintonprint',
+    name: 'Hintonburg Print Co.',
+    description: 'Digital and offset printing — signs, flyers, banners.',
+    website: 'https://hintonburgprint.example.com',
+    email: 'orders@hintonburgprint.example.com',
+    phone: '613-555-0138',
+    industry: 'Printing',
+  },
+  {
+    key: 'co-lansdowne',
+    name: 'Lansdowne Fitness Studio',
+    description: 'Group fitness and personal training at Lansdowne Park.',
+    website: 'https://lansdownefitness.example.com',
+    email: 'team@lansdownefitness.example.com',
+    phone: '613-555-0107',
+    industry: 'Fitness',
+  },
+];
+
+export const DEMO_HOUSEHOLDS: DemoHouseholdDef[] = [
+  // ── Somerset ward (Centretown) ──────────────────────────────────────────
+  {
+    key: 'hh-cooper',
+    street_num: '174',
+    street1: 'Cooper Street',
+    zip: 'K2P 0E8',
+    lat: 45.4136,
+    lng: -75.691,
+    ward: 'Somerset',
+    home_phone: '613-555-0221',
+    tags: ['lawn sign location'],
+  },
+  {
+    key: 'hh-maclaren',
+    street_num: '288',
+    street1: 'MacLaren Street',
+    zip: 'K2P 0M6',
+    lat: 45.4152,
+    lng: -75.696,
+    ward: 'Somerset',
+  },
+  {
+    key: 'hh-frank',
+    street_num: '92',
+    street1: 'Frank Street',
+    zip: 'K2P 0X2',
+    lat: 45.4126,
+    lng: -75.6875,
+    ward: 'Somerset',
+  },
+  {
+    key: 'hh-arlington',
+    street_num: '41',
+    street1: 'Arlington Avenue',
+    zip: 'K2P 1C1',
+    lat: 45.4079,
+    lng: -75.6944,
+    ward: 'Somerset',
+  },
+  {
+    key: 'hh-gladstone',
+    street_num: '356',
+    street1: 'Gladstone Avenue',
+    zip: 'K2P 0Y9',
+    lat: 45.4107,
+    lng: -75.6987,
+    ward: 'Somerset',
+    notes: 'Buzzer broken — knock loudly.',
+  },
+  {
+    key: 'hh-bay',
+    street_num: '145',
+    street1: 'Bay Street',
+    zip: 'K1R 7T2',
+    lat: 45.4155,
+    lng: -75.705,
+    ward: 'Somerset',
+    home_phone: '613-555-0244',
+  },
+
+  // ── Kitchissippi ward (Westboro / Hintonburg) ───────────────────────────
+  {
+    key: 'hh-byron',
+    street_num: '468',
+    street1: 'Byron Avenue',
+    zip: 'K2A 3G4',
+    lat: 45.3925,
+    lng: -75.7565,
+    ward: 'Kitchissippi',
+    tags: ['lawn sign location'],
+  },
+  {
+    key: 'hh-kirkwood',
+    street_num: '175',
+    street1: 'Kirkwood Avenue',
+    zip: 'K1Z 8K3',
+    lat: 45.394,
+    lng: -75.7495,
+    ward: 'Kitchissippi',
+  },
+  {
+    key: 'hh-java',
+    street_num: '33',
+    street1: 'Java Street',
+    zip: 'K1Y 3L2',
+    lat: 45.4028,
+    lng: -75.7291,
+    ward: 'Kitchissippi',
+  },
+  {
+    key: 'hh-armstrong',
+    street_num: '245',
+    street1: 'Armstrong Street',
+    zip: 'K1Y 2W3',
+    lat: 45.4046,
+    lng: -75.7247,
+    ward: 'Kitchissippi',
+  },
+  {
+    key: 'hh-huron',
+    street_num: '58',
+    street1: 'Huron Avenue N',
+    zip: 'K1Y 0W8',
+    lat: 45.4013,
+    lng: -75.7346,
+    ward: 'Kitchissippi',
+  },
+
+  // ── Capital ward (Glebe / Old Ottawa South) ─────────────────────────────
+  {
+    key: 'hh-fifth',
+    street_num: '87',
+    street1: 'Fifth Avenue',
+    zip: 'K1S 2M8',
+    lat: 45.4009,
+    lng: -75.6926,
+    ward: 'Capital',
+  },
+  {
+    key: 'hh-holmwood',
+    street_num: '224',
+    street1: 'Holmwood Avenue',
+    zip: 'K1S 2P4',
+    lat: 45.399,
+    lng: -75.6858,
+    ward: 'Capital',
+    home_phone: '613-555-0268',
+  },
+  {
+    key: 'hh-sunnyside',
+    street_num: '145',
+    street1: 'Sunnyside Avenue',
+    zip: 'K1S 0R2',
+    lat: 45.3949,
+    lng: -75.6812,
+    ward: 'Capital',
+  },
+  {
+    key: 'hh-powell',
+    street_num: '36',
+    street1: 'Powell Avenue',
+    zip: 'K1S 2A2',
+    lat: 45.4046,
+    lng: -75.6949,
+    ward: 'Capital',
+  },
+  {
+    key: 'hh-aylmer',
+    street_num: '112',
+    street1: 'Aylmer Avenue',
+    zip: 'K1S 2X6',
+    lat: 45.3952,
+    lng: -75.6867,
+    ward: 'Capital',
+  },
+
+  // ── Rideau-Vanier ward (Sandy Hill) ─────────────────────────────────────
+  {
+    key: 'hh-sweetland',
+    street_num: '61',
+    street1: 'Sweetland Avenue',
+    zip: 'K1N 7T7',
+    lat: 45.4266,
+    lng: -75.6797,
+    ward: 'Rideau-Vanier',
+  },
+  {
+    key: 'hh-marlborough',
+    street_num: '128',
+    street1: 'Marlborough Avenue',
+    zip: 'K1N 8G3',
+    lat: 45.4229,
+    lng: -75.6752,
+    ward: 'Rideau-Vanier',
+  },
+  {
+    key: 'hh-blackburn',
+    street_num: '45',
+    street1: 'Blackburn Avenue',
+    zip: 'K1N 8A4',
+    lat: 45.4245,
+    lng: -75.6791,
+    ward: 'Rideau-Vanier',
+  },
+  {
+    key: 'hh-charlotte',
+    street_num: '219',
+    street1: 'Charlotte Street',
+    zip: 'K1N 8L2',
+    lat: 45.4287,
+    lng: -75.6832,
+    ward: 'Rideau-Vanier',
+  },
+
+  // ── Alta Vista ward ─────────────────────────────────────────────────────
+  {
+    key: 'hh-kilborn',
+    street_num: '1128',
+    street1: 'Kilborn Avenue',
+    zip: 'K1H 6L1',
+    lat: 45.3867,
+    lng: -75.6544,
+    ward: 'Alta Vista',
+    tags: ['lawn sign location'],
+  },
+  {
+    key: 'hh-pleasantpark',
+    street_num: '645',
+    street1: 'Pleasant Park Road',
+    zip: 'K1H 5M2',
+    lat: 45.3901,
+    lng: -75.6608,
+    ward: 'Alta Vista',
+  },
+  {
+    key: 'hh-halifax',
+    street_num: '88',
+    street1: 'Halifax Drive',
+    zip: 'K1G 0T6',
+    lat: 45.3945,
+    lng: -75.6377,
+    ward: 'Alta Vista',
+  },
+  {
+    key: 'hh-featherston',
+    street_num: '1520',
+    street1: 'Featherston Drive',
+    zip: 'K1H 6P2',
+    lat: 45.3846,
+    lng: -75.6414,
+    ward: 'Alta Vista',
+  },
+];
+
+export const DEMO_PERSONS: DemoPersonDef[] = [
+  // ── hh-cooper: the Tremblays ────────────────────────────────────────────
+  {
+    key: 'marc-tremblay',
+    first_name: 'Marc',
+    last_name: 'Tremblay',
+    household: 'hh-cooper',
+    email: 'marc.tremblay@example.com',
+    mobile: '613-555-0101',
+    createdDaysAgo: 29,
+    notes: 'Offered his porch for a lawn sign. Prefers French for written material.',
+    supportLevel: 'strong',
+    votingStatus: 'will_vote',
+    subscribed: true,
+  },
+  {
+    key: 'sophie-tremblay',
+    first_name: 'Sophie',
+    last_name: 'Tremblay',
+    household: 'hh-cooper',
+    email: 'sophie.tremblay@example.com',
+    mobile: '613-555-0102',
+    createdDaysAgo: 29,
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'elise-tremblay',
+    first_name: 'Élise',
+    last_name: 'Tremblay',
+    household: 'hh-cooper',
+    email: 'elise.tremblay@example.net',
+    createdDaysAgo: 22,
+    tags: ['student'],
+    supportLevel: 'leaning',
+  },
+
+  // ── hh-maclaren ─────────────────────────────────────────────────────────
+  {
+    key: 'priya-sharma',
+    first_name: 'Priya',
+    last_name: 'Sharma',
+    household: 'hh-maclaren',
+    company: 'co-sometech',
+    email: 'priya.sharma@example.com',
+    mobile: '613-555-0103',
+    createdDaysAgo: 28,
+    notes: 'Canvassed with us twice in the spring. Great on the doors.',
+    tags: ['volunteer'],
+    supportLevel: 'strong',
+    votingStatus: 'voted_advance',
+    subscribed: true,
+  },
+
+  // ── hh-frank: the O'Briens ──────────────────────────────────────────────
+  {
+    key: 'kevin-obrien',
+    first_name: 'Kevin',
+    last_name: "O'Brien",
+    household: 'hh-frank',
+    email: 'kevin.obrien@example.com',
+    mobile: '613-555-0104',
+    createdDaysAgo: 27,
+    tags: ['letter writer'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+  {
+    key: 'maureen-obrien',
+    first_name: 'Maureen',
+    last_name: "O'Brien",
+    household: 'hh-frank',
+    company: 'co-rideau-dental',
+    email: 'maureen.obrien@example.com',
+    createdDaysAgo: 27,
+    tags: ['senior'],
+    supportLevel: 'neutral',
+    subscribed: true,
+  },
+
+  // ── hh-arlington ────────────────────────────────────────────────────────
+  {
+    key: 'devon-clarke',
+    first_name: 'Devon',
+    last_name: 'Clarke',
+    household: 'hh-arlington',
+    company: 'co-bytown',
+    email: 'devon.clarke@example.com',
+    mobile: '613-555-0105',
+    createdDaysAgo: 26,
+    notes: 'Owns Bytown Coffee Roasters — open to hosting a meet-and-greet.',
+    tags: ['small business owner'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+
+  // ── hh-gladstone: the Chens ─────────────────────────────────────────────
+  {
+    key: 'wei-chen',
+    first_name: 'Wei',
+    last_name: 'Chen',
+    household: 'hh-gladstone',
+    company: 'co-sometech',
+    email: 'wei.chen@example.com',
+    mobile: '613-555-0106',
+    createdDaysAgo: 25,
+    tags: ['small business owner'],
+    supportLevel: 'undecided',
+    subscribed: true,
+  },
+  {
+    key: 'lin-chen',
+    first_name: 'Lin',
+    last_name: 'Chen',
+    household: 'hh-gladstone',
+    email: 'lin.chen@example.com',
+    createdDaysAgo: 25,
+    supportLevel: 'undecided',
+  },
+  {
+    key: 'amy-chen',
+    first_name: 'Amy',
+    last_name: 'Chen',
+    household: 'hh-gladstone',
+    email: 'amy.chen@example.net',
+    createdDaysAgo: 18,
+    tags: ['student'],
+  },
+
+  // ── hh-bay: the Wilsons ─────────────────────────────────────────────────
+  {
+    key: 'ted-wilson',
+    first_name: 'Ted',
+    last_name: 'Wilson',
+    household: 'hh-bay',
+    email: 'ted.wilson@example.com',
+    createdDaysAgo: 24,
+    tags: ['senior'],
+    supportLevel: 'leaning_against',
+    votingStatus: 'will_vote',
+  },
+  {
+    key: 'norma-wilson',
+    first_name: 'Norma',
+    last_name: 'Wilson',
+    household: 'hh-bay',
+    createdDaysAgo: 24,
+    tags: ['senior'],
+    supportLevel: 'against',
+    notes: 'Asked not to be called during dinner hours.',
+  },
+
+  // ── hh-byron: the MacDonalds ────────────────────────────────────────────
+  {
+    key: 'heather-macdonald',
+    first_name: 'Heather',
+    last_name: 'MacDonald',
+    household: 'hh-byron',
+    email: 'heather.macdonald@example.com',
+    mobile: '613-555-0107',
+    createdDaysAgo: 23,
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'ross-macdonald',
+    first_name: 'Ross',
+    last_name: 'MacDonald',
+    household: 'hh-byron',
+    company: 'co-wwrealty',
+    email: 'ross.macdonald@example.com',
+    createdDaysAgo: 23,
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+
+  // ── hh-kirkwood ─────────────────────────────────────────────────────────
+  {
+    key: 'fatima-elsayed',
+    first_name: 'Fatima',
+    last_name: 'El-Sayed',
+    household: 'hh-kirkwood',
+    email: 'fatima.elsayed@example.com',
+    mobile: '343-555-0108',
+    createdDaysAgo: 21,
+    notes: 'Runs the Westboro community association newsletter.',
+    tags: ['community leader'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+
+  // ── hh-java: the Nguyens ────────────────────────────────────────────────
+  {
+    key: 'thanh-nguyen',
+    first_name: 'Thanh',
+    last_name: 'Nguyen',
+    household: 'hh-java',
+    email: 'thanh.nguyen@example.com',
+    mobile: '613-555-0109',
+    createdDaysAgo: 20,
+    supportLevel: 'neutral',
+    subscribed: true,
+  },
+  {
+    key: 'mai-nguyen',
+    first_name: 'Mai',
+    last_name: 'Nguyen',
+    household: 'hh-java',
+    email: 'mai.nguyen@example.com',
+    createdDaysAgo: 20,
+    tags: ['volunteer'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'bao-nguyen',
+    first_name: 'Bao',
+    last_name: 'Nguyen',
+    household: 'hh-java',
+    company: 'co-lansdowne',
+    email: 'bao.nguyen@example.net',
+    createdDaysAgo: 14,
+    tags: ['student'],
+  },
+
+  // ── hh-armstrong ────────────────────────────────────────────────────────
+  {
+    key: 'jake-morrison',
+    first_name: 'Jake',
+    last_name: 'Morrison',
+    household: 'hh-armstrong',
+    company: 'co-capland',
+    email: 'jake.morrison@example.com',
+    mobile: '613-555-0110',
+    createdDaysAgo: 19,
+    tags: ['volunteer'],
+    supportLevel: 'strong',
+    votingStatus: 'will_vote',
+    subscribed: true,
+  },
+
+  // ── hh-huron: the Kowalskis ─────────────────────────────────────────────
+  {
+    key: 'anna-kowalski',
+    first_name: 'Anna',
+    last_name: 'Kowalski',
+    household: 'hh-huron',
+    email: 'anna.kowalski@example.com',
+    createdDaysAgo: 18,
+    tags: ['union member'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+  {
+    key: 'piotr-kowalski',
+    first_name: 'Piotr',
+    last_name: 'Kowalski',
+    household: 'hh-huron',
+    email: 'piotr.kowalski@example.com',
+    createdDaysAgo: 18,
+    supportLevel: 'undecided',
+  },
+
+  // ── hh-fifth: the Haddads ───────────────────────────────────────────────
+  {
+    key: 'nadia-haddad',
+    first_name: 'Nadia',
+    last_name: 'Haddad',
+    household: 'hh-fifth',
+    email: 'nadia.haddad@example.com',
+    mobile: '613-555-0111',
+    createdDaysAgo: 17,
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'sami-haddad',
+    first_name: 'Sami',
+    last_name: 'Haddad',
+    household: 'hh-fifth',
+    email: 'sami.haddad@example.com',
+    createdDaysAgo: 17,
+    supportLevel: 'leaning',
+  },
+  {
+    key: 'layla-haddad',
+    first_name: 'Layla',
+    last_name: 'Haddad',
+    household: 'hh-fifth',
+    company: 'co-lansdowne',
+    email: 'layla.haddad@example.net',
+    createdDaysAgo: 12,
+    subscribed: true,
+  },
+
+  // ── hh-holmwood ─────────────────────────────────────────────────────────
+  {
+    key: 'gordon-ferguson',
+    first_name: 'Gordon',
+    last_name: 'Ferguson',
+    household: 'hh-holmwood',
+    email: 'gordon.ferguson@example.com',
+    createdDaysAgo: 16,
+    tags: ['senior'],
+    supportLevel: 'neutral',
+    votingStatus: 'voted_advance',
+  },
+
+  // ── hh-sunnyside: the Singhs ────────────────────────────────────────────
+  {
+    key: 'harpreet-singh',
+    first_name: 'Harpreet',
+    last_name: 'Singh',
+    household: 'hh-sunnyside',
+    email: 'harpreet.singh@example.com',
+    mobile: '613-555-0112',
+    createdDaysAgo: 15,
+    notes: 'Coaches the Sunnyside youth soccer league — knows everyone on the street.',
+    tags: ['community leader'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'simran-kaur',
+    first_name: 'Simran',
+    last_name: 'Kaur',
+    household: 'hh-sunnyside',
+    email: 'simran.kaur@example.com',
+    createdDaysAgo: 15,
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+  {
+    key: 'arjun-singh',
+    first_name: 'Arjun',
+    last_name: 'Singh',
+    household: 'hh-sunnyside',
+    email: 'arjun.singh@example.net',
+    createdDaysAgo: 10,
+    tags: ['student'],
+  },
+
+  // ── hh-powell ───────────────────────────────────────────────────────────
+  {
+    key: 'rebecca-stein',
+    first_name: 'Rebecca',
+    last_name: 'Stein',
+    household: 'hh-powell',
+    company: 'co-glebephysio',
+    email: 'rebecca.stein@example.com',
+    mobile: '613-555-0113',
+    createdDaysAgo: 14,
+    tags: ['letter writer'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+
+  // ── hh-aylmer: the Diallos ──────────────────────────────────────────────
+  {
+    key: 'amadou-diallo',
+    first_name: 'Amadou',
+    last_name: 'Diallo',
+    household: 'hh-aylmer',
+    company: 'co-riverkeepers',
+    email: 'amadou.diallo@example.com',
+    createdDaysAgo: 13,
+    tags: ['faith community'],
+    supportLevel: 'neutral',
+    subscribed: true,
+  },
+  {
+    key: 'mariam-diallo',
+    first_name: 'Mariam',
+    last_name: 'Diallo',
+    household: 'hh-aylmer',
+    email: 'mariam.diallo@example.com',
+    createdDaysAgo: 13,
+    supportLevel: 'undecided',
+  },
+
+  // ── hh-sweetland: the Lavoies ───────────────────────────────────────────
+  {
+    key: 'julie-lavoie',
+    first_name: 'Julie',
+    last_name: 'Lavoie',
+    household: 'hh-sweetland',
+    email: 'julie.lavoie@example.com',
+    mobile: '613-555-0115',
+    createdDaysAgo: 12,
+    tags: ['community leader'],
+    supportLevel: 'strong',
+    votingStatus: 'will_vote',
+    subscribed: true,
+  },
+  {
+    key: 'pascal-lavoie',
+    first_name: 'Pascal',
+    last_name: 'Lavoie',
+    household: 'hh-sweetland',
+    email: 'pascal.lavoie@example.com',
+    createdDaysAgo: 12,
+    supportLevel: 'leaning',
+  },
+  {
+    key: 'theo-lavoie',
+    first_name: 'Théo',
+    last_name: 'Lavoie',
+    household: 'hh-sweetland',
+    email: 'theo.lavoie@example.net',
+    createdDaysAgo: 8,
+    tags: ['volunteer', 'student'],
+  },
+
+  // ── hh-marlborough ──────────────────────────────────────────────────────
+  {
+    key: 'grace-okafor',
+    first_name: 'Grace',
+    last_name: 'Okafor',
+    household: 'hh-marlborough',
+    company: 'co-riverkeepers',
+    email: 'grace.okafor@example.com',
+    mobile: '343-555-0116',
+    createdDaysAgo: 11,
+    notes: 'Board member at the Riverkeepers Alliance. Introduced us to three other volunteers.',
+    tags: ['community leader', 'vip'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+
+  // ── hh-blackburn: the Petrovs ───────────────────────────────────────────
+  {
+    key: 'dmitri-petrov',
+    first_name: 'Dmitri',
+    last_name: 'Petrov',
+    household: 'hh-blackburn',
+    email: 'dmitri.petrov@example.com',
+    createdDaysAgo: 10,
+    supportLevel: 'leaning_against',
+    subscribed: true,
+  },
+  {
+    key: 'elena-petrova',
+    first_name: 'Elena',
+    last_name: 'Petrova',
+    household: 'hh-blackburn',
+    email: 'elena.petrova@example.com',
+    createdDaysAgo: 10,
+    supportLevel: 'undecided',
+    subscribed: true,
+  },
+
+  // ── hh-charlotte ────────────────────────────────────────────────────────
+  {
+    key: 'liam-byrne',
+    first_name: 'Liam',
+    last_name: 'Byrne',
+    household: 'hh-charlotte',
+    email: 'liam.byrne@example.com',
+    mobile: '613-555-0117',
+    createdDaysAgo: 9,
+    supportLevel: 'undecided',
+  },
+
+  // ── hh-kilborn: the Rahmans ─────────────────────────────────────────────
+  {
+    key: 'ayesha-rahman',
+    first_name: 'Ayesha',
+    last_name: 'Rahman',
+    household: 'hh-kilborn',
+    email: 'ayesha.rahman@example.com',
+    mobile: '613-555-0118',
+    createdDaysAgo: 8,
+    tags: ['faith community'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'tariq-rahman',
+    first_name: 'Tariq',
+    last_name: 'Rahman',
+    household: 'hh-kilborn',
+    email: 'tariq.rahman@example.com',
+    createdDaysAgo: 8,
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+  {
+    key: 'zara-rahman',
+    first_name: 'Zara',
+    last_name: 'Rahman',
+    household: 'hh-kilborn',
+    email: 'zara.rahman@example.net',
+    createdDaysAgo: 6,
+    tags: ['student'],
+  },
+
+  // ── hh-pleasantpark ─────────────────────────────────────────────────────
+  {
+    key: 'bruce-whitfield',
+    first_name: 'Bruce',
+    last_name: 'Whitfield',
+    household: 'hh-pleasantpark',
+    email: 'bruce.whitfield@example.com',
+    createdDaysAgo: 7,
+    tags: ['senior'],
+    supportLevel: 'against',
+    votingStatus: 'not_voting',
+    doNotContact: true,
+    notes: 'Asked to be removed from all contact lists — do-not-contact flag set.',
+  },
+
+  // ── hh-halifax: the Rossis ──────────────────────────────────────────────
+  {
+    key: 'carla-rossi',
+    first_name: 'Carla',
+    last_name: 'Rossi',
+    household: 'hh-halifax',
+    email: 'carla.rossi@example.com',
+    mobile: '613-555-0119',
+    createdDaysAgo: 6,
+    supportLevel: 'neutral',
+    subscribed: true,
+  },
+  {
+    key: 'vincenzo-rossi',
+    first_name: 'Vincenzo',
+    last_name: 'Rossi',
+    household: 'hh-halifax',
+    company: 'co-preston',
+    email: 'vincenzo.rossi@example.com',
+    createdDaysAgo: 6,
+    tags: ['small business owner'],
+    supportLevel: 'leaning',
+  },
+
+  // ── hh-featherston ──────────────────────────────────────────────────────
+  {
+    key: 'michelle-thibault',
+    first_name: 'Michelle',
+    last_name: 'Thibault',
+    household: 'hh-featherston',
+    email: 'michelle.thibault@example.com',
+    mobile: '343-555-0120',
+    createdDaysAgo: 5,
+    notes: 'Former riding association president — invaluable institutional memory.',
+    tags: ['vip'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+
+  // ── No household yet (placeholder) ──────────────────────────────────────
+  {
+    key: 'omar-khalil',
+    first_name: 'Omar',
+    last_name: 'Khalil',
+    email: 'omar.khalil@example.com',
+    mobile: '613-555-0121',
+    createdDaysAgo: 4,
+    tags: ['new to riding'],
+    subscribed: true,
+  },
+  {
+    key: 'jessica-lam',
+    first_name: 'Jessica',
+    last_name: 'Lam',
+    company: 'co-bytown',
+    email: 'jessica.lam@example.com',
+    createdDaysAgo: 26,
+    tags: ['volunteer'],
+    supportLevel: 'strong',
+    subscribed: true,
+  },
+  {
+    key: 'ryan-fitzgerald',
+    first_name: 'Ryan',
+    last_name: 'Fitzgerald',
+    email: 'ryan.fitzgerald@example.com',
+    mobile: '613-555-0122',
+    createdDaysAgo: 21,
+    tags: ['volunteer'],
+    supportLevel: 'leaning',
+  },
+  {
+    key: 'chantal-bergeron',
+    first_name: 'Chantal',
+    last_name: 'Bergeron',
+    company: 'co-rideau-dental',
+    email: 'chantal.bergeron@example.com',
+    createdDaysAgo: 19,
+    supportLevel: 'neutral',
+    subscribed: true,
+  },
+  {
+    key: 'david-oduya',
+    first_name: 'David',
+    last_name: 'Oduya',
+    email: 'david.oduya@example.com',
+    createdDaysAgo: 16,
+    tags: ['new to riding'],
+    supportLevel: 'undecided',
+  },
+  {
+    key: 'karen-mackenzie',
+    first_name: 'Karen',
+    last_name: 'Mackenzie',
+    company: 'co-wwrealty',
+    email: 'karen.mackenzie@example.com',
+    mobile: '613-555-0123',
+    createdDaysAgo: 15,
+    supportLevel: 'leaning_against',
+    subscribed: true,
+  },
+  {
+    key: 'steve-papadopoulos',
+    first_name: 'Steve',
+    last_name: 'Papadopoulos',
+    email: 'steve.papadopoulos@example.com',
+    createdDaysAgo: 13,
+    tags: ['union member'],
+    supportLevel: 'leaning',
+    subscribed: true,
+  },
+  {
+    key: 'hana-yoshida',
+    first_name: 'Hana',
+    last_name: 'Yoshida',
+    company: 'co-glebephysio',
+    email: 'hana.yoshida@example.com',
+    createdDaysAgo: 11,
+    supportLevel: 'neutral',
+  },
+  {
+    key: 'marcus-webb',
+    first_name: 'Marcus',
+    last_name: 'Webb',
+    company: 'co-hintonprint',
+    email: 'marcus.webb@example.com',
+    mobile: '613-555-0124',
+    createdDaysAgo: 9,
+    notes: 'Prints our signs at cost — invoice through Hintonburg Print Co.',
+    tags: ['small business owner'],
+    supportLevel: 'strong',
+  },
+  {
+    key: 'isabelle-fortin',
+    first_name: 'Isabelle',
+    last_name: 'Fortin',
+    email: 'isabelle.fortin@example.com',
+    mobile: '343-555-0125',
+    createdDaysAgo: 7,
+    notes: 'Freelance reporter — covers community affairs. Keep on the media list.',
+    tags: ['media contact'],
+  },
+  {
+    key: 'tom-reilly',
+    first_name: 'Tom',
+    last_name: 'Reilly',
+    company: 'co-capland',
+    email: 'tom.reilly@example.com',
+    createdDaysAgo: 5,
+    supportLevel: 'undecided',
+  },
+  {
+    key: 'aiko-tanaka',
+    first_name: 'Aiko',
+    last_name: 'Tanaka',
+    email: 'aiko.tanaka@example.com',
+    createdDaysAgo: 3,
+    tags: ['new to riding'],
+    subscribed: true,
+  },
+  {
+    key: 'brian-kelly',
+    first_name: 'Brian',
+    last_name: 'Kelly',
+    email: 'brian.kelly@example.com',
+    createdDaysAgo: 2,
+    tags: ['union member'],
+    supportLevel: 'against',
+    votingStatus: 'ineligible',
+  },
+  {
+    key: 'lucia-mendes',
+    first_name: 'Lucia',
+    last_name: 'Mendes',
+    email: 'lucia.mendes@example.com',
+    mobile: '613-555-0126',
+    createdDaysAgo: 2,
+    tags: ['new to riding'],
+    subscribed: true,
+  },
+  {
+    key: 'samir-gupta',
+    first_name: 'Samir',
+    last_name: 'Gupta',
+    company: 'co-sometech',
+    email: 'samir.gupta@example.com',
+    createdDaysAgo: 1,
+    supportLevel: 'leaning',
+  },
+];
+
+/**
+ * Freeform organizational labels only — donor/supporter/subscriber are
+ * structured concepts and must not come back as tags.
+ */
+export const DEMO_TAGS: DemoTagDef[] = [
+  { name: 'community leader', description: 'Runs or anchors a local association, league, or board.', color: '#8b5cf6' },
+  { name: 'small business owner', description: 'Owns or operates a business in the riding.', color: '#f97316' },
+  { name: 'senior', description: 'Prefers daytime calls and print material.', color: '#64748b' },
+  { name: 'student', description: 'Student — usually reachable evenings and weekends.', color: '#22c55e' },
+  { name: 'new to riding', description: 'Moved into the riding within the last year.', color: '#06b6d4' },
+  { name: 'letter writer', description: 'Has written letters to the editor or to council.', color: '#eab308' },
+  { name: 'media contact', description: 'Journalist or newsletter editor — route through comms.', color: '#ef4444' },
+  { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
+  { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
+  { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
+  { name: 'vip', description: 'High-priority relationship — handle personally.', color: '#facc15' },
+];
+
+export const DEMO_TASKS: DemoTaskDef[] = [
+  {
+    name: 'Call Marc Tremblay about the Cooper Street lawn sign',
+    details:
+      'He offered his porch at 174 Cooper Street — confirm size and drop-off day. He prefers French for written follow-up.',
+    status: 'todo',
+    priority: 'high',
+    position: 1,
+    dueInDays: 2,
+    assignToOwner: true,
+  },
+  {
+    name: 'Replace the damaged sign at 468 Byron Avenue',
+    details:
+      'Heather MacDonald reported the sign blew over in the weekend storm. Grab a replacement from the office on the way.',
+    status: 'todo',
+    priority: 'urgent',
+    position: 2,
+    dueInDays: 1,
+    assignToOwner: true,
+  },
+  {
+    name: 'Order 250 door hangers for the Westboro canvass',
+    details:
+      'Marcus Webb at Hintonburg Print Co. prints at cost — send him the artwork and confirm pickup before Saturday.',
+    status: 'in_progress',
+    priority: 'medium',
+    position: 3,
+    dueInDays: 4,
+    assignToUser: 'u-emma',
+  },
+  {
+    name: 'Recruit three more canvassers for Sandy Hill',
+    details:
+      'Julie Lavoie offered to ask around Sweetland Avenue. Check the volunteer prospects list for anyone near Rideau-Vanier.',
+    status: 'in_progress',
+    priority: 'high',
+    position: 4,
+    dueInDays: 5,
+    assignToUser: 'u-carlos',
+  },
+  {
+    name: 'Ask Devon Clarke about hosting a meet-and-greet',
+    details:
+      'Bytown Coffee Roasters has space for ~30 people on a weeknight. Devon was open to it when we spoke in May.',
+    status: 'todo',
+    priority: 'medium',
+    position: 5,
+    dueInDays: 7,
+  },
+  {
+    name: 'Book the community hall for town hall night',
+    details: 'Waiting to hear back from the Glebe Community Centre about availability in the last week of the month.',
+    status: 'waiting',
+    priority: 'high',
+    position: 6,
+    dueInDays: 10,
+  },
+  {
+    name: 'Update the phone-bank script with survey feedback',
+    details: 'The issues survey shows housing and transit leading — move those to the top of the script.',
+    status: 'todo',
+    priority: 'low',
+    position: 7,
+  },
+  {
+    name: 'Print name badges for the Saturday canvass launch',
+    details: 'Six volunteers signed up so far — print a few blanks too.',
+    status: 'todo',
+    priority: 'medium',
+    position: 8,
+    dueInDays: 3,
+    assignToOwner: true,
+  },
+  {
+    name: 'Coffee with Michelle Thibault',
+    details: 'Former riding association president. Pick her brain on the ward captains model before we grow the team.',
+    status: 'todo',
+    priority: 'medium',
+    position: 9,
+    dueInDays: 6,
+  },
+  {
+    name: 'Follow up with Isabelle Fortin on the profile piece',
+    details: 'She asked for two supporter interviews and a photo. Suggest Grace Okafor and Harpreet Singh.',
+    status: 'waiting',
+    priority: 'medium',
+    position: 10,
+    dueInDays: 8,
+  },
+  {
+    name: 'Send welcome notes to this month’s new contacts',
+    details: 'Omar, Aiko, Lucia and David all came in through the website this month.',
+    status: 'done',
+    priority: 'low',
+    position: 11,
+    completedDaysAgo: 3,
+  },
+  {
+    name: 'Thank the Brewer Park cleanup volunteers',
+    details: 'Julie, Grace, Harpreet and Amadou all showed — a short personal email each goes a long way.',
+    status: 'done',
+    priority: 'medium',
+    position: 12,
+    completedDaysAgo: 17,
+  },
+  {
+    name: 'Draft the June newsletter outline',
+    details: 'Lead with the canvass launch, then the transit survey results, then volunteer spotlights.',
+    status: 'in_progress',
+    priority: 'medium',
+    position: 13,
+    dueInDays: 6,
+    assignToUser: 'u-emma',
+  },
+  {
+    name: 'Clean up duplicate entries from the spring import',
+    details:
+      'The March CSV import created a handful of near-duplicates — review the Duplicates page and merge or dismiss.',
+    status: 'todo',
+    priority: 'low',
+    position: 14,
+  },
+];
+
+export const DEMO_LISTS: DemoListDef[] = [
+  {
+    key: 'list-volunteers',
+    name: 'Volunteer prospects',
+    description: 'People who volunteered before or said they might — first call for canvass weekends.',
+    members: [
+      'priya-sharma',
+      'jake-morrison',
+      'mai-nguyen',
+      'theo-lavoie',
+      'jessica-lam',
+      'ryan-fitzgerald',
+      'julie-lavoie',
+      'harpreet-singh',
+    ],
+  },
+  {
+    key: 'list-mainstreet',
+    name: 'Main street businesses',
+    description:
+      'Business owners and managers along the commercial strips — sponsorships, window posters, meet-and-greets.',
+    members: ['devon-clarke', 'vincenzo-rossi', 'marcus-webb', 'wei-chen', 'jessica-lam', 'karen-mackenzie'],
+  },
+  {
+    key: 'list-subscribers',
+    name: 'Newsletter subscribers',
+    description: 'Everyone who has opted in to the email newsletter.',
+    members: [
+      'marc-tremblay',
+      'sophie-tremblay',
+      'priya-sharma',
+      'kevin-obrien',
+      'maureen-obrien',
+      'devon-clarke',
+      'wei-chen',
+      'heather-macdonald',
+      'ross-macdonald',
+      'fatima-elsayed',
+      'thanh-nguyen',
+      'mai-nguyen',
+      'jake-morrison',
+      'anna-kowalski',
+      'nadia-haddad',
+      'layla-haddad',
+      'harpreet-singh',
+      'simran-kaur',
+      'rebecca-stein',
+      'amadou-diallo',
+      'julie-lavoie',
+      'grace-okafor',
+      'dmitri-petrov',
+      'elena-petrova',
+      'ayesha-rahman',
+      'tariq-rahman',
+      'carla-rossi',
+      'michelle-thibault',
+      'omar-khalil',
+      'jessica-lam',
+      'chantal-bergeron',
+      'karen-mackenzie',
+      'steve-papadopoulos',
+      'aiko-tanaka',
+      'lucia-mendes',
+    ],
+  },
+];
+
+export const DEMO_TEAM: DemoTeamDef = {
+  name: 'Canvassing crew',
+  description: 'The regulars who knock doors most weekends.',
+  members: ['priya-sharma', 'jake-morrison', 'julie-lavoie'],
+};
+
+export const DEMO_VOLUNTEER_EVENTS: DemoVolunteerEventDef[] = [
+  {
+    key: 'ev-canvass',
+    name: 'Saturday canvass launch',
+    description:
+      'Kick-off canvass for the season. Meet at the Hintonburg Community Centre for a 30-minute training, then pairs head out with turf packets. Coffee and snacks provided.',
+    location_address: '1064 Wellington St W, Ottawa, ON K1Y 2Y3',
+    slug: 'saturday-canvass-launch',
+    startInDays: 18,
+    durationHours: 3,
+    capacity: 25,
+    shifts: [
+      { person: 'priya-sharma', status: 'signed_up' },
+      { person: 'jake-morrison', status: 'signed_up' },
+      { person: 'mai-nguyen', status: 'signed_up' },
+      { person: 'ryan-fitzgerald', status: 'signed_up' },
+      { person: 'jessica-lam', status: 'signed_up' },
+      { person: 'theo-lavoie', status: 'signed_up' },
+    ],
+  },
+  {
+    key: 'ev-cleanup',
+    name: 'Brewer Park cleanup morning',
+    description: 'Community cleanup along the canal side of Brewer Park, followed by coffee. Gloves and bags provided.',
+    location_address: '100 Brewer Way, Ottawa, ON K1S 5T1',
+    slug: 'brewer-park-cleanup-morning',
+    startInDays: -20,
+    durationHours: 2,
+    capacity: 15,
+    shifts: [
+      { person: 'julie-lavoie', status: 'attended' },
+      { person: 'grace-okafor', status: 'attended' },
+      { person: 'harpreet-singh', status: 'attended' },
+      { person: 'amadou-diallo', status: 'attended' },
+    ],
+  },
+];
+
+const SPRING_LINKS = {
+  cleanup: 'https://example.org/park-cleanup-recap',
+  volunteer: 'https://example.org/volunteer-signup',
+  transit: 'https://example.org/transit-survey',
+};
+
+const WELCOME_LINKS = {
+  hours: 'https://example.org/office-hours',
+  subscribe: 'https://example.org/newsletter',
+};
+
+export const DEMO_NEWSLETTERS: DemoNewsletterDef[] = [
+  {
+    key: 'nl-spring',
+    name: 'Spring community update',
+    status: 'sent',
+    subject: 'Spring update: park cleanup, transit changes, and how to help',
+    preview_text: 'What we heard at the doors this month, plus two ways to pitch in.',
+    audience_description: 'Newsletter subscribers',
+    sentDaysAgo: 10,
+    links: [SPRING_LINKS.cleanup, SPRING_LINKS.volunteer, SPRING_LINKS.transit],
+    html_content:
+      '<h1>Spring community update</h1>' +
+      '<p>Thirty of us spent Saturday morning at Brewer Park — <a href="https://example.org/park-cleanup-recap">see the photos</a>. ' +
+      'Thank you to everyone who came out.</p>' +
+      '<p>At the doors this month, transit reliability came up more than any other issue. ' +
+      'We put together a <a href="https://example.org/transit-survey">two-minute survey</a> so we can bring your answers to the next community association meeting.</p>' +
+      '<p>Canvass season starts soon — <a href="https://example.org/volunteer-signup">sign up here</a> if you can give a Saturday morning.</p>',
+    plain_text_content:
+      'Spring community update — Brewer Park cleanup recap, a two-minute transit survey, and canvass season sign-up. ' +
+      'Survey: https://example.org/transit-survey — Volunteer: https://example.org/volunteer-signup',
+    recipients: [
+      'marc-tremblay',
+      'sophie-tremblay',
+      'priya-sharma',
+      'kevin-obrien',
+      'maureen-obrien',
+      'devon-clarke',
+      'wei-chen',
+      'heather-macdonald',
+      'ross-macdonald',
+      'fatima-elsayed',
+      'thanh-nguyen',
+      'mai-nguyen',
+      'jake-morrison',
+      'anna-kowalski',
+      'nadia-haddad',
+      'layla-haddad',
+      'harpreet-singh',
+      'simran-kaur',
+      'rebecca-stein',
+      'amadou-diallo',
+      'julie-lavoie',
+      'grace-okafor',
+      'dmitri-petrov',
+      'elena-petrova',
+      'ayesha-rahman',
+      'tariq-rahman',
+      'carla-rossi',
+      'michelle-thibault',
+      'karen-mackenzie',
+      'steve-papadopoulos',
+    ],
+    engagement: [
+      { person: 'marc-tremblay', opens: 3, clicks: [SPRING_LINKS.volunteer, SPRING_LINKS.cleanup] },
+      { person: 'sophie-tremblay', opens: 1 },
+      { person: 'priya-sharma', opens: 2, clicks: [SPRING_LINKS.volunteer] },
+      { person: 'kevin-obrien', opens: 2, clicks: [SPRING_LINKS.transit] },
+      { person: 'maureen-obrien', opens: 1 },
+      { person: 'devon-clarke', opens: 1 },
+      { person: 'heather-macdonald', opens: 4, clicks: [SPRING_LINKS.cleanup, SPRING_LINKS.volunteer] },
+      { person: 'fatima-elsayed', opens: 2, clicks: [SPRING_LINKS.transit] },
+      { person: 'mai-nguyen', opens: 1, clicks: [SPRING_LINKS.volunteer] },
+      { person: 'jake-morrison', opens: 2 },
+      { person: 'anna-kowalski', opens: 1 },
+      { person: 'nadia-haddad', opens: 2, clicks: [SPRING_LINKS.transit] },
+      { person: 'harpreet-singh', opens: 3, clicks: [SPRING_LINKS.cleanup] },
+      { person: 'rebecca-stein', opens: 1, clicks: [SPRING_LINKS.transit] },
+      { person: 'julie-lavoie', opens: 2 },
+      { person: 'grace-okafor', opens: 2 },
+      { person: 'ayesha-rahman', opens: 1 },
+      { person: 'carla-rossi', opens: 1 },
+      { person: 'michelle-thibault', opens: 2 },
+      { person: 'dmitri-petrov', opens: 1, unsubscribed: true },
+      { person: 'steve-papadopoulos', opens: 0, bounce: 'hard' },
+      { person: 'karen-mackenzie', opens: 0, bounce: 'soft' },
+    ],
+  },
+  {
+    key: 'nl-welcome',
+    name: 'Welcome from our new community office',
+    status: 'sent',
+    subject: 'We have opened a community office — come say hello',
+    preview_text: 'New office hours, and a newsletter you can forward to a neighbour.',
+    audience_description: 'Early subscribers',
+    sentDaysAgo: 45,
+    links: [WELCOME_LINKS.hours, WELCOME_LINKS.subscribe],
+    html_content:
+      '<h1>We have opened a community office</h1>' +
+      '<p>Drop in and say hello — <a href="https://example.org/office-hours">office hours are posted here</a>. ' +
+      'If a neighbour would enjoy these updates, <a href="https://example.org/newsletter">the sign-up form is here</a>.</p>',
+    plain_text_content:
+      'We have opened a community office. Office hours: https://example.org/office-hours — Newsletter sign-up: https://example.org/newsletter',
+    recipients: [
+      'marc-tremblay',
+      'sophie-tremblay',
+      'priya-sharma',
+      'kevin-obrien',
+      'devon-clarke',
+      'heather-macdonald',
+      'ross-macdonald',
+      'fatima-elsayed',
+      'thanh-nguyen',
+      'mai-nguyen',
+      'jake-morrison',
+      'nadia-haddad',
+      'harpreet-singh',
+      'simran-kaur',
+      'rebecca-stein',
+      'julie-lavoie',
+      'grace-okafor',
+      'ayesha-rahman',
+      'michelle-thibault',
+      'jessica-lam',
+      'chantal-bergeron',
+      'elena-petrova',
+      'carla-rossi',
+      'amadou-diallo',
+    ],
+    engagement: [
+      { person: 'marc-tremblay', opens: 2, clicks: [WELCOME_LINKS.hours] },
+      { person: 'priya-sharma', opens: 1 },
+      { person: 'heather-macdonald', opens: 2, clicks: [WELCOME_LINKS.subscribe] },
+      { person: 'fatima-elsayed', opens: 1 },
+      { person: 'mai-nguyen', opens: 1 },
+      { person: 'nadia-haddad', opens: 1, clicks: [WELCOME_LINKS.hours] },
+      { person: 'harpreet-singh', opens: 2 },
+      { person: 'julie-lavoie', opens: 1 },
+      { person: 'grace-okafor', opens: 3, clicks: [WELCOME_LINKS.hours] },
+      { person: 'michelle-thibault', opens: 1 },
+      { person: 'jessica-lam', opens: 1 },
+      { person: 'chantal-bergeron', opens: 0, bounce: 'hard' },
+    ],
+  },
+  {
+    key: 'nl-june',
+    name: 'June community update',
+    status: 'draft',
+    subject: 'June update: canvass launch and your transit survey results',
+    preview_text: 'The canvass season opens this Saturday — plus what 200 of you said about transit.',
+    audience_description: 'Newsletter subscribers',
+    html_content:
+      '<h1>June community update</h1>' +
+      '<p>Canvass season opens this Saturday at the Hintonburg Community Centre — training at 10:00, doors by 10:30.</p>' +
+      '<p>Transit survey results are in: reliability beat frequency two to one. Full breakdown next issue.</p>',
+    plain_text_content:
+      'June community update — canvass season opens Saturday (training 10:00, Hintonburg CC). Transit survey: reliability beat frequency two to one.',
+  },
+];
+
+/** Answer keys match the starter-form templates (fieldsForTemplate in web-forms.schema.ts). */
+export const DEMO_SUBMISSIONS: DemoSubmissionDef[] = [
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'omar-khalil',
+    daysAgo: 4,
+    answers: { full_name: 'Omar Khalil', email: 'omar.khalil@example.com', mobile: '613-555-0121' },
+  },
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'aiko-tanaka',
+    daysAgo: 3,
+    answers: { full_name: 'Aiko Tanaka', email: 'aiko.tanaka@example.com' },
+  },
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'lucia-mendes',
+    daysAgo: 2,
+    answers: { full_name: 'Lucia Mendes', email: 'lucia.mendes@example.com', mobile: '613-555-0126' },
+  },
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'david-oduya',
+    daysAgo: 12,
+    answers: { full_name: 'David Oduya', email: 'david.oduya@example.com' },
+  },
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'hana-yoshida',
+    daysAgo: 9,
+    answers: { full_name: 'Hana Yoshida', email: 'hana.yoshida@example.com' },
+  },
+  {
+    formSlug: 'newsletter-sign-up',
+    person: 'isabelle-fortin',
+    daysAgo: 6,
+    answers: { full_name: 'Isabelle Fortin', email: 'isabelle.fortin@example.com' },
+  },
+  {
+    formSlug: 'issues-survey',
+    person: 'rebecca-stein',
+    daysAgo: 8,
+    answers: {
+      full_name: 'Rebecca Stein',
+      email: 'rebecca.stein@example.com',
+      issues: ['Housing', 'Transit'],
+      open: 'The 6 bus is unusable in winter — reliability matters more than new routes.',
+    },
+  },
+  {
+    formSlug: 'issues-survey',
+    person: 'kevin-obrien',
+    daysAgo: 7,
+    answers: {
+      full_name: "Kevin O'Brien",
+      email: 'kevin.obrien@example.com',
+      issues: ['Transit', 'Parks'],
+      open: 'Please push for the Frank Street traffic calming pilot to be made permanent.',
+    },
+  },
+  {
+    formSlug: 'issues-survey',
+    person: 'fatima-elsayed',
+    daysAgo: 5,
+    answers: {
+      full_name: 'Fatima El-Sayed',
+      email: 'fatima.elsayed@example.com',
+      issues: ['Housing', 'Schools'],
+      open: 'Westboro needs more three-bedroom rentals — young families are being pushed out.',
+    },
+  },
+  {
+    formSlug: 'issues-survey',
+    person: 'liam-byrne',
+    daysAgo: 3,
+    answers: {
+      full_name: 'Liam Byrne',
+      email: 'liam.byrne@example.com',
+      issues: ['Safety'],
+      open: 'Better lighting on Charlotte Street between Rideau and Laurier, please.',
+    },
+  },
+];
+
+export const DEMO_USERS: DemoUserDef[] = [
+  {
+    key: 'u-natalie',
+    first_name: 'Natalie',
+    last_name: 'Brooks',
+    emailLocal: 'natalie.brooks',
+    role: 'admin',
+  },
+  {
+    key: 'u-carlos',
+    first_name: 'Carlos',
+    last_name: 'Rivera',
+    emailLocal: 'carlos.rivera',
+    role: 'user',
+  },
+  {
+    key: 'u-emma',
+    first_name: 'Emma',
+    last_name: 'Sinclair',
+    emailLocal: 'emma.sinclair',
+    role: 'user',
+  },
+];
+
+export const DEMO_ISSUES: DemoIssueDef[] = [
+  {
+    name: 'housing affordability',
+    description: 'Rents, missing-middle supply, and three-bedroom family units.',
+    color: '#f43f5e',
+    people: ['fatima-elsayed', 'rebecca-stein', 'ayesha-rahman', 'omar-khalil'],
+  },
+  {
+    name: 'transit reliability',
+    description: 'On-time performance on the core routes — the #1 doorstep topic this spring.',
+    color: '#0ea5e9',
+    people: ['rebecca-stein', 'kevin-obrien', 'steve-papadopoulos', 'anna-kowalski'],
+  },
+  {
+    name: 'road safety',
+    description: 'Traffic calming, crossings, and lighting on residential streets.',
+    color: '#f59e0b',
+    people: ['liam-byrne', 'harpreet-singh', 'julie-lavoie'],
+  },
+  {
+    name: 'parks & greenspace',
+    description: 'Park maintenance, canal access, and tree cover.',
+    color: '#22c55e',
+    people: ['marc-tremblay', 'kevin-obrien', 'grace-okafor'],
+  },
+  {
+    name: 'small business support',
+    description: 'Main-street vacancy, patio rules, and local procurement.',
+    color: '#f97316',
+    people: ['wei-chen', 'devon-clarke', 'vincenzo-rossi', 'marcus-webb'],
+  },
+  {
+    name: 'climate action',
+    description: 'Retrofit programs, river health, and active transportation.',
+    color: '#14b8a6',
+    people: ['amadou-diallo', 'grace-okafor', 'theo-lavoie'],
+  },
+];
+
+export const DEMO_EMAILS: DemoEmailDef[] = [
+  {
+    folder: 'inbox',
+    person: 'marc-tremblay',
+    subject: 'Lawn sign for our porch',
+    preview: 'Bonjour! We talked at the market on Saturday — we would love a sign for our porch on Cooper…',
+    status: 'open',
+    daysAgo: 2,
+    is_favourite: true,
+    body_html:
+      '<p>Bonjour!</p><p>We talked at the market on Saturday — we would love a sign for our porch at 174 Cooper Street. A larger one if you have them.</p><p>Merci,<br>Marc</p>',
+  },
+  {
+    folder: 'inbox',
+    person: 'devon-clarke',
+    subject: 'Meet-and-greet at the café — possible dates',
+    preview: 'Happy to host the evening you mentioned. The café can take about 30 people on a weeknight…',
+    status: 'open',
+    assignTo: 'owner',
+    daysAgo: 1,
+    body_html:
+      '<p>Hi,</p><p>Happy to host the evening you mentioned. The café can take about 30 people on a weeknight — the last two Thursdays of the month are open right now.</p><p>Devon<br>Bytown Coffee Roasters</p>',
+  },
+  {
+    folder: 'inbox',
+    person: 'fatima-elsayed',
+    subject: 'Newsletter swap with the community association?',
+    preview: 'Our association newsletter goes to about 900 households in Westboro. Would you be open to…',
+    status: 'open',
+    assignTo: 'u-emma',
+    daysAgo: 3,
+    body_html:
+      '<p>Hello,</p><p>Our association newsletter goes to about 900 households in Westboro. Would you be open to trading a short intro blurb next month?</p><p>Fatima</p>',
+  },
+  {
+    folder: 'inbox',
+    person: 'isabelle-fortin',
+    subject: 'Interview request: community profile piece',
+    preview: 'I am putting together a profile on new community organizations for the weekly. Could we set up…',
+    status: 'open',
+    assignTo: 'u-natalie',
+    daysAgo: 5,
+    body_html:
+      '<p>Hi,</p><p>I am putting together a profile on new community organizations for the weekly. Could we set up 30 minutes this week? I would also love to speak with two of your volunteers.</p><p>Isabelle Fortin</p>',
+  },
+  {
+    folder: 'inbox',
+    person: 'harpreet-singh',
+    subject: 'Soccer league fundraiser — table for you',
+    preview: 'The league fundraiser is on the 22nd and we can hold a table for your team if you want it…',
+    status: 'closed',
+    assignTo: 'u-carlos',
+    daysAgo: 12,
+    body_html:
+      '<p>Hi,</p><p>The league fundraiser is on the 22nd and we can hold a table for your team if you want it. Setup from 5pm.</p><p>Harpreet</p>',
+  },
+  {
+    folder: 'inbox',
+    person: 'grace-okafor',
+    subject: 'Riverkeepers endorsement process',
+    preview: 'Following up from the cleanup — the board reviews community partnerships quarterly, and the…',
+    status: 'closed',
+    assignTo: 'owner',
+    daysAgo: 15,
+    body_html:
+      '<p>Hello,</p><p>Following up from the cleanup — the board reviews community partnerships quarterly, and the next window opens in three weeks. I can walk you through the process.</p><p>Grace</p>',
+  },
+  {
+    folder: 'sent',
+    person: 'marc-tremblay',
+    subject: 'Re: Lawn sign for our porch',
+    preview: 'Merci Marc! A large sign is yours — we will drop it off this week and confirm the day by text…',
+    status: 'closed',
+    daysAgo: 1,
+    body_html:
+      '<p>Merci Marc!</p><p>A large sign is yours — we will drop it off this week and confirm the day by text. Thanks for the support.</p>',
+  },
+];
+```
+
+## File: apps/backend/src/app/modules/demo/demo-seed.ts
+
+```typescript
+import { randomUUID } from 'node:crypto';
+import type { Transaction } from 'kysely';
+import { z } from 'zod';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { hashPassword } from '../../lib/password-hash';
+import { backfillPersonPublicIds } from '../../lib/person-public-id';
+import { backfillMissingSlugs } from '../../lib/slug';
+import {
+  DEMO_CITY,
+  DEMO_COMPANIES,
+  DEMO_COUNTRY,
+  DEMO_EMAILS,
+  DEMO_HOUSEHOLDS,
+  DEMO_ISSUES,
+  DEMO_LISTS,
+  DEMO_NEWSLETTERS,
+  DEMO_PERSONS,
+  DEMO_STATE,
+  DEMO_SUBMISSIONS,
+  DEMO_TAGS,
+  DEMO_TASKS,
+  DEMO_TEAM,
+  DEMO_USERS,
+  DEMO_VOLUNTEER_EVENTS,
+} from './demo-seed-data';
+import type { DemoEngagementDef, DemoNewsletterDef } from './demo-seed-data';
+
+/**
+ * Everything `seedDemoData` created, keyed by table — stored as a `settings`
+ * row so exit-demo can delete exactly these rows (and nothing the user created
+ * meanwhile). The starter web forms are deliberately NOT here: they survive
+ * exiting demo mode.
+ */
+export const DemoSeedManifestObj = z.object({
+  version: z.literal(1),
+  companies: z.array(z.string()),
+  households: z.array(z.string()),
+  persons: z.array(z.string()),
+  /** Demo tag AND demo issue ids — both live in the tags table. */
+  tags: z.array(z.string()),
+  tasks: z.array(z.string()),
+  lists: z.array(z.string()),
+  teams: z.array(z.string()),
+  volunteer_events: z.array(z.string()),
+  newsletters: z.array(z.string()),
+  /** Demo teammates (authusers ids). */
+  users: z.array(z.string()),
+  emails: z.array(z.string()),
+});
+export type DemoSeedManifest = z.infer<typeof DemoSeedManifestObj>;
+
+export const DEMO_MANIFEST_SETTINGS_KEY = 'demo_seed_manifest';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
+const daysFromNow = (n: number) => new Date(Date.now() + n * DAY_MS);
+
+interface SeedParams {
+  tenant_id: string;
+  user_id: string;
+  campaign_id: string;
+  placeholder_household_id: string;
+  /** The starter forms created by seedStarterForms — submissions attach to two of them. */
+  forms: { id: string; slug: string }[];
+}
+
+/**
+ * Seeds the realistic demo dataset for a brand-new tenant, inside the signup
+ * transaction. Returns the manifest it also persisted to `settings`; sets
+ * `tenants.demo_mode_at` as the final step so the flag and the data are atomic.
+ *
+ * Geocoding is pre-baked (real coordinates + ward names in the dataset), so no
+ * geocode_household jobs are enqueued and no Google API calls happen at signup.
+ */
+export async function seedDemoData(params: SeedParams, trx: Transaction<Models>): Promise<DemoSeedManifest> {
+  const { tenant_id, user_id, campaign_id, placeholder_household_id } = params;
+  const audit = { tenant_id, createdby_id: user_id, updatedby_id: user_id };
+
+  // ── Demo teammates (real authusers so Users/assignment/inbox look staffed;
+  //    random unguessable password + reserved-domain email = can never sign in).
+  //    authusers.email is globally unique, so the address carries the tenant
+  //    slug: <local>@<slug>.example.com — still an RFC 2606 reserved domain.
+  const tenantRow = await trx.selectFrom('tenants').select('slug').where('id', '=', tenant_id).executeTakeFirst();
+  const demoEmailDomain = `${tenantRow?.slug ?? `tenant-${tenant_id}`}.example.com`;
+  const demoUserPassword = await hashPassword(randomUUID());
+  const userRows = await trx
+    .insertInto('authusers')
+    .values(
+      DEMO_USERS.map((u) => ({
+        ...audit,
+        email: `${u.emailLocal}@${demoEmailDomain}`,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        role: u.role,
+        password: demoUserPassword,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+        verified: true,
+        two_factor_enabled: false,
+        two_factor_code: null,
+        two_factor_expires_at: null,
+        deletion_scheduled_at: null,
+        deactivated_at: null,
+        previous_email: null,
+        previous_role: null,
+        passkey_setup_dismissed_at: null,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const userIdByKey = new Map(DEMO_USERS.map((u, i) => [u.key, String(userRows[i]?.id)]));
+  // Mirrors AuthController.createProfile: profile id == authuser id.
+  await trx
+    .insertInto('profiles')
+    .values(
+      userRows.map((u) => ({
+        id: String(u.id),
+        tenant_id,
+        auth_id: String(u.id),
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })),
+    )
+    .execute();
+
+  // ── Companies ─────────────────────────────────────────────────────────────
+  const companyRows = await trx
+    .insertInto('companies')
+    .values(
+      DEMO_COMPANIES.map((c) => ({
+        ...audit,
+        name: c.name,
+        description: c.description,
+        website: c.website,
+        email: c.email,
+        phone: c.phone,
+        industry: c.industry,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const companyIdByKey = new Map(DEMO_COMPANIES.map((c, i) => [c.key, String(companyRows[i]?.id)]));
+
+  // ── Households (geocode pre-baked: success + lat/lng + ward) ─────────────
+  const householdRows = await trx
+    .insertInto('households')
+    .values(
+      DEMO_HOUSEHOLDS.map((h) => {
+        const address = {
+          street_num: h.street_num,
+          street1: h.street1,
+          city: DEMO_CITY,
+          state: DEMO_STATE,
+          zip: h.zip,
+          country: DEMO_COUNTRY,
+        };
+        return {
+          ...audit,
+          campaign_id,
+          ...address,
+          home_phone: h.home_phone ?? null,
+          notes: h.notes ?? null,
+          lat: h.lat,
+          lng: h.lng,
+          ward: h.ward,
+          formatted_address: `${h.street_num} ${h.street1}, ${DEMO_CITY}, ${DEMO_STATE} ${h.zip}, ${DEMO_COUNTRY}`,
+          geocoding_status: 'success',
+          address_fp_street: fingerprintStreet(address),
+          address_fp_full: fingerprintFull(address),
+        };
+      }),
+    )
+    .returning('id')
+    .execute();
+  const householdIdByKey = new Map(DEMO_HOUSEHOLDS.map((h, i) => [h.key, String(householdRows[i]?.id)]));
+
+  // ── Persons (created_at staggered so the dashboard growth chart is real) ──
+  const personRows = await trx
+    .insertInto('persons')
+    .values(
+      DEMO_PERSONS.map((p) => ({
+        ...audit,
+        campaign_id,
+        household_id: p.household ? householdIdByKey.get(p.household) : placeholder_household_id,
+        company_id: p.company ? companyIdByKey.get(p.company) : null,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        email: p.email ?? null,
+        mobile: p.mobile ?? null,
+        notes: p.notes ?? null,
+        do_not_contact: p.doNotContact ?? false,
+        created_at: daysAgo(p.createdDaysAgo),
+      })),
+    )
+    .returning('id')
+    .execute();
+  const personIdByKey = new Map(DEMO_PERSONS.map((p, i) => [p.key, String(personRows[i]?.id)]));
+  const personByKey = new Map(DEMO_PERSONS.map((p) => [p.key, p]));
+
+  await backfillPersonPublicIds(trx, tenant_id);
+  await backfillMissingSlugs(trx, 'households', tenant_id);
+  await backfillMissingSlugs(trx, 'companies', tenant_id);
+
+  // ── Tags (freeform labels; system tags already exist via ensureSystemTags) ─
+  const tagRows = await trx
+    .insertInto('tags')
+    .values(
+      DEMO_TAGS.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'tag' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const demoTagIds = tagRows.map((t) => String(t.id));
+
+  const allTags = await trx.selectFrom('tags').select(['id', 'name']).where('tenant_id', '=', tenant_id).execute();
+  const tagIdByName = new Map(allTags.map((t) => [t.name, String(t.id)]));
+
+  const personTagRows = DEMO_PERSONS.flatMap((p) =>
+    (p.tags ?? []).flatMap((tagName) => {
+      const tag_id = tagIdByName.get(tagName);
+      const person_id = personIdByKey.get(p.key);
+      return tag_id && person_id ? [{ ...audit, person_id, tag_id }] : [];
+    }),
+  );
+  if (personTagRows.length > 0) {
+    await trx.insertInto('map_peoples_tags').values(personTagRows).execute();
+  }
+
+  const householdTagRows = DEMO_HOUSEHOLDS.flatMap((h) =>
+    (h.tags ?? []).flatMap((tagName) => {
+      const tag_id = tagIdByName.get(tagName);
+      const household_id = householdIdByKey.get(h.key);
+      return tag_id && household_id ? [{ ...audit, household_id, tag_id }] : [];
+    }),
+  );
+  if (householdTagRows.length > 0) {
+    await trx.insertInto('map_households_tags').values(householdTagRows).execute();
+  }
+
+  // ── Issues (tags with type 'issue') + person assignments ──────────────────
+  const issueRows = await trx
+    .insertInto('tags')
+    .values(
+      DEMO_ISSUES.map((issue) => ({
+        ...audit,
+        name: issue.name,
+        description: issue.description,
+        color: issue.color,
+        deletable: true,
+        type: 'issue' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  demoTagIds.push(...issueRows.map((t) => String(t.id)));
+  const issueAssignmentRows = DEMO_ISSUES.flatMap((issue, i) =>
+    issue.people.flatMap((personKey) => {
+      const person_id = personIdByKey.get(personKey);
+      const tag_id = issueRows[i]?.id;
+      return person_id && tag_id ? [{ ...audit, person_id, tag_id: String(tag_id) }] : [];
+    }),
+  );
+  if (issueAssignmentRows.length > 0) {
+    await trx.insertInto('map_peoples_tags').values(issueAssignmentRows).execute();
+  }
+
+  // ── Campaign-scoped facts + newsletter consent (Campaigns §15) ────────────
+  const factRows = DEMO_PERSONS.filter((p) => p.supportLevel || p.votingStatus).map((p) => ({
+    ...audit,
+    campaign_id,
+    person_id: personIdByKey.get(p.key) as string,
+    support_level: p.supportLevel ?? null,
+    support_source: p.supportLevel ? 'import' : null,
+    support_recorded_by: p.supportLevel ? user_id : null,
+    support_recorded_at: p.supportLevel ? daysAgo(p.createdDaysAgo) : null,
+    voting_status: p.votingStatus ?? null,
+    voting_source: p.votingStatus ? 'import' : null,
+    voting_recorded_by: p.votingStatus ? user_id : null,
+    voting_recorded_at: p.votingStatus ? daysAgo(Math.max(p.createdDaysAgo - 1, 0)) : null,
+  }));
+  if (factRows.length > 0) {
+    await trx.insertInto('campaign_person_facts').values(factRows).execute();
+  }
+
+  const subscriptionRows = DEMO_PERSONS.filter((p) => p.subscribed && p.email).map((p) => ({
+    ...audit,
+    campaign_id,
+    person_id: personIdByKey.get(p.key) as string,
+    email: p.email as string,
+    status: 'subscribed',
+    consent_source: 'import',
+    consent_at: daysAgo(p.createdDaysAgo),
+  }));
+  if (subscriptionRows.length > 0) {
+    await trx.insertInto('campaign_subscriptions').values(subscriptionRows).execute();
+  }
+
+  // ── Tasks ─────────────────────────────────────────────────────────────────
+  const taskRows = await trx
+    .insertInto('tasks')
+    .values(
+      DEMO_TASKS.map((t) => ({
+        ...audit,
+        name: t.name,
+        details: t.details,
+        status: t.status,
+        priority: t.priority,
+        position: t.position,
+        due_at: t.dueInDays != null ? daysFromNow(t.dueInDays) : null,
+        completed_at: t.completedDaysAgo != null ? daysAgo(t.completedDaysAgo) : null,
+        assigned_to: t.assignToOwner ? user_id : t.assignToUser ? (userIdByKey.get(t.assignToUser) ?? null) : null,
+      })),
+    )
+    .returning('id')
+    .execute();
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+  const listRows = await trx
+    .insertInto('lists')
+    .values(
+      DEMO_LISTS.map((l) => ({
+        ...audit,
+        campaign_id,
+        name: l.name,
+        description: l.description,
+        object: 'people' as const,
+        is_dynamic: false,
+        status: 'idle' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const listMemberRows = DEMO_LISTS.flatMap((l, i) =>
+    l.members.flatMap((personKey) => {
+      const person_id = personIdByKey.get(personKey);
+      const list_id = listRows[i]?.id;
+      return person_id && list_id ? [{ ...audit, list_id: String(list_id), person_id }] : [];
+    }),
+  );
+  if (listMemberRows.length > 0) {
+    await trx.insertInto('map_lists_persons').values(listMemberRows).execute();
+  }
+
+  // ── Team ──────────────────────────────────────────────────────────────────
+  const team = await trx
+    .insertInto('teams')
+    .values({
+      ...audit,
+      name: DEMO_TEAM.name,
+      description: DEMO_TEAM.description,
+      team_lead_user_id: user_id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  const teamMemberRows = DEMO_TEAM.members.flatMap((personKey) => {
+    const person_id = personIdByKey.get(personKey);
+    return person_id ? [{ ...audit, team_id: String(team.id), person_id }] : [];
+  });
+  if (teamMemberRows.length > 0) {
+    await trx.insertInto('map_teams_persons').values(teamMemberRows).execute();
+  }
+
+  // ── Volunteer events + shifts ─────────────────────────────────────────────
+  const eventIds: string[] = [];
+  for (const ev of DEMO_VOLUNTEER_EVENTS) {
+    const start = daysFromNow(ev.startInDays);
+    start.setHours(10, 0, 0, 0);
+    const end = new Date(start.getTime() + ev.durationHours * 60 * 60 * 1000);
+    const event = await trx
+      .insertInto('volunteer_events')
+      .values({
+        ...audit,
+        name: ev.name,
+        description: ev.description,
+        location_address: ev.location_address,
+        start_time: start,
+        end_time: end,
+        capacity: ev.capacity,
+        is_private: false,
+        send_reminder: false,
+        send_signup_confirmation: false,
+        send_volunteer_alert: false,
+        slug: ev.slug,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    eventIds.push(String(event.id));
+    const shiftRows = ev.shifts.flatMap((s) => {
+      const person_id = personIdByKey.get(s.person);
+      return person_id ? [{ ...audit, event_id: String(event.id), person_id, status: s.status }] : [];
+    });
+    if (shiftRows.length > 0) {
+      await trx.insertInto('volunteer_shifts').values(shiftRows).execute();
+    }
+  }
+
+  // ── Newsletters — aggregates DERIVED from the engagement spec ─────────────
+  const newsletterIds: string[] = [];
+  for (const nl of DEMO_NEWSLETTERS) {
+    const sendDate = nl.sentDaysAgo != null ? daysAgo(nl.sentDaysAgo) : null;
+    const stats = deriveNewsletterStats(nl);
+    const newsletter = await trx
+      .insertInto('newsletters')
+      .values({
+        ...audit,
+        campaign_id,
+        name: nl.name,
+        status: nl.status,
+        subject: nl.subject,
+        preview_text: nl.preview_text,
+        audience_description: nl.audience_description,
+        html_content: nl.html_content,
+        plain_text_content: nl.plain_text_content,
+        send_date: sendDate,
+        total_recipients: stats.totalRecipients,
+        delivered_count: stats.delivered,
+        bounce_count: stats.bounces,
+        unique_opens: stats.uniqueOpens,
+        unique_clicks: stats.uniqueClicks,
+        unsubscribe_count: stats.unsubscribes,
+        open_rate: stats.openRate,
+        click_rate: stats.clickRate,
+        top_links: JSON.stringify(stats.topLinks),
+        last_engagement_at:
+          sendDate && stats.lastEngagementHours > 0 ? hoursAfter(sendDate, stats.lastEngagementHours) : null,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    newsletterIds.push(String(newsletter.id));
+
+    if (sendDate && nl.engagement && nl.engagement.length > 0) {
+      // sg_event_id is globally unique — prefix with the tenant so every signup's
+      // seeded events coexist.
+      const eventRows = buildNewsletterEvents(`${tenant_id}-${nl.key}`, nl.engagement, sendDate).flatMap((e) => {
+        const person = personByKey.get(e.person);
+        return person?.email
+          ? [
+              {
+                tenant_id,
+                newsletter_id: String(newsletter.id),
+                email: person.email,
+                event_type: e.event_type,
+                sg_event_id: e.sg_event_id,
+                url: e.url,
+                reason: e.reason,
+                bounce_type: e.bounce_type,
+                timestamp: e.timestamp,
+              },
+            ]
+          : [];
+      });
+      if (eventRows.length > 0) {
+        await trx.insertInto('newsletter_events').values(eventRows).execute();
+      }
+    }
+  }
+
+  // ── Form submissions (against two of the starter forms) ──────────────────
+  const formIdBySlug = new Map(params.forms.map((f) => [f.slug, f.id]));
+  const submissionRows = DEMO_SUBMISSIONS.flatMap((s) => {
+    const form_id = formIdBySlug.get(s.formSlug);
+    const person_id = personIdByKey.get(s.person);
+    return form_id && person_id
+      ? [
+          {
+            tenant_id,
+            form_id,
+            person_id,
+            answers: JSON.stringify(s.answers),
+            created_at: daysAgo(s.daysAgo),
+          },
+        ]
+      : [];
+  });
+  if (submissionRows.length > 0) {
+    await trx.insertInto('form_submissions').values(submissionRows).execute();
+  }
+
+  // ── Inbox/sent emails (folder ids: '11' = Inbox, '3' = Sent) ──────────────
+  const OFFICE_EMAIL = 'office@example.org';
+  const emailIds: string[] = [];
+  for (const e of DEMO_EMAILS) {
+    const person = personByKey.get(e.person);
+    const personEmail = person?.email ?? OFFICE_EMAIL;
+    const personName = person ? `${person.first_name} ${person.last_name}` : null;
+    const isInbox = e.folder === 'inbox';
+    const assigned_to = e.assignTo === 'owner' ? user_id : e.assignTo ? (userIdByKey.get(e.assignTo) ?? null) : null;
+    const email = await trx
+      .insertInto('emails')
+      .values({
+        ...audit,
+        campaign_id,
+        folder_id: isInbox ? '11' : '3',
+        from_email: isInbox ? personEmail : OFFICE_EMAIL,
+        to_email: isInbox ? OFFICE_EMAIL : personEmail,
+        subject: e.subject,
+        preview: e.preview,
+        status: e.status,
+        assigned_to,
+        is_favourite: e.is_favourite ?? false,
+        created_at: daysAgo(e.daysAgo),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    emailIds.push(String(email.id));
+    await trx
+      .insertInto('email_bodies')
+      .values({ ...audit, email_id: String(email.id), body_html: e.body_html })
+      .execute();
+    await trx
+      .insertInto('email_recipients')
+      .values({
+        ...audit,
+        email_id: String(email.id),
+        kind: 'to' as const,
+        name: isInbox ? null : personName,
+        email: isInbox ? OFFICE_EMAIL : personEmail,
+        pos: 0,
+      })
+      .execute();
+  }
+
+  // ── Manifest + flag (atomic with the data) ────────────────────────────────
+  const manifest: DemoSeedManifest = {
+    version: 1,
+    companies: [...companyIdByKey.values()],
+    households: [...householdIdByKey.values()],
+    persons: [...personIdByKey.values()],
+    tags: demoTagIds,
+    tasks: taskRows.map((t) => String(t.id)),
+    lists: listRows.map((l) => String(l.id)),
+    teams: [String(team.id)],
+    volunteer_events: eventIds,
+    newsletters: newsletterIds,
+    users: [...userIdByKey.values()],
+    emails: emailIds,
+  };
+
+  await trx
+    .insertInto('settings')
+    .values({
+      tenant_id,
+      key: DEMO_MANIFEST_SETTINGS_KEY,
+      value: JSON.stringify(manifest),
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  await trx.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', tenant_id).execute();
+
+  return manifest;
+}
+
+interface DeleteParams {
+  tenant_id: string;
+  user_id: string;
+  manifest: DemoSeedManifest;
+  placeholder_household_id: string;
+}
+
+/**
+ * Deletes everything the manifest tracks, in FK-safe order, inside the caller's
+ * transaction. Junction/child rows that would CASCADE anyway are deleted
+ * explicitly so the intent is auditable; the one FK with NO cascade
+ * (persons.household_id) is handled first by re-pointing any person the user
+ * created inside a demo household at the tenant's placeholder household.
+ * Clears the manifest settings row and the tenant's demo flag last.
+ */
+export async function deleteDemoData(params: DeleteParams, trx: Transaction<Models>): Promise<void> {
+  const { tenant_id, user_id, manifest: m, placeholder_household_id } = params;
+
+  if (m.households.length > 0) {
+    let repoint = trx
+      .updateTable('persons')
+      .set({ household_id: placeholder_household_id, updatedby_id: user_id })
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', m.households);
+    if (m.persons.length > 0) {
+      repoint = repoint.where('id', 'not in', m.persons);
+    }
+    await repoint.execute();
+  }
+
+  if (m.persons.length > 0) {
+    await trx
+      .deleteFrom('form_submissions')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('campaign_person_facts')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('campaign_subscriptions')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('map_peoples_tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+  }
+
+  if (m.volunteer_events.length > 0) {
+    await trx
+      .deleteFrom('volunteer_shifts')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_id', 'in', m.volunteer_events)
+      .execute();
+    await trx
+      .deleteFrom('volunteer_events')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.volunteer_events)
+      .execute();
+  }
+
+  if (m.teams.length > 0) {
+    await trx
+      .deleteFrom('map_teams_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('team_id', 'in', m.teams)
+      .execute();
+    await trx.deleteFrom('teams').where('tenant_id', '=', tenant_id).where('id', 'in', m.teams).execute();
+  }
+
+  if (m.lists.length > 0) {
+    await trx
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', 'in', m.lists)
+      .execute();
+    await trx.deleteFrom('lists').where('tenant_id', '=', tenant_id).where('id', 'in', m.lists).execute();
+  }
+
+  if (m.tasks.length > 0) {
+    await trx.deleteFrom('tasks').where('tenant_id', '=', tenant_id).where('id', 'in', m.tasks).execute();
+  }
+
+  if (m.emails.length > 0) {
+    // email_bodies/recipients/headers/comments/attachments/read_states/trash all CASCADE.
+    await trx.deleteFrom('emails').where('tenant_id', '=', tenant_id).where('id', 'in', m.emails).execute();
+  }
+
+  if (m.newsletters.length > 0) {
+    await trx
+      .deleteFrom('newsletter_events')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', 'in', m.newsletters)
+      .execute();
+    await trx
+      .deleteFrom('person_newsletter_engagements')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', 'in', m.newsletters)
+      .execute();
+    await trx.deleteFrom('newsletters').where('tenant_id', '=', tenant_id).where('id', 'in', m.newsletters).execute();
+  }
+
+  if (m.persons.length > 0) {
+    await trx.deleteFrom('persons').where('tenant_id', '=', tenant_id).where('id', 'in', m.persons).execute();
+  }
+  if (m.households.length > 0) {
+    await trx
+      .deleteFrom('map_households_tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', m.households)
+      .execute();
+    await trx.deleteFrom('households').where('tenant_id', '=', tenant_id).where('id', 'in', m.households).execute();
+  }
+  if (m.companies.length > 0) {
+    await trx.deleteFrom('companies').where('tenant_id', '=', tenant_id).where('id', 'in', m.companies).execute();
+  }
+
+  // System tags are deletable=false — the guard keeps them even if a manifest
+  // were ever to contain one by mistake.
+  if (m.tags.length > 0) {
+    await trx
+      .deleteFrom('tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.tags)
+      .where('deletable', '=', true)
+      .execute();
+  }
+
+  // Demo teammates last: everything they were assigned is either deleted above
+  // or explicitly detached here (most authusers FKs have no ON DELETE action).
+  if (m.users.length > 0) {
+    const demoUserIds = m.users.filter((id) => id !== user_id);
+    if (demoUserIds.length > 0) {
+      await trx
+        .updateTable('tasks')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('persons')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('emails')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('teams')
+        .set({ team_lead_user_id: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('team_lead_user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('email_read_states')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('notifications')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('user_activity')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', tenant_id).where('user_id', 'in', demoUserIds).execute();
+      await trx
+        .deleteFrom('map_campaigns_users')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx.deleteFrom('profiles').where('tenant_id', '=', tenant_id).where('auth_id', 'in', demoUserIds).execute();
+      // Never the caller, never an owner — belt and braces on top of the manifest.
+      await trx
+        .deleteFrom('authusers')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', demoUserIds)
+        .where('role', '!=', 'owner')
+        .execute();
+    }
+  }
+
+  await trx
+    .deleteFrom('settings')
+    .where('tenant_id', '=', tenant_id)
+    .where('key', '=', DEMO_MANIFEST_SETTINGS_KEY)
+    .execute();
+  await trx.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', tenant_id).execute();
+}
+
+const hoursAfter = (base: Date, hours: number) => new Date(base.getTime() + hours * 60 * 60 * 1000);
+
+interface DerivedNewsletterStats {
+  totalRecipients: number;
+  delivered: number;
+  bounces: number;
+  uniqueOpens: number;
+  uniqueClicks: number;
+  unsubscribes: number;
+  openRate: number;
+  clickRate: number;
+  topLinks: { url: string; clicks: number }[];
+  lastEngagementHours: number;
+}
+
+/**
+ * Derives the stored aggregate columns from the engagement spec so the report
+ * page numbers always reconcile with the raw newsletter_events rows.
+ */
+function deriveNewsletterStats(nl: DemoNewsletterDef): DerivedNewsletterStats {
+  const engagement = nl.engagement ?? [];
+  const totalRecipients = nl.recipients?.length ?? 0;
+  const bounces = engagement.filter((e) => e.bounce).length;
+  const delivered = Math.max(totalRecipients - bounces, 0);
+  const uniqueOpens = engagement.filter((e) => e.opens > 0).length;
+  const uniqueClicks = engagement.filter((e) => (e.clicks?.length ?? 0) > 0).length;
+  const unsubscribes = engagement.filter((e) => e.unsubscribed).length;
+  const rate = (n: number) => (delivered > 0 ? Math.round((n / delivered) * 1000) / 10 : 0);
+
+  const clicksByUrl = new Map<string, number>();
+  for (const e of engagement) {
+    for (const url of e.clicks ?? []) {
+      clicksByUrl.set(url, (clicksByUrl.get(url) ?? 0) + 1);
+    }
+  }
+  const topLinks = [...clicksByUrl.entries()]
+    .map(([url, clicks]) => ({ url, clicks }))
+    .sort((a, b) => b.clicks - a.clicks);
+
+  return {
+    totalRecipients,
+    delivered,
+    bounces,
+    uniqueOpens,
+    uniqueClicks,
+    unsubscribes,
+    openRate: rate(uniqueOpens),
+    clickRate: rate(uniqueClicks),
+    topLinks,
+    lastEngagementHours: engagement.length > 0 ? 72 : 0,
+  };
+}
+
+interface BuiltNewsletterEvent {
+  person: string;
+  event_type: 'open' | 'click' | 'bounce' | 'unsubscribe';
+  sg_event_id: string;
+  url: string | null;
+  reason: string | null;
+  bounce_type: string | null;
+  timestamp: Date;
+}
+
+/**
+ * Expands the per-person engagement spec into raw event rows with timestamps
+ * deterministically spread over the 72 hours after the send — enough variance
+ * for a believable hourly timeline without a randomness dependency.
+ */
+function buildNewsletterEvents(
+  newsletterKey: string,
+  engagement: DemoEngagementDef[],
+  sendDate: Date,
+): BuiltNewsletterEvent[] {
+  const events: BuiltNewsletterEvent[] = [];
+  engagement.forEach((entry, i) => {
+    for (let k = 0; k < entry.opens; k++) {
+      events.push({
+        person: entry.person,
+        event_type: 'open',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-open-${k}`,
+        url: null,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 5 + k * 13) % 71) + 1),
+      });
+    }
+    (entry.clicks ?? []).forEach((url, j) => {
+      events.push({
+        person: entry.person,
+        event_type: 'click',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-click-${j}`,
+        url,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 7 + j * 9 + 3) % 70) + 2),
+      });
+    });
+    if (entry.bounce) {
+      events.push({
+        person: entry.person,
+        event_type: 'bounce',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-bounce`,
+        url: null,
+        reason:
+          entry.bounce === 'hard'
+            ? '550 5.1.1 The email account does not exist'
+            : '421 4.7.0 Mailbox temporarily unavailable',
+        bounce_type: entry.bounce === 'hard' ? 'bounce' : 'blocked',
+        timestamp: hoursAfter(sendDate, 1),
+      });
+    }
+    if (entry.unsubscribed) {
+      events.push({
+        person: entry.person,
+        event_type: 'unsubscribe',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-unsub`,
+        url: null,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 11) % 60) + 8),
+      });
+    }
+  });
+  return events;
+}
+```
+
+## File: apps/backend/src/app/modules/demo/trpc.router.ts
+
+```typescript
+import { adminOrOwnerProcedure, router } from '../../../trpc';
+import { DemoController } from './controller';
+
+const demo = new DemoController();
+
+export const DemoRouter = router({
+  /** Deletes all seeded demo data (keeps the starter forms) and clears the tenant's demo flag. */
+  exit: adminOrOwnerProcedure.mutation(({ ctx }) => demo.exitDemoMode(ctx.auth)),
 });
 ```
 
@@ -20676,6 +24133,7 @@ interface VerifiedDomainEntry {
 import { BaseController } from '../../lib/base.controller';
 import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { SettingsRepo } from './repositories/settings.repo';
 
 // Rate limiting in-memory storage to prevent verification spam/abuse
@@ -20733,6 +24191,9 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
+    // Workspace configuration is locked while the tenant is on the demo test drive.
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+
     // 1. Block direct updates to verified_emails setting key
     if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
       throw new TRPCError({
@@ -20786,6 +24247,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const normalized = email.toLowerCase().trim();
     const rateLimitKey = `${auth.tenant_id}:${normalized}`;
     const now = Date.now();
@@ -21014,6 +24476,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const db = this.getRepo().db;
 
@@ -21084,6 +24547,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
     const now = Date.now();
@@ -21248,6 +24712,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const db = this.getRepo().db;
 
@@ -27889,748 +31354,6 @@ export default defineConfig({
 }
 ```
 
-## File: apps/backend/src/app/\_migrations/2026-07-12-donations-manual-entry.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-// Donations §12 — "Record donation" dialog (offline gifts: cash, check, bank transfer, or a card
-// swipe not run through the public Stripe checkout). Every donation row up to this migration was
-// written by the Stripe checkout path (`recordSuccessfulDonation`), so `method` backfills to
-// 'card' for existing rows and `receipt_sent` backfills to true (a receipt was already implied by
-// a completed Stripe charge). New manual entries pass an explicit method.
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.donations
-      ADD COLUMN IF NOT EXISTS method text NOT NULL DEFAULT 'card',
-      ADD COLUMN IF NOT EXISTS receipt_sent boolean NOT NULL DEFAULT true
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.donations
-      ADD CONSTRAINT chk_donations_method CHECK (method = ANY (ARRAY['card'::text, 'check'::text, 'cash'::text, 'bank_transfer'::text]))
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE public.donations DROP CONSTRAINT IF EXISTS chk_donations_method`.execute(db);
-  await sql`
-    ALTER TABLE public.donations
-      DROP COLUMN IF EXISTS method,
-      DROP COLUMN IF EXISTS receipt_sent
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-13-campaign-contexts.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-// Campaigns §15 — turn the vestigial single-hidden-campaign into real "contexts".
-// A tenant permanently runs one 'office' context (constituency office) and any number of
-// time-bounded 'election' campaigns; several can be active at once and users switch between
-// them. People/households remain one shared tenant-wide rolodex, so their `campaign_id`
-// drops to nullable provenance ("first captured in") — campaign-specific facts about a
-// person (support level, voting status, subscriptions) live in their own tables added by
-// later migrations, never on the person row.
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.campaigns
-      ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'office',
-      ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active'
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.campaigns
-      ADD CONSTRAINT chk_campaigns_kind CHECK (kind = ANY (ARRAY['office'::text, 'election'::text]))
-  `.execute(db);
-  await sql`
-    ALTER TABLE public.campaigns
-      ADD CONSTRAINT chk_campaigns_status CHECK (status = ANY (ARRAY['active'::text, 'archived'::text]))
-  `.execute(db);
-
-  // Every pre-existing row is the signup-created default campaign — that IS the office context.
-  await sql`UPDATE public.campaigns SET kind = 'office', status = 'active'`.execute(db);
-
-  await sql`ALTER TABLE public.persons ALTER COLUMN campaign_id DROP NOT NULL`.execute(db);
-  await sql`ALTER TABLE public.households ALTER COLUMN campaign_id DROP NOT NULL`.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE public.persons ALTER COLUMN campaign_id SET NOT NULL`.execute(db);
-  await sql`ALTER TABLE public.households ALTER COLUMN campaign_id SET NOT NULL`.execute(db);
-  await sql`ALTER TABLE public.campaigns DROP CONSTRAINT IF EXISTS chk_campaigns_kind`.execute(db);
-  await sql`ALTER TABLE public.campaigns DROP CONSTRAINT IF EXISTS chk_campaigns_status`.execute(db);
-  await sql`
-    ALTER TABLE public.campaigns
-      DROP COLUMN IF EXISTS kind,
-      DROP COLUMN IF EXISTS status
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-14-campaign-person-facts.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Campaigns §15 — campaign-scoped person facts + the global do-not-contact flag.
- *
- * Support level and voting status are structured per-campaign concepts, not tags:
- * single-valued, enum-constrained, machine-updated (canvass knocks, forms), and
- * queried by send/knock logic. One row per (campaign, person); a missing row or
- * NULL field means "Unknown" — never stored explicitly.
- *
- * Do-not-contact is the opposite: a person-level compliance flag that overrides
- * every context (an optional channel list narrows it; NULL = all channels).
- *
- * The legacy system tags migrate here and are deleted:
- *   supporter → strong · non-supporter → against · undecided → undecided
- *   (into each tenant's office campaign; ties resolved supporter-first)
- *   do-not-contact → persons.do_not_contact = true
- *
- * DDL follows the house multi-tenant conventions (bigint id + own sequence,
- * UNIQUE (id), composite PK (id, tenant_id), FORCE RLS with tenant_isolation,
- * GRANTs to pplcrm_app) — same as the canvassing/deliveries migrations.
- */
-
-const tenantIsolation = (table: string): string => `
-  ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE ONLY public.${table} FORCE ROW LEVEL SECURITY;
-  CREATE POLICY tenant_isolation ON public.${table}
-    USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-    WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
-`;
-
-export async function up(db: Kysely<unknown>): Promise<void> {
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.campaign_person_facts (
-      id                   bigint NOT NULL,
-      tenant_id            bigint NOT NULL,
-      campaign_id          bigint NOT NULL,
-      person_id            bigint NOT NULL,
-      createdby_id         bigint NOT NULL,
-      updatedby_id         bigint NOT NULL,
-      support_level        text,
-      support_source       text,
-      support_recorded_by  bigint,
-      support_recorded_at  timestamp with time zone,
-      voting_status        text,
-      voting_source        text,
-      voting_recorded_by   bigint,
-      voting_recorded_at   timestamp with time zone,
-      created_at           timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at           timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_cpf_support_level CHECK (support_level IS NULL OR support_level = ANY (ARRAY['strong'::text, 'leaning'::text, 'neutral'::text, 'leaning_against'::text, 'against'::text, 'undecided'::text])),
-      CONSTRAINT chk_cpf_support_source CHECK (support_source IS NULL OR support_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text, 'carryover'::text])),
-      CONSTRAINT chk_cpf_voting_status CHECK (voting_status IS NULL OR voting_status = ANY (ARRAY['will_vote'::text, 'voted_advance'::text, 'voted_eday'::text, 'not_voting'::text, 'ineligible'::text])),
-      CONSTRAINT chk_cpf_voting_source CHECK (voting_source IS NULL OR voting_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text]))
-    );
-    CREATE SEQUENCE public.campaign_person_facts_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.campaign_person_facts_id_seq OWNED BY public.campaign_person_facts.id;
-    ALTER TABLE ONLY public.campaign_person_facts ALTER COLUMN id SET DEFAULT nextval('public.campaign_person_facts_id_seq'::regclass);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT campaign_person_facts_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT campaign_person_facts_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT uq_cpf_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT fk_cpf_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT fk_cpf_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT fk_cpf_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT fk_cpf_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.campaign_person_facts ADD CONSTRAINT fk_cpf_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    CREATE INDEX idx_cpf_tenant_campaign ON public.campaign_person_facts (tenant_id, campaign_id);
-    CREATE INDEX idx_cpf_tenant_person ON public.campaign_person_facts (tenant_id, person_id);
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_person_facts TO pplcrm_app;
-    GRANT USAGE ON SEQUENCE public.campaign_person_facts_id_seq TO pplcrm_app;
-    ${tenantIsolation('campaign_person_facts')}
-  `,
-    )
-    .execute(db);
-
-  // Global do-not-contact flag; NULL channel list = suppressed on every channel.
-  await sql
-    .raw(
-      `
-    ALTER TABLE public.persons
-      ADD COLUMN do_not_contact boolean NOT NULL DEFAULT false,
-      ADD COLUMN do_not_contact_channels text[];
-  `,
-    )
-    .execute(db);
-
-  // Backfill support levels from the legacy tags into each tenant's office
-  // campaign. A person with several of the tags gets the most committed one
-  // (supporter > non-supporter > undecided).
-  await sql
-    .raw(
-      `
-    INSERT INTO public.campaign_person_facts
-      (tenant_id, campaign_id, person_id, createdby_id, updatedby_id,
-       support_level, support_source, support_recorded_by, support_recorded_at)
-    SELECT DISTINCT ON (mpt.tenant_id, mpt.person_id)
-      mpt.tenant_id,
-      c.id,
-      mpt.person_id,
-      mpt.createdby_id,
-      mpt.updatedby_id,
-      CASE lower(t.name)
-        WHEN 'supporter' THEN 'strong'
-        WHEN 'non-supporter' THEN 'against'
-        ELSE 'undecided'
-      END,
-      'import',
-      mpt.createdby_id,
-      mpt.created_at
-    FROM public.map_peoples_tags mpt
-    JOIN public.tags t ON t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id
-    JOIN public.campaigns c ON c.tenant_id = mpt.tenant_id AND c.kind = 'office'
-    WHERE lower(t.name) IN ('supporter', 'non-supporter', 'undecided')
-    ORDER BY mpt.tenant_id, mpt.person_id,
-      CASE lower(t.name) WHEN 'supporter' THEN 0 WHEN 'non-supporter' THEN 1 ELSE 2 END;
-  `,
-    )
-    .execute(db);
-
-  // Backfill the do-not-contact flag from its legacy tag.
-  await sql
-    .raw(
-      `
-    UPDATE public.persons p
-    SET do_not_contact = true
-    FROM public.map_peoples_tags mpt
-    JOIN public.tags t ON t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id
-    WHERE mpt.person_id = p.id
-      AND mpt.tenant_id = p.tenant_id
-      AND lower(t.name) = 'do-not-contact';
-  `,
-    )
-    .execute(db);
-
-  // Retire the migrated tags entirely (mappings first, then the tags).
-  await sql
-    .raw(
-      `
-    DELETE FROM public.map_peoples_tags mpt
-    USING public.tags t
-    WHERE t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id
-      AND lower(t.name) IN ('supporter', 'non-supporter', 'undecided', 'do-not-contact');
-    DELETE FROM public.map_households_tags mht
-    USING public.tags t
-    WHERE t.id = mht.tag_id AND t.tenant_id = mht.tenant_id
-      AND lower(t.name) IN ('supporter', 'non-supporter', 'undecided', 'do-not-contact');
-    DELETE FROM public.tags
-    WHERE lower(name) IN ('supporter', 'non-supporter', 'undecided', 'do-not-contact');
-  `,
-    )
-    .execute(db);
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  // Data moved out of tags cannot be restored; down only removes the structures.
-  await sql`DROP TABLE IF EXISTS public.campaign_person_facts`.execute(db);
-  await sql`DROP SEQUENCE IF EXISTS public.campaign_person_facts_id_seq`.execute(db);
-  await sql`
-    ALTER TABLE public.persons
-      DROP COLUMN IF EXISTS do_not_contact,
-      DROP COLUMN IF EXISTS do_not_contact_channels
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-15-campaign-subscriptions.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Campaigns §15 — email consent becomes a three-layer model:
- *
- *  1. `campaign_subscriptions` — per-campaign CONSENT. status: 'subscribed'
- *     (sendable) / 'pending' (double opt-in awaiting confirm) / 'unsubscribed'.
- *     Express-vs-implied consent (CASL) is carried by `consent_source`
- *     (form/import/manual/copied), not a separate status.
- *  2. `email_suppressions` — global ADDRESS HEALTH per email. A hard bounce or
- *     spam complaint kills the address in every campaign.
- *  3. `persons.do_not_contact` (added by the previous migration) — the person-
- *     level override.
- *
- * Sendable in campaign X = subscribed in X ∧ address not suppressed ∧ not DNC.
- *
- * `newsletters.campaign_id` is added here (ahead of the broader domain-scoping
- * migration) because the send path filters recipients by the newsletter's
- * campaign from this point on.
- *
- * Backfills into each tenant's office context, then the legacy structures go:
- *  - persons.opt_in_status: confirmed→subscribed(form), pending→pending(form),
- *    NULL-with-email→subscribed(import, i.e. implied consent) … then DROPPED.
- *  - 'unsubscribed' tag mappings → status unsubscribed; 'subscriber' adds
- *    nothing new. Both tags deleted.
- *  - person_newsletter_engagements.hard_bounced and 'spamreport' events →
- *    email_suppressions.
- */
-
-const tenantIsolation = (table: string): string => `
-  ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE ONLY public.${table} FORCE ROW LEVEL SECURITY;
-  CREATE POLICY tenant_isolation ON public.${table}
-    USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-    WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL)
-      OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
-`;
-
-export async function up(db: Kysely<unknown>): Promise<void> {
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.campaign_subscriptions (
-      id               bigint NOT NULL,
-      tenant_id        bigint NOT NULL,
-      campaign_id      bigint NOT NULL,
-      person_id        bigint NOT NULL,
-      createdby_id     bigint NOT NULL,
-      updatedby_id     bigint NOT NULL,
-      email            text   NOT NULL,
-      status           text   NOT NULL DEFAULT 'subscribed',
-      consent_source   text   NOT NULL DEFAULT 'manual',
-      consent_at       timestamp with time zone,
-      unsubscribed_at  timestamp with time zone,
-      created_at       timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at       timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_csub_status CHECK (status = ANY (ARRAY['subscribed'::text, 'pending'::text, 'unsubscribed'::text])),
-      CONSTRAINT chk_csub_source CHECK (consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text]))
-    );
-    CREATE SEQUENCE public.campaign_subscriptions_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.campaign_subscriptions_id_seq OWNED BY public.campaign_subscriptions.id;
-    ALTER TABLE ONLY public.campaign_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.campaign_subscriptions_id_seq'::regclass);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT campaign_subscriptions_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT campaign_subscriptions_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT uq_csub_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT fk_csub_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT fk_csub_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT fk_csub_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT fk_csub_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-    ALTER TABLE ONLY public.campaign_subscriptions ADD CONSTRAINT fk_csub_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-    CREATE INDEX idx_csub_tenant_campaign_status ON public.campaign_subscriptions (tenant_id, campaign_id, status);
-    CREATE INDEX idx_csub_tenant_person ON public.campaign_subscriptions (tenant_id, person_id);
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.campaign_subscriptions TO pplcrm_app;
-    GRANT USAGE ON SEQUENCE public.campaign_subscriptions_id_seq TO pplcrm_app;
-    ${tenantIsolation('campaign_subscriptions')}
-  `,
-    )
-    .execute(db);
-
-  await sql
-    .raw(
-      `
-    CREATE TABLE public.email_suppressions (
-      id           bigint NOT NULL,
-      tenant_id    bigint NOT NULL,
-      email        text   NOT NULL,
-      reason       text   NOT NULL,
-      occurred_at  timestamp with time zone DEFAULT now() NOT NULL,
-      created_at   timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT chk_esup_reason CHECK (reason = ANY (ARRAY['hard_bounce'::text, 'spam_complaint'::text, 'manual'::text]))
-    );
-    CREATE SEQUENCE public.email_suppressions_id_seq START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
-    ALTER SEQUENCE public.email_suppressions_id_seq OWNED BY public.email_suppressions.id;
-    ALTER TABLE ONLY public.email_suppressions ALTER COLUMN id SET DEFAULT nextval('public.email_suppressions_id_seq'::regclass);
-    ALTER TABLE ONLY public.email_suppressions ADD CONSTRAINT email_suppressions_id_key UNIQUE (id);
-    ALTER TABLE ONLY public.email_suppressions ADD CONSTRAINT email_suppressions_pk PRIMARY KEY (id, tenant_id);
-    ALTER TABLE ONLY public.email_suppressions ADD CONSTRAINT uq_esup_email_reason UNIQUE (tenant_id, email, reason);
-    ALTER TABLE ONLY public.email_suppressions ADD CONSTRAINT fk_esup_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-    CREATE INDEX idx_esup_tenant_email ON public.email_suppressions (tenant_id, email);
-    GRANT SELECT, INSERT, UPDATE, DELETE ON public.email_suppressions TO pplcrm_app;
-    GRANT USAGE ON SEQUENCE public.email_suppressions_id_seq TO pplcrm_app;
-    ${tenantIsolation('email_suppressions')}
-  `,
-    )
-    .execute(db);
-
-  // Newsletters belong to a campaign from now on (send path filters by it).
-  await sql
-    .raw(
-      `
-    ALTER TABLE public.newsletters ADD COLUMN campaign_id bigint;
-    UPDATE public.newsletters n SET campaign_id = c.id
-      FROM public.campaigns c WHERE c.tenant_id = n.tenant_id AND c.kind = 'office';
-    ALTER TABLE public.newsletters ALTER COLUMN campaign_id SET NOT NULL;
-    ALTER TABLE ONLY public.newsletters ADD CONSTRAINT fk_newsletters_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-    CREATE INDEX idx_newsletters_tenant_campaign ON public.newsletters (tenant_id, campaign_id);
-  `,
-    )
-    .execute(db);
-
-  // Backfill consent into the office context from persons.opt_in_status.
-  await sql
-    .raw(
-      `
-    INSERT INTO public.campaign_subscriptions
-      (tenant_id, campaign_id, person_id, createdby_id, updatedby_id, email, status, consent_source, consent_at)
-    SELECT
-      p.tenant_id,
-      c.id,
-      p.id,
-      p.createdby_id,
-      p.updatedby_id,
-      p.email,
-      CASE p.opt_in_status WHEN 'pending' THEN 'pending' ELSE 'subscribed' END,
-      CASE WHEN p.opt_in_status IS NULL THEN 'import' ELSE 'form' END,
-      COALESCE(p.opt_in_confirmed_at, p.created_at)
-    FROM public.persons p
-    JOIN public.campaigns c ON c.tenant_id = p.tenant_id AND c.kind = 'office'
-    WHERE p.email IS NOT NULL AND p.email <> '';
-  `,
-    )
-    .execute(db);
-
-  // The legacy 'unsubscribed' tag wins over whatever the backfill inferred.
-  await sql
-    .raw(
-      `
-    UPDATE public.campaign_subscriptions cs
-    SET status = 'unsubscribed', unsubscribed_at = mpt.created_at, updated_at = now()
-    FROM public.map_peoples_tags mpt
-    JOIN public.tags t ON t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id
-    JOIN public.campaigns c ON c.tenant_id = mpt.tenant_id AND c.kind = 'office'
-    WHERE lower(t.name) = 'unsubscribed'
-      AND cs.tenant_id = mpt.tenant_id
-      AND cs.campaign_id = c.id
-      AND cs.person_id = mpt.person_id;
-  `,
-    )
-    .execute(db);
-
-  // Retire the subscriber/unsubscribed tags.
-  await sql
-    .raw(
-      `
-    DELETE FROM public.map_peoples_tags mpt
-    USING public.tags t
-    WHERE t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id
-      AND lower(t.name) IN ('subscriber', 'unsubscribed');
-    DELETE FROM public.map_households_tags mht
-    USING public.tags t
-    WHERE t.id = mht.tag_id AND t.tenant_id = mht.tenant_id
-      AND lower(t.name) IN ('subscriber', 'unsubscribed');
-    DELETE FROM public.tags WHERE lower(name) IN ('subscriber', 'unsubscribed');
-  `,
-    )
-    .execute(db);
-
-  // Address-health backfill: hard bounces and spam complaints already observed.
-  await sql
-    .raw(
-      `
-    INSERT INTO public.email_suppressions (tenant_id, email, reason, occurred_at)
-    SELECT DISTINCT ON (tenant_id, email)
-      tenant_id, email, 'hard_bounce', COALESCE(bounced_at, now())
-    FROM public.person_newsletter_engagements
-    WHERE hard_bounced = true
-    ORDER BY tenant_id, email, bounced_at DESC NULLS LAST
-    ON CONFLICT (tenant_id, email, reason) DO NOTHING;
-
-    INSERT INTO public.email_suppressions (tenant_id, email, reason, occurred_at)
-    SELECT DISTINCT ON (tenant_id, email)
-      tenant_id, email, 'spam_complaint', "timestamp"
-    FROM public.newsletter_events
-    WHERE event_type = 'spamreport'
-    ORDER BY tenant_id, email, "timestamp" DESC
-    ON CONFLICT (tenant_id, email, reason) DO NOTHING;
-  `,
-    )
-    .execute(db);
-
-  // The tenant-wide opt-in columns are fully replaced by campaign_subscriptions.
-  await sql
-    .raw(
-      `
-    ALTER TABLE public.persons
-      DROP COLUMN IF EXISTS opt_in_status,
-      DROP COLUMN IF EXISTS opt_in_confirmed_at;
-  `,
-    )
-    .execute(db);
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  // Consent moved out of persons/tags cannot be restored; down removes structures only.
-  await sql`ALTER TABLE public.newsletters DROP CONSTRAINT IF EXISTS fk_newsletters_campaign`.execute(db);
-  await sql`ALTER TABLE public.newsletters DROP COLUMN IF EXISTS campaign_id`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.campaign_subscriptions`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.email_suppressions`.execute(db);
-  await sql`
-    ALTER TABLE public.persons
-      ADD COLUMN IF NOT EXISTS opt_in_status text,
-      ADD COLUMN IF NOT EXISTS opt_in_confirmed_at timestamp with time zone
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-16-domain-campaign-scoping.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Campaigns §15 — the operational domains become campaign-scoped: everything a
- * team DOES lives in exactly one context (office or an election campaign),
- * while people/households/companies/tags stay one shared tenant-wide rolodex.
- *
- * Adds `campaign_id bigint NOT NULL` (FK → campaigns, backfilled to each
- * tenant's office context) to:
- *   donations, donation_pledges, donation_periods  — election-finance separation:
- *     office funds and campaign funds never mix; contribution-limit windows are
- *     per campaign
- *   web_forms       — a sign-up form collects consent for ONE campaign
- *   lists           — segments built for a campaign don't pollute the office
- *   events          — event pages belong to a context
- *   turfs           — canvassing is inherently a campaign activity
- *   delivery_requests, delivery_routes — yard-sign ops per campaign
- *
- * Children (form_submissions, event_registrations, turf_* tables,
- * delivery_route_stops) inherit context via their parent — no column.
- * `newsletters.campaign_id` was added by the subscriptions migration.
- */
-
-const SCOPED_TABLES = [
-  'donations',
-  'donation_pledges',
-  'donation_periods',
-  'web_forms',
-  'lists',
-  'events',
-  'turfs',
-  'delivery_requests',
-  'delivery_routes',
-] as const;
-
-export async function up(db: Kysely<unknown>): Promise<void> {
-  // With donations campaign-scoped, "donor" becomes a DERIVED badge (from the
-  // donations table, per campaign and lifetime) — the always-stale tag retires.
-  await sql
-    .raw(
-      `
-    DELETE FROM public.map_peoples_tags mpt
-    USING public.tags t
-    WHERE t.id = mpt.tag_id AND t.tenant_id = mpt.tenant_id AND lower(t.name) = 'donor';
-    DELETE FROM public.map_households_tags mht
-    USING public.tags t
-    WHERE t.id = mht.tag_id AND t.tenant_id = mht.tenant_id AND lower(t.name) = 'donor';
-    DELETE FROM public.tags WHERE lower(name) = 'donor';
-  `,
-    )
-    .execute(db);
-
-  for (const table of SCOPED_TABLES) {
-    await sql
-      .raw(
-        `
-      ALTER TABLE public.${table} ADD COLUMN campaign_id bigint;
-      UPDATE public.${table} t SET campaign_id = c.id
-        FROM public.campaigns c WHERE c.tenant_id = t.tenant_id AND c.kind = 'office';
-      ALTER TABLE public.${table} ALTER COLUMN campaign_id SET NOT NULL;
-      ALTER TABLE ONLY public.${table} ADD CONSTRAINT fk_${table}_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-      CREATE INDEX idx_${table}_tenant_campaign ON public.${table} (tenant_id, campaign_id);
-    `,
-      )
-      .execute(db);
-  }
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  for (const table of [...SCOPED_TABLES].reverse()) {
-    await sql
-      .raw(
-        `
-      DROP INDEX IF EXISTS idx_${table}_tenant_campaign;
-      ALTER TABLE public.${table} DROP CONSTRAINT IF EXISTS fk_${table}_campaign;
-      ALTER TABLE public.${table} DROP COLUMN IF EXISTS campaign_id;
-    `,
-      )
-      .execute(db);
-  }
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-17-campaign-scoped-mailboxes.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Campaigns §15 — email provider connections and the Inbox become
- * campaign-scoped. Each campaign (office or election) connects its own
- * Office 365 / Gmail mailbox, and the mail synced from it lands in that
- * campaign's Inbox. Switching context switches both the connection UI and the
- * visible mail.
- *
- * Token tables (`ms_oauth_tokens`, `google_oauth_tokens`): the old
- * `UNIQUE (tenant_id)` "one account per tenant" constraint becomes
- * `UNIQUE (tenant_id, campaign_id)` — one account per provider per campaign.
- * Because a legacy token has no meaningful campaign to belong to (and the
- * OAuth flow now binds a connection to the campaign it was authorized under),
- * we DROP existing token rows: tenants reconnect their mailbox under a
- * campaign. Nothing is shipped yet, so this is safe.
- *
- * Inbox tables (`emails`, `email_drafts`): gain `campaign_id NOT NULL`
- * (FK → campaigns). Existing rows are backfilled to each tenant's office
- * context so no mail is destroyed. Children (email_bodies, email_recipients,
- * email_headers, email_attachments, email_read_states, email_comments,
- * email_trash) inherit context via their parent `emails.id` — no column.
- */
-
-const TOKEN_TABLES = ['ms_oauth_tokens', 'google_oauth_tokens'] as const;
-const INBOX_TABLES = ['emails', 'email_drafts'] as const;
-
-export async function up(db: Kysely<unknown>): Promise<void> {
-  // Legacy connections have no campaign — require reconnect under a context.
-  for (const table of TOKEN_TABLES) {
-    await sql
-      .raw(
-        `
-      DELETE FROM public.${table};
-      ALTER TABLE public.${table} DROP CONSTRAINT IF EXISTS ${table}_tenant_id_key;
-      ALTER TABLE public.${table} ADD COLUMN campaign_id bigint NOT NULL;
-      ALTER TABLE ONLY public.${table} ADD CONSTRAINT fk_${table}_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-      ALTER TABLE ONLY public.${table} ADD CONSTRAINT ${table}_tenant_campaign_key UNIQUE (tenant_id, campaign_id);
-    `,
-      )
-      .execute(db);
-  }
-
-  // Inbox rows are backfilled to the office context — non-destructive.
-  for (const table of INBOX_TABLES) {
-    await sql
-      .raw(
-        `
-      ALTER TABLE public.${table} ADD COLUMN campaign_id bigint;
-      UPDATE public.${table} t SET campaign_id = c.id
-        FROM public.campaigns c WHERE c.tenant_id = t.tenant_id AND c.kind = 'office';
-      ALTER TABLE public.${table} ALTER COLUMN campaign_id SET NOT NULL;
-      ALTER TABLE ONLY public.${table} ADD CONSTRAINT fk_${table}_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-      CREATE INDEX idx_${table}_tenant_campaign ON public.${table} (tenant_id, campaign_id);
-    `,
-      )
-      .execute(db);
-  }
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  for (const table of [...INBOX_TABLES].reverse()) {
-    await sql
-      .raw(
-        `
-      DROP INDEX IF EXISTS idx_${table}_tenant_campaign;
-      ALTER TABLE public.${table} DROP CONSTRAINT IF EXISTS fk_${table}_campaign;
-      ALTER TABLE public.${table} DROP COLUMN IF EXISTS campaign_id;
-    `,
-      )
-      .execute(db);
-  }
-
-  for (const table of [...TOKEN_TABLES].reverse()) {
-    await sql
-      .raw(
-        `
-      ALTER TABLE public.${table} DROP CONSTRAINT IF EXISTS ${table}_tenant_campaign_key;
-      ALTER TABLE public.${table} DROP CONSTRAINT IF EXISTS fk_${table}_campaign;
-      ALTER TABLE public.${table} DROP COLUMN IF EXISTS campaign_id;
-      ALTER TABLE ONLY public.${table} ADD CONSTRAINT ${table}_tenant_id_key UNIQUE (tenant_id);
-    `,
-      )
-      .execute(db);
-  }
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-18-files-entity-linkage.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Storage settings §16 — files gain optional polymorphic linkage
- * (`entity_type`/`entity_id`) so a file can say what it belongs to (e.g. a
- * newsletter attachment, a team upload) instead of being an untethered blob.
- * This backs the Workspace settings → Storage tab's "largest files" list and
- * its "Attached to X" labels.
- *
- * `newsletters.attachments` (jsonb) is dropped: it was never read by the send
- * job and had no upload UI, so newsletter attachments move onto `files` via
- * entity linkage instead. Nothing is shipped yet, so dropping is safe.
- */
-export async function up(db: Kysely<unknown>): Promise<void> {
-  await sql
-    .raw(
-      `
-    ALTER TABLE public.files ADD COLUMN entity_type text;
-    ALTER TABLE public.files ADD COLUMN entity_id bigint;
-    CREATE INDEX files_entity_idx ON public.files (tenant_id, entity_type, entity_id);
-    ALTER TABLE public.newsletters DROP COLUMN attachments;
-  `,
-    )
-    .execute(db);
-}
-
-export async function down(db: Kysely<unknown>): Promise<void> {
-  await sql
-    .raw(
-      `
-    ALTER TABLE public.newsletters ADD COLUMN attachments jsonb;
-    DROP INDEX IF EXISTS files_entity_idx;
-    ALTER TABLE public.files DROP COLUMN IF EXISTS entity_id;
-    ALTER TABLE public.files DROP COLUMN IF EXISTS entity_type;
-  `,
-    )
-    .execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-19-newsletter-event-reasons.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Newsletter report — bounce diagnostics (§ Newsletters).
- *
- * SendGrid bounce/dropped events carry a human-readable `reason` ("Mailbox does
- * not exist") and bounce events a `type` ('bounce' = hard, 'blocked' = soft).
- * The webhook previously discarded both, so the report could not say WHY an
- * address bounced or whether it is permanent. Nullable — older rows and
- * non-bounce events simply have no diagnostics.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.newsletter_events
-      ADD COLUMN IF NOT EXISTS reason text,
-      ADD COLUMN IF NOT EXISTS bounce_type text
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.newsletter_events
-      DROP COLUMN IF EXISTS reason,
-      DROP COLUMN IF EXISTS bounce_type
-  `.execute(db);
-}
-```
-
 ## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
 
 ```typescript
@@ -31455,223 +34178,6 @@ export const ActivityRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/auth/repositories/authusers.repo.ts
-
-```typescript
-import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
-import { sql } from 'kysely';
-
-import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { generateToken, hashToken } from '../../../lib/token-hash';
-
-export class AuthUsersRepo extends BaseRepository<'authusers'> {
-  constructor() {
-    super('authusers');
-  }
-
-  public override async getAllWithCounts(
-    input: { tenant_id: string; options?: QueryParams<'authusers'> },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
-
-    const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
-    const endRowCandidate =
-      typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
-    const pageSize = Math.max(1, endRowCandidate - startRow);
-
-    const applyFilters = <QB extends SelectQueryBuilder<Models, any, any>>(qb: QB) =>
-      qb
-        .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-        .where('authusers.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (builder) => {
-          const text = searchStr;
-          return builder.where(
-            sql<boolean>`(
-              LOWER(authusers.email) LIKE ${text} OR
-              LOWER(authusers.first_name) LIKE ${text} OR
-              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
-              LOWER(COALESCE(profiles.last_name, '')) LIKE ${text}
-            )`,
-          );
-        })
-        .$if(filterModel['verified'] !== undefined && filterModel['verified'] !== null, (builder) => {
-          const raw = filterModel['verified'];
-          const boolVal =
-            typeof raw === 'boolean'
-              ? raw
-              : typeof raw?.value === 'boolean'
-                ? raw.value
-                : String(raw?.value ?? raw ?? '').toLowerCase() === 'true';
-          return builder.where('authusers.verified', '=', boolVal);
-        })
-        .$if(filterModel['role']?.value || typeof filterModel['role'] === 'string', (builder) => {
-          const raw = filterModel['role']?.value ?? filterModel['role'];
-          const value = String(raw ?? '').trim();
-          if (!value) return builder;
-          return builder.where('authusers.role', '=', String(value));
-        });
-
-    const countRow = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT authusers.id`).as('total')])
-      .executeTakeFirst();
-    const count = Number(countRow?.['total'] ?? 0);
-
-    const sorts = options.sortModel ?? [];
-
-    const rowsRaw = await applyFilters(this.getSelect(trx))
-      .select(() => [
-        'authusers.id',
-        'authusers.email',
-        'authusers.first_name',
-        'authusers.last_name',
-        'authusers.role',
-        'authusers.verified',
-        'authusers.two_factor_enabled',
-        'authusers.deletion_scheduled_at',
-        'authusers.deactivated_at',
-        'authusers.created_at',
-        'authusers.updated_at',
-        sql<string>`COALESCE(authusers.last_name, profiles.last_name)`.as('effective_last_name'),
-        sql<string>`profiles.last_name`.as('profile_last_name'),
-        'profiles.avatar_file_id',
-        // Most recent session touch for this user; sessions are tenant-scoped by the join to authusers.
-        sql<Date | null>`(
-          SELECT MAX(GREATEST(s.last_accessed, COALESCE(s.last_used_at, s.last_accessed)))
-          FROM sessions s
-          WHERE s.user_id = authusers.id AND s.tenant_id = authusers.tenant_id
-        )`.as('last_active_at'),
-      ])
-      .$if(sorts.length > 0, (qb) =>
-        sorts.reduce((acc, sort) => {
-          const dir = sort.sort;
-          switch (sort.colId) {
-            case 'id':
-              return acc.orderBy('authusers.id', dir);
-            case 'email':
-              return acc.orderBy('authusers.email', dir);
-            case 'first_name':
-              return acc.orderBy('authusers.first_name', dir);
-            case 'last_name':
-              return acc.orderBy(sql<boolean>`COALESCE(authusers.last_name, profiles.last_name)`, dir);
-            case 'role':
-              return acc.orderBy('authusers.role', dir);
-            case 'verified':
-              return acc.orderBy('authusers.verified', dir);
-            case 'created_at':
-              return acc.orderBy('authusers.created_at', dir);
-            case 'updated_at':
-              return acc.orderBy('authusers.updated_at', dir);
-            default:
-              return acc.orderBy(sort.colId, dir);
-          }
-        }, qb),
-      )
-      .offset(startRow)
-      .limit(pageSize)
-      .execute();
-
-    const rows = rowsRaw.map((row: any) => ({
-      id: row.id != null ? String(row.id) : undefined,
-      email: row.email ?? '',
-      first_name: row.first_name ?? '',
-      last_name: row.effective_last_name ?? row.profile_last_name ?? row.last_name ?? '',
-      role: row.role != null ? String(row.role) : null,
-      verified: this.toBoolean(row.verified),
-      two_factor_enabled: this.toBoolean(row.two_factor_enabled),
-      deletion_scheduled_at: row.deletion_scheduled_at ?? null,
-      deactivated_at: row.deactivated_at ?? null,
-      last_active_at: row.last_active_at ?? null,
-      created_at: row.created_at ?? null,
-      updated_at: row.updated_at ?? null,
-      avatar_file_id: row.avatar_file_id ? String(row.avatar_file_id) : null,
-    }));
-
-    return { rows, count };
-  }
-
-  private toBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') return value.toLowerCase() === 'true' || value === '1';
-    return false;
-  }
-
-  public async addPasswordResetCode(
-    id: string,
-    trx?: Transaction<Models>,
-  ): Promise<{ password_reset_code: string } | undefined> {
-    const plaintext = generateToken();
-    const hash = hashToken(plaintext);
-    await this.getUpdate(trx)
-      .set({
-        password_reset_code: hash,
-        password_reset_code_created_at: sql`now()`,
-      })
-      .where('id', '=', id)
-      .execute();
-    // Return the plaintext so callers can embed it in emails
-    return { password_reset_code: plaintext };
-  }
-
-  public existsByEmail(email: string): Promise<boolean> {
-    return this.exists({ key: email, column: 'email' });
-  }
-
-  public getByEmail(email: SelectEmailType, options?: QueryParams<'authusers'>, trx?: Transaction<Models>) {
-    return this.getSelectWithColumns(options, trx).where('email', '=', email).executeTakeFirst();
-  }
-
-  public async getCountByEmail(email: SelectEmailType): Promise<number> {
-    const { count } = (await this.getSelect()
-      .select(sql<string>`count(*)`.as('count'))
-      .where('email', '=', email)
-      .executeTakeFirst()) || { count: '0' };
-
-    return parseInt(count);
-  }
-
-  public getPasswordResetCodeTime(code: string, trx?: Transaction<Models>) {
-    const options = {
-      columns: ['password_reset_code_created_at'] as (keyof Models['authusers'])[],
-    };
-    return this.getSelectWithColumns(options, trx)
-      .where('password_reset_code', '=', hashToken(code))
-      .executeTakeFirstOrThrow();
-  }
-
-  public updatePassword(password: string, code: string, trx?: Transaction<Models>) {
-    return this.getUpdate(trx)
-      .set({
-        password,
-        password_reset_code: null,
-        password_reset_code_created_at: null,
-        verified: true,
-      })
-      .where('password_reset_code', '=', hashToken(code))
-      .executeTakeFirst() as unknown as UpdateResult;
-  }
-
-  public verifyEmailByCode(code: string, trx?: Transaction<Models>) {
-    return this.getUpdate(trx)
-      .set({
-        verified: true,
-        password_reset_code: null,
-        password_reset_code_created_at: null,
-      })
-      .where('password_reset_code', '=', hashToken(code))
-      .executeTakeFirst() as unknown as UpdateResult;
-  }
-}
-
-type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
-```
-
 ## File: apps/backend/src/app/modules/auth/repositories/sessions.repo.ts
 
 ```typescript
@@ -31745,352 +34251,283 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/auth/trpc.router.ts
+## File: apps/backend/src/app/modules/auth/passkey.controller.ts
 
 ```typescript
 import {
-  InviteAuthUserObj,
-  Verify2FAObj,
-  getAllOptions,
-  signInInputObj,
-  signUpInputObj,
-  idSchema,
-  UpdateAuthUserObj,
-} from '../../../../../../libs/common/src';
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
+import type {
+  AuthenticationResponseJSON,
+  AuthenticatorTransportFuture,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/types';
 
-import z from 'zod';
+import { randomBytes } from 'crypto';
 
-import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
-import { AuthController } from './controller';
-import { PasskeyController } from './passkey.controller';
-import { clearRefreshCookie, getRefreshTokenFromCookie, setRefreshCookie } from './auth-cookie';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { BaseRepository } from '../../lib/base.repo';
+import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
+import { createTokens } from './auth-tokens';
 
-const MIN15 = 15 * 60 * 1000;
-const HOUR1 = 60 * 60 * 1000;
+export class PasskeyController {
+  private get db() {
+    return BaseRepository.dbInstance;
+  }
 
-function currentUser() {
-  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
-}
+  // ── Email Check ──────────────────────────────────────────────────────────
+  public async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'tenant_id'])
+      .where('email', '=', email.trim().toLowerCase())
+      .executeTakeFirst();
 
-function count() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
-}
+    if (!user) return { hasPasskeys: false };
 
-function getAllWithCounts() {
-  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
-}
+    const row = await this.db
+      .selectFrom('passkeys')
+      .select(this.db.fn.countAll<string>().as('count'))
+      .where('user_id', '=', user.id)
+      .where('tenant_id', '=', user.tenant_id)
+      .executeTakeFirst();
 
-function getById() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
-}
+    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
+  }
 
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
-}
+  public async deletePasskey(auth: IAuthKeyPayload, id: string) {
+    const result = await this.db
+      .deleteFrom('passkeys')
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
 
-function renewAuthToken() {
-  // The refresh token arrives via the HttpOnly cookie, not the body (SECURITY-REVIEW 2.1). Rotate
-  // it, hand back only the new access token, and re-set the refreshed cookie.
-  return publicProcedure.mutation(async ({ ctx }) => {
-    const refreshToken = getRefreshTokenFromCookie(ctx.req);
-    const result = await controller.renewAuthToken(refreshToken);
-    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
-    return { auth_token: result.auth_token };
-  });
-}
-
-function resetPassword() {
-  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
-    return controller.resetPassword(input.password, input.code);
-  });
-}
-
-function sendPasswordResetEmail() {
-  return publicProcedure
-    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
-      return controller.sendPasswordResetEmail(input.email);
-    });
-}
-
-function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(async ({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signIn`, 10, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    const result = await controller.signIn(input, ip, ua);
-    // 2FA challenge → no tokens yet; otherwise stash the refresh token in the cookie.
-    if ('auth_token' in result) {
-      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
-      return { auth_token: result.auth_token };
+    if (Number(result.numDeletedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
     }
-    return result;
-  });
-}
+    return { success: true };
+  }
 
-function verify2FA() {
-  return publicProcedure.input(Verify2FAObj).mutation(async ({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    const result = await controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
-    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
-    return { auth_token: result.auth_token };
-  });
-}
+  // ── Authentication ────────────────────────────────────────────────────────
+  public async getAuthenticationOptions() {
+    const nonce = randomBytes(16).toString('hex');
 
-function scheduleAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
-}
-
-function cancelAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
-}
-
-function getTenantAccountStatus() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
-}
-
-function getSeatUsage() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getSeatUsage(ctx.auth));
-}
-
-function cancelTenantDeletionByToken() {
-  return publicProcedure
-    .input(z.object({ tenantId: z.string(), token: z.string() }))
-    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
-}
-
-function scheduleTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
-}
-
-function cancelTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
-}
-
-function pauseTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
-}
-
-function resumeTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
-}
-
-function cancelEmailChange() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
-}
-
-function uploadAvatar() {
-  return authProcedure
-    .input(
-      z.object({
-        dataBase64: z.string().min(1),
-        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
-        filename: z.string().min(1).max(255),
-      }),
-    )
-    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
-}
-
-function deleteAvatar() {
-  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
-}
-
-function adminTriggerPasswordReset() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
-}
-
-function deactivateUser() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminDeactivateUser(ctx.auth, input.id));
-}
-
-function reactivateUser() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminReactivateUser(ctx.auth, input.id));
-}
-
-function resendInvite() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminResendInvite(ctx.auth, input.id));
-}
-
-function invite() {
-  return adminOrOwnerProcedure
-    .input(InviteAuthUserObj)
-    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
-}
-
-function signOut() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    clearRefreshCookie(ctx.res);
-    return controller.signOut(ctx.auth);
-  });
-}
-
-function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(async ({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
-    const result = await controller.signUp(input);
-    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
-    return { auth_token: result.auth_token };
-  });
-}
-
-function deleteOne() {
-  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
-}
-
-function verifyEmail() {
-  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
-    return controller.verifyEmail(input.code);
-  });
-}
-
-function resendVerificationEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
-    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
-    return controller.resendVerificationEmail(input.email);
-  });
-}
-
-function dismissPasskeyPrompt() {
-  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
-}
-
-const controller = new AuthController();
-const passkeyController = new PasskeyController();
-
-function passkeyRegistrationOptions() {
-  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
-}
-
-function verifyPasskeyRegistration() {
-  return authProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as RegistrationResponseJSON),
-        friendlyName: z.string().max(100).optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
-}
-
-function passkeyAuthenticationOptions() {
-  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
-}
-
-function checkEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
-    return passkeyController.checkEmailPasskeys(input.email);
-  });
-}
-
-function verifyPasskeyAuthentication() {
-  return publicProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as AuthenticationResponseJSON),
-        nonce: z.string(),
-        rememberMe: z.boolean().optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
-      const ua = ctx.req?.headers?.['user-agent'] ?? '';
-      const result = await passkeyController.verifyAuthentication(
-        input.response,
-        input.nonce,
-        ip,
-        ua,
-        input.rememberMe,
-      );
-      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
-      return { auth_token: result.auth_token };
+    const options = await generateAuthenticationOptions({
+      rpID,
+      userVerification: 'preferred',
+      allowCredentials: [], // discoverable credential — browser prompts user to choose
     });
+
+    storeChallenge(`auth:${nonce}`, options.challenge);
+    return { options, nonce };
+  }
+
+  // ── Registration ─────────────────────────────────────────────────────────
+  public async getRegistrationOptions(auth: IAuthKeyPayload) {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'email', 'first_name', 'last_name'])
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!user) throw new NotFoundError('User not found');
+
+    const existingPasskeys = await this.db
+      .selectFrom('passkeys')
+      .select(['credential_id', 'transports'])
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .execute();
+
+    const options = await generateRegistrationOptions({
+      rpName,
+      rpID,
+      userName: user.email,
+      userDisplayName: [user.first_name, (user as any).last_name].filter(Boolean).join(' '),
+      attestationType: 'none',
+      excludeCredentials: existingPasskeys.map((pk) => ({
+        id: pk.credential_id,
+        transports: (pk.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
+      })),
+      authenticatorSelection: {
+        residentKey: 'preferred',
+        userVerification: 'preferred',
+      },
+    });
+
+    storeChallenge(`reg:${auth.user_id}`, options.challenge);
+    return options;
+  }
+
+  // ── Management ────────────────────────────────────────────────────────────
+  public async listPasskeys(auth: IAuthKeyPayload) {
+    return this.db
+      .selectFrom('passkeys')
+      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  public async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
+    const result = await this.db
+      .updateTable('passkeys')
+      .set({ friendly_name: friendlyName })
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (Number(result.numUpdatedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
+    }
+    return { success: true };
+  }
+
+  public async verifyAuthentication(
+    response: AuthenticationResponseJSON,
+    nonce: string,
+    ipAddress?: string,
+    userAgent?: string,
+    rememberMe?: boolean,
+  ) {
+    const challenge = consumeChallenge(`auth:${nonce}`);
+    if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
+
+    // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const passkey = await this.db
+      .selectFrom('passkeys')
+      .selectAll()
+      .where('credential_id', '=', response.id)
+      .executeTakeFirst();
+
+    if (!passkey) throw new UnauthorizedError('Passkey not recognized.');
+
+    const verification = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: getExpectedOrigins(),
+      expectedRPID: rpID,
+      credential: {
+        id: passkey.credential_id,
+        publicKey: Buffer.from(passkey.public_key, 'base64url'),
+        counter: Number(passkey.counter),
+        transports: (passkey.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
+      },
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
+
+    await this.db
+      .updateTable('passkeys')
+      .set({ counter: verification.authenticationInfo.newCounter as any })
+      .where('credential_id', '=', passkey.credential_id)
+      .where('tenant_id', '=', passkey.tenant_id)
+      .execute();
+
+    // Fetch the user
+    const user = await this.db
+      .selectFrom('authusers')
+      .select([
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'tenant_id',
+        'role',
+        'verified',
+        'deletion_scheduled_at',
+        'deactivated_at',
+      ])
+      .where('id', '=', passkey.user_id)
+      .executeTakeFirst();
+
+    if (!user) throw new UnauthorizedError();
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
+    }
+    if (!user.verified) throw new UnauthorizedError('Email not verified.');
+
+    const tenantId = String(user.tenant_id);
+    const userId = String(user.id);
+
+    return createTokens({
+      user_id: userId,
+      tenant_id: tenantId,
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+      rememberMe,
+    });
+  }
+
+  public async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
+    const challenge = consumeChallenge(`reg:${auth.user_id}`);
+    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
+
+    const verification = await verifyRegistrationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: getExpectedOrigins(),
+      expectedRPID: rpID,
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified || !verification.registrationInfo) {
+      throw new BadRequestError('Passkey registration verification failed.');
+    }
+
+    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
+
+    const user = await this.db
+      .selectFrom('authusers')
+      .select('tenant_id')
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirstOrThrow();
+
+    await this.db
+      .insertInto('passkeys')
+      .values({
+        user_id: auth.user_id,
+        tenant_id: user.tenant_id,
+        credential_id: credential.id,
+        public_key: Buffer.from(credential.publicKey).toString('base64url'),
+        counter: credential.counter,
+        device_type: credentialDeviceType,
+        backed_up: credentialBackedUp,
+        transports: (credential.transports as string[] | undefined) ?? null,
+        aaguid: aaguid ?? null,
+        friendly_name: friendlyName ?? null,
+      })
+      .execute();
+
+    return { verified: true };
+  }
 }
 
-function listPasskeys() {
-  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
+function getExpectedOrigins(): string[] {
+  const origins: string[] = [env.appUrl];
+  if (env.apiUrl !== env.appUrl) {
+    try {
+      origins.push(new URL(env.apiUrl).origin);
+    } catch {}
+  }
+  return origins;
 }
 
-function deletePasskey() {
-  return authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
-}
-
-function updatePasskeyName() {
-  return authProcedure
-    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
-    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
-}
-
-export const AuthRouter = router({
-  signUp: signUp(),
-  signIn: signIn(),
-  signOut: signOut(),
-  currentUser: currentUser(),
-  getAllWithCounts: getAllWithCounts(),
-  getById: getById(),
-  invite: invite(),
-  update: update(),
-  delete: deleteOne(),
-  count: count(),
-  resetPassword: resetPassword(),
-  renewAuthToken: renewAuthToken(),
-  sendPasswordResetEmail: sendPasswordResetEmail(),
-  verifyEmail: verifyEmail(),
-  resendVerificationEmail: resendVerificationEmail(),
-  verify2FA: verify2FA(),
-  scheduleAccountDeletion: scheduleAccountDeletion(),
-  cancelAccountDeletion: cancelAccountDeletion(),
-  cancelEmailChange: cancelEmailChange(),
-  getTenantAccountStatus: getTenantAccountStatus(),
-  getSeatUsage: getSeatUsage(),
-  scheduleTenantDeletion: scheduleTenantDeletion(),
-  cancelTenantDeletion: cancelTenantDeletion(),
-  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
-  pauseTenant: pauseTenant(),
-  resumeTenant: resumeTenant(),
-  adminTriggerPasswordReset: adminTriggerPasswordReset(),
-  deactivateUser: deactivateUser(),
-  reactivateUser: reactivateUser(),
-  resendInvite: resendInvite(),
-  uploadAvatar: uploadAvatar(),
-  deleteAvatar: deleteAvatar(),
-  passkeyRegistrationOptions: passkeyRegistrationOptions(),
-  verifyPasskeyRegistration: verifyPasskeyRegistration(),
-  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
-  checkEmail: checkEmail(),
-  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
-  listPasskeys: listPasskeys(),
-  deletePasskey: deletePasskey(),
-  updatePasskeyName: updatePasskeyName(),
-  dismissPasskeyPrompt: dismissPasskeyPrompt(),
-});
+const rpID = env.webAuthnRpId;
+const rpName = env.webAuthnRpName;
 ```
 
 ## File: apps/backend/src/app/modules/billing/controller.ts
@@ -38965,6 +41402,7 @@ import { z } from 'zod';
 import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
+import { assertNotDemoMode } from '../demo/demo-guard';
 
 let _oauthSvc: GoogleOAuthService | null = null;
 let _syncSvc: GoogleSyncService | null = null;
@@ -38990,6 +41428,8 @@ function getAuthUrl() {
   return authProcedure
     .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
     .query(async ({ ctx, input }) => {
+      // Mailbox sync is configuration — locked during the demo test drive.
+      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
       const { oauthSvc } = getServices();
       const state = encodeOAuthState({
         userId: ctx.auth.user_id,
@@ -40663,6 +43103,7 @@ import { z } from 'zod';
 import { idSchema } from '@common';
 import { sql } from 'kysely';
 import { encodeOAuthState } from '../../lib/oauth-state';
+import { assertNotDemoMode } from '../demo/demo-guard';
 
 let _oauthSvc: MsOAuthService | null = null;
 let _syncSvc: MsSyncService | null = null;
@@ -40689,6 +43130,8 @@ function getAuthUrl() {
   return authProcedure
     .input(z.object({ campaignId: idSchema, returnTo: z.string().optional() }))
     .query(async ({ ctx, input }) => {
+      // Mailbox sync is configuration — locked during the demo test drive.
+      await assertNotDemoMode(BaseRepository.dbInstance, ctx.auth.tenant_id);
       const { oauthSvc } = getServices();
       const state = encodeOAuthState({
         userId: ctx.auth.user_id,
@@ -41964,7 +44407,7 @@ export const PersonsRouter = router({
  * derived from the donations table. All were retired as tags by the
  * 2026-07-14/15/16 migrations.
  */
-export const SYSTEM_TAG_NAMES = ['volunteer', 'staff', 'vip'] as const;
+export const SYSTEM_TAG_NAMES = ['volunteer', 'staff'] as const;
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -41983,7 +44426,6 @@ export function isSystemTag(name: string) {
 const SYSTEM_TAG_COLOURS: Record<string, string> = {
   volunteer: '#0ea5e9',
   staff: '#2563eb',
-  vip: '#facc15',
 };
 
 export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
@@ -44962,6 +47404,7 @@ import { DuplicatesRouter } from './duplicates/trpc.router';
 import { CampaignsRouter } from './campaigns/trpc.router';
 import { CanvassingRouter } from './canvassing/trpc.router';
 import { DeliveriesRouter } from './deliveries/trpc.router';
+import { DemoRouter } from './demo/trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
 
@@ -45000,6 +47443,7 @@ export const trpcRouter = router({
   campaigns: CampaignsRouter,
   canvassing: CanvassingRouter,
   deliveries: DeliveriesRouter,
+  demo: DemoRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -45833,6 +48277,223 @@ export class ActivityController extends BaseController<'user_activity', UserActi
 }
 ```
 
+## File: apps/backend/src/app/modules/auth/repositories/authusers.repo.ts
+
+```typescript
+import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
+import { sql } from 'kysely';
+
+import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { generateToken, hashToken } from '../../../lib/token-hash';
+
+export class AuthUsersRepo extends BaseRepository<'authusers'> {
+  constructor() {
+    super('authusers');
+  }
+
+  public override async getAllWithCounts(
+    input: { tenant_id: string; options?: QueryParams<'authusers'> },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
+
+    const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
+    const endRowCandidate =
+      typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
+    const pageSize = Math.max(1, endRowCandidate - startRow);
+
+    const applyFilters = <QB extends SelectQueryBuilder<Models, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+        .where('authusers.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (builder) => {
+          const text = searchStr;
+          return builder.where(
+            sql<boolean>`(
+              LOWER(authusers.email) LIKE ${text} OR
+              LOWER(authusers.first_name) LIKE ${text} OR
+              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(profiles.last_name, '')) LIKE ${text}
+            )`,
+          );
+        })
+        .$if(filterModel['verified'] !== undefined && filterModel['verified'] !== null, (builder) => {
+          const raw = filterModel['verified'];
+          const boolVal =
+            typeof raw === 'boolean'
+              ? raw
+              : typeof raw?.value === 'boolean'
+                ? raw.value
+                : String(raw?.value ?? raw ?? '').toLowerCase() === 'true';
+          return builder.where('authusers.verified', '=', boolVal);
+        })
+        .$if(filterModel['role']?.value || typeof filterModel['role'] === 'string', (builder) => {
+          const raw = filterModel['role']?.value ?? filterModel['role'];
+          const value = String(raw ?? '').trim();
+          if (!value) return builder;
+          return builder.where('authusers.role', '=', String(value));
+        });
+
+    const countRow = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT authusers.id`).as('total')])
+      .executeTakeFirst();
+    const count = Number(countRow?.['total'] ?? 0);
+
+    const sorts = options.sortModel ?? [];
+
+    const rowsRaw = await applyFilters(this.getSelect(trx))
+      .select(() => [
+        'authusers.id',
+        'authusers.email',
+        'authusers.first_name',
+        'authusers.last_name',
+        'authusers.role',
+        'authusers.verified',
+        'authusers.two_factor_enabled',
+        'authusers.deletion_scheduled_at',
+        'authusers.deactivated_at',
+        'authusers.created_at',
+        'authusers.updated_at',
+        sql<string>`COALESCE(authusers.last_name, profiles.last_name)`.as('effective_last_name'),
+        sql<string>`profiles.last_name`.as('profile_last_name'),
+        'profiles.avatar_file_id',
+        // Most recent session touch for this user; sessions are tenant-scoped by the join to authusers.
+        sql<Date | null>`(
+          SELECT MAX(GREATEST(s.last_accessed, COALESCE(s.last_used_at, s.last_accessed)))
+          FROM sessions s
+          WHERE s.user_id = authusers.id AND s.tenant_id = authusers.tenant_id
+        )`.as('last_active_at'),
+      ])
+      .$if(sorts.length > 0, (qb) =>
+        sorts.reduce((acc, sort) => {
+          const dir = sort.sort;
+          switch (sort.colId) {
+            case 'id':
+              return acc.orderBy('authusers.id', dir);
+            case 'email':
+              return acc.orderBy('authusers.email', dir);
+            case 'first_name':
+              return acc.orderBy('authusers.first_name', dir);
+            case 'last_name':
+              return acc.orderBy(sql<boolean>`COALESCE(authusers.last_name, profiles.last_name)`, dir);
+            case 'role':
+              return acc.orderBy('authusers.role', dir);
+            case 'verified':
+              return acc.orderBy('authusers.verified', dir);
+            case 'created_at':
+              return acc.orderBy('authusers.created_at', dir);
+            case 'updated_at':
+              return acc.orderBy('authusers.updated_at', dir);
+            default:
+              return acc.orderBy(sort.colId, dir);
+          }
+        }, qb),
+      )
+      .offset(startRow)
+      .limit(pageSize)
+      .execute();
+
+    const rows = rowsRaw.map((row: any) => ({
+      id: row.id != null ? String(row.id) : undefined,
+      email: row.email ?? '',
+      first_name: row.first_name ?? '',
+      last_name: row.effective_last_name ?? row.profile_last_name ?? row.last_name ?? '',
+      role: row.role != null ? String(row.role) : null,
+      verified: this.toBoolean(row.verified),
+      two_factor_enabled: this.toBoolean(row.two_factor_enabled),
+      deletion_scheduled_at: row.deletion_scheduled_at ?? null,
+      deactivated_at: row.deactivated_at ?? null,
+      last_active_at: row.last_active_at ?? null,
+      created_at: row.created_at ?? null,
+      updated_at: row.updated_at ?? null,
+      avatar_file_id: row.avatar_file_id ? String(row.avatar_file_id) : null,
+    }));
+
+    return { rows, count };
+  }
+
+  private toBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') return value.toLowerCase() === 'true' || value === '1';
+    return false;
+  }
+
+  public async addPasswordResetCode(
+    id: string,
+    trx?: Transaction<Models>,
+  ): Promise<{ password_reset_code: string } | undefined> {
+    const plaintext = generateToken();
+    const hash = hashToken(plaintext);
+    await this.getUpdate(trx)
+      .set({
+        password_reset_code: hash,
+        password_reset_code_created_at: sql`now()`,
+      })
+      .where('id', '=', id)
+      .execute();
+    // Return the plaintext so callers can embed it in emails
+    return { password_reset_code: plaintext };
+  }
+
+  public existsByEmail(email: string): Promise<boolean> {
+    return this.exists({ key: email, column: 'email' });
+  }
+
+  public getByEmail(email: SelectEmailType, options?: QueryParams<'authusers'>, trx?: Transaction<Models>) {
+    return this.getSelectWithColumns(options, trx).where('email', '=', email).executeTakeFirst();
+  }
+
+  public async getCountByEmail(email: SelectEmailType): Promise<number> {
+    const { count } = (await this.getSelect()
+      .select(sql<string>`count(*)`.as('count'))
+      .where('email', '=', email)
+      .executeTakeFirst()) || { count: '0' };
+
+    return parseInt(count);
+  }
+
+  public getPasswordResetCodeTime(code: string, trx?: Transaction<Models>) {
+    const options = {
+      columns: ['password_reset_code_created_at'] as (keyof Models['authusers'])[],
+    };
+    return this.getSelectWithColumns(options, trx)
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirstOrThrow();
+  }
+
+  public updatePassword(password: string, code: string, trx?: Transaction<Models>) {
+    return this.getUpdate(trx)
+      .set({
+        password,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+        verified: true,
+      })
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirst() as unknown as UpdateResult;
+  }
+
+  public verifyEmailByCode(code: string, trx?: Transaction<Models>) {
+    return this.getUpdate(trx)
+      .set({
+        verified: true,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      })
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirst() as unknown as UpdateResult;
+  }
+}
+
+type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
+```
+
 ## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
 
 ```typescript
@@ -45840,204 +48501,29 @@ import type { Transaction } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
 import type { FormType } from '../../../../../../libs/common/src';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 
-export async function seedOnboardingData(
+/**
+ * Creates the six starter web forms (one of every kind, all drafts) for a new
+ * tenant. These are deliberately separate from the demo dataset
+ * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
+ * keeps these forms — a ready-made starting point the user publishes when
+ * they're ready.
+ *
+ * Returns the created ids + slugs so the demo seeder can attach sample
+ * submissions to two of them.
+ */
+export async function seedStarterForms(
   params: {
     tenant_id: string;
     user_id: string;
     campaign_id: string | bigint;
   },
   trx: Transaction<Models>,
-) {
+): Promise<{ id: string; slug: string }[]> {
   const { tenant_id, user_id } = params;
   const campaign_id = String(params.campaign_id);
 
-  // ── 1. Two sample households ─────────────────────────────────────────────
-  const households = await trx
-    .insertInto('households')
-    .values([
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        street1: '123 Sample Street',
-        city: 'Springfield',
-        state: 'IL',
-        zip: '62701',
-        country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '123 Sample Street' }),
-        address_fp_full: fingerprintFull({
-          street1: '123 Sample Street',
-          city: 'Springfield',
-          state: 'IL',
-          zip: '62701',
-          country: 'US',
-        }),
-        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        street1: '456 Demo Avenue',
-        city: 'Springfield',
-        state: 'IL',
-        zip: '62702',
-        country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '456 Demo Avenue' }),
-        address_fp_full: fingerprintFull({
-          street1: '456 Demo Avenue',
-          city: 'Springfield',
-          state: 'IL',
-          zip: '62702',
-          country: 'US',
-        }),
-        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .returning('id')
-    .execute();
-
-  const [hh1Id, hh2Id] = households.map((h) => h.id) as [string, string];
-
-  // ── 2. Three sample persons ───────────────────────────────────────────────
-  const persons = await trx
-    .insertInto('persons')
-    .values([
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh1Id,
-        first_name: 'Alex',
-        last_name: '[Sample]',
-        email: 'alex.sample@example.com',
-        mobile: '555-0101',
-        notes: '[SAMPLE] Marked as a strong supporter. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh1Id,
-        first_name: 'Sam',
-        last_name: '[Sample]',
-        email: 'sam.sample@example.com',
-        mobile: '555-0102',
-        notes: '[SAMPLE] Tagged as Volunteer. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh2Id,
-        first_name: 'Jordan',
-        last_name: '[Sample]',
-        email: 'jordan.sample@example.com',
-        mobile: '555-0103',
-        notes: '[SAMPLE] Marked as against. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .returning('id')
-    .execute();
-
-  const [alexId, samId, jordanId] = persons.map((p) => p.id) as [string, string, string];
-
-  // ── 3. Tag + support-level assignments ────────────────────────────────────
-  // Support is a per-campaign fact (§15), not a tag: Alex/Jordan get facts rows
-  // in the office context. Sam keeps the volunteer tag — that one is still a tag.
-  const tagRows = await trx
-    .selectFrom('tags')
-    .select(['id', 'name'])
-    .where('tenant_id', '=', tenant_id)
-    .where('name', '=', 'volunteer')
-    .where('type', '=', 'tag')
-    .execute();
-
-  const volunteerTagId = tagRows[0]?.id;
-  if (volunteerTagId) {
-    await trx
-      .insertInto('map_peoples_tags')
-      .values({
-        tenant_id: tenant_id,
-        person_id: samId,
-        tag_id: volunteerTagId,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      })
-      .execute();
-  }
-
-  await trx
-    .insertInto('campaign_person_facts')
-    .values(
-      (
-        [
-          { person_id: alexId, support_level: 'strong' },
-          { person_id: jordanId, support_level: 'against' },
-        ] as const
-      ).map(({ person_id, support_level }) => ({
-        tenant_id: tenant_id,
-        campaign_id,
-        person_id,
-        support_level,
-        support_source: 'import',
-        support_recorded_by: user_id,
-        support_recorded_at: new Date(),
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      })),
-    )
-    .execute();
-
-  // ── 4. Sample tasks ───────────────────────────────────────────────────────
-  await trx
-    .insertInto('tasks')
-    .values([
-      {
-        tenant_id: tenant_id,
-        name: 'Add your first real contact [SAMPLE]',
-        details:
-          'Go to People and add someone from your real list. You can delete the three sample contacts (Alex, Sam, Jordan) anytime.',
-        status: 'todo' as const,
-        priority: 'low' as const,
-        position: 1,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        name: 'Explore tags and lists to segment your contacts [SAMPLE]',
-        details:
-          'Tags like "volunteer", "staff", and "vip" are already set up — support level and email consent live on the person record per campaign. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
-        status: 'todo' as const,
-        priority: 'low' as const,
-        position: 2,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        name: 'Publish a sample form to start collecting responses [SAMPLE]',
-        details:
-          'Six sample forms — Volunteer signup, Newsletter signup, Recurring donation, One-time donation, Yard sign request and Issues survey — have been created under Forms as drafts. Open one, customize it, then publish it to get a public link for your website.',
-        status: 'todo' as const,
-        priority: 'medium' as const,
-        position: 3,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .execute();
-
-  // ── 5. Sample forms (draft) ───────────────────────────────────────────────
-  const sampleForms: {
+  const starterForms: {
     key: FormType;
     formType: 'standard' | 'donation' | 'recurring_donation';
     name: string;
@@ -46051,9 +48537,9 @@ export async function seedOnboardingData(
     {
       key: 'signup',
       formType: 'standard',
-      name: 'Volunteer Signup [SAMPLE]',
+      name: 'Volunteer signup',
       slug: 'volunteer-signup',
-      description: 'Sample volunteer signup form for your website. Customize the fields or delete and create your own.',
+      description: 'Volunteer signup form for your website. Customize the fields, then publish to get a public link.',
       submitLabel: FORM_TEMPLATES.signup.submitLabel,
       thanksBody: 'You’re signed up — we’ll be in touch soon.',
       confirmSubject: 'Thanks for signing up',
@@ -46062,9 +48548,9 @@ export async function seedOnboardingData(
     {
       key: 'signup',
       formType: 'standard',
-      name: 'Newsletter Sign-Up [SAMPLE]',
+      name: 'Newsletter sign-up',
       slug: 'newsletter-sign-up',
-      description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
+      description: 'Sign-up form for your email newsletter. Customize the fields, then publish to get a public link.',
       submitLabel: FORM_TEMPLATES.signup.submitLabel,
       thanksBody: 'You’re on the list — thanks for signing up.',
       confirmSubject: 'Thanks for signing up',
@@ -46073,9 +48559,9 @@ export async function seedOnboardingData(
     {
       key: 'pledge',
       formType: 'recurring_donation',
-      name: 'Recurring Donation [SAMPLE]',
+      name: 'Recurring donation',
       slug: 'recurring-donation',
-      description: 'Sample monthly-giving form. Customize the fields or delete and create your own.',
+      description: 'Monthly-giving form. Customize the fields, then publish to start accepting recurring gifts.',
       submitLabel: 'Set up recurring gift',
       thanksBody: 'Your recurring gift means a lot to us.',
       confirmSubject: 'Thanks for your recurring gift',
@@ -46084,9 +48570,9 @@ export async function seedOnboardingData(
     {
       key: 'pledge',
       formType: 'donation',
-      name: 'One-Time Donation [SAMPLE]',
+      name: 'One-time donation',
       slug: 'one-time-donation',
-      description: 'Sample one-time donation form. Customize the fields or delete and create your own.',
+      description: 'One-time donation form. Customize the fields, then publish to start accepting gifts.',
       submitLabel: 'Give now',
       thanksBody: 'Your gift means a lot to us.',
       confirmSubject: 'Thanks for your gift',
@@ -46095,10 +48581,9 @@ export async function seedOnboardingData(
     {
       key: 'request',
       formType: 'standard',
-      name: 'Yard Sign Request [SAMPLE]',
+      name: 'Yard sign request',
       slug: 'yard-sign-request',
-      description:
-        'Sample yard sign request form for your website. Customize the fields or delete and create your own.',
+      description: 'Yard sign request form for your website. Requests feed the Deliveries page for route planning.',
       submitLabel: FORM_TEMPLATES.request.submitLabel,
       thanksBody: 'We’ll deliver your yard sign soon.',
       confirmSubject: 'Your yard sign request',
@@ -46107,9 +48592,9 @@ export async function seedOnboardingData(
     {
       key: 'survey',
       formType: 'standard',
-      name: 'Issues Survey [SAMPLE]',
+      name: 'Issues survey',
       slug: 'issues-survey',
-      description: 'Sample issues survey for your website. Customize the fields or delete and create your own.',
+      description: 'Issues survey for your website. Answers help you rank what your community cares about.',
       submitLabel: FORM_TEMPLATES.survey.submitLabel,
       thanksBody: 'Thanks for sharing your priorities with us.',
       confirmSubject: 'Thanks for your input',
@@ -46117,10 +48602,10 @@ export async function seedOnboardingData(
     },
   ];
 
-  await trx
+  const created = await trx
     .insertInto('web_forms')
     .values(
-      sampleForms.map((f) => ({
+      starterForms.map((f) => ({
         tenant_id: tenant_id,
         campaign_id,
         name: f.name,
@@ -46144,452 +48629,359 @@ export async function seedOnboardingData(
         updatedby_id: user_id,
       })),
     )
+    .returning(['id', 'slug'])
     .execute();
 
-  // ── 6. Sample list (Supporters) with Alex pre-added ──────────────────────
-  const list = await trx
-    .insertInto('lists')
-    .values({
-      tenant_id: tenant_id,
-      campaign_id,
-      name: 'Supporters [SAMPLE]',
-      description:
-        'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
-      object: 'people',
-      is_dynamic: false,
-      status: 'idle',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('map_lists_persons')
-    .values({
-      tenant_id: tenant_id,
-      list_id: list.id,
-      person_id: alexId,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 7. Sample volunteer event with Sam signed up ──────────────────────────
-  const eventStart = new Date();
-  eventStart.setDate(eventStart.getDate() + 30);
-  eventStart.setHours(10, 0, 0, 0);
-  const eventEnd = new Date(eventStart);
-  eventEnd.setHours(14, 0, 0, 0);
-
-  const event = await trx
-    .insertInto('volunteer_events')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Community Kickoff [SAMPLE]',
-      description:
-        'Sample volunteer event. Edit the details, date, and location — then share the public sign-up link with your volunteers.',
-      location_address: '789 Town Hall Square, Springfield, IL',
-      start_time: eventStart,
-      end_time: eventEnd,
-      capacity: 20,
-      is_private: false,
-      send_reminder: false,
-      send_signup_confirmation: false,
-      send_volunteer_alert: false,
-      slug: `sample-community-kickoff-${tenant_id.replace(/-/g, '').slice(0, 8)}`,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('volunteer_shifts')
-    .values({
-      tenant_id: tenant_id,
-      event_id: event.id,
-      person_id: samId,
-      status: 'signed_up',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 8. Sample newsletter (draft) ─────────────────────────────────────────
-  await trx
-    .insertInto('newsletters')
-    .values({
-      tenant_id: tenant_id,
-      campaign_id,
-      name: 'Welcome Newsletter [SAMPLE]',
-      status: 'draft',
-      subject: 'Welcome — we are glad you are here!',
-      preview_text: 'A quick introduction to who we are and how to get involved.',
-      audience_description: 'All supporters and subscribers',
-      html_content:
-        '<h1>Welcome!</h1><p>Thanks for joining us. We are excited to have you on board.</p><p>Stay tuned for updates, events, and ways to get involved.</p>',
-      plain_text_content:
-        'Welcome! Thanks for joining us. We are excited to have you on board. Stay tuned for updates, events, and ways to get involved.',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 9. Sample team with the owner as lead and Sam as a member ─────────────
-  const team = await trx
-    .insertInto('teams')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Sample Team [SAMPLE]',
-      description: 'Sample team. Teams let you assign contacts and lists to a group of users working together.',
-      team_lead_user_id: user_id,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('map_teams_persons')
-    .values({
-      tenant_id: tenant_id,
-      team_id: team.id,
-      person_id: samId,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
+  return created.map((f) => ({ id: String(f.id), slug: f.slug }));
 }
 ```
 
-## File: apps/backend/src/app/modules/billing/usage-limits.ts
+## File: apps/backend/src/app/modules/auth/trpc.router.ts
 
 ```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import { env } from '../../../env';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { logger } from '../../logger';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
+import {
+  InviteAuthUserObj,
+  Verify2FAObj,
+  getAllOptions,
+  signInInputObj,
+  signUpInputObj,
+  idSchema,
+  UpdateAuthUserObj,
+} from '../../../../../../libs/common/src';
 
-export interface PlanLimits {
-  price: string;
-  contacts: number;
-  seats: number;
-  emails: number;
-  /** Storage quota in bytes. */
-  storageBytes: number;
+import z from 'zod';
+
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
+import { AuthController } from './controller';
+import { PasskeyController } from './passkey.controller';
+import { clearRefreshCookie, getRefreshTokenFromCookie, setRefreshCookie } from './auth-cookie';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
+
+const MIN15 = 15 * 60 * 1000;
+const HOUR1 = 60 * 60 * 1000;
+
+function currentUser() {
+  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
 }
 
-const settingsRepo = new SettingsRepo();
-const mailService = new TransactionalEmailService();
-
-const GB = 1024 * 1024 * 1024;
-
-export function getPlanLimits(planName: string | null | undefined): PlanLimits {
-  switch (planName?.toLowerCase()) {
-    case 'grassroots':
-      return { price: '$49/month', contacts: 5000, seats: 3, emails: 5000, storageBytes: 5 * GB };
-    case 'representative':
-      return { price: '$199/month', contacts: 50000, seats: 10, emails: 50000, storageBytes: 25 * GB };
-    default:
-      // Free / Trial Tier
-      return { price: '$0/month (Free Trial)', contacts: 500, seats: 1, emails: 500, storageBytes: 1 * GB };
-  }
+function count() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
 }
 
-/** Rounds a byte count to GB with one decimal place, for the coarse-grained usage/alerting resources. */
-function bytesToGB(bytes: number): number {
-  return Math.round((bytes / GB) * 10) / 10;
+function getAllWithCounts() {
+  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
 }
 
-export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
-  const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', BigInt(tenantId)).executeTakeFirst();
+function getById() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
+}
 
-  if (!tenant) {
-    logger.error(`[checkTenantUsage] Tenant not found: ${tenantId}`);
-    return;
-  }
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
+}
 
-  const planName = (tenant['subscription_plan'] as string) || 'free';
-  const planLimits = getPlanLimits(planName);
-
-  // 1. Count Contacts (Persons)
-  const contactsCountRow = await db
-    .selectFrom('persons')
-    .select(db.fn.countAll().as('cnt'))
-    .where('tenant_id', '=', tenantId)
-    .executeTakeFirst();
-  const currentContacts = Number(contactsCountRow?.cnt || 0);
-
-  // 2. Count Active User Seats
-  const seatsCountRow = await db
-    .selectFrom('authusers')
-    .select(db.fn.countAll().as('cnt'))
-    .where('tenant_id', '=', tenantId)
-    .where('deletion_scheduled_at', 'is', null)
-    .where('deactivated_at', 'is', null)
-    .executeTakeFirst();
-  const currentSeats = Number(seatsCountRow?.cnt || 0);
-
-  // 3. Count Outbound Emails within Current Billing Cycle
-  const endsAt = tenant['subscription_ends_at']
-    ? new Date(tenant['subscription_ends_at'] as string | number | Date)
-    : null;
-  let billingCycleStart = new Date();
-  billingCycleStart.setDate(billingCycleStart.getDate() - 30); // fallback: last 30 days
-  if (endsAt) {
-    const candidateStart = new Date(endsAt);
-    candidateStart.setMonth(candidateStart.getMonth() - 1);
-    while (candidateStart > new Date()) {
-      candidateStart.setMonth(candidateStart.getMonth() - 1);
-    }
-    billingCycleStart = candidateStart;
-  }
-
-  const emailsCountRow = await db
-    .selectFrom('emails')
-    .select(db.fn.countAll().as('cnt'))
-    .where('tenant_id', '=', tenantId)
-    .where('folder_id', '=', ALL_FOLDERS.SENT)
-    .where('created_at', '>=', billingCycleStart)
-    .executeTakeFirst();
-  const emailsSent = Number(emailsCountRow?.cnt || 0);
-
-  const newslettersCountRow = await db
-    .selectFrom('newsletters')
-    .select(db.fn.sum('delivered_count').as('cnt'))
-    .where('tenant_id', '=', tenantId)
-    .where('status', '=', 'sent')
-    .where('send_date', '>=', billingCycleStart)
-    .executeTakeFirst();
-  const newslettersSent = Number(newslettersCountRow?.cnt || 0);
-
-  const totalEmailsSent = emailsSent + newslettersSent;
-
-  // 4. Sum uploaded file storage
-  const storageRow = await db
-    .selectFrom('files')
-    .select(db.fn.sum('size_bytes').as('total'))
-    .where('tenant_id', '=', tenantId)
-    .executeTakeFirst();
-  const currentStorageBytes = Number(storageRow?.total || 0);
-
-  // Retrieve existing warning status from settings
-  const alertSettingsRow = await settingsRepo.getByKey({
-    tenant_id: tenantId,
-    key: 'billing.limit_alerts_sent',
+function renewAuthToken() {
+  // The refresh token arrives via the HttpOnly cookie, not the body (SECURITY-REVIEW 2.1). Rotate
+  // it, hand back only the new access token, and re-set the refreshed cookie.
+  return publicProcedure.mutation(async ({ ctx }) => {
+    const refreshToken = getRefreshTokenFromCookie(ctx.req);
+    const result = await controller.renewAuthToken(refreshToken);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
   });
-  let alertSettings: Record<string, boolean> = {};
-  if (alertSettingsRow?.value) {
-    const val = alertSettingsRow.value;
-    const parsed = typeof val === 'string' ? JSON.parse(val) : val;
-    if (parsed && typeof parsed === 'object') {
-      alertSettings = { ...parsed };
-    }
-  }
+}
 
-  let settingsChanged = false;
+function resetPassword() {
+  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
+    return controller.resetPassword(input.password, input.code);
+  });
+}
 
-  const resources = [
-    {
-      name: 'contacts list',
-      key: 'contacts',
-      current: currentContacts,
-      limit: planLimits.contacts,
-      unit: 'voter contacts',
-    },
-    {
-      name: 'user seats',
-      key: 'seats',
-      current: currentSeats,
-      limit: planLimits.seats,
-      unit: 'active users',
-    },
-    {
-      name: 'outbound emails',
-      key: 'emails',
-      current: totalEmailsSent,
-      limit: planLimits.emails,
-      unit: 'sent emails',
-    },
-    {
-      name: 'file storage',
-      key: 'storage',
-      current: bytesToGB(currentStorageBytes),
-      limit: bytesToGB(planLimits.storageBytes),
-      unit: 'GB used',
-    },
-  ];
-
-  const adminsList: { email: string; first_name: string }[] = [];
-
-  for (const resource of resources) {
-    const pct = resource.limit ? (resource.current / resource.limit) * 100 : 0;
-    const flag90 = `${resource.key}_90`;
-    const flag100 = `${resource.key}_100`;
-
-    // Handle 100% capacity limit hit
-    if (pct >= 100) {
-      if (!alertSettings[flag100]) {
-        alertSettings[flag100] = true;
-        alertSettings[flag90] = true; // Auto-set 90% if we skipped directly to 100%
-        settingsChanged = true;
-        await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 100, adminsList, db);
-      }
-    } else {
-      // Reset 100% flag if usage drops below 100%
-      if (alertSettings[flag100]) {
-        alertSettings[flag100] = false;
-        settingsChanged = true;
-      }
-
-      // Handle 90% limit hit
-      if (pct >= 90) {
-        if (!alertSettings[flag90]) {
-          alertSettings[flag90] = true;
-          settingsChanged = true;
-          await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 90, adminsList, db);
-        }
-      } else {
-        // Reset 90% flag if usage drops below 90%
-        if (alertSettings[flag90]) {
-          alertSettings[flag90] = false;
-          settingsChanged = true;
-        }
-      }
-    }
-  }
-
-  if (settingsChanged) {
-    const adminUserId = tenant['admin_id'] ? String(tenant['admin_id']) : '1';
-    await settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: adminUserId,
-      entries: [
-        {
-          key: 'billing.limit_alerts_sent',
-          value: alertSettings,
-        },
-      ],
+function sendPasswordResetEmail() {
+  return publicProcedure
+    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
+      return controller.sendPasswordResetEmail(input.email);
     });
-  }
 }
 
-async function sendLimitEmail(
-  tenantId: string,
-  tenantName: string,
-  planName: string,
-  resource: { name: string; current: number; limit: number; unit: string },
-  pct: 90 | 100,
-  adminsCache: { email: string; first_name: string }[],
-  db: Kysely<any>,
-): Promise<void> {
-  if (adminsCache.length === 0) {
-    const admins = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
-      .where((eb: any) =>
-        eb.or([
-          eb('role', '=', 'admin'),
-          eb('id', '=', BigInt(tenantId) as any), // admin fallback
-        ]),
-      )
-      .where('deletion_scheduled_at', 'is', null)
-      .where('deactivated_at', 'is', null)
-      .execute();
-    adminsCache.push(...(admins as any));
-  }
-
-  const billingPageUrl = `${env.appUrl}/workspace/billing`;
-  const planNameUpper = planName.toUpperCase();
-  const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
-  const prefix = pct === 100 ? 'reached' : 'approaching';
-
-  const subject = `${alertTag} Action Required: You have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
-  const text = `Hi,
-
-Your organization "${tenantName}" has reached ${pct}% of its ${resource.name} capacity limit under the ${planNameUpper} plan.
-
-Current Usage: ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).
-
-To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.
-
-Upgrade Options:
-- Grassroots Plan ($49/month): Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.
-- Representative Plan ($199/month): Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.
-
-Update your subscription tier here: ${billingPageUrl}
-
-Thank you,
-The PplCRM Team`;
-
-  const html = `<p>Hi,</p>
-<p>Your organization <strong>${tenantName}</strong> has reached <strong>${pct}%</strong> of its ${resource.name} capacity limit under the <strong>${planNameUpper}</strong> plan.</p>
-<p><strong>Current Usage:</strong> ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).</p>
-<p><strong>[${pct === 100 ? 'WARNING' : 'IMPORTANT'}]</strong> To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.</p>
-<p><strong>Upgrade Tiers:</strong></p>
-<ul>
-  <li><strong>Grassroots Plan ($49/month):</strong> Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.</li>
-  <li><strong>Representative Plan ($199/month):</strong> Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.</li>
-</ul>
-<p><a href="${billingPageUrl}">Upgrade Subscription Plan</a></p>`;
-
-  for (const admin of adminsCache) {
-    if (admin.email) {
-      try {
-        await mailService.enqueueMail({
-          to: admin.email,
-          tenant_id: tenantId,
-          subject,
-          text,
-          html,
-        });
-      } catch (err) {
-        logger.error({ err }, `Failed to send limit notification email to ${admin.email}`);
-      }
+function signIn() {
+  return publicProcedure.input(signInInputObj).mutation(async ({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signIn`, 10, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    const result = await controller.signIn(input, ip, ua);
+    // 2FA challenge → no tokens yet; otherwise stash the refresh token in the cookie.
+    if ('auth_token' in result) {
+      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+      return { auth_token: result.auth_token };
     }
-  }
+    return result;
+  });
 }
 
-export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
-  const tenants = await db.selectFrom('tenants').select('id').execute();
-  for (const tenant of tenants) {
-    try {
-      await checkTenantUsage(String(tenant['id']), db);
-    } catch (err) {
-      logger.error({ err }, `Failed to check usage limits for tenant ${tenant['id']}`);
-    }
-  }
+function verify2FA() {
+  return publicProcedure.input(Verify2FAObj).mutation(async ({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    const result = await controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
+  });
 }
 
-export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<void> {
-  // Check if there is already a pending limits check job for this tenant
-  const existing = await db
-    .selectFrom('background_jobs')
-    .select('id')
-    .where('tenant_id', '=', tenantId)
-    .where('status', '=', 'pending')
-    .where(sql.raw("payload->>'type'"), '=', 'check_usage_limits')
-    .executeTakeFirst();
-
-  if (!existing) {
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'check_usage_limits', tenant_id: tenantId }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-  }
+function scheduleAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
 }
+
+function cancelAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
+}
+
+function getTenantAccountStatus() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
+}
+
+function getSeatUsage() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getSeatUsage(ctx.auth));
+}
+
+function cancelTenantDeletionByToken() {
+  return publicProcedure
+    .input(z.object({ tenantId: z.string(), token: z.string() }))
+    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
+}
+
+function scheduleTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
+}
+
+function cancelTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
+}
+
+function pauseTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
+}
+
+function resumeTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
+}
+
+function cancelEmailChange() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
+}
+
+function uploadAvatar() {
+  return authProcedure
+    .input(
+      z.object({
+        dataBase64: z.string().min(1),
+        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+        filename: z.string().min(1).max(255),
+      }),
+    )
+    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
+}
+
+function deleteAvatar() {
+  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
+}
+
+function adminTriggerPasswordReset() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
+}
+
+function deactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminDeactivateUser(ctx.auth, input.id));
+}
+
+function reactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminReactivateUser(ctx.auth, input.id));
+}
+
+function resendInvite() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminResendInvite(ctx.auth, input.id));
+}
+
+function invite() {
+  return adminOrOwnerProcedure
+    .input(InviteAuthUserObj)
+    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
+}
+
+function signOut() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    clearRefreshCookie(ctx.res);
+    return controller.signOut(ctx.auth);
+  });
+}
+
+function signUp() {
+  return publicProcedure.input(signUpInputObj).mutation(async ({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
+    const result = await controller.signUp(input);
+    setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+    return { auth_token: result.auth_token };
+  });
+}
+
+function deleteOne() {
+  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
+}
+
+function verifyEmail() {
+  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
+    return controller.verifyEmail(input.code);
+  });
+}
+
+function resendVerificationEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
+    return controller.resendVerificationEmail(input.email);
+  });
+}
+
+function dismissPasskeyPrompt() {
+  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
+}
+
+const controller = new AuthController();
+const passkeyController = new PasskeyController();
+
+function passkeyRegistrationOptions() {
+  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
+}
+
+function verifyPasskeyRegistration() {
+  return authProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as RegistrationResponseJSON),
+        friendlyName: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
+}
+
+function passkeyAuthenticationOptions() {
+  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
+}
+
+function checkEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
+    return passkeyController.checkEmailPasskeys(input.email);
+  });
+}
+
+function verifyPasskeyAuthentication() {
+  return publicProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as AuthenticationResponseJSON),
+        nonce: z.string(),
+        rememberMe: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
+      const ua = ctx.req?.headers?.['user-agent'] ?? '';
+      const result = await passkeyController.verifyAuthentication(
+        input.response,
+        input.nonce,
+        ip,
+        ua,
+        input.rememberMe,
+      );
+      setRefreshCookie(ctx.res, result.refresh_token, result.refresh_expires_at);
+      return { auth_token: result.auth_token };
+    });
+}
+
+function listPasskeys() {
+  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
+}
+
+function deletePasskey() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
+}
+
+function updatePasskeyName() {
+  return authProcedure
+    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
+    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
+}
+
+export const AuthRouter = router({
+  signUp: signUp(),
+  signIn: signIn(),
+  signOut: signOut(),
+  currentUser: currentUser(),
+  getAllWithCounts: getAllWithCounts(),
+  getById: getById(),
+  invite: invite(),
+  update: update(),
+  delete: deleteOne(),
+  count: count(),
+  resetPassword: resetPassword(),
+  renewAuthToken: renewAuthToken(),
+  sendPasswordResetEmail: sendPasswordResetEmail(),
+  verifyEmail: verifyEmail(),
+  resendVerificationEmail: resendVerificationEmail(),
+  verify2FA: verify2FA(),
+  scheduleAccountDeletion: scheduleAccountDeletion(),
+  cancelAccountDeletion: cancelAccountDeletion(),
+  cancelEmailChange: cancelEmailChange(),
+  getTenantAccountStatus: getTenantAccountStatus(),
+  getSeatUsage: getSeatUsage(),
+  scheduleTenantDeletion: scheduleTenantDeletion(),
+  cancelTenantDeletion: cancelTenantDeletion(),
+  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
+  pauseTenant: pauseTenant(),
+  resumeTenant: resumeTenant(),
+  adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  deactivateUser: deactivateUser(),
+  reactivateUser: reactivateUser(),
+  resendInvite: resendInvite(),
+  uploadAvatar: uploadAvatar(),
+  deleteAvatar: deleteAvatar(),
+  passkeyRegistrationOptions: passkeyRegistrationOptions(),
+  verifyPasskeyRegistration: verifyPasskeyRegistration(),
+  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
+  checkEmail: checkEmail(),
+  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
+  listPasskeys: listPasskeys(),
+  deletePasskey: deletePasskey(),
+  updatePasskeyName: updatePasskeyName(),
+  dismissPasskeyPrompt: dismissPasskeyPrompt(),
+});
 ```
 
 ## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
@@ -51214,6 +53606,335 @@ export class PersonsService {
 }
 ```
 
+## File: apps/backend/src/app/modules/billing/usage-limits.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import { env } from '../../../env';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { logger } from '../../logger';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export interface PlanLimits {
+  price: string;
+  contacts: number;
+  seats: number;
+  emails: number;
+  /** Storage quota in bytes. */
+  storageBytes: number;
+}
+
+const settingsRepo = new SettingsRepo();
+const mailService = new TransactionalEmailService();
+
+const GB = 1024 * 1024 * 1024;
+
+export function getPlanLimits(planName: string | null | undefined): PlanLimits {
+  switch (planName?.toLowerCase()) {
+    case 'grassroots':
+      return { price: '$49/month', contacts: 5000, seats: 3, emails: 5000, storageBytes: 5 * GB };
+    case 'representative':
+      return { price: '$199/month', contacts: 50000, seats: 10, emails: 50000, storageBytes: 25 * GB };
+    default:
+      // Free / Trial Tier
+      return { price: '$0/month (Free Trial)', contacts: 500, seats: 1, emails: 500, storageBytes: 1 * GB };
+  }
+}
+
+/** Rounds a byte count to GB with one decimal place, for the coarse-grained usage/alerting resources. */
+function bytesToGB(bytes: number): number {
+  return Math.round((bytes / GB) * 10) / 10;
+}
+
+export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
+  const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', BigInt(tenantId)).executeTakeFirst();
+
+  if (!tenant) {
+    logger.error(`[checkTenantUsage] Tenant not found: ${tenantId}`);
+    return;
+  }
+
+  const planName = (tenant['subscription_plan'] as string) || 'free';
+  const planLimits = getPlanLimits(planName);
+
+  // 1. Count Contacts (Persons)
+  const contactsCountRow = await db
+    .selectFrom('persons')
+    .select(db.fn.countAll().as('cnt'))
+    .where('tenant_id', '=', tenantId)
+    .executeTakeFirst();
+  const currentContacts = Number(contactsCountRow?.cnt || 0);
+
+  // 2. Count Active User Seats
+  const seatsCountRow = await db
+    .selectFrom('authusers')
+    .select(db.fn.countAll().as('cnt'))
+    .where('tenant_id', '=', tenantId)
+    .where('deletion_scheduled_at', 'is', null)
+    .where('deactivated_at', 'is', null)
+    .executeTakeFirst();
+  const currentSeats = Number(seatsCountRow?.cnt || 0);
+
+  // 3. Count Outbound Emails within Current Billing Cycle
+  const endsAt = tenant['subscription_ends_at']
+    ? new Date(tenant['subscription_ends_at'] as string | number | Date)
+    : null;
+  let billingCycleStart = new Date();
+  billingCycleStart.setDate(billingCycleStart.getDate() - 30); // fallback: last 30 days
+  if (endsAt) {
+    const candidateStart = new Date(endsAt);
+    candidateStart.setMonth(candidateStart.getMonth() - 1);
+    while (candidateStart > new Date()) {
+      candidateStart.setMonth(candidateStart.getMonth() - 1);
+    }
+    billingCycleStart = candidateStart;
+  }
+
+  const emailsCountRow = await db
+    .selectFrom('emails')
+    .select(db.fn.countAll().as('cnt'))
+    .where('tenant_id', '=', tenantId)
+    .where('folder_id', '=', ALL_FOLDERS.SENT)
+    .where('created_at', '>=', billingCycleStart)
+    .executeTakeFirst();
+  const emailsSent = Number(emailsCountRow?.cnt || 0);
+
+  const newslettersCountRow = await db
+    .selectFrom('newsletters')
+    .select(db.fn.sum('delivered_count').as('cnt'))
+    .where('tenant_id', '=', tenantId)
+    .where('status', '=', 'sent')
+    .where('send_date', '>=', billingCycleStart)
+    .executeTakeFirst();
+  const newslettersSent = Number(newslettersCountRow?.cnt || 0);
+
+  const totalEmailsSent = emailsSent + newslettersSent;
+
+  // 4. Sum uploaded file storage
+  const storageRow = await db
+    .selectFrom('files')
+    .select(db.fn.sum('size_bytes').as('total'))
+    .where('tenant_id', '=', tenantId)
+    .executeTakeFirst();
+  const currentStorageBytes = Number(storageRow?.total || 0);
+
+  // Retrieve existing warning status from settings
+  const alertSettingsRow = await settingsRepo.getByKey({
+    tenant_id: tenantId,
+    key: 'billing.limit_alerts_sent',
+  });
+  let alertSettings: Record<string, boolean> = {};
+  if (alertSettingsRow?.value) {
+    const val = alertSettingsRow.value;
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+    if (parsed && typeof parsed === 'object') {
+      alertSettings = { ...parsed };
+    }
+  }
+
+  let settingsChanged = false;
+
+  const resources = [
+    {
+      name: 'contacts list',
+      key: 'contacts',
+      current: currentContacts,
+      limit: planLimits.contacts,
+      unit: 'voter contacts',
+    },
+    {
+      name: 'user seats',
+      key: 'seats',
+      current: currentSeats,
+      limit: planLimits.seats,
+      unit: 'active users',
+    },
+    {
+      name: 'outbound emails',
+      key: 'emails',
+      current: totalEmailsSent,
+      limit: planLimits.emails,
+      unit: 'sent emails',
+    },
+    {
+      name: 'file storage',
+      key: 'storage',
+      current: bytesToGB(currentStorageBytes),
+      limit: bytesToGB(planLimits.storageBytes),
+      unit: 'GB used',
+    },
+  ];
+
+  const adminsList: { email: string; first_name: string }[] = [];
+
+  for (const resource of resources) {
+    const pct = resource.limit ? (resource.current / resource.limit) * 100 : 0;
+    const flag90 = `${resource.key}_90`;
+    const flag100 = `${resource.key}_100`;
+
+    // Handle 100% capacity limit hit
+    if (pct >= 100) {
+      if (!alertSettings[flag100]) {
+        alertSettings[flag100] = true;
+        alertSettings[flag90] = true; // Auto-set 90% if we skipped directly to 100%
+        settingsChanged = true;
+        await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 100, adminsList, db);
+      }
+    } else {
+      // Reset 100% flag if usage drops below 100%
+      if (alertSettings[flag100]) {
+        alertSettings[flag100] = false;
+        settingsChanged = true;
+      }
+
+      // Handle 90% limit hit
+      if (pct >= 90) {
+        if (!alertSettings[flag90]) {
+          alertSettings[flag90] = true;
+          settingsChanged = true;
+          await sendLimitEmail(tenantId, tenant['name'] as string, planName, resource, 90, adminsList, db);
+        }
+      } else {
+        // Reset 90% flag if usage drops below 90%
+        if (alertSettings[flag90]) {
+          alertSettings[flag90] = false;
+          settingsChanged = true;
+        }
+      }
+    }
+  }
+
+  if (settingsChanged) {
+    const adminUserId = tenant['admin_id'] ? String(tenant['admin_id']) : '1';
+    await settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: adminUserId,
+      entries: [
+        {
+          key: 'billing.limit_alerts_sent',
+          value: alertSettings,
+        },
+      ],
+    });
+  }
+}
+
+async function sendLimitEmail(
+  tenantId: string,
+  tenantName: string,
+  planName: string,
+  resource: { name: string; current: number; limit: number; unit: string },
+  pct: 90 | 100,
+  adminsCache: { email: string; first_name: string }[],
+  db: Kysely<any>,
+): Promise<void> {
+  if (adminsCache.length === 0) {
+    const admins = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      .where((eb: any) =>
+        eb.or([
+          eb('role', '=', 'admin'),
+          eb('id', '=', BigInt(tenantId) as any), // admin fallback
+        ]),
+      )
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
+      .execute();
+    adminsCache.push(...(admins as any));
+  }
+
+  const billingPageUrl = `${env.appUrl}/workspace/billing`;
+  const planNameUpper = planName.toUpperCase();
+  const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
+  const prefix = pct === 100 ? 'reached' : 'approaching';
+
+  const subject = `${alertTag} Action Required: You have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
+  const text = `Hi,
+
+Your organization "${tenantName}" has reached ${pct}% of its ${resource.name} capacity limit under the ${planNameUpper} plan.
+
+Current Usage: ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).
+
+To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.
+
+Upgrade Options:
+- Grassroots Plan ($49/month): Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.
+- Representative Plan ($199/month): Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.
+
+Update your subscription tier here: ${billingPageUrl}
+
+Thank you,
+The PplCRM Team`;
+
+  const html = `<p>Hi,</p>
+<p>Your organization <strong>${tenantName}</strong> has reached <strong>${pct}%</strong> of its ${resource.name} capacity limit under the <strong>${planNameUpper}</strong> plan.</p>
+<p><strong>Current Usage:</strong> ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).</p>
+<p><strong>[${pct === 100 ? 'WARNING' : 'IMPORTANT'}]</strong> To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.</p>
+<p><strong>Upgrade Tiers:</strong></p>
+<ul>
+  <li><strong>Grassroots Plan ($49/month):</strong> Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.</li>
+  <li><strong>Representative Plan ($199/month):</strong> Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.</li>
+</ul>
+<p><a href="${billingPageUrl}">Upgrade Subscription Plan</a></p>`;
+
+  for (const admin of adminsCache) {
+    if (admin.email) {
+      try {
+        await mailService.enqueueMail({
+          to: admin.email,
+          tenant_id: tenantId,
+          subject,
+          text,
+          html,
+        });
+      } catch (err) {
+        logger.error({ err }, `Failed to send limit notification email to ${admin.email}`);
+      }
+    }
+  }
+}
+
+export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
+  const tenants = await db.selectFrom('tenants').select('id').execute();
+  for (const tenant of tenants) {
+    try {
+      await checkTenantUsage(String(tenant['id']), db);
+    } catch (err) {
+      logger.error({ err }, `Failed to check usage limits for tenant ${tenant['id']}`);
+    }
+  }
+}
+
+export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<void> {
+  // Check if there is already a pending limits check job for this tenant
+  const existing = await db
+    .selectFrom('background_jobs')
+    .select('id')
+    .where('tenant_id', '=', tenantId)
+    .where('status', '=', 'pending')
+    .where(sql.raw("payload->>'type'"), '=', 'check_usage_limits')
+    .executeTakeFirst();
+
+  if (!existing) {
+    await db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({ type: 'check_usage_limits', tenant_id: tenantId }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
 
 ```typescript
@@ -52215,6 +54936,7 @@ import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { ListsController } from '../lists/controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
@@ -52537,6 +55259,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    // Sending is locked during the demo test drive (no plan yet, no sender identity).
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const newsletter = (await this.getOneById({ tenant_id, id })) as any;
     if (!newsletter) {
       throw new NotFoundError('Newsletter not found');
@@ -52592,6 +55316,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const db = this.getRepo().db;
 
     // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
@@ -53150,7 +55875,8 @@ import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { seedOnboardingData } from './onboarding-seed';
+import { seedStarterForms } from './onboarding-seed';
+import { seedDemoData } from '../demo/demo-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
@@ -53568,11 +56294,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
+      let tenant_demo_mode_at: Date | null = null;
       let tenant_slug: string | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at', 'slug'])
+          .select(['deletion_scheduled_at', 'paused_at', 'demo_mode_at', 'slug'])
           .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
@@ -53581,6 +56308,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (tenant?.paused_at) {
           tenant_paused_at = tenant.paused_at;
         }
+        tenant_demo_mode_at = tenant?.demo_mode_at ?? null;
         tenant_slug = tenant?.slug ?? null;
       }
 
@@ -53591,6 +56319,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
+        tenant_demo_mode_at,
         tenant_slug,
       };
     } catch (err) {
@@ -54515,7 +57244,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .where('id', '=', tenant_id)
           .execute();
 
-        await seedOnboardingData({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        // Starter forms survive exit-demo; the demo dataset does not — see modules/demo.
+        const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        await seedDemoData(
+          {
+            tenant_id,
+            user_id: userId,
+            campaign_id: String(campaign.id),
+            placeholder_household_id: String(placeholderHousehold.id),
+            forms: starterForms,
+          },
+          trx,
+        );
 
         const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
         const verificationCode = codeObj?.password_reset_code;

@@ -48,7 +48,8 @@ import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { seedOnboardingData } from './onboarding-seed';
+import { seedStarterForms } from './onboarding-seed';
+import { seedDemoData } from '../demo/demo-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
@@ -466,11 +467,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
+      let tenant_demo_mode_at: Date | null = null;
       let tenant_slug: string | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at', 'slug'])
+          .select(['deletion_scheduled_at', 'paused_at', 'demo_mode_at', 'slug'])
           .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
@@ -479,6 +481,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (tenant?.paused_at) {
           tenant_paused_at = tenant.paused_at;
         }
+        tenant_demo_mode_at = tenant?.demo_mode_at ?? null;
         tenant_slug = tenant?.slug ?? null;
       }
 
@@ -489,6 +492,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
+        tenant_demo_mode_at,
         tenant_slug,
       };
     } catch (err) {
@@ -1413,7 +1417,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .where('id', '=', tenant_id)
           .execute();
 
-        await seedOnboardingData({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        // Starter forms survive exit-demo; the demo dataset does not — see modules/demo.
+        const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        await seedDemoData(
+          {
+            tenant_id,
+            user_id: userId,
+            campaign_id: String(campaign.id),
+            placeholder_household_id: String(placeholderHousehold.id),
+            forms: starterForms,
+          },
+          trx,
+        );
 
         const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
         const verificationCode = codeObj?.password_reset_code;

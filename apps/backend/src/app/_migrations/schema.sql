@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
+\restrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 
--- Dumped from database version 14.18 (Homebrew)
--- Dumped by pg_dump version 17.6
+-- Dumped from database version 18.4 (Homebrew)
+-- Dumped by pg_dump version 18.4 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -36,24 +36,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: 
---
-
-COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
-
-
---
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
 --
@@ -135,6 +121,7 @@ CREATE TABLE public.authusers (
     previous_role text,
     passkey_setup_dismissed_at timestamp with time zone,
     two_factor_attempts integer DEFAULT 0 NOT NULL,
+    deactivated_at timestamp with time zone,
     CONSTRAINT chk_authusers_role CHECK (((role IS NULL) OR (role = ANY (ARRAY['owner'::text, 'admin'::text, 'user'::text, 'viewer'::text]))))
 );
 
@@ -212,6 +199,107 @@ ALTER SEQUENCE public.background_jobs_id_seq OWNED BY public.background_jobs.id;
 
 
 --
+-- Name: campaign_person_facts; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.campaign_person_facts (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    support_level text,
+    support_source text,
+    support_recorded_by bigint,
+    support_recorded_at timestamp with time zone,
+    voting_status text,
+    voting_source text,
+    voting_recorded_by bigint,
+    voting_recorded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_cpf_support_level CHECK (((support_level IS NULL) OR (support_level = ANY (ARRAY['strong'::text, 'leaning'::text, 'neutral'::text, 'leaning_against'::text, 'against'::text, 'undecided'::text])))),
+    CONSTRAINT chk_cpf_support_source CHECK (((support_source IS NULL) OR (support_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text, 'carryover'::text])))),
+    CONSTRAINT chk_cpf_voting_source CHECK (((voting_source IS NULL) OR (voting_source = ANY (ARRAY['manual'::text, 'canvass'::text, 'form'::text, 'import'::text])))),
+    CONSTRAINT chk_cpf_voting_status CHECK (((voting_status IS NULL) OR (voting_status = ANY (ARRAY['will_vote'::text, 'voted_advance'::text, 'voted_eday'::text, 'not_voting'::text, 'ineligible'::text]))))
+);
+
+ALTER TABLE ONLY public.campaign_person_facts FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.campaign_person_facts OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_person_facts_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.campaign_person_facts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.campaign_person_facts_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_person_facts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.campaign_person_facts_id_seq OWNED BY public.campaign_person_facts.id;
+
+
+--
+-- Name: campaign_subscriptions; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.campaign_subscriptions (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    email text NOT NULL,
+    status text DEFAULT 'subscribed'::text NOT NULL,
+    consent_source text DEFAULT 'manual'::text NOT NULL,
+    consent_at timestamp with time zone,
+    unsubscribed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_csub_source CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text]))),
+    CONSTRAINT chk_csub_status CHECK ((status = ANY (ARRAY['subscribed'::text, 'pending'::text, 'unsubscribed'::text])))
+);
+
+ALTER TABLE ONLY public.campaign_subscriptions FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.campaign_subscriptions OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.campaign_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.campaign_subscriptions_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: campaign_subscriptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.campaign_subscriptions_id_seq OWNED BY public.campaign_subscriptions.id;
+
+
+--
 -- Name: campaigns; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -227,7 +315,11 @@ CREATE TABLE public.campaigns (
     enddate date,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updatedby_id bigint
+    updatedby_id bigint,
+    kind text DEFAULT 'office'::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    CONSTRAINT chk_campaigns_kind CHECK ((kind = ANY (ARRAY['office'::text, 'election'::text]))),
+    CONSTRAINT chk_campaigns_status CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
 );
 
 ALTER TABLE ONLY public.campaigns FORCE ROW LEVEL SECURITY;
@@ -276,7 +368,8 @@ CREATE TABLE public.companies (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     file_id bigint,
-    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED
+    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED,
+    slug text
 );
 
 ALTER TABLE ONLY public.companies FORCE ROW LEVEL SECURITY;
@@ -375,6 +468,11 @@ CREATE TABLE public.data_imports (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
     error_message text,
+    merged_count integer DEFAULT 0 NOT NULL,
+    tags_applied jsonb DEFAULT '[]'::jsonb NOT NULL,
+    source_file_key text,
+    source_file_size bigint,
+    skip_reasons jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT chk_data_imports_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text]))))
 );
 
@@ -382,13 +480,6 @@ ALTER TABLE ONLY public.data_imports FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE public.data_imports OWNER TO pplcrm_owner;
-
---
--- Name: COLUMN data_imports.tag_name; Type: COMMENT; Schema: public; Owner: pplcrm_owner
---
-
-COMMENT ON COLUMN public.data_imports.tag_name IS 'Tag name requested at import time; label of record once the tag is deleted. While the tag exists, tags.name via tag_id is the source of truth (D-10)';
-
 
 --
 -- Name: data_imports_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
@@ -412,6 +503,152 @@ ALTER SEQUENCE public.data_imports_id_seq OWNED BY public.data_imports.id;
 
 
 --
+-- Name: delivery_requests; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_requests (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    person_id bigint,
+    web_form_id uuid,
+    source text DEFAULT 'manual'::text NOT NULL,
+    status text DEFAULT 'new'::text NOT NULL,
+    notes text,
+    skip_reason text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_delivery_requests_source CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text]))),
+    CONSTRAINT chk_delivery_requests_status CHECK ((status = ANY (ARRAY['new'::text, 'approved'::text, 'declined'::text, 'delivered'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_requests FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_requests OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_requests ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_requests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: delivery_route_stops; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_route_stops (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    route_id bigint NOT NULL,
+    request_id bigint NOT NULL,
+    seq integer NOT NULL,
+    leg_minutes double precision DEFAULT 0 NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    reason text,
+    acted_at timestamp with time zone,
+    acted_via text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_delivery_route_stops_acted_via CHECK (((acted_via IS NULL) OR (acted_via = ANY (ARRAY['volunteer_link'::text, 'staff'::text])))),
+    CONSTRAINT chk_delivery_route_stops_status CHECK ((status = ANY (ARRAY['pending'::text, 'delivered'::text, 'skipped'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_route_stops FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_route_stops OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_route_stops_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_route_stops ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_route_stops_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: delivery_routes; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.delivery_routes (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    volunteer_person_id bigint,
+    start_address text NOT NULL,
+    start_lat double precision NOT NULL,
+    start_lng double precision NOT NULL,
+    est_minutes double precision DEFAULT 0 NOT NULL,
+    est_km double precision DEFAULT 0 NOT NULL,
+    scheduled_for timestamp with time zone,
+    share_token_hash text,
+    share_token_expires_at timestamp with time zone,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_delivery_routes_status CHECK ((status = ANY (ARRAY['draft'::text, 'assigned'::text, 'in_progress'::text, 'completed'::text, 'canceled'::text])))
+);
+
+ALTER TABLE ONLY public.delivery_routes FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.delivery_routes OWNER TO pplcrm_owner;
+
+--
+-- Name: delivery_routes_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_routes ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.delivery_routes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: dismissed_duplicate_groups; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.dismissed_duplicate_groups (
+    tenant_id bigint NOT NULL,
+    group_key text NOT NULL,
+    dismissed_by_id bigint NOT NULL,
+    dismissed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.dismissed_duplicate_groups OWNER TO pplcrm_owner;
+
+--
 -- Name: donation_periods; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -427,6 +664,7 @@ CREATE TABLE public.donation_periods (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT donation_periods_dates_check CHECK (((end_date IS NULL) OR (end_date > start_date))),
     CONSTRAINT donation_periods_limit_check CHECK ((limit_amount > 0))
 );
@@ -481,6 +719,7 @@ CREATE TABLE public.donation_pledges (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT donation_pledges_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'cancelled'::text, 'unpaid'::text])))
 );
 
@@ -532,7 +771,11 @@ CREATE TABLE public.donations (
     state text,
     zip text,
     country text,
-    pledge_id bigint
+    pledge_id bigint,
+    method text DEFAULT 'card'::text NOT NULL,
+    receipt_sent boolean DEFAULT true NOT NULL,
+    campaign_id bigint NOT NULL,
+    CONSTRAINT chk_donations_method CHECK ((method = ANY (ARRAY['card'::text, 'check'::text, 'cash'::text, 'bank_transfer'::text])))
 );
 
 ALTER TABLE ONLY public.donations FORCE ROW LEVEL SECURITY;
@@ -711,7 +954,8 @@ CREATE TABLE public.email_drafts (
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.email_drafts FORCE ROW LEVEL SECURITY;
@@ -846,6 +1090,46 @@ ALTER SEQUENCE public.email_recipients_id_seq OWNED BY public.email_recipients.i
 
 
 --
+-- Name: email_suppressions; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.email_suppressions (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email text NOT NULL,
+    reason text NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_esup_reason CHECK ((reason = ANY (ARRAY['hard_bounce'::text, 'spam_complaint'::text, 'manual'::text])))
+);
+
+ALTER TABLE ONLY public.email_suppressions FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.email_suppressions OWNER TO pplcrm_owner;
+
+--
+-- Name: email_suppressions_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.email_suppressions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_suppressions_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: email_suppressions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.email_suppressions_id_seq OWNED BY public.email_suppressions.id;
+
+
+--
 -- Name: email_trash; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -908,6 +1192,7 @@ CREATE TABLE public.emails (
     updatedby_id bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_emails_folder_id CHECK ((folder_id = ANY (ARRAY[(3)::bigint, (4)::bigint, (5)::bigint, (7)::bigint, (10)::bigint, (11)::bigint]))),
     CONSTRAINT chk_emails_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['open'::text, 'closed'::text]))))
 );
@@ -916,13 +1201,6 @@ ALTER TABLE ONLY public.emails FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE public.emails OWNER TO pplcrm_owner;
-
---
--- Name: COLUMN emails.to_email; Type: COMMENT; Schema: public; Owner: pplcrm_owner
---
-
-COMMENT ON COLUMN public.emails.to_email IS 'Display-only cache of the To list; email_recipients is the source of truth (D-10)';
-
 
 --
 -- Name: emails_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
@@ -1063,6 +1341,7 @@ CREATE TABLE public.events (
     updatedby_id bigint NOT NULL,
     search_vector tsvector GENERATED ALWAYS AS (((setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
     fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT events_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
     CONSTRAINT events_end_after_start_check CHECK ((end_time > start_time))
 );
@@ -1107,7 +1386,9 @@ CREATE TABLE public.files (
     sha256_hex text,
     uploaded_by bigint,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entity_type text,
+    entity_id bigint
 );
 
 ALTER TABLE ONLY public.files FORCE ROW LEVEL SECURITY;
@@ -1171,7 +1452,8 @@ CREATE TABLE public.google_oauth_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_sync_error text,
-    last_sync_error_at timestamp with time zone
+    last_sync_error_at timestamp with time zone,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.google_oauth_tokens FORCE ROW LEVEL SECURITY;
@@ -1186,7 +1468,7 @@ ALTER TABLE public.google_oauth_tokens OWNER TO pplcrm_owner;
 CREATE TABLE public.households (
     id bigint NOT NULL,
     tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
+    campaign_id bigint,
     createdby_id bigint NOT NULL,
     file_id bigint,
     home_phone text,
@@ -1214,6 +1496,7 @@ CREATE TABLE public.households (
     ward text,
     geocoding_status text DEFAULT 'pending'::text,
     search_vector tsvector GENERATED ALWAYS AS ((((((((((setweight(to_tsvector('simple'::regconfig, COALESCE(street1, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(city, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(address_fp_full, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(zip, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(state, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street_num, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(apt, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street2, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(country, ''::text)), 'C'::"char"))) STORED,
+    slug text,
     CONSTRAINT chk_households_geocoding_status CHECK (((geocoding_status IS NULL) OR (geocoding_status = ANY (ARRAY['pending'::text, 'success'::text, 'failed'::text]))))
 );
 
@@ -1285,6 +1568,7 @@ CREATE TABLE public.lists (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_refreshed_at timestamp with time zone,
     status text DEFAULT 'idle'::text NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_lists_status CHECK ((status = ANY (ARRAY['idle'::text, 'refreshing'::text, 'failed'::text]))),
     CONSTRAINT lists_object_check CHECK ((object = ANY (ARRAY['people'::text, 'households'::text])))
 );
@@ -1504,7 +1788,8 @@ CREATE TABLE public.ms_oauth_tokens (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_sync_error text,
-    last_sync_error_at timestamp with time zone
+    last_sync_error_at timestamp with time zone,
+    campaign_id bigint NOT NULL
 );
 
 ALTER TABLE ONLY public.ms_oauth_tokens FORCE ROW LEVEL SECURITY;
@@ -1528,7 +1813,9 @@ CREATE TABLE public.newsletter_events (
     ip text,
     user_agent text,
     "timestamp" timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    reason text,
+    bounce_type text
 );
 
 ALTER TABLE ONLY public.newsletter_events FORCE ROW LEVEL SECURITY;
@@ -1589,9 +1876,9 @@ CREATE TABLE public.newsletters (
     html_content text,
     plain_text_content text,
     top_links jsonb,
-    attachments jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_newsletters_click_rate_range CHECK (((click_rate >= (0)::numeric) AND (click_rate <= (100)::numeric))),
     CONSTRAINT chk_newsletters_open_rate_range CHECK (((open_rate >= (0)::numeric) AND (open_rate <= (100)::numeric)))
 );
@@ -1784,7 +2071,7 @@ ALTER TABLE public.person_newsletter_engagements OWNER TO pplcrm_owner;
 CREATE TABLE public.persons (
     id bigint NOT NULL,
     tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
+    campaign_id bigint,
     createdby_id bigint NOT NULL,
     household_id bigint NOT NULL,
     file_id bigint,
@@ -1806,9 +2093,11 @@ CREATE TABLE public.persons (
     instagram text,
     assigned_to bigint,
     search_vector tsvector GENERATED ALWAYS AS ((((((setweight(to_tsvector('simple'::regconfig, COALESCE(first_name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(last_name, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email2, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(mobile, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'C'::"char"))) STORED,
-    opt_in_status text,
-    opt_in_confirmed_at timestamp with time zone,
-    preferred_contact text
+    preferred_contact text,
+    slug text,
+    public_id text,
+    do_not_contact boolean DEFAULT false NOT NULL,
+    do_not_contact_channels text[]
 );
 
 ALTER TABLE ONLY public.persons FORCE ROW LEVEL SECURITY;
@@ -2216,7 +2505,7 @@ CREATE TABLE public.tasks (
     team_id bigint,
     file_id bigint,
     CONSTRAINT chk_tasks_priority CHECK (((priority IS NULL) OR (priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'urgent'::text])))),
-    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text])))
+    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'waiting'::text, 'done'::text, 'archived'::text])))
 );
 
 ALTER TABLE ONLY public.tasks FORCE ROW LEVEL SECURITY;
@@ -2327,7 +2616,8 @@ CREATE TABLE public.tenants (
     deletion_scheduled_at timestamp with time zone,
     suspended_at timestamp with time zone,
     paused_at timestamp with time zone,
-    slug text
+    slug text,
+    demo_mode_at timestamp with time zone
 );
 
 
@@ -2352,6 +2642,166 @@ ALTER SEQUENCE public.tenants_id_seq OWNER TO pplcrm_owner;
 --
 
 ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
+
+
+--
+-- Name: turf_assignments; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_assignments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    team_id bigint,
+    token text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_assignments FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_assignments OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turf_assignments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turf_assignments_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turf_assignments_id_seq OWNED BY public.turf_assignments.id;
+
+
+--
+-- Name: turf_households; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_households (
+    tenant_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_households FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_households OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turf_knocks (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    turf_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    person_id bigint,
+    outcome text NOT NULL,
+    response text,
+    notes text,
+    source text DEFAULT 'companion'::text NOT NULL,
+    canvasser_name text,
+    client_knock_id text,
+    knocked_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.turf_knocks FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turf_knocks OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turf_knocks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turf_knocks_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turf_knocks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turf_knocks_id_seq OWNED BY public.turf_knocks.id;
+
+
+--
+-- Name: turfs; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.turfs (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    list_id bigint,
+    target_doors integer,
+    centroid_lat double precision,
+    centroid_lng double precision,
+    ward text,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    campaign_id bigint NOT NULL
+);
+
+ALTER TABLE ONLY public.turfs FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.turfs OWNER TO pplcrm_owner;
+
+--
+-- Name: turfs_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE SEQUENCE public.turfs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.turfs_id_seq OWNER TO pplcrm_owner;
+
+--
+-- Name: turfs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER SEQUENCE public.turfs_id_seq OWNED BY public.turfs.id;
 
 
 --
@@ -2528,6 +2978,7 @@ CREATE TABLE public.web_forms (
     confirm_body text,
     notify_team_on boolean DEFAULT false NOT NULL,
     archived_at timestamp with time zone,
+    campaign_id bigint NOT NULL,
     CONSTRAINT chk_web_forms_form_type CHECK (((form_type IS NULL) OR (form_type = ANY (ARRAY['standard'::text, 'donation'::text, 'recurring_donation'::text])))),
     CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
 );
@@ -2631,6 +3082,43 @@ ALTER SEQUENCE public.workflow_enrollments_id_seq OWNED BY public.workflow_enrol
 
 
 --
+-- Name: workflow_runs; Type: TABLE; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE TABLE public.workflow_runs (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    workflow_id bigint NOT NULL,
+    enrollment_id bigint,
+    person_id bigint,
+    step_number integer,
+    step_kind text,
+    status text DEFAULT 'success'::text NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_workflow_runs_status CHECK ((status = ANY (ARRAY['success'::text, 'failed'::text])))
+);
+
+ALTER TABLE ONLY public.workflow_runs FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE public.workflow_runs OWNER TO pplcrm_owner;
+
+--
+-- Name: workflow_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.workflow_runs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.workflow_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: workflow_steps; Type: TABLE; Schema: public; Owner: pplcrm_owner
 --
 
@@ -2640,13 +3128,16 @@ CREATE TABLE public.workflow_steps (
     workflow_id bigint NOT NULL,
     step_number integer NOT NULL,
     delay_days integer NOT NULL,
-    subject text NOT NULL,
+    subject text,
     preview_text text,
     html_content text,
     plain_text_content text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    delay_unit text DEFAULT 'days'::text NOT NULL
+    delay_unit text DEFAULT 'days'::text NOT NULL,
+    kind text DEFAULT 'send_email'::text NOT NULL,
+    config jsonb,
+    CONSTRAINT chk_workflow_steps_kind CHECK ((kind = ANY (ARRAY['wait'::text, 'send_email'::text, 'add_tag'::text, 'create_task'::text, 'notify_team'::text])))
 );
 
 ALTER TABLE ONLY public.workflow_steps FORCE ROW LEVEL SECURITY;
@@ -2691,6 +3182,7 @@ CREATE TABLE public.workflows (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     trigger_event_id text,
+    conditions jsonb,
     CONSTRAINT chk_workflows_status CHECK (((status IS NULL) OR (status = ANY (ARRAY['draft'::text, 'active'::text, 'paused'::text]))))
 );
 
@@ -2764,6 +3256,20 @@ ALTER TABLE ONLY public.authusers ALTER COLUMN id SET DEFAULT nextval('public.au
 --
 
 ALTER TABLE ONLY public.background_jobs ALTER COLUMN id SET DEFAULT nextval('public.background_jobs_id_seq'::regclass);
+
+
+--
+-- Name: campaign_person_facts id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts ALTER COLUMN id SET DEFAULT nextval('public.campaign_person_facts_id_seq'::regclass);
+
+
+--
+-- Name: campaign_subscriptions id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions ALTER COLUMN id SET DEFAULT nextval('public.campaign_subscriptions_id_seq'::regclass);
 
 
 --
@@ -2855,6 +3361,13 @@ ALTER TABLE ONLY public.email_headers ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.email_recipients ALTER COLUMN id SET DEFAULT nextval('public.email_recipients_id_seq'::regclass);
+
+
+--
+-- Name: email_suppressions id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions ALTER COLUMN id SET DEFAULT nextval('public.email_suppressions_id_seq'::regclass);
 
 
 --
@@ -3026,6 +3539,27 @@ ALTER TABLE ONLY public.tenants ALTER COLUMN id SET DEFAULT nextval('public.tena
 
 
 --
+-- Name: turf_assignments id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments ALTER COLUMN id SET DEFAULT nextval('public.turf_assignments_id_seq'::regclass);
+
+
+--
+-- Name: turf_knocks id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks ALTER COLUMN id SET DEFAULT nextval('public.turf_knocks_id_seq'::regclass);
+
+
+--
+-- Name: turfs id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs ALTER COLUMN id SET DEFAULT nextval('public.turfs_id_seq'::regclass);
+
+
+--
 -- Name: user_activity id; Type: DEFAULT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3099,6 +3633,38 @@ ALTER TABLE ONLY public.background_jobs
 
 
 --
+-- Name: campaign_person_facts campaign_person_facts_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT campaign_person_facts_id_key UNIQUE (id);
+
+
+--
+-- Name: campaign_person_facts campaign_person_facts_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT campaign_person_facts_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: campaign_subscriptions campaign_subscriptions_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT campaign_subscriptions_id_key UNIQUE (id);
+
+
+--
+-- Name: campaign_subscriptions campaign_subscriptions_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT campaign_subscriptions_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: campaigns campaigns_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3160,6 +3726,38 @@ ALTER TABLE ONLY public.data_imports
 
 ALTER TABLE ONLY public.data_imports
     ADD CONSTRAINT data_imports_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: delivery_requests delivery_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT delivery_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_route_stops delivery_route_stops_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT delivery_route_stops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_routes delivery_routes_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT delivery_routes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dismissed_duplicate_groups dismissed_duplicate_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups
+    ADD CONSTRAINT dismissed_duplicate_groups_pkey PRIMARY KEY (tenant_id, group_key);
 
 
 --
@@ -3275,6 +3873,22 @@ ALTER TABLE ONLY public.email_recipients
 
 
 --
+-- Name: email_suppressions email_suppressions_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT email_suppressions_id_key UNIQUE (id);
+
+
+--
+-- Name: email_suppressions email_suppressions_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT email_suppressions_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: email_trash email_trash_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3355,11 +3969,11 @@ ALTER TABLE ONLY public.google_oauth_tokens
 
 
 --
--- Name: google_oauth_tokens google_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: google_oauth_tokens google_oauth_tokens_tenant_campaign_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.google_oauth_tokens
-    ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+    ADD CONSTRAINT google_oauth_tokens_tenant_campaign_key UNIQUE (tenant_id, campaign_id);
 
 
 --
@@ -3491,11 +4105,11 @@ ALTER TABLE ONLY public.ms_oauth_tokens
 
 
 --
--- Name: ms_oauth_tokens ms_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: ms_oauth_tokens ms_oauth_tokens_tenant_campaign_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.ms_oauth_tokens
-    ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+    ADD CONSTRAINT ms_oauth_tokens_tenant_campaign_key UNIQUE (tenant_id, campaign_id);
 
 
 --
@@ -3731,6 +4345,70 @@ ALTER TABLE ONLY public.tenants
 
 
 --
+-- Name: turf_assignments turf_assignments_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_id_key UNIQUE (id);
+
+
+--
+-- Name: turf_assignments turf_assignments_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: turf_assignments turf_assignments_token_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT turf_assignments_token_key UNIQUE (token);
+
+
+--
+-- Name: turf_households turf_households_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT turf_households_pk PRIMARY KEY (tenant_id, turf_id, household_id);
+
+
+--
+-- Name: turf_knocks turf_knocks_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT turf_knocks_id_key UNIQUE (id);
+
+
+--
+-- Name: turf_knocks turf_knocks_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT turf_knocks_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: turfs turfs_id_key; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT turfs_id_key UNIQUE (id);
+
+
+--
+-- Name: turfs turfs_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT turfs_pk PRIMARY KEY (id, tenant_id);
+
+
+--
 -- Name: email_bodies unique_email_bodies_email_id; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3744,6 +4422,30 @@ ALTER TABLE ONLY public.email_bodies
 
 ALTER TABLE ONLY public.email_headers
     ADD CONSTRAINT unique_email_headers_email_id UNIQUE (email_id);
+
+
+--
+-- Name: campaign_person_facts uq_cpf_campaign_person; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT uq_cpf_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
+
+
+--
+-- Name: campaign_subscriptions uq_csub_campaign_person; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT uq_csub_campaign_person UNIQUE (tenant_id, campaign_id, person_id);
+
+
+--
+-- Name: email_suppressions uq_esup_email_reason; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT uq_esup_email_reason UNIQUE (tenant_id, email, reason);
 
 
 --
@@ -3843,6 +4545,14 @@ ALTER TABLE ONLY public.workflow_enrollments
 
 
 --
+-- Name: workflow_runs workflow_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT workflow_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: workflow_steps workflow_steps_pk; Type: CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3889,6 +4599,13 @@ CREATE INDEX campaigns_tenant_index ON public.campaigns USING btree (tenant_id);
 
 
 --
+-- Name: companies_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX companies_tenant_slug_unique ON public.companies USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
+
+
+--
 -- Name: event_registrations_event_idx; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -3914,6 +4631,20 @@ CREATE INDEX events_search_vector_idx ON public.events USING gin (search_vector)
 --
 
 CREATE UNIQUE INDEX events_tenant_slug_unique ON public.events USING btree (tenant_id, slug);
+
+
+--
+-- Name: files_entity_idx; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX files_entity_idx ON public.files USING btree (tenant_id, entity_type, entity_id);
+
+
+--
+-- Name: households_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX households_tenant_slug_unique ON public.households USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
 
 
 --
@@ -3973,6 +4704,34 @@ CREATE INDEX idx_companies_trgm_name ON public.companies USING gin (name public.
 
 
 --
+-- Name: idx_cpf_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_cpf_tenant_campaign ON public.campaign_person_facts USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_cpf_tenant_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_cpf_tenant_person ON public.campaign_person_facts USING btree (tenant_id, person_id);
+
+
+--
+-- Name: idx_csub_tenant_campaign_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_csub_tenant_campaign_status ON public.campaign_subscriptions USING btree (tenant_id, campaign_id, status);
+
+
+--
+-- Name: idx_csub_tenant_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_csub_tenant_person ON public.campaign_subscriptions USING btree (tenant_id, person_id);
+
+
+--
 -- Name: idx_data_exports_tenant_created; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4001,6 +4760,76 @@ CREATE INDEX idx_data_imports_tenant_processed ON public.data_imports USING btre
 
 
 --
+-- Name: idx_delivery_requests_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_campaign ON public.delivery_requests USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_delivery_requests_tenant_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_household ON public.delivery_requests USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_delivery_requests_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_requests_tenant_status ON public.delivery_requests USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_delivery_route_stops_tenant_route; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_route_stops_tenant_route ON public.delivery_route_stops USING btree (tenant_id, route_id);
+
+
+--
+-- Name: idx_delivery_routes_share_token_hash; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_share_token_hash ON public.delivery_routes USING btree (share_token_hash) WHERE (share_token_hash IS NOT NULL);
+
+
+--
+-- Name: idx_delivery_routes_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_tenant_campaign ON public.delivery_routes USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_delivery_routes_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_delivery_routes_tenant_status ON public.delivery_routes USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_dismissed_duplicate_groups_tenant; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_dismissed_duplicate_groups_tenant ON public.dismissed_duplicate_groups USING btree (tenant_id);
+
+
+--
+-- Name: idx_donation_periods_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donation_periods_tenant_campaign ON public.donation_periods USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_donation_pledges_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donation_pledges_tenant_campaign ON public.donation_pledges USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_donations_person; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4012,6 +4841,13 @@ CREATE INDEX idx_donations_person ON public.donations USING btree (tenant_id, pe
 --
 
 CREATE INDEX idx_donations_pledge ON public.donations USING btree (pledge_id) WHERE (pledge_id IS NOT NULL);
+
+
+--
+-- Name: idx_donations_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_donations_tenant_campaign ON public.donations USING btree (tenant_id, campaign_id);
 
 
 --
@@ -4033,6 +4869,13 @@ CREATE INDEX idx_email_attachments_file_id ON public.email_attachments USING btr
 --
 
 CREATE INDEX idx_email_comments_email ON public.email_comments USING btree (email_id);
+
+
+--
+-- Name: idx_email_drafts_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_email_drafts_tenant_campaign ON public.email_drafts USING btree (tenant_id, campaign_id);
 
 
 --
@@ -4071,6 +4914,13 @@ CREATE INDEX idx_emails_tenant_assigned ON public.emails USING btree (tenant_id,
 
 
 --
+-- Name: idx_emails_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_emails_tenant_campaign ON public.emails USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_emails_tenant_folder; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4085,10 +4935,24 @@ CREATE INDEX idx_emails_tenant_status ON public.emails USING btree (tenant_id, s
 
 
 --
+-- Name: idx_esup_tenant_email; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_esup_tenant_email ON public.email_suppressions USING btree (tenant_id, email);
+
+
+--
 -- Name: idx_event_registrations_ticket; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
 CREATE INDEX idx_event_registrations_ticket ON public.event_registrations USING btree (ticket_type_id) WHERE (ticket_type_id IS NOT NULL);
+
+
+--
+-- Name: idx_events_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_events_tenant_campaign ON public.events USING btree (tenant_id, campaign_id);
 
 
 --
@@ -4197,6 +5061,13 @@ CREATE INDEX idx_households_trgm_zip ON public.households USING gin (zip public.
 
 
 --
+-- Name: idx_lists_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_lists_tenant_campaign ON public.lists USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_lists_tenant_is_dynamic; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4285,6 +5156,13 @@ CREATE INDEX idx_newsletter_events_newsletter_event ON public.newsletter_events 
 --
 
 CREATE INDEX idx_newsletter_events_type ON public.newsletter_events USING btree (tenant_id, newsletter_id, event_type);
+
+
+--
+-- Name: idx_newsletters_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_newsletters_tenant_campaign ON public.newsletters USING btree (tenant_id, campaign_id);
 
 
 --
@@ -4540,6 +5418,83 @@ CREATE UNIQUE INDEX idx_tenants_slug ON public.tenants USING btree (slug) WHERE 
 
 
 --
+-- Name: idx_turf_assignments_team; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_assignments_team ON public.turf_assignments USING btree (tenant_id, team_id);
+
+
+--
+-- Name: idx_turf_assignments_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_assignments_turf ON public.turf_assignments USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turf_households_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_households_household ON public.turf_households USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_turf_households_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_households_turf ON public.turf_households USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turf_knocks_household; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_household ON public.turf_knocks USING btree (tenant_id, household_id);
+
+
+--
+-- Name: idx_turf_knocks_knocked_at; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_knocked_at ON public.turf_knocks USING btree (tenant_id, knocked_at);
+
+
+--
+-- Name: idx_turf_knocks_turf; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turf_knocks_turf ON public.turf_knocks USING btree (tenant_id, turf_id);
+
+
+--
+-- Name: idx_turfs_tenant; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant ON public.turfs USING btree (tenant_id);
+
+
+--
+-- Name: idx_turfs_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_campaign ON public.turfs USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_turfs_tenant_list; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_list ON public.turfs USING btree (tenant_id, list_id);
+
+
+--
+-- Name: idx_turfs_tenant_status; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_turfs_tenant_status ON public.turfs USING btree (tenant_id, status);
+
+
+--
 -- Name: idx_user_activity_tenant_entity; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4610,6 +5565,13 @@ CREATE INDEX idx_volunteer_shifts_person_ri ON public.volunteer_shifts USING btr
 
 
 --
+-- Name: idx_web_forms_tenant_campaign; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_web_forms_tenant_campaign ON public.web_forms USING btree (tenant_id, campaign_id);
+
+
+--
 -- Name: idx_web_forms_tenant_slug; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
@@ -4649,6 +5611,13 @@ CREATE INDEX idx_workflow_enrollments_tenant_id ON public.workflow_enrollments U
 --
 
 CREATE INDEX idx_workflow_enrollments_workflow_person ON public.workflow_enrollments USING btree (workflow_id, person_id);
+
+
+--
+-- Name: idx_workflow_runs_tenant_workflow_created; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE INDEX idx_workflow_runs_tenant_workflow_created ON public.workflow_runs USING btree (tenant_id, workflow_id, created_at DESC);
 
 
 --
@@ -4715,10 +5684,45 @@ CREATE INDEX persons_tenant_campaign_household_index ON public.persons USING btr
 
 
 --
+-- Name: persons_tenant_public_id_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX persons_tenant_public_id_unique ON public.persons USING btree (tenant_id, public_id) WHERE (public_id IS NOT NULL);
+
+
+--
+-- Name: persons_tenant_slug_unique; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX persons_tenant_slug_unique ON public.persons USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
+
+
+--
 -- Name: sessions_user_index; Type: INDEX; Schema: public; Owner: pplcrm_owner
 --
 
 CREATE INDEX sessions_user_index ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: uq_delivery_route_stops_active_request; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_delivery_route_stops_active_request ON public.delivery_route_stops USING btree (request_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: uq_delivery_route_stops_route_seq; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_delivery_route_stops_route_seq ON public.delivery_route_stops USING btree (route_id, seq);
+
+
+--
+-- Name: uq_turf_knocks_client; Type: INDEX; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE UNIQUE INDEX uq_turf_knocks_client ON public.turf_knocks USING btree (tenant_id, turf_id, client_knock_id) WHERE (client_knock_id IS NOT NULL);
 
 
 --
@@ -5144,18 +6148,18 @@ ALTER TABLE ONLY public.email_trash
 
 
 --
--- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
-
-
---
 -- Name: campaigns fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
 
 
@@ -5200,19 +6204,19 @@ ALTER TABLE ONLY public.households
 
 
 --
--- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-
-
---
 -- Name: map_campaigns_users fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.map_campaigns_users
     ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -5256,11 +6260,43 @@ ALTER TABLE ONLY public.companies
 
 
 --
--- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+-- Name: campaign_person_facts fk_cpf_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_person_facts fk_cpf_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_person_facts fk_cpf_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_person_facts fk_cpf_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: campaign_person_facts fk_cpf_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_person_facts
+    ADD CONSTRAINT fk_cpf_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
 
 
 --
@@ -5285,6 +6321,54 @@ ALTER TABLE ONLY public.households
 
 ALTER TABLE ONLY public.persons
     ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_subscriptions fk_csub_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaign_subscriptions fk_csub_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: campaign_subscriptions fk_csub_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.campaign_subscriptions
+    ADD CONSTRAINT fk_csub_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
 
 
 --
@@ -5336,6 +6420,110 @@ ALTER TABLE ONLY public.data_imports
 
 
 --
+-- Name: delivery_requests fk_delivery_requests_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_requests fk_delivery_requests_web_form; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_requests
+    ADD CONSTRAINT fk_delivery_requests_web_form FOREIGN KEY (web_form_id) REFERENCES public.web_forms(id) ON DELETE SET NULL;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_request; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_request FOREIGN KEY (request_id) REFERENCES public.delivery_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_route; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_route FOREIGN KEY (route_id) REFERENCES public.delivery_routes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_route_stops fk_delivery_route_stops_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_route_stops
+    ADD CONSTRAINT fk_delivery_route_stops_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delivery_routes fk_delivery_routes_volunteer; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.delivery_routes
+    ADD CONSTRAINT fk_delivery_routes_volunteer FOREIGN KEY (volunteer_person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: dismissed_duplicate_groups fk_dismissed_duplicate_groups_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.dismissed_duplicate_groups
+    ADD CONSTRAINT fk_dismissed_duplicate_groups_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: donation_periods fk_donation_periods_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donation_periods
+    ADD CONSTRAINT fk_donation_periods_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: donation_periods fk_donation_periods_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5344,11 +6532,27 @@ ALTER TABLE ONLY public.donation_periods
 
 
 --
+-- Name: donation_pledges fk_donation_pledges_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT fk_donation_pledges_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: donation_pledges fk_donation_pledges_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.donation_pledges
     ADD CONSTRAINT fk_donation_pledges_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: donations fk_donations_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT fk_donations_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -5429,6 +6633,14 @@ ALTER TABLE ONLY public.email_comments
 
 ALTER TABLE ONLY public.email_comments
     ADD CONSTRAINT fk_email_comments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_drafts fk_email_drafts_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_email_drafts_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -5520,11 +6732,27 @@ ALTER TABLE ONLY public.emails
 
 
 --
+-- Name: emails fk_emails_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT fk_emails_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: emails fk_emails_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
 ALTER TABLE ONLY public.emails
     ADD CONSTRAINT fk_emails_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_suppressions fk_esup_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.email_suppressions
+    ADD CONSTRAINT fk_esup_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -5557,6 +6785,14 @@ ALTER TABLE ONLY public.event_registrations
 
 ALTER TABLE ONLY public.event_ticket_types
     ADD CONSTRAINT fk_event_ticket_types_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: events fk_events_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT fk_events_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -5624,6 +6860,14 @@ ALTER TABLE ONLY public.google_oauth_tokens
 
 
 --
+-- Name: google_oauth_tokens fk_google_oauth_tokens_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.google_oauth_tokens
+    ADD CONSTRAINT fk_google_oauth_tokens_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: persons fk_household_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5645,6 +6889,14 @@ ALTER TABLE ONLY public.households
 
 ALTER TABLE ONLY public.households
     ADD CONSTRAINT fk_households_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: lists fk_lists_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT fk_lists_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -5816,6 +7068,14 @@ ALTER TABLE ONLY public.ms_oauth_tokens
 
 
 --
+-- Name: ms_oauth_tokens fk_ms_oauth_tokens_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.ms_oauth_tokens
+    ADD CONSTRAINT fk_ms_oauth_tokens_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
 -- Name: newsletter_events fk_newsletter_events_newsletter_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -5829,6 +7089,14 @@ ALTER TABLE ONLY public.newsletter_events
 
 ALTER TABLE ONLY public.newsletter_events
     ADD CONSTRAINT fk_newsletter_events_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: newsletters fk_newsletters_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT fk_newsletters_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -6160,6 +7428,174 @@ ALTER TABLE ONLY public.teams
 
 
 --
+-- Name: turf_assignments fk_turf_assignments_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_team; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_team FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_assignments fk_turf_assignments_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_assignments
+    ADD CONSTRAINT fk_turf_assignments_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_households fk_turf_households_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_households fk_turf_households_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_households fk_turf_households_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_households fk_turf_households_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_households fk_turf_households_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_households
+    ADD CONSTRAINT fk_turf_households_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_household; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_household FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_person; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_turf; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_turf FOREIGN KEY (turf_id) REFERENCES public.turfs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: turf_knocks fk_turf_knocks_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turf_knocks
+    ADD CONSTRAINT fk_turf_knocks_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turfs fk_turfs_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: turfs fk_turfs_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: turfs fk_turfs_list; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_list FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE SET NULL;
+
+
+--
+-- Name: turfs fk_turfs_tenant; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: turfs fk_turfs_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.turfs
+    ADD CONSTRAINT fk_turfs_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
 -- Name: user_activity fk_user_activity_createdby; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6197,6 +7633,14 @@ ALTER TABLE ONLY public.user_activity
 
 ALTER TABLE ONLY public.map_campaigns_users
     ADD CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: web_forms fk_web_forms_campaign; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT fk_web_forms_campaign FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
 
 
 --
@@ -6253,6 +7697,22 @@ ALTER TABLE ONLY public.workflow_enrollments
 
 ALTER TABLE ONLY public.workflow_enrollments
     ADD CONSTRAINT fk_workflow_enrollments_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs fk_workflow_runs_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT fk_workflow_runs_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_runs fk_workflow_runs_workflow_id; Type: FK CONSTRAINT; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE ONLY public.workflow_runs
+    ADD CONSTRAINT fk_workflow_runs_workflow_id FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
 
 
 --
@@ -6508,6 +7968,18 @@ ALTER TABLE public.authusers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.background_jobs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: campaign_person_facts; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.campaign_person_facts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: campaign_subscriptions; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.campaign_subscriptions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: campaigns; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6530,6 +8002,30 @@ ALTER TABLE public.data_exports ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.data_imports ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_requests; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_route_stops; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_route_stops ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_routes; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.delivery_routes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: dismissed_duplicate_groups; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.dismissed_duplicate_groups ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: donation_periods; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -6590,6 +8086,12 @@ ALTER TABLE public.email_read_states ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.email_recipients ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_suppressions; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.email_suppressions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: email_trash; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -6828,6 +8330,20 @@ CREATE POLICY tenant_isolation ON public.background_jobs USING (((NULLIF(current
 
 
 --
+-- Name: campaign_person_facts tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.campaign_person_facts USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: campaign_subscriptions tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.campaign_subscriptions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: campaigns tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -6853,6 +8369,34 @@ CREATE POLICY tenant_isolation ON public.data_exports USING (((NULLIF(current_se
 --
 
 CREATE POLICY tenant_isolation ON public.data_imports USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_requests tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_requests USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_route_stops tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_route_stops USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: delivery_routes tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.delivery_routes USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: dismissed_duplicate_groups tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.dismissed_duplicate_groups USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
 
 --
@@ -6923,6 +8467,13 @@ CREATE POLICY tenant_isolation ON public.email_read_states USING (((NULLIF(curre
 --
 
 CREATE POLICY tenant_isolation ON public.email_recipients USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: email_suppressions tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.email_suppressions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
 
 --
@@ -7185,6 +8736,34 @@ CREATE POLICY tenant_isolation ON public.teams USING (((NULLIF(current_setting('
 
 
 --
+-- Name: turf_assignments tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_assignments USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turf_households tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_households USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turf_knocks tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turf_knocks USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
+-- Name: turfs tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.turfs USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: user_activity tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7227,6 +8806,13 @@ CREATE POLICY tenant_isolation ON public.workflow_enrollments USING (((NULLIF(cu
 
 
 --
+-- Name: workflow_runs tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
+--
+
+CREATE POLICY tenant_isolation ON public.workflow_runs USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
+
+
+--
 -- Name: workflow_steps tenant_isolation; Type: POLICY; Schema: public; Owner: pplcrm_owner
 --
 
@@ -7246,6 +8832,30 @@ CREATE POLICY tenant_isolation ON public.workflows USING (((NULLIF(current_setti
 
 CREATE POLICY tenant_isolation ON public.zapier_subscriptions USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint))) WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)));
 
+
+--
+-- Name: turf_assignments; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turf_households; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_households ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turf_knocks; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turf_knocks ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: turfs; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.turfs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: user_activity; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -7282,6 +8892,12 @@ ALTER TABLE public.webhook_events ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.workflow_enrollments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: workflow_runs; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
+--
+
+ALTER TABLE public.workflow_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: workflow_steps; Type: ROW SECURITY; Schema: public; Owner: pplcrm_owner
@@ -7334,6 +8950,34 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.background_jobs TO pplcrm_app;
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.background_jobs_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE campaign_person_facts; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.campaign_person_facts TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE campaign_person_facts_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.campaign_person_facts_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE campaign_subscriptions; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.campaign_subscriptions TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE campaign_subscriptions_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.campaign_subscriptions_id_seq TO pplcrm_app;
 
 
 --
@@ -7390,6 +9034,55 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.data_imports TO pplcrm_app;
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.data_imports_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_requests; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_requests TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_requests_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_requests_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_route_stops; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_route_stops TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_route_stops_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_route_stops_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE delivery_routes; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.delivery_routes TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE delivery_routes_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.delivery_routes_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE dismissed_duplicate_groups; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.dismissed_duplicate_groups TO pplcrm_app;
 
 
 --
@@ -7523,6 +9216,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.email_recipients TO pplcrm_app
 --
 
 GRANT SELECT,USAGE ON SEQUENCE public.email_recipients_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE email_suppressions; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.email_suppressions TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE email_suppressions_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.email_suppressions_id_seq TO pplcrm_app;
 
 
 --
@@ -7981,6 +9688,55 @@ GRANT SELECT,USAGE ON SEQUENCE public.tenants_id_seq TO pplcrm_app;
 
 
 --
+-- Name: TABLE turf_assignments; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_assignments TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turf_assignments_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turf_assignments_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE turf_households; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_households TO pplcrm_app;
+
+
+--
+-- Name: TABLE turf_knocks; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turf_knocks TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turf_knocks_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turf_knocks_id_seq TO pplcrm_app;
+
+
+--
+-- Name: TABLE turfs; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.turfs TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE turfs_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.turfs_id_seq TO pplcrm_app;
+
+
+--
 -- Name: TABLE user_activity; Type: ACL; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8058,6 +9814,20 @@ GRANT SELECT,USAGE ON SEQUENCE public.workflow_enrollments_id_seq TO pplcrm_app;
 
 
 --
+-- Name: TABLE workflow_runs; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.workflow_runs TO pplcrm_app;
+
+
+--
+-- Name: SEQUENCE workflow_runs_id_seq; Type: ACL; Schema: public; Owner: pplcrm_owner
+--
+
+GRANT SELECT,USAGE ON SEQUENCE public.workflow_runs_id_seq TO pplcrm_app;
+
+
+--
 -- Name: TABLE workflow_steps; Type: ACL; Schema: public; Owner: pplcrm_owner
 --
 
@@ -8117,5 +9887,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
+\unrestrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 

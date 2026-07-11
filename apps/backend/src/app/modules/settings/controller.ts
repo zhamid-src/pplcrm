@@ -19,6 +19,7 @@ interface VerifiedDomainEntry {
 import { BaseController } from '../../lib/base.controller';
 import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { SettingsRepo } from './repositories/settings.repo';
 
 // Rate limiting in-memory storage to prevent verification spam/abuse
@@ -76,6 +77,9 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
+    // Workspace configuration is locked while the tenant is on the demo test drive.
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+
     // 1. Block direct updates to verified_emails setting key
     if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
       throw new TRPCError({
@@ -129,6 +133,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const normalized = email.toLowerCase().trim();
     const rateLimitKey = `${auth.tenant_id}:${normalized}`;
     const now = Date.now();
@@ -357,6 +362,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const db = this.getRepo().db;
 
@@ -427,6 +433,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
     const now = Date.now();
@@ -591,6 +598,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   }
 
   public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
     const db = this.getRepo().db;
 
