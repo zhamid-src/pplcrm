@@ -1,4 +1,4 @@
-import { Component, type OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, type OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 
 import { Icon } from '@icons/icon';
@@ -59,6 +59,13 @@ const RESPONSES: { key: KnockResponse; label: string }[] = [
 })
 export class CompanionPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly onOnline = (): void => {
+    this.online.set(true);
+    void this.flushQueue();
+  };
+  private readonly onOffline = (): void => this.online.set(false);
 
   protected readonly outcomes = OUTCOMES;
   protected readonly responses = RESPONSES;
@@ -85,11 +92,12 @@ export class CompanionPage implements OnInit {
     this.canvasserName.set(stored);
     this.token.set(this.route.snapshot.queryParamMap.get('token') ?? '');
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => {
-        this.online.set(true);
-        void this.flushQueue();
+      window.addEventListener('online', this.onOnline);
+      window.addEventListener('offline', this.onOffline);
+      this.destroyRef.onDestroy(() => {
+        window.removeEventListener('online', this.onOnline);
+        window.removeEventListener('offline', this.onOffline);
       });
-      window.addEventListener('offline', () => this.online.set(false));
     }
     this.queued.set(this.readQueue().length);
     void this.load();

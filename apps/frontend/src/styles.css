@@ -8,6 +8,18 @@
 /* Self-hosted app font — bundled from node_modules, no external font CDN */
 @import '@fontsource-variable/inter';
 
+/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
+   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
+   DaisyUI blocks below, same as --color-line. */
+@theme {
+  --color-base-50: #fbfbfc;
+}
+
+/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
+   scanner cannot see — without this safelist an icon size only works if some other
+   file happens to use the same w-/h- class literally. Covers every [size] in use. */
+@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
+
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;
@@ -19,6 +31,7 @@
   --color-accent-content: #f0f0f0;
   --color-neutral: #cbd5e1;
   --color-neutral-content: #1f2937;
+  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
   --color-base-100: #ffffff;
   --color-base-200: #f8f8f8ff;
   --color-base-300: rgb(226, 226, 226);
@@ -81,6 +94,7 @@ label.input input:-webkit-autofill:active {
   --color-neutral-content: #c7d1e5; /* default text on dark */
 
   /* Surfaces */
+  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
   --color-base-100: #0b1220; /* app/page background */
   --color-base-200: #131e31; /* row alt / subtle surface */
   --color-base-300: #1a2b45; /* headers / raised surface */

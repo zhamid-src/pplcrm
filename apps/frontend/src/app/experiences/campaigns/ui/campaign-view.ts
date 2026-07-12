@@ -9,6 +9,7 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Icon } from '@icons/icon';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { createRequestGuard } from '@uxcommon/request-guard';
 
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { CampaignContextService } from '../../../services/campaign-context.service';
@@ -35,6 +36,7 @@ export class CampaignViewComponent {
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
+  private readonly _requestGuard = createRequestGuard();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
   protected readonly campaign = signal<Record<string, unknown> | null>(null);
@@ -152,9 +154,11 @@ export class CampaignViewComponent {
   }
 
   private async load(id: string): Promise<void> {
+    const isCurrent = this._requestGuard.begin();
     const end = this._loading.begin();
     try {
       const data: CampaignDetail = await this.campaignsSvc.getById(id);
+      if (!isCurrent()) return;
       this.campaign.set((data ?? null) as Record<string, unknown> | null);
     } catch (err) {
       this.alerts.showError(getUserErrorMessage(err, 'Could not load the campaign. Please try again.'));

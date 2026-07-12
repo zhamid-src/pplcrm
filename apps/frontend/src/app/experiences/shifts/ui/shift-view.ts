@@ -18,6 +18,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { createRequestGuard } from '@uxcommon/request-guard';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
@@ -53,6 +54,7 @@ export class ShiftViewComponent {
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly _loading = createLoadingGate();
+  private readonly _requestGuard = createRequestGuard();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
   protected readonly event = signal<any | null>(null);
@@ -100,14 +102,17 @@ export class ShiftViewComponent {
   }
 
   protected async loadAllData(id: string) {
+    const isCurrent = this._requestGuard.begin();
     const end = this._loading.begin();
     try {
       // 1. Load Event details
       const detail = await this.volunteerEventsSvc.getById(id);
+      if (!isCurrent()) return;
       this.event.set(detail);
 
       // 2. Load associated shifts/roster
       const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
+      if (!isCurrent()) return;
       this.roster.set(rosterData || []);
     } catch (err) {
       this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the shift. Please try again.'));

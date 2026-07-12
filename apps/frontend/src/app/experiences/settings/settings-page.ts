@@ -458,6 +458,8 @@ export class SettingsPage implements OnInit {
       }));
       this.startEmailCooldown(normalized);
       this.lastRequestedEmail.set(normalized);
+      // Clear only after success — on failure the user keeps their input to retry.
+      this.senderEmailInput.set('');
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
       );
