@@ -19,6 +19,19 @@ function getStripe(): Stripe {
   return stripe;
 }
 
+/**
+ * The Stripe API version stripe-node v22 targets (2025 "basil" and later) removed
+ * `current_period_end` from the top-level Subscription object — it now lives on each
+ * subscription item. Read it from the first item, and fall back to null on an unexpected
+ * shape rather than throwing, so a webhook can never fail to activate a paid plan over a
+ * missing timestamp (previously `new Date(undefined * 1000)` threw and left the tenant on
+ * the free tier despite a successful charge).
+ */
+function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const periodEnd = subscription.items.data[0]?.current_period_end;
+  return typeof periodEnd === 'number' ? new Date(periodEnd * 1000).toISOString() : null;
+}
+
 const tenantsRepo = new TenantsRepo();
 const webhookEventsRepo = new WebhookEventsRepo();
 
@@ -215,7 +228,7 @@ export class BillingController {
               stripe_subscription_id: subscriptionId,
               subscription_plan: planName,
               subscription_status: subscription.status,
-              subscription_ends_at: new Date((subscription as any).current_period_end * 1000).toISOString(),
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
             } as any,
           });
           logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
@@ -252,7 +265,7 @@ export class BillingController {
               stripe_subscription_id: subscriptionId,
               subscription_plan: planName,
               subscription_status: subscription.status,
-              subscription_ends_at: new Date((subscription as any).current_period_end * 1000).toISOString(),
+              subscription_ends_at: subscriptionPeriodEnd(subscription),
             } as any,
           });
           logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);

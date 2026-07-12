@@ -304,9 +304,10 @@ export class WebhookEventWorker {
           unpaid: 'unpaid',
         };
         const mappedStatus = statusMap[stripeStatus];
-        const nextBillingDate = stripeObj.current_period_end
-          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
-          : null;
+        // Stripe's 2025 "basil" API moved `current_period_end` off the Subscription object onto
+        // each item; keep the legacy top-level read as a fallback for older event payloads.
+        const periodEndUnix = stripeObj.current_period_end ?? stripeObj.items?.data?.[0]?.current_period_end;
+        const nextBillingDate = periodEndUnix ? new Date(periodEndUnix * 1000).toISOString().slice(0, 10) : null;
 
         if (mappedStatus) {
           await this.db
