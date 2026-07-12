@@ -1,9 +1,10 @@
-import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
+import { Component, ElementRef, inject, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-grid-tool-btn',
+  host: { '(document:click)': 'onDocumentClick($event)' },
   template: `
     <li
       [class.tooltip-left]="placement() === 'left'"
@@ -111,7 +112,6 @@ export class GridActionComponent {
     }
   }
 
-  @HostListener('document:click', ['$event'])
   public onDocumentClick(event: MouseEvent) {
     if (!this.hasDropdown()) return;
     const detailsEl = this.el.nativeElement.querySelector('details');
