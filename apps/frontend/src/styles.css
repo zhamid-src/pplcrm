@@ -398,6 +398,19 @@ body {
   min-width: 2.75rem;
 }
 
+/* Micro-caps "eyebrow" — THE one kicker/section-label style (UX-GUIDELINES §8:
+   10–11.5px / 500–600 / uppercase / .04–.09em / base-content 45–55%). Pinned
+   here so the ~40 hand-rolled tracking/opacity/size variants collapse to one
+   class; pair with a margin utility only (`class="pc-eyebrow mb-2"`). */
+@utility pc-eyebrow {
+  font-size: 0.6875rem; /* 11px */
+  line-height: 1.35;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
 /* Dark mode overrides for Quill and email prose */
 [data-theme='dark'] .ql-toolbar.ql-snow,
 [data-theme='dark'] .ql-container.ql-snow {
