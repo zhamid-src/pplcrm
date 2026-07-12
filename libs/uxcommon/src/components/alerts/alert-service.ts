@@ -6,19 +6,15 @@ export class AlertMessage {
   /** How many identical (same text+type) toasts have coalesced into this one (§2). */
   public readonly count = signal(1);
 
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
   public duration = 3000;
   public id: string;
   public text: string;
   public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
   public type?: ALERTTYPE;
 
   constructor(init?: Partial<AlertMessage>) {
     Object.assign(this, init);
     this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
     this.duration = init?.duration || 3000;
     this.text = init?.text ?? 'Alert';
   }
@@ -35,11 +31,6 @@ export class AlertService {
 
   public readonly alertList = this.alertsSignal.asReadonly();
   public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
 
   public dismiss(id: string): void {
     const alert = this.findById(id);

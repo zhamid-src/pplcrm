@@ -8,6 +8,14 @@ export interface NewsletterRecipient {
   substitutions?: Record<string, string>;
 }
 
+export interface NewsletterAttachment {
+  /** Base64-encoded file content. */
+  content: string;
+  filename: string;
+  type?: string;
+  disposition?: 'attachment' | 'inline';
+}
+
 export interface SendNewsletterOptions {
   fromName: string;
   fromEmail: string;
@@ -20,6 +28,7 @@ export interface SendNewsletterOptions {
   subuserUsername?: string;
   newsletterId?: string;
   tenantId?: string;
+  attachments?: NewsletterAttachment[];
 }
 
 export class NewsletterEmailService {
@@ -99,6 +108,16 @@ export class NewsletterEmailService {
                 newsletter_id: options.newsletterId,
                 tenant_id: options.tenantId,
               },
+            }
+          : {}),
+        ...(options.attachments?.length
+          ? {
+              attachments: options.attachments.map((a) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.type,
+                disposition: a.disposition || 'attachment',
+              })),
             }
           : {}),
         // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in

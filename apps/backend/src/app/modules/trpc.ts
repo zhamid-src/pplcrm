@@ -29,8 +29,10 @@ import { EventsRouter } from './events/trpc.router';
 import { PersonConnectionsRouter } from './person-connections/trpc.router';
 import { ZapierRouter } from './zapier/zapier.trpc.router';
 import { DuplicatesRouter } from './duplicates/trpc.router';
+import { CampaignsRouter } from './campaigns/trpc.router';
 import { CanvassingRouter } from './canvassing/trpc.router';
 import { DeliveriesRouter } from './deliveries/trpc.router';
+import { DemoRouter } from './demo/trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
 
@@ -66,8 +68,10 @@ export const trpcRouter = router({
   connections: PersonConnectionsRouter,
   zapier: ZapierRouter,
   duplicates: DuplicatesRouter,
+  campaigns: CampaignsRouter,
   canvassing: CanvassingRouter,
   deliveries: DeliveriesRouter,
+  demo: DemoRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -119,3 +123,4 @@ export { ExportsRouter } from './exports/trpc.router';
 export { UsersRouter } from './users/trpc.router';
 export { EventsRouter } from './events/trpc.router';
 export { PersonConnectionsRouter } from './person-connections/trpc.router';
+export { CampaignsRouter } from './campaigns/trpc.router';

@@ -71,7 +71,7 @@ export class BillingController {
 
     if (isMockMode) {
       // In Mock Mode, direct them to a simulated callback
-      const mockSuccessUrl = `${frontendUrl}/settings?tab=billing&mock_checkout_success=true&plan=${plan}`;
+      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}`;
       return { url: mockSuccessUrl };
     }
 
@@ -112,8 +112,8 @@ export class BillingController {
         },
       ],
       mode: 'subscription',
-      success_url: `${frontendUrl}/settings?tab=billing&checkout_success=true`,
-      cancel_url: `${frontendUrl}/settings?tab=billing`,
+      success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
+      cancel_url: `${frontendUrl}/workspace/billing`,
       subscription_data: {
         metadata: {
           tenantId: auth.tenant_id,
@@ -140,7 +140,7 @@ export class BillingController {
     const frontendUrl = this.getFrontendUrl();
 
     if (isMockMode) {
-      return { url: `${frontendUrl}/settings?tab=billing&mock_portal_success=true` };
+      return { url: `${frontendUrl}/workspace/billing?mock_portal_success=true` };
     }
 
     const stripeCustomerId = tenant.stripe_customer_id;
@@ -150,7 +150,7 @@ export class BillingController {
 
     const session = await getStripe().billingPortal.sessions.create({
       customer: stripeCustomerId,
-      return_url: `${frontendUrl}/settings?tab=billing`,
+      return_url: `${frontendUrl}/workspace/billing`,
     });
 
     return { url: session.url };
@@ -404,7 +404,7 @@ export class BillingController {
             }
 
             const mailService = new TransactionalEmailService();
-            const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
+            const billingPageUrl = `${env.appUrl}/workspace/billing`;
             const amountDue = (invoice.amount_due || 0) / 100;
             await mailService.sendMail({
               to: admin.email,
@@ -501,7 +501,7 @@ export class BillingController {
 
     if (admin && admin.email) {
       const planLimits = getPlanLimits(planName);
-      const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
+      const billingPageUrl = `${env.appUrl}/workspace/billing`;
       const mockPrefix = isMock ? '[MOCK] ' : '';
 
       const mailService = new TransactionalEmailService();

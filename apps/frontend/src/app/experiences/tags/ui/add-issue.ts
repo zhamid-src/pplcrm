@@ -1,9 +1,9 @@
-import { Component, inject, viewChild, signal } from '@angular/core';
+import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
 import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AddTagObj } from '../../../../../../../libs/common/src';
 
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
@@ -18,40 +18,70 @@ function randomHexColor(): string {
   );
 }
 
+/** Fig. 11 "New issue" — a popup, not a routed page, so adding an issue never leaves the admin table. */
 @Component({
-  selector: 'pc-add-issue',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique issue name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input
-            class="input input-bordered input-sm w-24"
-            type="color"
-            [formField]="form.color"
-            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
-          />
-          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
-            @for (err of form.color().errors(); track err) {
-              <span class="text-error text-xs">{{ err.message }}</span>
-            }
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+  selector: 'pc-add-issue-dialog',
+  imports: [PcInput, FormField, Icon],
+  template: `<dialog #dlg class="modal">
+    <div class="modal-box max-w-md">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-xl font-bold flex items-center gap-2">
+          <pc-icon name="add-issue" [size]="5" class="text-primary"></pc-icon>
+          New issue
+        </h3>
+        <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+          <pc-icon name="x-mark" [size]="4"></pc-icon>
+        </button>
       </div>
+
+      <form (submit)="add($event)" class="flex flex-col gap-4" novalidate>
+        <div class="flex flex-col gap-2">
+          <label i18n class="label text-sm font-light">
+            Enter a unique issue name (and optionally, give it a description)
+          </label>
+          <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+          <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+          <div class="flex items-center gap-2">
+            <label i18n class="label-text font-light text-sm">Colour</label>
+            <input
+              class="input input-bordered input-sm w-24"
+              type="color"
+              [formField]="form.color"
+              [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+            />
+            @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+              @for (err of form.color().errors(); track err) {
+                <span class="text-error text-xs">{{ err.message }}</span>
+              }
+            }
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="isLoading()">Cancel</button>
+          <button type="submit" class="btn btn-primary gap-2" [disabled]="isLoading()">
+            @if (isLoading()) {
+              <span class="loading loading-spinner loading-xs"></span>
+            } @else {
+              <pc-icon name="add-issue" [size]="4"></pc-icon>
+            }
+            Add issue
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button (click)="close()">close</button>
     </form>
-  </div>`,
+  </dialog>`,
 })
-export class AddIssue {
+export class AddIssueDialog {
   private readonly alertSvc = inject(AlertService);
   private readonly tagSvc = inject(TagsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
 
   private _loading = createLoadingGate();
 
@@ -67,10 +97,20 @@ export class AddIssue {
 
   protected isLoading = this._loading.visible;
 
-  public readonly formActions = viewChild(FormActions);
+  public readonly saved = output<void>();
 
-  protected async add(event?: any) {
-    if (event instanceof Event) {
+  public open(): void {
+    this.payload.set({ name: '', description: '', color: randomHexColor() });
+    this.form().reset();
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected async add(event?: Event) {
+    if (event) {
       event.preventDefault();
     }
 
@@ -88,9 +128,8 @@ export class AddIssue {
           await this.tagOptionsSvc.invalidate('issue');
           this.tagSvc.triggerRefresh();
           this.alertSvc.showSuccess('Issue added successfully.');
-
-          this.payload.set({ name: '', description: '', color: randomHexColor() });
-          this.formActions()?.stayOrCancel();
+          this.saved.emit();
+          this.close();
         } catch (err) {
           this.alertSvc.showError(
             err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",

@@ -169,8 +169,10 @@ function removeHousehold() {
 function importMany() {
   const ImportRow = z.object({
     first_name: z.string().trim().max(100).optional(),
+    middle_names: z.string().trim().max(100).optional(),
     last_name: z.string().trim().max(100).optional(),
     email: z.string().trim().max(255).optional(),
+    email2: z.string().trim().max(255).optional(),
     mobile: z.string().trim().max(30).optional(),
     notes: z.string().trim().max(10000).optional(),
     home_phone: z.string().trim().max(30).optional(),
@@ -182,6 +184,12 @@ function importMany() {
     state: z.string().trim().max(100).optional(),
     zip: z.string().trim().max(20).optional(),
     country: z.string().trim().max(100).optional(),
+    // Company name from a mapped CSV column — matched case-insensitively to an
+    // existing company, created (attributed to this import) when there's no match.
+    company: z.string().trim().max(200).optional(),
+    // Raw comma/semicolon-separated tag names from a mapped CSV column,
+    // applied per person on top of the batch-level `tags` below.
+    tags: z.string().trim().max(500).optional(),
   });
 
   const Input = z.object({

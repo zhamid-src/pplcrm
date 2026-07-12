@@ -6,7 +6,12 @@ import { DataGridUtilsService } from '@frontend/shared/components/datagrid/servi
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
 
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
@@ -14,6 +19,8 @@ import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-
 import {
   DATA_GRID_CONFIG,
   DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
   provideDataGridConfig,
 } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -26,6 +33,7 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
   selector: 'pc-persons-grid',
   imports: [DataGrid, GrainTabs, Icon],
   templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
     provideDataGridConfig({
@@ -50,8 +58,15 @@ export class PersonsGrid implements OnInit {
   private readonly personsService = inject(PersonsService);
 
   private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
 
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
+  }
 
   public inline = input<boolean>(false);
 
@@ -111,6 +126,25 @@ export class PersonsGrid implements OnInit {
     // is intentionally a fixed, wrapping column). Notes/description still win when shown.
     { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
     { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
     { field: 'company_name', headerName: 'Company', editable: false, hide: true },
     {
       field: 'home_phone',
@@ -318,7 +352,7 @@ export class PersonsGrid implements OnInit {
   // one idiom for the job instead of two. See libs/uxcommon/csv-import for
   // the shared header-mapping heuristic this grid used to own inline.
   protected openImportDialog() {
-    void this.router.navigate(['/imports/new']);
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
   }
 
   protected routeToHouseholds() {
@@ -345,14 +379,9 @@ export class PersonsGrid implements OnInit {
     const ids = selected.map((r: any) => r.id);
 
     // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
     const ok = await this.dialogs.confirm({
       title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
       variant: this.config.messages.deleteConfirmVariant,
       icon: this.config.messages.deleteConfirmIcon,
       confirmText: this.config.messages.deleteConfirmText,
@@ -365,7 +394,7 @@ export class PersonsGrid implements OnInit {
     try {
       // Call deleteMany without force, skipping global error toast
       await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
     } catch (err) {
       // Check if it's the captain error message
       const errMsg =
@@ -389,7 +418,7 @@ export class PersonsGrid implements OnInit {
         if (forceOk) {
           try {
             await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
           } catch (forceErr) {
             const forceErrMsg =
               forceErr instanceof Error && forceErr.message

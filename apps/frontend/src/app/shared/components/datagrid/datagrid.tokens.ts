@@ -57,6 +57,26 @@ export function provideDataGridConfig(
 
 export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
 
+/**
+ * Counted delete-confirm copy: "3 people will be deleted permanently. You cannot undo this."
+ * Falls back to the configured `deleteConfirmMessage` when the count is unknown.
+ */
+export function deleteConfirmMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (!count) return messages.deleteConfirmMessage;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `${count} ${noun} will be deleted permanently. You cannot undo this.`;
+}
+
+/**
+ * Counted delete-success toast: "Deleted 1 person." — result toasts count what changed
+ * (UX doctrine). A grid that overrides `deleteSuccess` keeps its custom text verbatim.
+ */
+export function deleteSuccessMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (messages.deleteSuccess !== DEFAULT_DATA_GRID_CONFIG.messages.deleteSuccess) return messages.deleteSuccess;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `Deleted ${count} ${noun}.`;
+}
+
 export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
   pageSize: 25,
   filterToolPanelId: 'filters-new',

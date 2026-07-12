@@ -2,6 +2,7 @@ import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../../services/api/token-service';
 import { environment } from '../../../../environments/environment';
@@ -24,7 +25,7 @@ export interface DonationPeriod {
 
 @Component({
   selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, Table],
   templateUrl: './donations-settings.html',
 })
 export class DonationsSettingsComponent implements OnInit {

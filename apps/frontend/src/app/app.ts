@@ -8,8 +8,9 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
   selector: 'pc-root',
   imports: [RouterModule, ConfirmDialogHost],
   template: `
-    <pc-dialog-host></pc-dialog-host>
+    <!-- Dialog host lives inside the themed div so modals inherit data-theme (dark mode). -->
     <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
+      <pc-dialog-host></pc-dialog-host>
       <router-outlet></router-outlet>
     </div>
   `,

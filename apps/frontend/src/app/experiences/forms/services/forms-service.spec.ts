@@ -19,6 +19,8 @@ describe('FormsService', () => {
     service = Object.create(FormsService.prototype) as FormsService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests (§15): reads go unscoped, writes unstamped.
+    (service as any).campaignContext = { activeCampaignId: () => null };
   });
 
   it('should add a new web form via the add mutation', async () => {

@@ -11,28 +11,33 @@
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;
-  --color-primary: #0ea5e9;
+  --color-primary: #3498db;
   --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
+  --color-secondary: #22a6b3;
+  --color-secondary-content: #ffffff;
+  --color-accent: #818789;
   --color-accent-content: #f0f0f0;
   --color-neutral: #cbd5e1;
   --color-neutral-content: #1f2937;
   --color-base-100: #ffffff;
   --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
+  --color-base-300: rgb(226, 226, 226);
   --color-base-content: #1f2937;
   --color-info: #38bdf8;
   --color-success: #2dd4bf;
   --color-success-content: #053a34;
-  --color-warning: #e5c963;
+  --color-warning: #e3d6a7;
   --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
+  --color-error: #eb4d4b;
   --color-error-content: #ffffff;
 
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #e7e5e4;
+
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
@@ -83,6 +88,9 @@ label.input input:-webkit-autofill:active {
   /* Hairline border token — one line color app-wide, per theme (design §5). */
   --color-line: #1a2b45;
 
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
   /* Feedback */
   --color-info: #3ea6ff;
   --color-success: #22c55e;
@@ -105,6 +113,11 @@ body {
 body {
   font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
   font-weight: 400;
+  /* App-wide default type is text-xs (UX-GUIDELINES §8). Without this, any
+     element missing an explicit text-* class silently falls back to the
+     browser's 16px — larger sizes must always be opted into. */
+  font-size: 0.75rem;
+  line-height: calc(1 / 0.75);
 }
 
 /* Custom scrollbar styles for email components */
@@ -310,6 +323,66 @@ body {
   }
 }
 
+/* ── Shared table visual contract ──────────────────────────────────────────
+   The single source of truth for how EVERY tabular surface looks — the house
+   DataGrid (`pc-datagrid`) and the lighter presentational `pc-table` (uxcommon)
+   both consume these. Change a value here and every table moves together; that
+   is the whole point (design §4 "one idiom per job", §8 typography).
+
+   Why global (not component-scoped): `pc-table` projects each page's bespoke
+   `<tr>`/`<td>` into its own `<tbody>`, and Angular's emulated encapsulation
+   would not let a component stylesheet reach projected rows. Global component
+   classes reach both projected content and the datagrid's own markup.
+
+   Tokens are theme-agnostic sizes; colors resolve through DaisyUI `--color-*`
+   so both themes stay correct for free (design §5). */
+:root {
+  --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
+  --pc-table-header-tracking: 0.07em;
+  --pc-table-body-size: 0.75rem; /* text-xs — the default for ALL table body cells */
+  --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
+  --pc-table-radius: 0.75rem; /* rounded-xl */
+}
+
+@layer components {
+  /* The bordered, rounded container every table sits inside. */
+  .pc-table-shell {
+    overflow-x: auto;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--pc-table-radius);
+    background-color: var(--color-base-100);
+  }
+
+  /* Applied alongside DaisyUI `.table`. Overrides land in the same @layer as
+     DaisyUI's `.table` rules but at higher specificity, so they win — while
+     Tailwind *utilities* (a later layer) still override per-instance when a
+     page needs to. */
+  .pc-table thead th {
+    font-size: var(--pc-table-header-size);
+    letter-spacing: var(--pc-table-header-tracking);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+  }
+  .pc-table :where(th, td) {
+    padding-block: var(--pc-table-cell-py);
+  }
+  /* Body cells are text-xs by default — DaisyUI's `.table` would otherwise
+     leave them at text-sm. Don't re-add `text-sm` on data cells; prose empty
+     states may still opt up per-instance from the utilities layer. */
+  .pc-table tbody {
+    font-size: var(--pc-table-body-size);
+  }
+  /* Subtle row hover (design §8: hover is a quiet secondary signal). The
+     datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
+     which win from the utilities layer — a deliberate scale adaptation for
+     long data tables (base-300 stays visible over the base-200 zebra stripes;
+     40% keeps it a wash), documented in the pplcrm-datagrid skill. */
+  .pc-table tbody tr:hover {
+    background-color: color-mix(in oklch, var(--color-base-200) 60%, transparent);
+  }
+}
+
 /* Hairline border helper — pairs with any border-width utility to paint the
    app-wide line color (design §5). Use as `class="border-b border-line"`. */
 @utility border-line {
@@ -419,6 +492,14 @@ body {
 /* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
    :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
 :focus:not(:focus-visible) {
+  outline: none;
+}
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
   outline: none;
 }
 

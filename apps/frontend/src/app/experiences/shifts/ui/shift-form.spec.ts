@@ -297,7 +297,7 @@ describe('ShiftFormComponent', () => {
       expect(mockShiftsSvc.delete).toHaveBeenCalledWith('v-1');
       expect(mockShiftsSvc.triggerRefresh).toHaveBeenCalled();
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Event deleted');
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/events/shifts']);
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/forms']);
     });
   });
 

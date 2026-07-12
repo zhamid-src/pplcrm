@@ -26,6 +26,8 @@ describe('ListsService', () => {
     service = Object.create(ListsService.prototype) as ListsService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests (§15): reads go unscoped, writes unstamped.
+    (service as any).campaignContext = { activeCampaignId: () => null };
     (service as any).endpointName = 'lists';
   });
 

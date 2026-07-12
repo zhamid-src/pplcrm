@@ -2,6 +2,7 @@
   [title]="company()?.name || 'Company'"
   [subtitle]="subtitle()"
   [eyebrow]="'Company'"
+  [avatarText]="initials()"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
   [hasRecord]="!initialized() || !!company()"
@@ -19,153 +20,98 @@
   (prevRecord)="recordNav.goToPrev()"
   (nextRecord)="recordNav.goToNext()"
 >
-  <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
   @if (company()) {
-  <button
+  <pc-log-interaction
     pc-actions-prefix
-    type="button"
-    class="btn btn-sm btn-ghost gap-2"
-    [disabled]="enriching()"
-    [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
-    (click)="enrichCompany()"
-  >
-    <pc-icon name="magnifying-glass" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
-    {{ enrichLabel() }}
-  </button>
-  } @if (company()) {
+    [entity]="'companies'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (company(); as c) {
   <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Company Details Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Company Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Industry -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
-        @if (company().industry) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
-        } @else {
-        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
-        }
-
-        <!-- Contact details list -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Website"
-            [value]="company().website"
-            icon="globe-americas"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Email Address"
-            [value]="company().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Phone Number"
-            [value]="company().phone"
-            icon="identification"
-            [copyable]="true"
-          ></pc-detail-item>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Left Column: Contact, Google enrichment, Internal notes -->
+    <div class="flex flex-col gap-6 lg:col-span-1">
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+        <div class="flex w-full flex-col text-sm">
+          <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Phone" [value]="c.phone" icon="phone" [copyable]="true"></pc-detail-item>
         </div>
-
-        <!-- Internal Notes (Short summary) -->
-        @if (company().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
-            Internal Notes
-          </span>
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ company().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
         <pc-system-metadata
-          [createdAt]="company().created_at"
-          [createdBy]="getUserName(company().createdby_id)"
-          [updatedAt]="company().updated_at"
-          [updatedBy]="getUserName(company().updatedby_id)"
+          [createdAt]="c.created_at"
+          [createdBy]="getUserName(c.createdby_id)"
+          [updatedAt]="c.updated_at"
+          [updatedBy]="getUserName(c.updatedby_id)"
         ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
+      </pc-card>
 
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Employees'"
-          [value]="employeeCount()"
-          [description]="'Total staff listed'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Enriched from Google'"
-          [value]="isEnriched() ? 'Yes' : 'No'"
-          [description]="'Google Places sync status'"
-          [icon]="'check-circle'"
-          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- GOOGLE ENRICHMENT card (§7) -->
-      <div class="card bg-base-100 border border-base-300 rounded-xl p-4 flex flex-col gap-2">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <pc-icon name="globe-americas" [size]="4" class="text-primary"></pc-icon>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Google enrichment</span>
-          </div>
+      <!-- Google enrichment card (§7) -->
+      <pc-card>
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
           @if (isEnriched()) {
           <pc-status-badge type="success">Enriched</pc-status-badge>
           } @else {
           <pc-status-badge type="neutral">Not enriched</pc-status-badge>
           }
         </div>
-        <p class="text-sm text-base-content/65 font-light leading-relaxed">
+        <p class="text-sm font-light leading-relaxed text-base-content/65">
           Runs as a background job — a Places text search finds the business, then place details fill website, phone,
           industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
         </p>
-      </div>
+        <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
+        <button
+          type="button"
+          class="btn btn-sm btn-outline btn-secondary mt-1 w-fit gap-2"
+          [disabled]="enriching()"
+          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+          (click)="enrichCompany()"
+        >
+          <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
+          {{ enrichLabel() }}
+        </button>
+      </pc-card>
 
-      <!-- Tabs Panel -->
+      <!-- Internal notes card -->
+      <pc-card>
+        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        @if (c.notes) {
+        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
+        } @else {
+        <p class="text-sm italic text-base-content/40">No internal notes recorded.</p>
+        }
+      </pc-card>
+    </div>
+
+    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
       <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
         <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'companies'" [entityId]="id()"></pc-record-activities>
           </div>
         </pc-tab-panel>
 
-        <pc-tab-panel id="employees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @defer (on viewport) {
-            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            }
-          </div>
+        <pc-tab-panel id="people" [activeTab]="activeTab()">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton h-32 w-full"></div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
+            Grouped from the employer field — edit a person’s employer and they move companies.
+          </p>
         </pc-tab-panel>
 
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (company().description) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
-                Company Description
-              </span>
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-                {{ company().description }}
-              </p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
-            }
-          </div>
+        <pc-tab-panel id="about" [activeTab]="activeTab()">
+          @if (c.description) {
+          <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
+          } @else {
+          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+          }
         </pc-tab-panel>
       </pc-tabs>
     </div>

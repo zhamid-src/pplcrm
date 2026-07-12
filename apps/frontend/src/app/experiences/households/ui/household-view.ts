@@ -1,5 +1,5 @@
 import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -8,6 +8,7 @@ import { PcMap } from '@uxcommon/components/map/map';
 import type { PcMapMarker } from '@uxcommon/components/map/map-types';
 import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { UserService } from '../../../services/user.service';
 import type { Selectable } from 'kysely';
@@ -16,17 +17,14 @@ import { Households } from '../../../../../../../libs/common/src/lib/kysely.mode
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
 
 @Component({
   selector: 'pc-household-view',
@@ -35,15 +33,11 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     PeopleInHousehold,
     Icon,
     RecordActivities,
+    LogInteraction,
     DetailLayout,
     PcCard,
-    Tabs,
+    PcTabs,
     TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
     PcMap,
     GeocodeChip,
     DatePipe,
@@ -54,6 +48,7 @@ export class HouseholdView {
   readonly id = input.required<string>();
 
   protected readonly recordNav = injectRecordNavigation('household', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -70,10 +65,15 @@ export class HouseholdView {
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
 
-  // Segmentation
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
   protected readonly peopleCount = signal(0);
+  protected readonly lastCanvass = signal<LastCanvass>(null);
+
+  // Tabbed right column (matches person view): Members is the default tab.
+  protected readonly activeTab = signal<string>('members');
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: 'Members', badge: this.peopleCount() || undefined },
+    { id: 'activity', label: 'Activity' },
+  ]);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
     { label: 'Households', route: '/households' },
@@ -98,6 +98,13 @@ export class HouseholdView {
     return parts.join(', ').trim() || 'No Address Assigned';
   });
 
+  /** Short "City, State" for the map address chip. */
+  protected readonly cityLine = computed(() => {
+    const h = this.household();
+    if (!h) return '';
+    return [h.city, h.state].filter(Boolean).join(', ');
+  });
+
   protected readonly hasMap = computed(() => {
     const h = this.household();
     return !!(h && h.lat && h.lng && !h.is_placeholder);
@@ -110,7 +117,7 @@ export class HouseholdView {
     return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
   });
 
-  /** Header subtitle — "Ward 5 · 3 people · last touch" (§6). Parts drop out honestly when absent. */
+  /** Header subtitle — "Ward 4 · 3 people · Canvassed May 2" (§6). Parts drop out honestly when absent. */
   protected readonly subtitle = computed(() => {
     const h = this.household();
     if (!h || h.is_placeholder) return null;
@@ -118,18 +125,12 @@ export class HouseholdView {
     if (h.ward) parts.push(`Ward ${h.ward}`);
     const n = this.peopleCount();
     parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    if (h.updated_at) parts.push(`last touch ${this.formatLastTouch(h.updated_at)}`);
+    const canvass = this.lastCanvass();
+    if (canvass) {
+      parts.push(`Canvassed ${this.formatCanvassDate(canvass.knocked_at)}`);
+    }
     return parts.join(' · ');
   });
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly householdTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
 
   constructor() {
     effect(() => {
@@ -159,21 +160,24 @@ export class HouseholdView {
         this.location.replaceState(`/households/${householdData.slug}`);
       }
 
-      // 2. Load tags and issues
-      const tagList = await this.householdsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.householdsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load people in household count
-      const count = await this.householdsSvc.getPeopleCount(id);
+      // 2. Load people count and last-canvass in parallel (both feed the header subtitle).
+      const [count, canvass] = await Promise.all([
+        this.householdsSvc.getPeopleCount(id),
+        this.householdsSvc.getLastCanvass(id).catch(() => null),
+      ]);
       this.peopleCount.set(count);
+      this.lastCanvass.set((canvass as LastCanvass) ?? null);
     } catch (err) {
       this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
     }
+  }
+
+  /** Refresh the "Activity at this door" feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
   }
 
   protected editHousehold() {
@@ -241,28 +245,11 @@ export class HouseholdView {
     }
   }
 
-  /** Compact relative "last touch" — matches the house tabular, low-chrome style. */
-  private formatLastTouch(value: Date | string): string {
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
+  /** Compact "Canvassed May 2" style date for the header subtitle. */
+  private formatCanvassDate(value: Date | string): string {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
   protected getUserName(id: string | null | undefined): string {

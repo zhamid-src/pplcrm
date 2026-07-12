@@ -8,6 +8,7 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
 export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
@@ -74,8 +75,8 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
     return this.api.tasks.update.mutate({ id, data });
   }
 
-  public import(rows: any[], skipped: number, file_name?: string) {
-    return this.api.tasks.import.mutate({ rows, skipped, file_name });
+  public import(input: RouterInputs['tasks']['import']): Promise<RouterOutputs['tasks']['import']> {
+    return this.api.tasks.import.mutate(input);
   }
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {

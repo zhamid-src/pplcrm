@@ -1,14 +1,22 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { emailSchema } from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { PERSONS_MAPPABLE_FIELDS, autoMapPersonsHeader } from '@uxcommon/components/csv-import/persons-field-mapping';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { CompaniesService } from '../../companies/services/companies-service';
+import { HouseholdsService } from '../../households/services/households-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import {
+  IMPORT_ENTITY_CONFIGS,
+  IMPORT_ENTITY_TYPES,
+  isImportEntityType,
+  type ImportEntityType,
+} from '../import-entity-config';
 import { ImportsService } from '../services/imports-service';
 
 /** The four steps of the CSV import wizard (spec §17), in order. */
@@ -39,25 +47,6 @@ type RunState =
     }
   | { status: 'error'; message: string };
 
-const FIELD_LABELS: Record<string, string> = {
-  first_name: 'First name',
-  last_name: 'Last name',
-  middle_names: 'Middle name(s)',
-  email: 'Email',
-  email2: 'Secondary email',
-  mobile: 'Mobile phone',
-  home_phone: 'Home phone',
-  street_num: 'Street number',
-  street1: 'Street line 1',
-  street2: 'Street line 2',
-  apt: 'Apt/Unit',
-  city: 'City',
-  state: 'State/Province',
-  zip: 'Zip/Postal code',
-  country: 'Country',
-  notes: 'Notes',
-};
-
 /** How long to wait between status polls once an import has been queued. */
 const POLL_INTERVAL_MS = 1500;
 /** Give up narrating progress (the import itself keeps running server-side) after this long. */
@@ -70,14 +59,27 @@ const POLL_TIMEOUT_MS = 120_000;
 })
 export class ImportWizard {
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly alerts = inject(AlertService);
   private readonly personsService = inject(PersonsService);
+  private readonly companiesService = inject(CompaniesService);
+  private readonly householdsService = inject(HouseholdsService);
+  private readonly tasksService = inject(TasksService);
   private readonly importsService = inject(ImportsService);
   private readonly listsService = inject(ListsService);
 
   private readonly _duplicateCheck = createLoadingGate();
   protected readonly checkingDuplicates = this._duplicateCheck.visible;
+
+  // --- What are you importing? ---
+  protected readonly entityTypes = IMPORT_ENTITY_TYPES;
+  protected readonly configs = IMPORT_ENTITY_CONFIGS;
+  private readonly requestedType = this.route.snapshot.queryParamMap.get('type');
+  protected readonly entity = signal<ImportEntityType>(
+    isImportEntityType(this.requestedType) ? this.requestedType : 'people',
+  );
+  protected readonly config = computed(() => IMPORT_ENTITY_CONFIGS[this.entity()]);
 
   protected readonly step = signal<WizardStep>('upload');
   protected readonly stepOrder: WizardStep[] = ['upload', 'map', 'review', 'confirm'];
@@ -94,7 +96,7 @@ export class ImportWizard {
     const targetIdx = this.stepOrder.indexOf(target);
     if (targetIdx <= this.currentStepIndex()) return true;
     if (target === 'map') return this.rowCount() > 0;
-    if (target === 'review') return this.mappedColumnCount() > 0;
+    if (target === 'review') return this.canContinueToReview();
     return false;
   }
 
@@ -111,11 +113,23 @@ export class ImportWizard {
 
   // --- Map columns ---
   protected readonly mapping = signal<string[]>([]); // index-aligned with headers()
-  protected readonly mappableFields = PERSONS_MAPPABLE_FIELDS;
-  protected readonly fieldLabels = FIELD_LABELS;
 
   protected readonly mappedColumnCount = computed(() => this.mapping().filter((m) => !!m).length);
   protected readonly skippedColumnCount = computed(() => this.columnCount() - this.mappedColumnCount());
+
+  /** Required fields (e.g. a company/task name) that no column is mapped to yet. */
+  protected readonly missingRequiredFields = computed(() => {
+    const mapped = new Set(this.mapping().filter((m) => !!m));
+    return this.config().requiredFields.filter((field) => !mapped.has(field));
+  });
+  protected readonly missingRequiredFieldLabels = computed(() =>
+    this.missingRequiredFields()
+      .map((field) => this.config().fieldLabels[field] ?? field)
+      .join(', '),
+  );
+  protected readonly canContinueToReview = computed(
+    () => this.mappedColumnCount() > 0 && this.missingRequiredFields().length === 0,
+  );
 
   /** Every row, with only its mapped, non-blank fields — the shape the backend import mutation expects. */
   protected readonly mappedRows = computed(() => {
@@ -137,6 +151,14 @@ export class ImportWizard {
     () => this.mappedRows().filter((row) => Object.keys(row).length > 0).length,
   );
 
+  /** Rows that have data but are missing a required field — the backend would skip them anyway. */
+  protected readonly missingRequiredRowCount = computed(() => {
+    const required = this.config().requiredFields;
+    if (required.length === 0) return 0;
+    return this.mappedRows().filter((row) => Object.keys(row).length > 0 && required.some((field) => !row[field]))
+      .length;
+  });
+
   // --- Review ---
   protected readonly duplicateDecision = signal<DuplicateDecision>('merge');
   protected readonly badEmailDecision = signal<BadEmailDecision>('skip');
@@ -153,9 +175,10 @@ export class ImportWizard {
   protected readonly validEmailRows = computed(() =>
     this.emailRows().filter((r) => emailSchema.safeParse(r.email).success),
   );
-  protected readonly badEmailRows = computed(() =>
-    this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success),
-  );
+  protected readonly badEmailRows = computed(() => {
+    if (!this.config().supportsEmailReview) return [];
+    return this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success);
+  });
   protected readonly duplicateRowCount = computed(() => {
     const matched = new Set(this.duplicateMatches().map((m) => m.email.toLowerCase()));
     return this.validEmailRows().filter((r) => matched.has(r.email.toLowerCase())).length;
@@ -177,15 +200,53 @@ export class ImportWizard {
 
   /** The exact row count the Confirm button and working-state sentence quote (spec §17). */
   protected readonly finalRowCount = computed(() => {
-    if (this.badEmailDecision() === 'skip') {
-      return this.importableRowCount() - this.badEmailRows().length;
+    let count = this.importableRowCount() - this.missingRequiredRowCount();
+    if (this.config().supportsEmailReview && this.badEmailDecision() === 'skip') {
+      count -= this.badEmailRows().length;
     }
-    return this.importableRowCount();
+    return count;
+  });
+
+  /** One line of "what the background job is doing" copy while the import runs. */
+  protected readonly runningHint = computed(() => {
+    const entity = this.entity();
+    switch (entity) {
+      case 'people':
+        return 'Matching by email, merging duplicates and applying tags';
+      case 'households':
+        return 'Deduplicating by address, applying tags and queueing geocoding';
+      case 'companies':
+        return 'Creating companies and recording the import in history';
+      case 'tasks':
+        return 'Creating tasks and recording the import in history';
+      default: {
+        const _exhaustive: never = entity;
+        return _exhaustive;
+      }
+    }
   });
 
   constructor() {
     this.destroyRef.onDestroy(() => this.clearPoll());
     void this.loadExistingListNames();
+  }
+
+  /** Switch record type — remaps the already-parsed headers with the new type's heuristic. */
+  protected setEntity(type: ImportEntityType): void {
+    if (this.entity() === type || this.run().status === 'running') return;
+    this.entity.set(type);
+    this.mapping.set(this.headers().map((h) => IMPORT_ENTITY_CONFIGS[type].autoMapHeader(h)));
+    this.duplicateDecision.set('merge');
+    this.badEmailDecision.set('skip');
+    this.tagsText.set('');
+    this.listName.set('');
+    this.duplicateMatches.set([]);
+    // Keep the URL shareable/bookmarkable — grids deep-link here with ?type=.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { type },
+      replaceUrl: true,
+    });
   }
 
   private async loadExistingListNames(): Promise<void> {
@@ -234,13 +295,13 @@ export class ImportWizard {
       // UTF-8 and Excel-exported CSVs both decode correctly as text — Excel's
       // CSV export is UTF-8 (sometimes BOM-prefixed), which readAsText handles.
       // FileReader (not the newer File.text()) matches the shared csv-import
-      // component's own reading approach.
+      // worker's original reading approach.
       const text = await this.readFileAsText(file);
       this.fileText = text;
       const { headers, rows } = await this.parseCsv(text);
       this.headers.set(headers);
       this.rawRows.set(rows);
-      this.mapping.set(headers.map((h) => autoMapPersonsHeader(h)));
+      this.mapping.set(headers.map((h) => this.config().autoMapHeader(h)));
     } catch {
       this.alerts.showError('Failed to read that file. Make sure it is a CSV export.');
       this.fileName.set(null);
@@ -313,6 +374,10 @@ export class ImportWizard {
 
   protected async goToReview(): Promise<void> {
     this.step.set('review');
+    if (!this.config().supportsEmailReview) {
+      this.duplicateMatches.set([]);
+      return;
+    }
     const end = this._duplicateCheck.begin();
     try {
       const emails = [...new Set(this.validEmailRows().map((r) => r.email.toLowerCase()))];
@@ -337,7 +402,37 @@ export class ImportWizard {
   protected async runImport(): Promise<void> {
     if (this.run().status === 'running') return;
     this.run.set({ status: 'running' });
+    try {
+      const result = this.entity() === 'people' ? await this.importPeople() : await this.importSimple();
 
+      if (result.import_id) {
+        await this.pollUntilDone(result.import_id, Date.now());
+      } else {
+        // Nothing importable — the backend already reported the terminal state synchronously.
+        this.run.set({
+          status: 'done',
+          inserted: result.inserted,
+          merged: 0,
+          skipped: result.skipped,
+          errors: result.errors,
+          tag: result.tag,
+          importId: null,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'The import could not be started.';
+      this.run.set({ status: 'error', message });
+    }
+  }
+
+  /** People import — the full duplicate-decision / bad-email / tags / list pipeline. */
+  private async importPeople(): Promise<{
+    import_id: string | null;
+    inserted: number;
+    skipped: number;
+    errors: number;
+    tag: string | null;
+  }> {
     const badEmailRows = this.badEmailRows();
     const badEmailIdx = new Set(badEmailRows.map((r) => r.idx - 1));
     const skipBadEmail = this.badEmailDecision() === 'skip';
@@ -354,35 +449,122 @@ export class ImportWizard {
       ? badEmailRows.map((r) => ({ row: r.idx, email: r.email, reason: 'Email address is not valid' }))
       : [];
 
-    try {
-      const result = await this.personsService.import({
-        rows: rowsToSend,
-        tags: this.parsedTags(),
-        skipped: skippedCount,
-        file_name: this.fileName() ?? undefined,
-        duplicate_decision: this.duplicateDecision(),
-        list_name: this.listName().trim() || undefined,
-        source_csv: this.fileText || undefined,
-        client_skip_reasons: clientSkipReasons,
-      });
+    const result = await this.personsService.import({
+      rows: rowsToSend,
+      tags: this.parsedTags(),
+      skipped: skippedCount,
+      file_name: this.fileName() ?? undefined,
+      duplicate_decision: this.duplicateDecision(),
+      list_name: this.listName().trim() || undefined,
+      source_csv: this.fileText || undefined,
+      client_skip_reasons: clientSkipReasons,
+    });
+    return {
+      import_id: result?.import_id ?? null,
+      inserted: result?.inserted ?? 0,
+      skipped: result?.skipped ?? skippedCount,
+      errors: result?.errors ?? 0,
+      tag: result?.tag ?? null,
+    };
+  }
 
-      if (result?.import_id) {
-        await this.pollUntilDone(result.import_id, Date.now());
-      } else {
-        // Nothing importable — the backend already reported the terminal state synchronously.
-        this.run.set({
-          status: 'done',
-          inserted: result?.inserted ?? 0,
-          merged: 0,
-          skipped: result?.skipped ?? skippedCount,
-          errors: result?.errors ?? 0,
-          tag: result?.tag ?? null,
-          importId: null,
+  /**
+   * Companies / households / tasks import — no client-side review pipeline, but
+   * rows missing a required field are dropped here (and counted as skipped) so
+   * one bad row can't fail the whole mutation's input validation.
+   */
+  private async importSimple(): Promise<{
+    import_id: string | null;
+    inserted: number;
+    skipped: number;
+    errors: number;
+    tag: string | null;
+  }> {
+    const required = this.config().requiredFields;
+    const rowsToSend = this.mappedRows().filter(
+      (row) => Object.keys(row).length > 0 && required.every((field) => !!row[field]),
+    );
+    const skippedCount = this.rawRows().length - rowsToSend.length;
+    const common = {
+      skipped: skippedCount,
+      file_name: this.fileName() ?? undefined,
+      source_csv: this.fileText || undefined,
+    };
+
+    const entity = this.entity();
+    switch (entity) {
+      case 'companies': {
+        const result = await this.companiesService.import({
+          rows: rowsToSend.map((row) => ({
+            name: row['name'] ?? '',
+            description: row['description'],
+            website: row['website'],
+            email: row['email'],
+            phone: row['phone'],
+            industry: row['industry'],
+            notes: row['notes'],
+          })),
+          ...common,
         });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'The import could not be started.';
-      this.run.set({ status: 'error', message });
+      case 'households': {
+        const result = await this.householdsService.import({
+          rows: rowsToSend.map((row) => ({
+            street_num: row['street_num'],
+            apt: row['apt'],
+            street1: row['street1'],
+            street2: row['street2'],
+            city: row['city'],
+            state: row['state'],
+            zip: row['zip'],
+            country: row['country'],
+            home_phone: row['home_phone'],
+            notes: row['notes'],
+          })),
+          tags: this.parsedTags(),
+          ...common,
+        });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
+      }
+      case 'tasks': {
+        const result = await this.tasksService.import({
+          rows: rowsToSend.map((row) => ({
+            name: row['name'] ?? '',
+            details: row['details'],
+            status: row['status'],
+            priority: row['priority'],
+            due_at: row['due_at'],
+            assigned_to: row['assigned_to'],
+          })),
+          ...common,
+        });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
+      }
+      case 'people':
+        throw new Error('People imports go through importPeople()');
+      default: {
+        const _exhaustive: never = entity;
+        throw new Error(`Unhandled import type: ${String(_exhaustive)}`);
+      }
     }
   }
 
@@ -441,8 +623,8 @@ export class ImportWizard {
     this.step.set('upload');
   }
 
-  protected viewImportedPeople(): void {
-    void this.router.navigate(['/people']);
+  protected viewImported(): void {
+    void this.router.navigate([this.config().viewRoute]);
   }
 
   protected backToHistory(): void {

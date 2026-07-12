@@ -12,10 +12,12 @@ describe('saveLocalEmail (integration)', () => {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
   let tenantId: string;
   let userId: string;
+  let campaignId: string;
 
   beforeEach(async () => {
     tenantId = rand();
     userId = rand();
+    campaignId = rand();
 
     await db.insertInto('tenants').values({ id: tenantId, name: 'Test Tenant' }).execute();
 
@@ -29,6 +31,19 @@ describe('saveLocalEmail (integration)', () => {
         first_name: 'Test',
         last_name: 'Sender',
         verified: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Emails are campaign-scoped (§15) — saveLocalEmail requires the context id.
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaignId,
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Test Campaign',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -49,6 +64,7 @@ describe('saveLocalEmail (integration)', () => {
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('email_attachments').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('files').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
   });
@@ -61,6 +77,7 @@ describe('saveLocalEmail (integration)', () => {
     const created = await saveLocalEmail(
       db,
       tenantId,
+      campaignId,
       userId,
       'sender@example.com',
       'Test Sender',
@@ -137,6 +154,7 @@ describe('saveLocalEmail (integration)', () => {
     const created = await saveLocalEmail(
       db,
       tenantId,
+      campaignId,
       userId,
       'sender@example.com',
       'Test Sender',

@@ -41,11 +41,11 @@ export class DataGridToolbarComponent {
     return `Export ${this.countFormatter.format(count)} ${matching}${noun}`;
   });
 
-  /** Solid-primary Add button label (spec §5), e.g. "Add person". Falls back to "Add" when the
-   *  grid config carries no specific entity noun. */
+  /** Solid-primary create-button label (UX-GUIDELINES "Buttons"), e.g. "New person". Falls back
+   *  to "New" when the grid config carries no specific entity noun. */
   readonly addLabel = computed(() => {
     const noun = this.grid.entityNoun;
-    return noun && noun !== 'row' ? `Add ${noun}` : 'Add';
+    return noun && noun !== 'row' ? `New ${noun}` : 'New';
   });
 
   public onAdd() {

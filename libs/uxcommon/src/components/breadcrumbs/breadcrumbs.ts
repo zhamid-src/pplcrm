@@ -18,15 +18,22 @@ export interface PcBreadcrumb {
     <div class="flex min-w-0 items-center justify-between gap-3">
       <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
         <ol class="flex flex-wrap items-center gap-1.5">
-          @for (crumb of crumbs(); track $index; let last = $last) {
+          @for (crumb of crumbs(); track $index; let last = $last; let first = $first) {
             <li class="flex min-w-0 items-center gap-1.5">
+              <!-- The first crumb doubles as the page title (pages no longer repeat it
+                   in-body), so it renders larger and in full-contrast ink. -->
               @if (!last && crumb.route) {
-                <a [routerLink]="crumb.route" class="max-w-48 truncate font-medium text-primary hover:underline">
+                <a
+                  [routerLink]="crumb.route"
+                  class="max-w-48 truncate font-medium hover:underline"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-primary'"
+                >
                   {{ crumb.label }}
                 </a>
               } @else {
                 <span
-                  class="max-w-48 truncate font-medium text-base-content/60"
+                  class="max-w-48 truncate font-medium"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-base-content/60'"
                   [attr.aria-current]="last ? 'page' : null"
                 >
                   {{ crumb.label }}

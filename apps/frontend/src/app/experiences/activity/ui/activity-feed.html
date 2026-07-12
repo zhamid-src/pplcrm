@@ -1,48 +1,25 @@
 <div class="p-6 max-w-4xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="clipboard-document-list" class="text-primary" [size]="7"></pc-icon>
-        <ng-container i18n="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
-          >User Activity Feed</ng-container
-        >
-      </h1>
-      <p
-        class="text-sm text-base-content/60 mt-1"
-        i18n="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
-      >
-        Real-time audit log of changes made to contacts, emails, tasks, and system settings.
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button
-        class="btn btn-outline btn-sm gap-2 text-primary hover:bg-primary/10"
-        (click)="exportFeed()"
-        [disabled]="isLoadingExport() || activities().length === 0"
-        title="Export activity feed as CSV"
-      >
-        @if (isLoadingExport()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } @else {
-        <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-        }
-        <span>Export log</span>
-      </button>
-      <button
-        class="btn btn-outline btn-sm gap-2"
-        (click)="refreshFeed()"
-        i18n-title="@@activityFeed.refreshButton.title"
-        title="Refresh the activity feed"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        <ng-container
-          i18n="Activity feed page|Button label to refresh the activity feed@@activityFeed.refreshButton.label"
-          >Refresh Feed</ng-container
-        >
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header
+    title="Activity feed"
+    i18n-title="Activity feed page|Main heading of the activity feed page@@activityFeed.heading"
+    description="Real-time audit log of changes made to contacts, emails, tasks, and system settings."
+    i18n-description="Activity feed page|Subtitle describing what the activity feed shows@@activityFeed.subtitle"
+  >
+    <button
+      class="btn btn-outline btn-secondary btn-sm gap-2"
+      (click)="exportFeed()"
+      [disabled]="isLoadingExport() || activities().length === 0"
+      title="Export activity feed as CSV"
+    >
+      @if (isLoadingExport()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      }
+      <span>Export log</span>
+    </button>
+  </pc-grid-header>
 
   <!-- Filters -->
   <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
@@ -158,7 +135,7 @@
         No activity logged
       </h2>
       <p
-        class="text-sm text-base-content/50 mt-1"
+        class="text-xs text-base-content/50 mt-1"
         i18n="
                 Activity feed empty state|Description text when no activity has been logged
                 yet@@activityFeed.emptyState.description"
@@ -223,7 +200,7 @@
                     >
                     @if (getCustomMessage(act); as msg) {
                     <!-- Honest attribution: backend-authored sentence surfaced verbatim -->
-                    <p class="text-sm font-medium text-base-content">
+                    <p class="text-xs font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
                       @if (getEntityLink(act); as link) { —
                       <a
@@ -235,7 +212,7 @@
                       } @else { — <span class="text-base-content/85">{{ msg }}</span> }
                     </p>
                     } @else {
-                    <p class="text-sm font-medium text-base-content">
+                    <p class="text-xs font-medium text-base-content">
                       <span class="font-bold">{{ act.first_name }} {{ act.last_name }}</span>
                       {{ getActivityPrefix(act) }} @if (getEntityLink(act); as link) {
                       <a
@@ -256,7 +233,7 @@
                     </span>
                     }
                   </div>
-                  <span class="text-[11px] text-base-content/40 whitespace-nowrap"
+                  <span class="text-[10px] text-base-content/40 whitespace-nowrap"
                     >{{ act.created_at | date: 'short' }}</span
                   >
                 </div>
@@ -272,7 +249,7 @@
     <!-- Load More Button -->
     @if (hasMore()) {
     <div class="flex justify-center pt-4">
-      <button class="btn btn-outline btn-primary gap-2" [disabled]="isLoading()" (click)="loadMore()">
+      <button class="btn btn-outline btn-secondary gap-2" [disabled]="isLoading()" (click)="loadMore()">
         @if (isLoading()) {
         <span class="loading loading-spinner loading-xs"></span>
         }

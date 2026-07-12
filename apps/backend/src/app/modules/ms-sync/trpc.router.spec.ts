@@ -60,6 +60,7 @@ function installMockDb(options: { activeJob?: unknown } = {}) {
 }
 
 const AUTH = { tenant_id: '10', user_id: '20', session_id: 's1' };
+const CAMPAIGN = '30';
 
 describe('MsSyncRouter', () => {
   let originalDb: unknown;
@@ -76,7 +77,7 @@ describe('MsSyncRouter', () => {
   it('rejects unauthenticated callers', async () => {
     installMockDb();
     const caller = MsSyncRouter.createCaller({ auth: undefined } as any);
-    await expect(caller.getAuthUrl({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(caller.getAuthUrl({ campaignId: CAMPAIGN })).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
   it('getAuthUrl signs a state binding the caller and delegates to the oauth service', async () => {
@@ -86,14 +87,19 @@ describe('MsSyncRouter', () => {
       .mockResolvedValue('https://login.microsoftonline.com/mock');
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getAuthUrl({ returnTo: '/settings/integrations' });
+    const result = await caller.getAuthUrl({ campaignId: CAMPAIGN, returnTo: '/settings/integrations' });
 
     expect(result.url).toBe('https://login.microsoftonline.com/mock');
     expect(spy).toHaveBeenCalledTimes(1);
 
     const state = spy.mock.calls[0][0] as string;
     const decoded = decodeOAuthState(state);
-    expect(decoded).toMatchObject({ userId: '20', tenantId: '10', returnTo: '/settings/integrations' });
+    expect(decoded).toMatchObject({
+      userId: '20',
+      tenantId: '10',
+      campaignId: CAMPAIGN,
+      returnTo: '/settings/integrations',
+    });
   });
 
   it('propagates errors from the oauth service when building the auth url', async () => {
@@ -101,7 +107,7 @@ describe('MsSyncRouter', () => {
     vi.spyOn(MsOAuthService.prototype, 'getAuthUrl').mockRejectedValue(new Error('MSAL metadata fetch failed'));
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    await expect(caller.getAuthUrl({})).rejects.toThrow();
+    await expect(caller.getAuthUrl({ campaignId: CAMPAIGN })).rejects.toThrow();
   });
 
   it('getConnectionStatus reports syncing=false when no background job is active', async () => {
@@ -115,7 +121,7 @@ describe('MsSyncRouter', () => {
     });
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getConnectionStatus();
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
 
     expect(result.connected).toBe(true);
     expect(result.msEmail).toBe('user@example.com');
@@ -133,7 +139,7 @@ describe('MsSyncRouter', () => {
     });
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.getConnectionStatus();
+    const result = await caller.getConnectionStatus({ campaignId: CAMPAIGN });
 
     expect(result.syncing).toBe(true);
   });
@@ -142,7 +148,7 @@ describe('MsSyncRouter', () => {
     const db = installMockDb({ activeJob: undefined });
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
 
-    const result = await caller.syncNow();
+    const result = await caller.syncNow({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ inserted: 0, queued: true });
     expect(db.insertInto).toHaveBeenCalledWith('background_jobs');
@@ -152,7 +158,7 @@ describe('MsSyncRouter', () => {
     const db = installMockDb({ activeJob: { id: '5' } });
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
 
-    const result = await caller.syncNow();
+    const result = await caller.syncNow({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ inserted: 0, queued: true });
     expect(db.insertInto).not.toHaveBeenCalled();
@@ -164,11 +170,11 @@ describe('MsSyncRouter', () => {
     const disconnectSpy = vi.spyOn(MsOAuthService.prototype, 'disconnect').mockResolvedValue(undefined);
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.disconnect({ removeLocalEmails: true });
+    const result = await caller.disconnect({ campaignId: CAMPAIGN, removeLocalEmails: true });
 
     expect(result).toEqual({ success: true });
-    expect(removeSpy).toHaveBeenCalledWith('10');
-    expect(disconnectSpy).toHaveBeenCalledWith('10');
+    expect(removeSpy).toHaveBeenCalledWith('10', CAMPAIGN);
+    expect(disconnectSpy).toHaveBeenCalledWith('10', CAMPAIGN);
   });
 
   it('disconnect skips local email removal by default', async () => {
@@ -177,7 +183,7 @@ describe('MsSyncRouter', () => {
     vi.spyOn(MsOAuthService.prototype, 'disconnect').mockResolvedValue(undefined);
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    await caller.disconnect({});
+    await caller.disconnect({ campaignId: CAMPAIGN });
 
     expect(removeSpy).not.toHaveBeenCalled();
   });
@@ -187,9 +193,9 @@ describe('MsSyncRouter', () => {
     const spy = vi.spyOn(MsOAuthService.prototype, 'saveDeltaLink').mockResolvedValue(undefined);
 
     const caller = MsSyncRouter.createCaller({ auth: AUTH } as any);
-    const result = await caller.resetSync();
+    const result = await caller.resetSync({ campaignId: CAMPAIGN });
 
     expect(result).toEqual({ success: true });
-    expect(spy).toHaveBeenCalledWith('10', NEEDS_FULL_SYNC);
+    expect(spy).toHaveBeenCalledWith('10', CAMPAIGN, NEEDS_FULL_SYNC);
   });
 });

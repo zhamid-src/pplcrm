@@ -14,14 +14,17 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
           {
             title: 'Design in the visual editor',
             detail: 'Write and arrange your content visually — what you see is what subscribers get.',
           },
           {
             title: 'Name it clearly',
-            detail: 'The name is how you will find it in the grid and its performance later.',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
           },
         ],
       },
@@ -45,11 +48,20 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'send', text: 'Send or schedule' },
       {
         kind: 'p',
-        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
       },
       {
         kind: 'p',
-        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report — it appears once a send is underway, since an unsent campaign has nothing to report — and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
       },
       { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
       {
@@ -80,6 +92,12 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
       },
       { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
       {

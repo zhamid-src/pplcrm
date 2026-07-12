@@ -1,4 +1,4 @@
-import { Service } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import {
   AddListType,
   ExportCsvInputType,
@@ -8,13 +8,23 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
 @Service()
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   protected override readonly endpointName = 'lists';
 
+  private readonly campaignContext = inject(CampaignContextService);
+  /** Campaigns §15 — scope reads and stamp writes with the user's active context. */
+  private withContext<T extends object | undefined>(options: T): T {
+    const campaignId = this.campaignContext.activeCampaignId();
+    return (campaignId ? { ...(options ?? {}), campaignId } : options) as T;
+  }
+
   public add(row: AddListType) {
-    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
+    const campaignId = this.campaignContext.activeCampaignId();
+    const stamped = campaignId ? { ...row, campaign_id: campaignId } : row;
+    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(stamped, {
       context: { skipErrorHandler: true },
     });
   }
@@ -45,7 +55,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   }
 
   public getAllWithCounts(options?: getAllOptionsType) {
-    return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
+    return this.api.lists.getAllWithCounts.query(this.withContext(options), { signal: this.ac.signal });
   }
 
   public getById(id: string) {

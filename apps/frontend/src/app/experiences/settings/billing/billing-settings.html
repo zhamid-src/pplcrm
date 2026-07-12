@@ -2,7 +2,7 @@
 <div class="flex h-48 items-center justify-center">
   <div class="flex flex-col items-center gap-3 text-base-content/50">
     <span class="loading loading-spinner loading-md"></span>
-    <p class="text-sm font-medium">Retrieving subscription details…</p>
+    <p class="text-xs font-medium">Retrieving subscription details…</p>
   </div>
 </div>
 } @else {
@@ -14,7 +14,7 @@
   >
     <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0" />
     <div>
-      <h3 class="font-semibold text-sm">Sandbox Mode Enabled</h3>
+      <h3 class="font-semibold text-xs">Sandbox Mode Enabled</h3>
       <p class="text-xs opacity-90 mt-0.5">
         Stripe is running in **Mock Mode** for local development. Clicking billing triggers will simulate Stripe
         responses instantly without making live credit card calls.
@@ -43,15 +43,15 @@
         <div>
           <h3 class="text-3xl font-extrabold capitalize text-base-content">{{ details()?.plan }} Plan</h3>
           @if (details()?.hasActiveSubscription && details()?.endsAt) {
-          <p class="text-sm text-base-content/60 mt-1">
+          <p class="text-xs text-base-content/60 mt-1">
             Your subscription will renew automatically on **{{ details()?.endsAt | date:'mediumDate' }}**.
           </p>
           } @else if (details()?.endsAt) {
-          <p class="text-sm text-error/80 mt-1 font-medium">
+          <p class="text-xs text-error/80 mt-1 font-medium">
             Your plan has expired or was canceled. Access ends on {{ details()?.endsAt | date:'mediumDate' }}.
           </p>
           } @else {
-          <p class="text-sm text-base-content/60 mt-1">
+          <p class="text-xs text-base-content/60 mt-1">
             You are currently on the free trial version of PeopleCRM. Upgrade below to unlock all capabilities.
           </p>
           }
@@ -63,21 +63,21 @@
         @if (details()?.stripeCustomerId) {
         <button
           type="button"
-          class="btn btn-secondary btn-sm rounded-lg flex items-center gap-1.5"
+          class="btn btn-outline btn-secondary btn-sm gap-1.5"
           [disabled]="actionPending()"
           (click)="openPortal()"
         >
           <pc-icon name="cog-6-tooth" />
-          Manage Subscription
+          Manage subscription
         </button>
         } @if (details()?.isMockMode && details()?.hasActiveSubscription) {
         <button
           type="button"
-          class="btn btn-outline btn-error btn-sm rounded-lg"
+          class="btn btn-outline btn-error btn-sm"
           [disabled]="actionPending()"
           (click)="cancelMock()"
         >
-          Mock Cancel Subscription
+          Mock cancel subscription
         </button>
         }
       </div>
@@ -87,7 +87,7 @@
     <div class="card bg-base-100 border border-base-200 rounded-2xl p-6 space-y-4">
       <h4 class="text-xs uppercase font-bold tracking-wider text-base-content/50">Billing Account</h4>
 
-      <div class="space-y-3 text-sm">
+      <div class="space-y-3 text-xs">
         <div>
           <span class="text-base-content/50 block text-xs">Organization Tenant ID</span>
           <span class="font-mono text-base-content/80 font-medium"
@@ -110,7 +110,7 @@
   <div class="space-y-6">
     <div>
       <h3 class="text-xl font-bold tracking-tight text-base-content">Upgrade Options</h3>
-      <p class="text-sm text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
+      <p class="text-xs text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
     </div>
 
     <div class="grid gap-6 md:grid-cols-3">
@@ -136,7 +136,7 @@
 
           <div class="flex items-baseline text-base-content">
             <span class="text-4xl font-extrabold tracking-tight">$49</span>
-            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+            <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
           </div>
 
           <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
@@ -162,7 +162,7 @@
         <div class="mt-6 pt-4">
           <button
             type="button"
-            class="btn btn-primary w-full rounded-xl"
+            class="btn btn-primary w-full"
             [disabled]="details()?.plan === 'grassroots' || actionPending()"
             (click)="subscribe('grassroots')"
           >
@@ -199,7 +199,7 @@
 
           <div class="flex items-baseline text-base-content">
             <span class="text-4xl font-extrabold tracking-tight">$199</span>
-            <span class="text-sm font-semibold text-base-content/60 ml-1">/ month</span>
+            <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
           </div>
 
           <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
@@ -229,7 +229,7 @@
         <div class="mt-6 pt-4">
           <button
             type="button"
-            class="btn btn-primary w-full rounded-xl"
+            class="btn btn-primary w-full"
             [disabled]="details()?.plan === 'representative' || actionPending()"
             (click)="subscribe('representative')"
           >
@@ -277,7 +277,7 @@
         <div class="mt-6 pt-4">
           <a
             href="mailto:support@peoplecrm.example.com?subject=Enterprise Inquiry"
-            class="btn btn-outline btn-neutral w-full rounded-xl"
+            class="btn btn-outline btn-secondary w-full"
           >
             Contact Sales
           </a>

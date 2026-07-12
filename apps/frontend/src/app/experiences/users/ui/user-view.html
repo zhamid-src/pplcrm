@@ -1,59 +1,111 @@
 <pc-detail-layout
   [title]="displayName() || 'User'"
   [eyebrow]="'User'"
+  [subtitle]="detail()?.email"
+  [avatarText]="initials()"
   [crumbs]="crumbs()"
   [isLoading]="loading()"
   [error]="error()"
   [hasRecord]="!initialized() || !!detail()"
-  [showDelete]="true"
+  [showActions]="false"
+  [showDelete]="canDelete()"
   [deleteText]="'Delete user'"
-  [btn1Text]="'Edit user'"
-  [btn1Icon]="'pencil-square'"
   [positionLabel]="recordNav.positionLabel()"
   [hasPrev]="recordNav.hasPrev()"
   [hasNext]="recordNav.hasNext()"
   [prevLabel]="recordNav.prevLabel()"
   [nextLabel]="recordNav.nextLabel()"
-  (save)="editUser()"
   (delete)="deleteUser()"
   (prevRecord)="recordNav.goToPrev()"
   (nextRecord)="recordNav.goToNext()"
 >
-  @if (detail()) {
-  <!-- Main Content Grid -->
+  @if (status(); as chip) {
+  <pc-status-badge pc-title-suffix [type]="chip.tone">{{ chip.label }}</pc-status-badge>
+  }
+
+  <button
+    pc-actions-prefix
+    class="btn btn-outline btn-secondary btn-sm gap-2"
+    type="button"
+    (click)="triggerPasswordReset()"
+    [disabled]="resettingPassword()"
+  >
+    <pc-icon name="lock-closed" [size]="4"></pc-icon>
+    {{ resettingPassword() ? 'Sending link…' : 'Send password reset' }}
+  </button>
+
+  @if (showDeactivateAction()) {
+  <li pc-overflow-extra>
+    <button type="button" class="text-warning" (click)="deactivateUser()" [disabled]="lifecycleBusy()">
+      <pc-icon name="archive-box" [size]="4"></pc-icon>
+      Deactivate user
+    </button>
+  </li>
+  } @if (detail()) {
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: User Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-          <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ detail()?.role }}
-        </pc-status-badge>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
-            <span>Verified:</span>
-            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
-              {{ detail()?.verified ? 'Yes' : 'No' }}
-            </pc-status-badge>
-          </pc-detail-row>
-        </div>
-
-        <pc-system-metadata
-          [createdAt]="detail()?.created_at"
-          [updatedAt]="detail()?.updated_at"
-          layout="col"
-          dateFormat="medium"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Metadata & Activity -->
+    <!-- Left column: identity form, stats, activity log -->
     <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Cards Grid -->
+      <pc-card title="Profile" subtitle="Their name appears on tasks, notes and the Activity log.">
+        <form class="space-y-4" (submit)="save($event)" novalidate>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <pc-input
+              id="first_name"
+              label="First name"
+              [formField]="form.first_name"
+              autocomplete="given-name"
+            ></pc-input>
+            <pc-input
+              id="last_name"
+              label="Last name"
+              [formField]="form.last_name"
+              autocomplete="family-name"
+            ></pc-input>
+            <div class="sm:col-span-2">
+              <pc-input
+                id="email"
+                label="Email address"
+                type="email"
+                [formField]="form.email"
+                autocomplete="email"
+              ></pc-input>
+              <p class="mt-1 text-xs text-base-content/50">
+                Email is how they sign in — changing it sends a confirmation to the new address first.
+              </p>
+            </div>
+          </div>
+
+          <!-- Dirty state narrated, not implied (§2) -->
+          <div class="flex items-center justify-between gap-3 border-t border-base-200 pt-4">
+            <p class="text-xs text-base-content/60">
+              @if (unsavedChanges.dirtyCount() > 0) {
+              <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                Unsaved changes · {{ unsavedChanges.dirtyCount() }} {{ unsavedChanges.dirtyCount() === 1 ? 'field' :
+                'fields' }}
+              </span>
+              } @else {
+              <span>All changes saved.</span>
+              }
+            </p>
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-outline btn-accent btn-sm"
+                type="button"
+                (click)="resetForm()"
+                [disabled]="saving() || !form().dirty()"
+              >
+                Reset
+              </button>
+              <button class="btn btn-primary btn-sm" type="submit" [disabled]="saving() || !form().dirty()">
+                @if (saving()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } Save user
+              </button>
+            </div>
+          </div>
+        </form>
+      </pc-card>
+
       @if (stats()) {
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         @for (card of activityCards(); track card.key) {
@@ -66,28 +118,102 @@
       </div>
       }
 
-      <!-- Account Metadata -->
-      <!-- Account Metadata -->
-      <pc-card title="Account Metadata">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
+      <pc-card title="Activity log">
+        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right column: access + account -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-card title="Access" subtitle="Role, security and sign-in facts.">
+        <!-- Lifecycle context strip: names the limbo state, offers its one exit (§3) -->
+        @if (lifecycleStrip(); as strip) {
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-xs"
+          [class]="strip.tone === 'warning' ? 'bg-warning/15' : 'bg-base-200 text-base-content/70'"
+        >
+          <span>{{ strip.text }}</span>
+          @if (strip.action === 'resend') {
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-xs gap-1"
+            (click)="resendInvite()"
+            [disabled]="lifecycleBusy()"
+          >
+            <pc-icon name="paper-airplane" [size]="3"></pc-icon>
+            {{ strip.actionLabel }}
+          </button>
+          } @else if (strip.action === 'reactivate') {
+          <button
+            type="button"
+            class="btn btn-outline btn-warning btn-xs gap-1"
+            (click)="reactivateUser()"
+            [disabled]="lifecycleBusy()"
+          >
+            <pc-icon name="arrow-path" [size]="3"></pc-icon>
+            {{ strip.actionLabel }}
+          </button>
+          }
+        </div>
+        }
+
+        <!-- Role: instant-apply with explained locks (§2) -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-base-content/70" for="user-role">Role</label>
+          @if (roleLock(); as reason) {
+          <select
+            id="user-role"
+            class="select select-bordered select-sm w-full"
+            disabled
+            [attr.aria-label]="'Role — ' + reason"
+          >
+            <option>{{ roleLabel() }}</option>
+          </select>
+          <p class="mt-1 text-xs text-warning">{{ reason }}</p>
+          } @else {
+          <select
+            id="user-role"
+            class="select select-bordered select-sm w-full"
+            [class.animate-saved-flash]="roleFlash()"
+            [disabled]="roleSaving()"
+            [attr.aria-label]="'Role for ' + displayName()"
+            (change)="changeRole($event)"
+          >
+            @for (r of roleChoices(); track r) {
+            <option [value]="r" [selected]="r === detail()?.role">{{ roleLabelFor(r) }}</option>
+            }
+          </select>
+          <p class="mt-1 text-xs text-base-content/50">Applies immediately — no save needed.</p>
+          }
+        </div>
+
+        <div class="border-t border-base-200 pt-4">
           <pc-detail-item
-            label="Created"
-            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
+            label="Two-factor auth"
+            [value]="detail()?.two_factor_enabled ? 'Enabled' : 'Not set up'"
+            [icon]="detail()?.two_factor_enabled ? 'check-circle' : 'x-circle'"
           ></pc-detail-item>
+          <pc-detail-item label="Last active" [value]="lastActiveLabel()"></pc-detail-item>
           <pc-detail-item
-            label="Last updated"
-            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+            label="Email verified"
+            [value]="detail()?.verified ? 'Yes' : 'Not yet'"
+            [icon]="detail()?.verified ? 'check-circle' : 'x-circle'"
           ></pc-detail-item>
         </div>
       </pc-card>
 
-      <!-- Activity log track -->
-      <pc-card title="Activity Log">
-        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
-        </div>
+      <pc-card title="Account" subtitle="System identifiers and timestamps.">
+        <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+        <pc-detail-item
+          label="Member since"
+          [value]="detail()?.created_at ? (detail()?.created_at | date: 'mediumDate') : null"
+        ></pc-detail-item>
+        <pc-detail-item
+          label="Last updated"
+          [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+        ></pc-detail-item>
       </pc-card>
     </div>
   </div>

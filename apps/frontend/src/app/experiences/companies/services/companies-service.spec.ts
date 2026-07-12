@@ -129,7 +129,7 @@ describe('CompaniesService', () => {
       const mockResponse = { inserted: 3, skipped: 1, file_name: 'companies.csv' };
       mockApi.companies.import.mutate.mockResolvedValue(mockResponse);
 
-      const result = await service.import([{ name: 'Acme' }], 1, 'companies.csv');
+      const result = await service.import({ rows: [{ name: 'Acme' }], skipped: 1, file_name: 'companies.csv' });
 
       expect(mockApi.companies.import.mutate).toHaveBeenCalledWith({
         rows: [{ name: 'Acme' }],

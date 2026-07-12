@@ -80,11 +80,12 @@ async function createPerson(db: any, tenantId: string, campaignId: string, house
   return String(result.id);
 }
 
-async function createList(db: any, tenantId: string, userId: string) {
+async function createList(db: any, tenantId: string, userId: string, campaignId: string) {
   const result = await db
     .insertInto('lists')
     .values({
       tenant_id: tenantId,
+      campaign_id: campaignId,
       name: `List-${rand()}`,
       object: 'people',
       createdby_id: userId,
@@ -201,7 +202,7 @@ describe('TeamsController', () => {
   it('should create a team, auto-tag volunteers, and set the captain', async () => {
     const captainId = await createPerson(db, tenantId, campaignId, householdId, userId);
     const memberId = await createPerson(db, tenantId, campaignId, householdId, userId);
-    const listId = await createList(db, tenantId, userId);
+    const listId = await createList(db, tenantId, userId, campaignId);
 
     const created = await controller.addTeam(auth, {
       name: 'Canvassing Team',
@@ -263,7 +264,7 @@ describe('TeamsController', () => {
 
   it('should return a team with captain name, lead user name, and lists', async () => {
     const captainId = await createPerson(db, tenantId, campaignId, householdId, userId);
-    const listId = await createList(db, tenantId, userId);
+    const listId = await createList(db, tenantId, userId, campaignId);
 
     const created = await controller.addTeam(auth, {
       name: 'Full Team',
@@ -331,7 +332,7 @@ describe('TeamsController', () => {
     const created = await controller.addTeam(auth, { name: 'List Team' });
     expect(await controller.getAssignedLists(auth, created.id)).toEqual([]);
 
-    const listId = await createList(db, tenantId, userId);
+    const listId = await createList(db, tenantId, userId, campaignId);
     await controller.updateTeam(auth, created.id, { list_ids: [listId] });
 
     const lists = await controller.getAssignedLists(auth, created.id);

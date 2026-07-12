@@ -87,10 +87,10 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('web_forms').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('background_jobs').where('tenant_id', '=', tenantId).execute();
@@ -129,6 +129,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: listId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Newsletter Subscribers',
         object: 'people',
         is_dynamic: false,
@@ -144,6 +145,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: formId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Newsletter Form',
         slug: 'newsletter-form',
         description: 'Public newsletter signup form',
@@ -258,6 +260,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: formId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Newsletter Form',
         slug: 'newsletter-merge-form',
         status: 'published',
@@ -299,6 +302,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: formId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Newsletter Form',
         slug: 'newsletter-honeypot-form',
         status: 'published',
@@ -327,7 +331,7 @@ describe('WebFormsController Integration', () => {
     expect(person).toBeUndefined();
   });
 
-  it('should automatically apply Donor tag when submitting a donation web form', async () => {
+  it('should NOT tag donor on donation form submits — donor is derived from donations (§15)', async () => {
     // 1. Create a Web Form definition of type donation
     const formId = randomUUID();
     await db
@@ -335,6 +339,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: formId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Donation Form Test',
         slug: 'donation-form-test',
         status: 'published',
@@ -393,7 +398,8 @@ describe('WebFormsController Integration', () => {
       .execute();
 
     const tagNames = personTags.map((t: any) => t.name);
-    expect(tagNames).toContain('donor');
+    // "Donor" retired as a tag (§15): it is derived from the donations table.
+    expect(tagNames).not.toContain('donor');
     expect(tagNames).toContain('source: donation form test');
   });
 
@@ -405,6 +411,7 @@ describe('WebFormsController Integration', () => {
       .values({
         id: formId,
         tenant_id: tenantId,
+        campaign_id: campaignId,
         form_type: 'standard',
         name: 'Required Fields Test',
         slug: 'required-fields-test',
@@ -453,6 +460,7 @@ describe('WebFormsController lifecycle', () => {
   let tenantId: string;
   let tenantSlug: string;
   let userId: string;
+  let campaignId: string;
 
   const auth = () => ({ tenant_id: tenantId, user_id: userId, session_id: 'test-session', name: 'Test User' });
   const tenant = () => ({ id: tenantId, slug: tenantSlug });
@@ -462,6 +470,7 @@ describe('WebFormsController lifecycle', () => {
     tenantId = seed.tenantId;
     tenantSlug = seed.tenantSlug;
     userId = seed.userId;
+    campaignId = seed.campaignId;
   });
 
   afterEach(async () => {
@@ -606,6 +615,7 @@ describe('WebFormsController lifecycle', () => {
       .values({
         id: randomUUID(),
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: 'Donation page',
         slug: 'donation-page',
         status: 'published',

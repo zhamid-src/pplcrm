@@ -4,13 +4,14 @@ import { RouterLink } from '@angular/router';
 import { ActivityService } from '../services/activity.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { PcIconNameType } from '@icons/icons.index';
 import { UserService } from '../../../services/user.service';
 import { IAuthUser } from '../../../../../../../libs/common/src';
 
 @Component({
   selector: 'pc-activity-feed',
-  imports: [DatePipe, RouterLink, Icon],
+  imports: [DatePipe, RouterLink, Icon, GridHeaderComponent],
   templateUrl: './activity-feed.html',
   styles: [
     `
@@ -228,7 +229,7 @@ export class ActivityFeed implements OnInit {
       case 'create':
         return 'Created';
       case 'update':
-        return 'Edited';
+        return 'Updated';
       case 'delete':
         return 'Deleted';
       case 'merge':

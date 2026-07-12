@@ -1,5 +1,6 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { vi, describe, beforeEach, afterEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AuthService } from '../../auth/auth-service';
@@ -55,6 +56,7 @@ describe('ProfilePage', () => {
     await TestBed.configureTestingModule({
       imports: [ProfilePage],
       providers: [
+        provideRouter([]),
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: UserService, useValue: mockUserSvc },
@@ -92,18 +94,19 @@ describe('ProfilePage', () => {
     expect(component['initials']()).toBe('JD');
   });
 
-  it('should build activity cards from the loaded stats snapshot', async () => {
+  it('should build the activity sentences from the loaded stats snapshot', async () => {
     fixture.detectChanges();
     await flush();
 
-    const cards = component['activityCards']();
-    expect(cards).toHaveLength(4);
-    expect(cards.find((c) => c.key === 'emails')).toMatchObject({
-      title: 'Emails Assigned',
-      value: 4,
-      subtitle: '2 open · 2 closed',
+    const rows = component['activityRows']();
+    expect(rows).toHaveLength(3);
+    expect(rows.find((r) => r.key === 'emails')).toMatchObject({
+      count: '4 conversations',
+      rest: 'assigned to you — 2 open · 2 closed',
+      link: '/inbox',
     });
-    expect(cards.find((c) => c.key === 'imports')).toMatchObject({ value: 1, subtitle: '50 people imported' });
+    expect(rows.find((r) => r.key === 'contacts')).toMatchObject({ count: '10 contacts', link: '/people' });
+    expect(rows.find((r) => r.key === 'files')).toMatchObject({ count: '1 import · 2 exports' });
   });
 
   it('should treat a viewer role as read-only via isViewer', async () => {

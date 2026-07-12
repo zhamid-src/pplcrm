@@ -38,6 +38,7 @@ import type { QueryParams } from '../../lib/base.repo';
 import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
 import { parseProfilePreferences } from '../../lib/profile-preferences';
+import { getPlanLimits } from '../billing/usage-limits';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
@@ -47,7 +48,8 @@ import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { seedOnboardingData } from './onboarding-seed';
+import { seedStarterForms } from './onboarding-seed';
+import { seedDemoData } from '../demo/demo-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
@@ -67,6 +69,186 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   constructor() {
     super(new AuthUsersRepo());
+  }
+
+  /**
+   * Admin deactivation: sets `deactivated_at` (indefinite, blocks sign-in, revokes sessions).
+   * Deliberately NOT `deletion_scheduled_at` — that column hard-deletes via the deletion worker
+   * and is auto-cleared when the user signs back in.
+   */
+  public async adminDeactivateUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can deactivate users.');
+    }
+
+    const targetId = String(userId);
+    if (targetId === auth.user_id) {
+      throw new BadRequestError('You cannot deactivate yourself.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot deactivate owner accounts.');
+    }
+    if (authUser.deactivated_at) {
+      throw new BadRequestError('This account is already deactivated.');
+    }
+
+    const deactivatedAt = new Date();
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deactivated_at: deactivatedAt, updated_at: deactivatedAt, updatedby_id: auth.user_id })
+        .where('id', '=', targetId)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      // Deactivation takes effect immediately, not at next token expiry.
+      await this.sessions.deleteByUserId(targetId, auth.tenant_id, trx);
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: targetId,
+          quantity: 1,
+          metadata: {
+            id: targetId,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            changes: { deactivated_at: { from: null, to: deactivatedAt.toISOString() } },
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true, deactivated_at: deactivatedAt };
+  }
+
+  /** Reverses admin deactivation; also clears a self-scheduled deletion so there is one way back. */
+  public async adminReactivateUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can reactivate users.');
+    }
+
+    const targetId = String(userId);
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: targetId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot reactivate owner accounts.');
+    }
+    if (!authUser.deactivated_at && !authUser.deletion_scheduled_at) {
+      throw new BadRequestError('This account is already active.');
+    }
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deactivated_at: null, deletion_scheduled_at: null, updated_at: new Date(), updatedby_id: auth.user_id })
+        .where('id', '=', targetId)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: targetId,
+          quantity: 1,
+          metadata: {
+            id: targetId,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            changes: {
+              deactivated_at: { from: authUser.deactivated_at ?? null, to: null },
+              ...(authUser.deletion_scheduled_at
+                ? { deletion_scheduled_at: { from: authUser.deletion_scheduled_at, to: null } }
+                : {}),
+            },
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true };
+  }
+
+  /** Re-sends the invitation email to a user who hasn't activated yet, with a fresh temp password + code. */
+  public async adminResendInvite(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can resend invitations.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: String(userId) });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot resend invitations for owners.');
+    }
+    if (authUser.verified) {
+      throw new BadRequestError('This user has already activated their account.');
+    }
+    if (authUser.deactivated_at) {
+      throw new BadRequestError('This account is deactivated — reactivate it before resending the invitation.');
+    }
+
+    const tempPassword = this.generateTempPassword();
+    const password = await hashPassword(tempPassword);
+
+    await repo.transaction().execute(async (trx) => {
+      // The old temp password stops working; the emailed activation link carries a fresh code.
+      await trx
+        .updateTable('authusers')
+        .set({ password, updated_at: new Date(), updatedby_id: auth.user_id })
+        .where('id', '=', String(authUser.id))
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      const codeObj = await repo.addPasswordResetCode(authUser.id, trx);
+      await this.enqueueInviteEmail(trx, {
+        to: authUser.email,
+        tenantId: auth.tenant_id,
+        firstName: authUser.first_name,
+        inviterName: auth.name,
+        tempPassword,
+        code: codeObj?.password_reset_code,
+      });
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'authusers',
+          entity_id: String(authUser.id),
+          quantity: 1,
+          metadata: {
+            id: String(authUser.id),
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+            action: 'resend_invite',
+          },
+        },
+        trx,
+      );
+    });
+
+    return { success: true };
   }
 
   public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
@@ -285,11 +467,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
+      let tenant_demo_mode_at: Date | null = null;
       let tenant_slug: string | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at', 'slug'])
+          .select(['deletion_scheduled_at', 'paused_at', 'demo_mode_at', 'slug'])
           .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
@@ -298,6 +481,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (tenant?.paused_at) {
           tenant_paused_at = tenant.paused_at;
         }
+        tenant_demo_mode_at = tenant?.demo_mode_at ?? null;
         tenant_slug = tenant?.slug ?? null;
       }
 
@@ -308,6 +492,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
+        tenant_demo_mode_at,
         tenant_slug,
       };
     } catch (err) {
@@ -447,6 +632,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
       )
       .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
       .execute();
 
     if (activeOwners.length > 0) {
@@ -458,7 +644,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .selectFrom('authusers')
       .select(['id'])
       .where('tenant_id', '=', tenantId)
-      .where('deletion_scheduled_at', 'is', null);
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null);
 
     if (excludeUserId) {
       query = query.where('id', '!=', excludeUserId);
@@ -502,6 +689,32 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       suspended_at: tenant.suspended_at ?? null,
       paused_at: tenant.paused_at ?? null,
     };
+  }
+
+  /** Seat usage for the invite/users UI: plan name, seat limit, and seats consumed (invited counts too). */
+  public async getSeatUsage(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    const plan = (tenant.subscription_plan as string | null) || 'free';
+    const limits = getPlanLimits(plan);
+
+    // Matches the billing usage check: every non-deactivated login (including pending invites) holds a seat.
+    const seatRow = await db
+      .selectFrom('authusers')
+      .select((eb) => eb.fn.countAll().as('cnt'))
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
+      .executeTakeFirst();
+
+    return { plan, seatLimit: limits.seats, seatsUsed: Number(seatRow?.cnt ?? 0) };
   }
 
   public async getUserById(auth: IAuthKeyPayload, id: string) {
@@ -583,25 +796,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.profiles.add({ row: profileRow }, trx);
 
       const codeObj = await repo.addPasswordResetCode(user.id, trx);
-      const code = codeObj?.password_reset_code;
-      await this.mailService.enqueueMail(
-        {
-          to: email,
-          tenant_id: auth.tenant_id,
-          subject: `You've been invited to join ${auth.name} on PplCRM`,
-          text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}`,
-          html: `<h2>You've Been Invited!</h2>
-<p>Hi ${input.first_name},</p>
-<p>You have been invited to join the campaign team by <strong>${auth.name}</strong>.</p>
-<p>To join the team, activate your account, and set up your password, click the button below:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Activate Account</a>
-</div>
-<p>Your temporary password is: <code>${tempPassword}</code></p>
-<p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
-        },
-        trx,
-      );
+      await this.enqueueInviteEmail(trx, {
+        to: email,
+        tenantId: auth.tenant_id,
+        firstName: input.first_name,
+        inviterName: auth.name,
+        tempPassword,
+        code: codeObj?.password_reset_code,
+      });
 
       await this.userActivity.log(
         {
@@ -693,13 +895,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const refreshHash = hashToken(refreshToken);
 
       // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
-      // itself identifies which session (and therefore tenant) this is.
+      // itself identifies which session (and therefore tenant) this is. Rotated sessions are
+      // accepted here (their reuse window is checked below) so concurrent renewals replaying the
+      // same cookie don't strand a tab.
       // eslint-disable-next-line local/no-unscoped-db-query
       const session = await this.sessions.db
         .selectFrom('sessions')
-        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at'])
+        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at', 'status'])
         .where('refresh_token', '=', refreshHash)
-        .where('status', '=', 'active')
+        .where('status', 'in', ['active', 'rotated'])
         .executeTakeFirst();
 
       if (!session) {
@@ -707,6 +911,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       }
 
       const now = new Date();
+
+      // A rotated session's refresh token stays honored for a short reuse window so concurrent
+      // renewals (two tabs cold-loading with the same cookie, or a rotation response lost to a
+      // dev-server restart) succeed instead of signing a tab out. Beyond the window, a replay is
+      // treated as a stolen/reused token. `last_used_at` was stamped at rotation time by
+      // markRotatedBySessionHash, so here it is the rotation timestamp.
+      if (session.status === 'rotated') {
+        const rotatedAgoMs = session.last_used_at ? now.getTime() - session.last_used_at.getTime() : Infinity;
+        if (rotatedAgoMs > ROTATION_REUSE_GRACE_MS) {
+          throw new UnauthorizedError();
+        }
+      }
 
       if (session.expires_at && session.expires_at < now) {
         throw new UnauthorizedError('Session has expired. Please sign in again.');
@@ -732,15 +948,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         throw new UnauthorizedError();
       }
 
-      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry) and drop
-      // the old session so a stolen or replayed refresh token can't be reused.
+      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry). The old
+      // session is marked rotated rather than deleted: the auth gates stop accepting it
+      // immediately, but its refresh token remains replayable within ROTATION_REUSE_GRACE_MS (see
+      // above) so a sibling tab holding the same cookie can still re-auth. Access tokens that
+      // still reference it recover via the client's refresh-and-retry on UNAUTHORIZED.
       const tokens = await this.createTokens({
         user_id: String(session.user_id),
         tenant_id: String(session.tenant_id),
         name: user.first_name ?? '',
         existingExpiresAt: session.expires_at ?? null,
       });
-      await this.sessions.deleteBySessionHash(session.session_id);
+      if (session.status === 'active') {
+        await this.sessions.markRotatedBySessionHash(session.session_id, String(session.tenant_id));
+      }
+      // Sweep this user's rotated sessions whose reuse window has passed — they're inert.
+      await this.sessions.deleteRotatedBefore(
+        String(session.user_id),
+        String(session.tenant_id),
+        new Date(now.getTime() - ROTATION_REUSE_GRACE_MS),
+      );
       return tokens;
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -792,7 +1019,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const user = await this.getRepo()
       .db.selectFrom('authusers')
-      .select(['email', 'first_name', 'tenant_id'])
+      .select(['email', 'first_name', 'tenant_id', 'verified'])
       .where('password_reset_code', '=', hashToken(code))
       .executeTakeFirst();
 
@@ -800,11 +1027,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new BadRequestError('Invalid or expired password reset link.');
     }
 
-    // Check if the code is valid
+    // Check if the code is valid. An unverified user is activating an invitation — that link
+    // lives 7 days; a password reset for an established account stays short-lived.
     const msec = await this.getCodeAge(code);
-    // 15 minutes in milliseconds
-    if (msec > 15 * 60 * 1000) {
-      throw new BadRequestError('The code is expired. Please request a new code');
+    if (user.verified) {
+      if (msec > PASSWORD_RESET_CODE_MAX_AGE_MS) {
+        throw new BadRequestError('The code is expired. Please request a new code');
+      }
+    } else if (msec > INVITE_ACTIVATION_MAX_AGE_MS) {
+      throw new BadRequestError('This invitation has expired. Ask an administrator to send a new one.');
     }
 
     await this.getRepo()
@@ -1010,6 +1241,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
 
+    // Checked before the verified/deletion branches: a deactivated account must not receive
+    // "verify your email" guidance, and signing in must NOT auto-restore it (that shortcut is
+    // only for self-scheduled deletion below).
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
+    }
+
     if (!user.verified) {
       throw new ForbiddenError(
         'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
@@ -1123,7 +1361,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
         await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
 
-        // Create a default campaign for the new tenant
+        // Create the tenant's permanent office context (Campaigns §15). Election
+        // campaigns are added later by the user; this one always exists.
         const campaign = await trx
           .insertInto('campaigns')
           .values({
@@ -1131,7 +1370,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             admin_id: user.id,
             createdby_id: user.id,
             updatedby_id: user.id,
-            name: `${input.organization} Campaign`,
+            name: `${input.organization} Office`,
+            kind: 'office',
+            status: 'active',
           })
           .returning('id')
           .executeTakeFirstOrThrow();
@@ -1176,7 +1417,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .where('id', '=', tenant_id)
           .execute();
 
-        await seedOnboardingData({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        // Starter forms survive exit-demo; the demo dataset does not — see modules/demo.
+        const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
+        await seedDemoData(
+          {
+            tenant_id,
+            user_id: userId,
+            campaign_id: String(campaign.id),
+            placeholder_household_id: String(placeholderHousehold.id),
+            forms: starterForms,
+          },
+          trx,
+        );
 
         const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
         const verificationCode = codeObj?.password_reset_code;
@@ -1225,8 +1477,20 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (!existing) throw new NotFoundError('User not found');
     const existingUser = existing as AuthUsersType;
 
+    const isRoleChange = data.role !== undefined && data.role !== existingUser.role;
+
+    // Nobody edits their own role — not even an owner. Losing owner/admin by accident is a
+    // lockout risk, and granting yourself more access must go through another admin/owner.
+    if (isRoleChange && userId === auth.user_id) {
+      throw new ForbiddenError('You cannot change your own role.');
+    }
+
+    if (isRoleChange && existingUser.deactivated_at) {
+      throw new BadRequestError('Deactivated accounts keep their role. Reactivate the account first.');
+    }
+
     if (callerRole === 'user') {
-      if (data.role !== undefined && data.role !== existingUser.role) {
+      if (isRoleChange) {
         throw new ForbiddenError('You do not have permission to change roles.');
       }
     }
@@ -1498,6 +1762,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         .where('tenant_id', '=', user.tenant_id)
         .execute();
       throw new BadRequestError('Invalid verification code.');
+    }
+
+    if (user.deactivated_at) {
+      throw new ForbiddenError('This account has been deactivated. Contact an administrator to restore access.');
     }
 
     if (!user.verified) {
@@ -1795,6 +2063,40 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
+  /** The invitation email — initial invite and admin resend share the copy. */
+  private async enqueueInviteEmail(
+    trx: Transaction<Models>,
+    opts: {
+      to: string;
+      tenantId: string;
+      firstName: string;
+      inviterName: string | undefined;
+      tempPassword: string;
+      code: string | null | undefined;
+    },
+  ) {
+    const inviter = opts.inviterName || 'your team';
+    await this.mailService.enqueueMail(
+      {
+        to: opts.to,
+        tenant_id: opts.tenantId,
+        subject: `You've been invited to join ${inviter} on PplCRM`,
+        text: `Hi ${opts.firstName},\n\nYou have been invited to join the campaign team by ${inviter}.\n\nYour temporary password is: ${opts.tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${opts.code}\n\nThis invitation expires in 7 days.`,
+        html: `<h2>You've Been Invited!</h2>
+<p>Hi ${opts.firstName},</p>
+<p>You have been invited to join the campaign team by <strong>${inviter}</strong>.</p>
+<p>To join the team, activate your account, and set up your password, click the button below:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/new-password?code=${opts.code}" class="btn">Activate Account</a>
+</div>
+<p>Your temporary password is: <code>${opts.tempPassword}</code></p>
+<p>This invitation expires in 7 days.</p>
+<p class="warning">If you did not expect this invitation, you can safely ignore this email.</p>`,
+      },
+      trx,
+    );
+  }
+
   private generateTempPassword(length = 18) {
     return randomBytes(Math.max(12, Math.ceil(length / 2)))
       .toString('base64url')
@@ -1903,6 +2205,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       email_verified: this.coerceBoolean(record['verified']),
       two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
       deletion_scheduled_at: this.coerceDate(record['deletion_scheduled_at']),
+      deactivated_at: this.coerceDate(record['deactivated_at']),
+      last_active_at: this.coerceDate(record['last_active_at']),
       created_at: this.coerceDate(record['created_at']),
       updated_at: this.coerceDate(record['updated_at']),
       previous_email: (record['previous_email'] as string | null | undefined) ?? null,
@@ -1990,7 +2294,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 }
 
+const PASSWORD_RESET_CODE_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
+const INVITE_ACTIVATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+// How long a rotated-away refresh token may still be replayed (concurrent tabs sharing one cookie).
+const ROTATION_REUSE_GRACE_MS = 60 * 1000;
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated

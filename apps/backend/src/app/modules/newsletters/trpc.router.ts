@@ -21,9 +21,11 @@ const sendTestSchema = z.object({
 export const NewslettersRouter = router({
   ...crud,
 
-  getEngagementStats: authProcedure
+  getReport: authProcedure.input(idSchema).query(({ input, ctx }) => newsletters.getReport(ctx.auth.tenant_id, input)),
+
+  createClickersList: authProcedure
     .input(idSchema)
-    .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
+    .mutation(({ input, ctx }) => newsletters.createClickersList(ctx.auth, input)),
 
   send: authProcedure
     .input(idSchema)

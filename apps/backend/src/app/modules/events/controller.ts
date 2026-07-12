@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { publicOrgName } from '../../lib/public-tenant';
 import { logger } from '../../logger';
 import { WorkflowsController } from '../workflows/controller';
@@ -16,6 +17,7 @@ const RSVP_RATE_LIMIT_MAX = 5;
 const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 export class EventsController extends BaseController<'events', EventsRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
   constructor() {
     super(new EventsRepo());
   }
@@ -41,6 +43,11 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
     const row = {
       tenant_id: auth.tenant_id,
+      // The context this event belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: payload.campaign_id,
+      }),
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
       name: payload.name,

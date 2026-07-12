@@ -109,7 +109,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Newsletters',
         route: '/newsletters',
-        icon: 'megaphone',
+        icon: 'mailbox',
         shortcut: 'n',
       },
       {
@@ -130,14 +130,6 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'currency-dollar',
         shortcut: 'o',
       },
-      // Wave 3J: Fundraising (donation pages, §12) folds under Donations. Kept
-      // here so the feature stays reachable until the Donations page links to it.
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-        shortcut: 'r',
-      },
     ],
   },
   {
@@ -148,21 +140,15 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Canvassing',
         route: '/canvassing',
-        icon: 'map-pin',
+        icon: 'route',
         shortcut: 'v',
       },
       {
         name: 'Deliveries',
         route: '/deliveries',
-        icon: 'map-pin',
+        icon: 'house-modern',
         // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
         // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-        shortcut: 'e',
       },
       {
         name: 'Teams',
@@ -170,20 +156,11 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'user-group',
         shortcut: 't',
       },
-      // Wave 3K: Shifts (§15) folds into Teams. Kept here so the feature stays
-      // reachable until the Teams page surfaces shifts.
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-        shortcut: 's',
-      },
     ],
   },
   {
     name: `DATA`,
     type: 'subheading',
-    collapsed: true,
     children: [
       {
         // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
@@ -209,19 +186,13 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Issues',
         route: '/issues',
-        icon: 'shield-exclamation',
+        icon: 'chat-bubble-bottom-center-text',
       },
       {
         name: `Automations`,
         route: '/automations',
         icon: 'cog',
         shortcut: 'a',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
       },
     ],
   },

@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
@@ -10,7 +11,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
 import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 
@@ -31,9 +32,10 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
     Icon,
     RouterModule,
     PcDetailHeader,
-    PcEntityOverview,
+    PcCard,
     PcAddressFormGroup,
     GeocodeChip,
+    DatePipe,
   ],
   templateUrl: './household-form.html',
 })
@@ -48,6 +50,9 @@ export class HouseholdForm implements OnInit {
   private _loading = createLoadingGate();
 
   protected readonly household = signal<Selectable<Households> | null>(null);
+
+  /** Member count for the Overview rail — loaded alongside the household (§6). */
+  protected readonly peopleCount = signal(0);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
     const households: PcBreadcrumb = { label: 'Households', route: '/households' };
@@ -341,6 +346,11 @@ export class HouseholdForm implements OnInit {
       this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
       await this.getTags();
       this.refreshForm();
+      try {
+        this.peopleCount.set(await this.householdsSvc.getPeopleCount(id));
+      } catch {
+        this.peopleCount.set(0);
+      }
     } finally {
       end();
     }

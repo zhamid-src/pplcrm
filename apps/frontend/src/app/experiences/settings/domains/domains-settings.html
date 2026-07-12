@@ -21,7 +21,7 @@
         } Add Domain
       </button>
     </form>
-    <p class="text-[13px] text-base-content/50 mt-2">
+    <p class="text-xs text-base-content/50 mt-2">
       Verify your domain ownership by adding DNS records to your registrar. Once verified, you can send newsletters from
       addresses under this domain.
     </p>
@@ -36,7 +36,7 @@
       class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
     >
       <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
-      <p class="font-medium text-sm">No custom domains configured yet.</p>
+      <p class="font-medium text-xs">No custom domains configured yet.</p>
       <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
     </div>
     } @else {
@@ -77,7 +77,7 @@
         @if (expandedDomain() === item.domain) {
         <div class="p-5 bg-base-100 border-t border-base-100 space-y-5 animate-slide-down">
           <div class="space-y-1">
-            <h4 class="text-sm font-bold text-base-content/90">DNS Verification Setup</h4>
+            <h4 class="text-xs font-bold text-base-content/90">DNS Verification Setup</h4>
             <p class="text-xs text-base-content/60">
               Please add the following CNAME and TXT records to your DNS provider (e.g. Cloudflare, GoDaddy, Namecheap)
               to verify domain sending authorization, link branding, and DMARC policy validation.
@@ -279,7 +279,7 @@
               @if (verifyingDomain() === item.domain) {
               <span class="loading loading-spinner loading-xs mr-2"></span>
               Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
-              <span class="countdown font-mono text-sm"
+              <span class="countdown font-mono text-xs"
                 ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
               >s } @else {
               <pc-icon name="arrow-path" class="mr-2"></pc-icon>

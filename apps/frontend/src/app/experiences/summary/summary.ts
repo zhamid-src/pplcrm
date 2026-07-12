@@ -7,6 +7,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { SlaDetails } from './sla-details';
 import { GettingStartedCard } from './getting-started-card';
+import { DemoModeCard } from './demo-mode-card';
 import { AuthService } from '../../auth/auth-service';
 
 interface UpcomingEvent {
@@ -24,7 +25,7 @@ interface DraftNewsletter {
 }
 
 @Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, RouterLink],
+  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })

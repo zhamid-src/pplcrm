@@ -11,21 +11,30 @@ export interface PlanLimits {
   contacts: number;
   seats: number;
   emails: number;
+  /** Storage quota in bytes. */
+  storageBytes: number;
 }
 
 const settingsRepo = new SettingsRepo();
 const mailService = new TransactionalEmailService();
 
+const GB = 1024 * 1024 * 1024;
+
 export function getPlanLimits(planName: string | null | undefined): PlanLimits {
   switch (planName?.toLowerCase()) {
     case 'grassroots':
-      return { price: '$49/month', contacts: 5000, seats: 3, emails: 5000 };
+      return { price: '$49/month', contacts: 5000, seats: 3, emails: 5000, storageBytes: 5 * GB };
     case 'representative':
-      return { price: '$199/month', contacts: 50000, seats: 10, emails: 50000 };
+      return { price: '$199/month', contacts: 50000, seats: 10, emails: 50000, storageBytes: 25 * GB };
     default:
       // Free / Trial Tier
-      return { price: '$0/month (Free Trial)', contacts: 500, seats: 1, emails: 500 };
+      return { price: '$0/month (Free Trial)', contacts: 500, seats: 1, emails: 500, storageBytes: 1 * GB };
   }
+}
+
+/** Rounds a byte count to GB with one decimal place, for the coarse-grained usage/alerting resources. */
+function bytesToGB(bytes: number): number {
+  return Math.round((bytes / GB) * 10) / 10;
 }
 
 export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
@@ -53,6 +62,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
     .select(db.fn.countAll().as('cnt'))
     .where('tenant_id', '=', tenantId)
     .where('deletion_scheduled_at', 'is', null)
+    .where('deactivated_at', 'is', null)
     .executeTakeFirst();
   const currentSeats = Number(seatsCountRow?.cnt || 0);
 
@@ -91,6 +101,14 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
 
   const totalEmailsSent = emailsSent + newslettersSent;
 
+  // 4. Sum uploaded file storage
+  const storageRow = await db
+    .selectFrom('files')
+    .select(db.fn.sum('size_bytes').as('total'))
+    .where('tenant_id', '=', tenantId)
+    .executeTakeFirst();
+  const currentStorageBytes = Number(storageRow?.total || 0);
+
   // Retrieve existing warning status from settings
   const alertSettingsRow = await settingsRepo.getByKey({
     tenant_id: tenantId,
@@ -128,6 +146,13 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
       current: totalEmailsSent,
       limit: planLimits.emails,
       unit: 'sent emails',
+    },
+    {
+      name: 'file storage',
+      key: 'storage',
+      current: bytesToGB(currentStorageBytes),
+      limit: bytesToGB(planLimits.storageBytes),
+      unit: 'GB used',
     },
   ];
 
@@ -206,11 +231,12 @@ async function sendLimitEmail(
         ]),
       )
       .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
       .execute();
     adminsCache.push(...(admins as any));
   }
 
-  const billingPageUrl = `${env.appUrl}/settings?tab=billing`;
+  const billingPageUrl = `${env.appUrl}/workspace/billing`;
   const planNameUpper = planName.toUpperCase();
   const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
   const prefix = pct === 100 ? 'reached' : 'approaching';

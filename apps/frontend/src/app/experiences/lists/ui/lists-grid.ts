@@ -1,15 +1,15 @@
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { UpdateListType } from '../../../../../../../libs/common/src';
+import { describeListDefinition } from '@experiences/lists/services/list-definition';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { describeListDefinition } from '@experiences/lists/services/list-definition';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UpdateListType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -33,22 +33,30 @@ function escapeHtml(value: string): string {
 
 @Component({
   selector: 'pc-lists-grid',
-  imports: [DataGrid],
+  imports: [DataGrid, Icon, GridHeaderComponent],
+  host: { class: 'block h-full' },
   template: `
-    <div class="flex flex-col gap-4">
-      <!-- Where am I going? The grain sentence carries the numbers before clicks (§1). -->
-      <p class="text-sm text-base-content/70 tabular-nums" data-testid="lists-summary">{{ summarySentence() }}</p>
+    <div class="flex h-full min-h-0 flex-col gap-4 p-6">
+      <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
+           own in-grid title/toolbar are switched off below so this is the only header, and its
+           p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
+      <pc-grid-header title="Lists" [totalSentence]="summarySentence()">
+        <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          <span>New list</span>
+        </button>
+      </pc-grid-header>
 
       <pc-datagrid
         #grid
-        title="Lists"
-        i18n-title
-        description="Reusable audiences for outreach, canvassing and forms — smart lists that refresh themselves or static snapshots you curate."
-        i18n-description
+        class="min-h-0 flex-1"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
         [allowFilter]="false"
+        [enableSelection]="false"
+        [showToolbar]="false"
+        [showColumnMenus]="false"
         plusIcon="add-list"
         i18n-plusIcon
         addRoute="add"
@@ -65,13 +73,19 @@ function escapeHtml(value: string): string {
   `,
   providers: [
     { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'list',
+        entityNounPlural: 'lists',
+        exportEntity: 'lists',
+        exportFileName: 'lists-export.csv',
+      },
+    }),
   ],
 })
-export class ListsGridComponent implements OnInit, OnDestroy {
+export class ListsGridComponent implements OnInit {
   private readonly refreshSvc = inject(ListsRefreshService);
   private readonly listsSvc = inject(ListsService);
-  private readonly alerts = inject(AlertService);
   private readonly router = inject(Router);
   private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
 
@@ -125,11 +139,10 @@ export class ListsGridComponent implements OnInit, OnDestroy {
       headerName: 'List',
       cellRenderer: (p: CellParams) => {
         const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
-        return `<span class="link link-hover text-primary font-medium">${escapeHtml(name)}</span>`;
+        return `<span class="cursor-pointer text-xs font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary">${escapeHtml(name)}</span>`;
       },
       onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
     },
-    { field: 'description', headerName: 'Description', editable: true },
     {
       field: 'is_dynamic',
       headerName: 'Type',
@@ -170,60 +183,11 @@ export class ListsGridComponent implements OnInit, OnDestroy {
       },
     },
     {
-      field: 'refresh_action',
-      headerName: 'Refresh',
-      cellRenderer: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        if (!isSmart) return '—';
-        const status = p?.data?.['status'];
-        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
-        if (status === 'refreshing' || isLocallyRefreshing) {
-          return `
-            <div class="flex items-center justify-center h-full w-full">
-              <span class="loading loading-ring loading-lg text-primary"></span>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center justify-center h-full w-full">
-            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh smart list">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          </div>
-        `;
-      },
-      onCellClicked: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        const id = String(p?.data?.['id'] ?? '');
-        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
-        if (isSmart && id && !isRefreshing) {
-          void this.refreshList(id, p);
-        }
-      },
-    },
-    {
-      field: 'last_refreshed_at',
-      headerName: 'Last refreshed',
-      valueFormatter: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        if (!isSmart) return '—';
-        if (!p?.value) return 'Never';
-        return formatDateTime(p.value);
-      },
-    },
-    {
       field: 'updated_at',
       headerName: 'Updated',
       valueFormatter: (p: CellParams) => formatDateTime(p?.value),
     },
-    { field: 'created_by', headerName: 'Created by' },
   ];
-
-  private readonly refreshingIds = new Set<string>();
-
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   /** Open the People/Households grid with this list applied as a chip. */
   private openListOnGrid(data: unknown): void {
@@ -232,68 +196,5 @@ export class ListsGridComponent implements OnInit, OnDestroy {
     if (!id) return;
     const route = data['object'] === 'households' ? '/households' : '/people';
     void this.router.navigate([route], { queryParams: { listId: id } });
-  }
-
-  private async refreshList(id: string, cellParams: CellParams): Promise<void> {
-    try {
-      this.refreshingIds.add(id);
-      this.refreshCellIfPossible(cellParams);
-
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      await this.listsSvc.refreshList(id);
-      this.pollRefreshStatus(id);
-    } catch (e) {
-      this.refreshingIds.delete(id);
-      this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
-    }
-  }
-
-  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
-  private refreshCellIfPossible(cellParams: unknown): void {
-    if (!isRecord(cellParams)) return;
-    const api = cellParams['api'];
-    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
-    (api['refreshCells'] as (opts: unknown) => void)({
-      rowNodes: [cellParams['node']],
-      columns: ['refresh_action'],
-      force: true,
-    });
-  }
-
-  private pollRefreshStatus(id: string): void {
-    const existing = this.pollIntervals.get(id);
-    if (existing) clearInterval(existing);
-
-    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
-    this.pollIntervals.set(id, interval);
-  }
-
-  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
-    try {
-      const list = await this.listsSvc.getById(id);
-      if (isRecord(list) && list['status'] !== 'refreshing') {
-        clearInterval(interval);
-        this.pollIntervals.delete(id);
-        this.refreshingIds.delete(id);
-        if (isRecord(list) && list['status'] === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        void this.grid()?.refresh();
-        void this.loadCounts();
-      }
-    } catch {
-      clearInterval(interval);
-      this.pollIntervals.delete(id);
-      this.refreshingIds.delete(id);
-    }
-  }
-
-  public ngOnDestroy(): void {
-    for (const interval of this.pollIntervals.values()) {
-      clearInterval(interval);
-    }
   }
 }

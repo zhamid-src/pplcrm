@@ -105,11 +105,13 @@ describe('DonationsController Unit & Integration', () => {
   let tenantId: string;
   let userId: string;
   let personId: string;
+  let campaignId: string;
 
   beforeEach(async () => {
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
     userId = seed.userId;
+    campaignId = seed.campaignId;
     personId = seed.personId;
   });
 
@@ -167,6 +169,7 @@ describe('DonationsController Unit & Integration', () => {
         .insertInto('donations')
         .values({
           tenant_id: tenantId,
+          campaign_id: campaignId,
           person_id: personId,
           amount: 100000,
           status: 'succeeded',

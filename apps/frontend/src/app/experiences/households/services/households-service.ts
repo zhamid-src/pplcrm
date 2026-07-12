@@ -7,6 +7,7 @@ import {
 } from '../../../../../../../libs/common/src';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
 @Service()
 export class HouseholdsService extends AbstractAPIService<'households', never> {
@@ -22,6 +23,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
 
   public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
     return this.api.households.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  /** CSV import wizard (spec §17) — queues a background households import. */
+  public import(input: RouterInputs['households']['import']): Promise<RouterOutputs['households']['import']> {
+    return this.api.households.import.mutate(input);
   }
 
   public count(): Promise<number> {
@@ -67,6 +73,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
 
   public getPeopleCount(id: string) {
     return this.api.households.getPeopleCount.query(id);
+  }
+
+  /** Most recent canvass at this household's door, or null if never canvassed. */
+  public getLastCanvass(id: string) {
+    return this.api.households.getLastCanvass.query(id);
   }
 
   public update(id: string, data: UpdateHouseholdsType) {

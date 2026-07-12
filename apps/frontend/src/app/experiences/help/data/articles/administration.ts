@@ -5,8 +5,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     id: 'profile',
     category: 'admin',
     title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    summary: 'Your photo, your details, and your account facts — plus a snapshot of your own activity.',
     keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
     related: ['users-roles', 'settings', 'getting-around'],
     blocks: [
@@ -22,7 +21,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. The **Email notifications** card on your Profile — grouped into “About your work” and “About your data” — flips each email alert on or off, and every switch applies instantly (there is nothing to save). For the full grid with separate email and in-app switches, open **Settings** from the avatar menu. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page: choose, per event, whether you are alerted by email and in-app — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
@@ -51,15 +50,26 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — and an **MFA** column so you can see at a glance who has multi-factor sign-in turned on. Your own role is locked in the grid: you can’t change or demote yourself, which prevents an accidental self-lockout.',
+        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page — everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role — it applies immediately, and locked roles say why — and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
       {
         kind: 'list',
         items: [
           '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
           '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
           '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
         ],
       },
       {
@@ -75,7 +85,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access — deactivated accounts keep their role.',
       },
     ],
   },
@@ -157,6 +167,11 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
       },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
       { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
       {
         kind: 'p',
@@ -171,6 +186,63 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'The log is a teaching tool',
         text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces — how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context — the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it — supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in — click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level** — Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection** — each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation — consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign — data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either — archive them instead, so their history and attribution stay intact.',
       },
     ],
   },

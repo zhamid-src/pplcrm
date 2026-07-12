@@ -27,6 +27,10 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
       },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record — subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
       { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
       {
         kind: 'list',
@@ -46,32 +50,40 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
   {
     id: 'files',
     category: 'productivity',
-    title: 'Files',
-    summary: 'One shared library for the documents your team actually reuses — uploaded once, findable by everyone.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'library'],
-    related: ['grid-basics', 'export'],
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
     blocks: [
       {
         kind: 'p',
-        text: 'The [Files](/files) area is your workspace’s shared drive inside the CRM: flyers, scripts, permits, photos — uploaded once, visible to the team, and searchable like any grid.',
+        text: 'Files no longer live in their own standalone library — a file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
       },
-      { kind: 'h2', id: 'upload', text: 'Add and find files' },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Files](/files)', detail: 'The grid lists every uploaded file with its details.' },
-          { title: 'Upload', detail: 'Pick the file and it lands in the library, ready to open or download.' },
           {
-            title: 'Find it later',
-            detail: 'Search with `⌘K` or the grid filters — naming files descriptively pays off here.',
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
           },
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Name for your future self',
-        text: '“2026-06 canvassing script v2.pdf” beats “final_FINAL.pdf” every time someone searches.',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments — free up space first if attachments matter for that send.',
       },
     ],
   },

@@ -7,9 +7,13 @@ import { Icon } from '@icons/icon';
   template: `
     <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
-        <!-- Breadcrumb-styled title: matches the crumb trail on view/edit pages -->
-        <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-xs text-base-content/50">
-          <h1 class="max-w-48 truncate font-medium text-base-content/60">{{ title() }}</h1>
+        <!-- The visible page title is the navbar breadcrumb's first crumb; keep an
+             sr-only h1 so the page still has an accessible heading. -->
+        <h1 class="sr-only">{{ title() }}</h1>
+        <div class="flex items-center gap-1.5">
+          @if (countText(); as text) {
+            <p class="text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
+          }
           @if (description()) {
             <button
               type="button"
@@ -21,10 +25,7 @@ import { Icon } from '@icons/icon';
               <pc-icon name="information-circle" [size]="4"></pc-icon>
             </button>
           }
-        </nav>
-        @if (countText(); as text) {
-          <p class="mt-0.5 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
-        }
+        </div>
         @if (descriptionOpen() && description()) {
           <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
         }

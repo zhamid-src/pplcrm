@@ -30,7 +30,10 @@ type Generated<T> =
 
 export interface Models {
   authusers: AuthUsers;
+  campaign_person_facts: CampaignPersonFacts;
+  campaign_subscriptions: CampaignSubscriptions;
   campaigns: Campaigns;
+  email_suppressions: EmailSuppressions;
   households: Households;
   map_campaigns_users: MapCampaignsUsers;
   map_households_tags: MapHouseholdsTags;
@@ -198,9 +201,48 @@ interface AuthUsers extends RecordType {
   two_factor_expires_at: Timestamp | null;
   two_factor_attempts: Generated<number>;
   deletion_scheduled_at: Timestamp | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. NULL = active. */
+  deactivated_at: Timestamp | null;
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
+}
+
+/** Per-campaign email CONSENT (§15). Address health lives in EmailSuppressions; DNC on Persons. */
+interface CampaignSubscriptions extends RecordType {
+  campaign_id: string;
+  person_id: string;
+  email: string;
+  /** 'subscribed' | 'pending' (double opt-in) | 'unsubscribed'. Sendable = subscribed. */
+  status: Generated<string>;
+  /** 'form' (express) | 'import' | 'manual' (implied) | 'copied' (carry-over). */
+  consent_source: Generated<string>;
+  consent_at: Timestamp | null;
+  unsubscribed_at: Timestamp | null;
+}
+
+/** Global per-address suppression (§15): a hard bounce / spam complaint kills the address everywhere. */
+interface EmailSuppressions {
+  id: Generated<string>;
+  tenant_id: string;
+  email: string;
+  reason: string;
+  occurred_at: Generated<Timestamp>;
+  created_at: Generated<Timestamp>;
+}
+
+/** Campaign-scoped person facts (§15): support level + voting status. No row / NULL = Unknown. */
+interface CampaignPersonFacts extends RecordType {
+  campaign_id: string;
+  person_id: string;
+  support_level: string | null;
+  support_source: string | null;
+  support_recorded_by: string | null;
+  support_recorded_at: Timestamp | null;
+  voting_status: string | null;
+  voting_source: string | null;
+  voting_recorded_by: string | null;
+  voting_recorded_at: Timestamp | null;
 }
 
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
@@ -211,10 +253,15 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   enddate: string | null;
   name: string;
   notes: string | null;
+  /** 'office' = the permanent constituency-office context; 'election' = a time-bounded run. */
+  kind: Generated<string>;
+  /** 'active' | 'archived' — archived campaigns are read-only history. */
+  status: Generated<string>;
 }
 
 export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: string;
+  /** Provenance only ("first captured in") — households are tenant-wide, never campaign-scoped. */
+  campaign_id: string | null;
   createdby_id: string;
   file_id: string | null;
   home_phone: string | null;
@@ -266,6 +313,9 @@ interface MapTeamsPersons extends JunctionRecordType {
 // Deliveries (spec §14). "routed" is intentionally NOT a column on delivery_requests — it is
 // derived from an active (pending) delivery_route_stops row (one source of truth).
 export interface DeliveryRequests extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   household_id: string;
   person_id: string | null;
   web_form_id: string | null;
@@ -276,6 +326,9 @@ export interface DeliveryRequests extends RecordType {
 }
 
 export interface DeliveryRoutes extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   status: Generated<'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled'>;
   volunteer_person_id: string | null;
@@ -315,6 +368,9 @@ interface MapTeamsLists extends JunctionRecordType {
  * turf_knocks at read time, never stored here (§22.6).
  */
 interface Turfs extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   status: string;
   list_id: string | null;
@@ -385,7 +441,12 @@ export interface MapWebFormsLists extends JunctionRecordType {
 }
 
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: string;
+  /** Provenance only ("first captured in") — persons are tenant-wide, never campaign-scoped. */
+  campaign_id: string | null;
+  /** Global compliance override (§15): suppresses contact in every campaign context. */
+  do_not_contact: Generated<boolean>;
+  /** Channels the DNC applies to ('email' | 'phone' | 'door'); null = all channels. */
+  do_not_contact_channels: string[] | null;
   household_id: string | null;
   createdby_id: string;
   first_name: string | null;
@@ -403,8 +464,6 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   facebook: string | null;
   instagram: string | null;
   assigned_to: string | null;
-  opt_in_status: string | null;
-  opt_in_confirmed_at: Timestamp | null;
   preferred_contact: string | null;
   /**
    * Opaque public identifier — 8 Crockford Base32 chars (40 CSPRNG bits),
@@ -439,6 +498,9 @@ interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
 }
 
 export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   person_id: string | null;
   amount: number;
   status: Generated<string>;
@@ -458,6 +520,9 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
 }
 
 export interface DonationPeriods extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   start_date: ColumnType<Date, Date | string, Date | string>;
   end_date: ColumnType<Date, Date | string, Date | string> | null;
@@ -466,6 +531,9 @@ export interface DonationPeriods extends RecordType {
 }
 
 export interface DonationPledges extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   person_id: string | null;
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
@@ -501,6 +569,9 @@ interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'u
 }
 
 export interface Lists extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   object: 'people' | 'households';
@@ -549,9 +620,13 @@ interface Tenants extends RecordType, AddressType {
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;
   paused_at: Timestamp | null;
+  /** Demo mode: set while the seeded test-drive data is present; NULL = exited/never. */
+  demo_mode_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {
+  /** The campaign context this email was synced into (§15). */
+  campaign_id: string;
   folder_id: string;
   from_email: string | null;
   /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
@@ -565,6 +640,8 @@ interface Emails extends RecordType {
 }
 
 interface Newsletters extends RecordType {
+  /** The context this newsletter belongs to (§15); recipients are filtered by its consent. */
+  campaign_id: string;
   name: string;
   status: string;
   subject: string | null;
@@ -588,7 +665,6 @@ interface Newsletters extends RecordType {
   html_content: string | null;
   plain_text_content: string | null;
   top_links: Json | null;
-  attachments: Json | null;
 }
 
 export interface NewsletterEvents {
@@ -602,6 +678,10 @@ export interface NewsletterEvents {
   url: string | null;
   ip: string | null;
   user_agent: string | null;
+  /** SendGrid's human-readable failure reason (bounce/dropped events only). */
+  reason: string | null;
+  /** SendGrid bounce sub-type: 'bounce' = hard, 'blocked' = soft. */
+  bounce_type: string | null;
   timestamp: Timestamp;
   created_at: Generated<Timestamp>;
 }
@@ -624,6 +704,9 @@ export interface PersonNewsletterEngagements {
 }
 
 interface WebForms extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   redirect_url: string | null;
@@ -692,6 +775,8 @@ interface EmailAttachments extends RecordType {
 }
 
 interface EmailDrafts extends RecordType {
+  /** The campaign context this draft belongs to (§15). */
+  campaign_id: string;
   user_id: string;
   thread_id: string | null;
   to_list: JsonValue | null;
@@ -830,6 +915,8 @@ export interface DismissedDuplicateGroups {
 interface MsOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;
@@ -846,6 +933,8 @@ interface MsOauthTokens {
 export interface GoogleOauthTokens {
   id: Generated<string>;
   tenant_id: string;
+  /** The campaign context this mailbox connection belongs to (§15). */
+  campaign_id: string;
   user_id: string | null;
   access_token: string;
   refresh_token: string;
@@ -904,6 +993,9 @@ export interface Files {
   storage_key: string;
   sha256_hex: string | null;
   uploaded_by: string | null;
+  /** Polymorphic link — what this file belongs to (e.g. 'newsletter', 'team'). Null for untethered uploads. */
+  entity_type: string | null;
+  entity_id: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -947,6 +1039,9 @@ export interface VolunteerShifts extends RecordType {
 }
 
 export interface Events extends RecordType {
+  /** The context this record belongs to (Campaigns §15); backfilled to the office. */
+  campaign_id: string;
+
   name: string;
   description: string | null;
   location_address: string | null;

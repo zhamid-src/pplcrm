@@ -1,11 +1,33 @@
+/* Fill whatever height the page grants so the body scrolls inside the shell and the
+   pagination footer stays pinned. In auto-height parents `height: 100%` resolves to
+   auto, so embedded grids (list-form preview box, list-view tabs) keep growing
+   naturally with the page. */
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
 /* lock layout + neutralize cell padding/borders */
 :host table {
   table-layout: fixed;
 }
 
+/* The body scrolls inside the shell, so headers must pin or they scroll out of view.
+   Needs its own background (the tr's doesn't travel with a sticky cell) and to sit
+   above the pinned body cells (z-10/z-20). */
+:host thead th {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background-color: var(--color-base-100);
+}
+
 :host table :where(th, td) {
   box-sizing: border-box;
   vertical-align: middle;
+  /* Shared table density token — single source of truth in styles.css (pc-table contract). */
+  padding-block: var(--pc-table-cell-py, 0.375rem);
 }
 
 :host table tbody td {

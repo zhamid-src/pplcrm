@@ -235,7 +235,7 @@ describe('FundraisingFormComponent', () => {
     expect(mockFormsSvc.delete).toHaveBeenCalledWith('page-123');
     expect(mockFormsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Donation page deleted');
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['/donation-pages']);
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/donations']);
   });
 
   it('should not delete when the confirmation dialog is rejected', async () => {

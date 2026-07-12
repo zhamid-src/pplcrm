@@ -48,8 +48,8 @@ describe('HouseholdView', () => {
 
     mockHouseholdsSvc = {
       getById: vi.fn().mockResolvedValue(mockHouseholdData),
-      getTags: vi.fn().mockResolvedValue(['donor', 'volunteer']),
       getPeopleCount: vi.fn().mockResolvedValue(3),
+      getLastCanvass: vi.fn().mockResolvedValue(null),
     };
 
     mockPersonsSvc = {
@@ -118,37 +118,34 @@ describe('HouseholdView', () => {
     fixture.detectChanges();
   });
 
-  it('should initialize and load household details, tags, and people count', async () => {
+  it('should initialize and load household details, people count, and last canvass', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(component).toBeTruthy();
     expect(component['id']()).toBe('123');
     expect(mockHouseholdsSvc.getById).toHaveBeenCalledWith('123');
-    expect(mockHouseholdsSvc.getTags).toHaveBeenCalledWith('123', 'tag');
     expect(mockHouseholdsSvc.getPeopleCount).toHaveBeenCalledWith('123');
+    expect(mockHouseholdsSvc.getLastCanvass).toHaveBeenCalledWith('123');
 
     expect(component['household']()).toEqual(mockHouseholdData);
-    expect(component['tags']()).toEqual(['donor', 'volunteer']);
     expect(component['peopleCount']()).toBe(3);
     expect(component['addressString']()).toBe('1600 Amphitheatre Pkwy, Mountain View, CA');
   });
 
-  it('should copy text to clipboard and show success alert', async () => {
-    const clipboardMock = {
-      writeText: vi.fn().mockResolvedValue(undefined),
-    };
-    Object.defineProperty(navigator, 'clipboard', {
-      value: clipboardMock,
-      writable: true,
+  it('adds a "Canvassed" segment to the subtitle only when a knock exists', async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // No canvass mocked → subtitle has no "Canvassed" segment.
+    expect(component['subtitle']()).not.toContain('Canvassed');
+
+    component['lastCanvass'].set({
+      knocked_at: new Date('2026-05-02T12:00:00Z'),
+      canvasser_name: 'Dana',
+      outcome: 'home',
     });
-
-    component['copyToClipboard']('555-555-5555', 'Phone');
-    expect(clipboardMock.writeText).toHaveBeenCalledWith('555-555-5555');
-
-    // Allow promise resolve microtasks
-    await new Promise((r) => setTimeout(r, 0));
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Phone copied to clipboard');
+    expect(component['subtitle']()).toContain('Canvassed');
   });
 
   it('should format addressString from individual fields when formatted_address is empty', async () => {

@@ -21,5 +21,7 @@ export const RecordDonationObj = z.object({
   personId: idSchema,
   amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
   method: donationMethodSchema,
+  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
 });
 export type RecordDonationType = z.infer<typeof RecordDonationObj>;

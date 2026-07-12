@@ -12,19 +12,23 @@ import { sql } from 'kysely';
 import type { QueryParams } from '../../lib/base.repo';
 import { BaseRepository } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
-import { uniqueSlug } from '../../lib/slug';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
+import { StorageService } from '../../lib/storage.service';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
 import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { OperationDataType, TypeId, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
 
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
+  private importsRepo = new ImportsRepo();
   private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
   private settingsController = new SettingsController();
+  private storageService = new StorageService();
   private tagsRepo = new TagsRepo();
 
   constructor() {
@@ -77,7 +81,6 @@ export class HouseholdsController extends BaseController<'households', Household
     if (fp_street || fp_full) {
       const existing = await this.getRepo().findByFingerprint({
         tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
         fp_street: fp_street,
         fp_full: fp_full,
       });
@@ -311,6 +314,31 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
   }
 
+  /**
+   * Most recent canvass at this household's door — powers the "Canvassed <date>"
+   * segment of the household header subtitle. Returns null when the household has
+   * no knock on record (the subtitle then honestly drops the segment).
+   */
+  public async getLastCanvass(
+    id: string,
+    auth: IAuthKeyPayload,
+  ): Promise<{ knocked_at: Date; canvasser_name: string | null; outcome: string } | null> {
+    const row = await this.getRepo()
+      .db.selectFrom('turf_knocks')
+      .select(['knocked_at', 'canvasser_name', 'outcome'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', id)
+      .orderBy('knocked_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      knocked_at: new Date(row.knocked_at as unknown as string),
+      canvasser_name: row.canvasser_name ?? null,
+      outcome: row.outcome,
+    };
+  }
+
   public countDistinctWards(auth: IAuthKeyPayload) {
     return this.getRepo().countDistinctWards(auth.tenant_id);
   }
@@ -438,5 +466,353 @@ export class HouseholdsController extends BaseController<'households', Household
         max_attempts: 3,
       })
       .execute();
+  }
+
+  /**
+   * CSV import (spec §17): record the import in data_imports, park the mapped
+   * rows in storage, and queue a background job — same transactional-outbox
+   * shape as the persons/companies/tasks imports.
+   */
+  public async importRows(
+    input: {
+      rows: Array<Record<string, string | null | undefined>>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      source_csv?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoName = `Imported-Households-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoName}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'households',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    };
+
+    const savedImport = await this.importsRepo.add({
+      row: importRow as unknown as OperationDataType<'data_imports', 'insert'>,
+    });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      } as unknown as OperationDataType<'data_imports', 'update'>,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags: input.tags ?? [],
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'households',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  /**
+   * Background-job half of the households CSV import. Rows are deduplicated by
+   * address fingerprint — against households the tenant already has and within
+   * the file itself — matching how the persons import resolves households.
+   * Inserts go through HouseholdRepo.addMany so geocoding jobs are queued in
+   * the same transaction.
+   */
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+    const trim = (value: string | null | undefined): string | null => {
+      const text = (value ?? '').toString().trim();
+      return text.length > 0 ? text : null;
+    };
+    const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
+    for (const name of tags) {
+      const clean = (name ?? '').trim();
+      if (clean && !uniqueTagNames.has(clean.toLowerCase())) uniqueTagNames.set(clean.toLowerCase(), clean);
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and fingerprint valid rows upfront
+      type Entry = {
+        sanitized: {
+          street_num: string | null;
+          apt: string | null;
+          street1: string | null;
+          street2: string | null;
+          city: string | null;
+          state: string | null;
+          zip: string | null;
+          country: string | null;
+          home_phone: string | null;
+          notes: string | null;
+        };
+        fp_street: string | null;
+        fp_full: string | null;
+      };
+      const entries: Entry[] = [];
+      for (const raw of chunk) {
+        const sanitized = {
+          street_num: trim(raw['street_num']),
+          apt: trim(raw['apt']),
+          street1: trim(raw['street1']),
+          street2: trim(raw['street2']),
+          city: trim(raw['city']),
+          state: trim(raw['state']),
+          zip: trim(raw['zip']),
+          country: trim(raw['country']),
+          home_phone: trim(raw['home_phone']),
+          notes: trim(raw['notes']),
+        };
+        const hasAddress =
+          sanitized.street_num != null ||
+          sanitized.apt != null ||
+          sanitized.street1 != null ||
+          sanitized.street2 != null ||
+          sanitized.city != null ||
+          sanitized.state != null ||
+          sanitized.zip != null ||
+          sanitized.country != null;
+        if (!hasAddress && sanitized.home_phone == null && sanitized.notes == null) {
+          results.skipped += 1;
+          continue;
+        }
+        entries.push({
+          sanitized,
+          fp_street: hasAddress
+            ? fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              })
+            : null,
+          fp_full: hasAddress
+            ? fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              })
+            : null,
+        });
+      }
+
+      if (entries.length > 0) {
+        try {
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // 2. Dedupe against existing households by full-address fingerprint
+              const uniqueFps = [...new Set(entries.map((e) => e.fp_full).filter((fp): fp is string => fp != null))];
+              const existingFps = new Set<string>();
+              if (uniqueFps.length > 0) {
+                const existing = await trx
+                  .selectFrom('households')
+                  .select(['address_fp_full'])
+                  .where('tenant_id', '=', tenant_id)
+                  .where('address_fp_full', 'in', uniqueFps)
+                  .execute();
+                for (const h of existing) {
+                  if (h.address_fp_full) existingFps.add(h.address_fp_full);
+                }
+              }
+
+              // 3. Insert only addresses the tenant doesn't have yet (also deduped within the file)
+              const seenFps = new Set<string>();
+              const toInsert: OperationDataType<'households', 'insert'>[] = [];
+              for (const entry of entries) {
+                if (entry.fp_full && (existingFps.has(entry.fp_full) || seenFps.has(entry.fp_full))) {
+                  results.skipped += 1;
+                  continue;
+                }
+                if (entry.fp_full) seenFps.add(entry.fp_full);
+                toInsert.push({
+                  tenant_id,
+                  campaign_id: campaign_id || null,
+                  createdby_id: user_id,
+                  updatedby_id: user_id,
+                  ...entry.sanitized,
+                  address_fp_street: entry.fp_street,
+                  address_fp_full: entry.fp_full,
+                  file_id: import_id,
+                } as OperationDataType<'households', 'insert'>);
+              }
+
+              const created = toInsert.length > 0 ? await this.getRepo().addMany({ rows: toInsert }, trx) : [];
+              results.inserted += created.length;
+
+              // 4. Apply the batch-level tags to every created household
+              if (created.length > 0 && uniqueTagNames.size > 0) {
+                const tagIds: string[] = [];
+                for (const name of uniqueTagNames.values()) {
+                  const tag = await this.tagsRepo.addOrGet(
+                    {
+                      row: {
+                        name,
+                        tenant_id,
+                        createdby_id: user_id,
+                        updatedby_id: user_id,
+                      } as OperationDataType<'tags', 'insert'>,
+                      onConflictColumn: 'name',
+                    },
+                    trx,
+                  );
+                  if (tag?.id != null) tagIds.push(String(tag.id));
+                }
+                const mapRows = created
+                  .filter((h) => h?.id != null)
+                  .flatMap((h) =>
+                    tagIds.map((tag_id) => ({
+                      tenant_id,
+                      household_id: String(h.id),
+                      tag_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                    })),
+                  );
+                if (mapRows.length > 0) {
+                  await trx
+                    .insertInto('map_households_tags')
+                    .values(mapRows as unknown as OperationDataType<'map_households_tags', 'insert'>[])
+                    .onConflict((oc) => oc.doNothing())
+                    .execute();
+                }
+              }
+            });
+        } catch (err) {
+          results.errors += entries.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          households_created: results.inserted,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as unknown as OperationDataType<'data_imports', 'update'>,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill household slugs after import');
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
   }
 }

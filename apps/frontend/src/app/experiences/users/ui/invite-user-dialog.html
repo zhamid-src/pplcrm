@@ -1,0 +1,59 @@
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-5 flex items-center justify-between">
+      <h3 class="flex items-center gap-3 text-xl font-bold">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+          <pc-icon name="user-plus" [size]="5"></pc-icon>
+        </span>
+        Invite a user
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form class="flex flex-col gap-4" (submit)="submit($event)" novalidate>
+      <pc-input label="Email" type="email" placeholder="name@example.org" [formField]="form.email"></pc-input>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input label="First name" [formField]="form.first_name"></pc-input>
+        <pc-input label="Last name" [formField]="form.last_name"></pc-input>
+      </div>
+
+      <pc-select label="Role" [formField]="form.role">
+        @if (currentUserRole() === 'owner') {
+        <option value="owner">Owner — full control of the workspace</option>
+        }
+        <option value="admin">Admin — manage users and settings</option>
+        <option value="user">Editor — edit records, send, import</option>
+        <option value="viewer">Viewer — read-only access</option>
+      </pc-select>
+
+      <p class="flex items-start gap-1.5 text-xs text-base-content/50">
+        <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
+        <span>
+          Invitations expire after 7 days and take a seat right away @if (seatUsage(); as usage) { —
+          <span class="tabular-nums">{{ seatsRemaining() }}</span> of
+          <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan}.
+        </span>
+      </p>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+          <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          } Send invitation
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
+  </form>
+</dialog>

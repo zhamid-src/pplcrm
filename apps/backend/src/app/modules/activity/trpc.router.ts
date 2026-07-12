@@ -1,4 +1,4 @@
-import { getAllOptions, exportCsvInput, exportCsvResponse } from '../../../../../../libs/common/src';
+import { getAllOptions, exportCsvInput, exportCsvResponse, LogInteractionObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { ActivityController } from './controller';
@@ -26,4 +26,7 @@ export const ActivityRouter = router({
     .input(exportCsvInput)
     .output(exportCsvResponse)
     .mutation(({ input, ctx }) => activity.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
+  logInteraction: authProcedure
+    .input(LogInteractionObj)
+    .mutation(({ input, ctx }) => activity.logInteraction(ctx.auth, input)),
 });

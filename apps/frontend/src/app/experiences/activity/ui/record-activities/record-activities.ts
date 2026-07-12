@@ -111,9 +111,23 @@ export class RecordActivities {
         return 'check-circle';
       case 'reopen':
         return 'arrow-path';
+      // Human-authored interactions (Log an interaction)
+      case 'call':
+        return 'phone';
+      case 'door_knock':
+        return 'map-pin';
+      case 'note':
+        return 'envelope';
+      case 'meeting':
+        return 'user-group';
       default:
         return 'information-circle';
     }
+  }
+
+  /** True for human-authored interaction types (call/door knock/note/meeting). */
+  protected isInteraction(activity: string): boolean {
+    return activity === 'call' || activity === 'door_knock' || activity === 'note' || activity === 'meeting';
   }
 
   protected getActivityDotClass(activity: string): string {
@@ -138,6 +152,12 @@ export class RecordActivities {
         return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
       case 'reopen':
         return 'bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400';
+      // Logged interactions share one soft-primary treatment (semantic, theme-safe).
+      case 'call':
+      case 'door_knock':
+      case 'note':
+      case 'meeting':
+        return 'bg-primary/10 text-primary';
       default:
         return 'bg-gray-100 text-gray-400 dark:bg-neutral/30 dark:text-neutral-content/50';
     }
@@ -152,6 +172,12 @@ export class RecordActivities {
       return `"${str.substring(0, 40)}..."`;
     }
     return `"${str}"`;
+  }
+
+  /** Append the free-text note of a logged interaction, if any. */
+  private getNoteSuffix(meta: any): string {
+    const note = typeof meta?.['note'] === 'string' ? meta['note'].trim() : '';
+    return note ? ` — “${note}”` : '';
   }
 
   private getChangesSuffix(changes: any): string {
@@ -268,6 +294,15 @@ export class RecordActivities {
         return `closed this ${ent}`;
       case 'reopen':
         return `reopened this ${ent}`;
+      // Human-authored interactions. On households the framing is "at this door".
+      case 'call':
+        return `logged a call${this.getNoteSuffix(meta)}`;
+      case 'door_knock':
+        return `logged a door knock${this.getNoteSuffix(meta)}`;
+      case 'note':
+        return `logged a note${this.getNoteSuffix(meta)}`;
+      case 'meeting':
+        return `logged a meeting${this.getNoteSuffix(meta)}`;
       default:
         return `performed ${act.activity} on this ${ent}`;
     }

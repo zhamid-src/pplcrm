@@ -1,0 +1,480 @@
+import { describe, expect, it } from 'vitest';
+
+import { BaseRepository } from '../../lib/base.repo';
+import { useTestTransaction } from '../../lib/test-utils/db-test-isolation';
+import { seedStarterForms } from '../auth/onboarding-seed';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { DemoController } from './controller';
+import { assertNotDemoMode } from './demo-guard';
+import { DEMO_MANIFEST_SETTINGS_KEY, deleteDemoData, seedDemoData } from './demo-seed';
+import type { DemoSeedManifest } from './demo-seed';
+import {
+  DEMO_COMPANIES,
+  DEMO_EMAILS,
+  DEMO_HOUSEHOLDS,
+  DEMO_ISSUES,
+  DEMO_LISTS,
+  DEMO_NEWSLETTERS,
+  DEMO_PERSONS,
+  DEMO_SUBMISSIONS,
+  DEMO_TAGS,
+  DEMO_TASKS,
+  DEMO_USERS,
+  DEMO_VOLUNTEER_EVENTS,
+} from './demo-seed-data';
+import { ForbiddenError, NotFoundError } from '../../errors/app-errors';
+
+const rand = (): string => String(Math.floor(Math.random() * 100000000) + 10000000);
+
+describe('demo seeding and exit-demo', () => {
+  const ctx = useTestTransaction();
+
+  interface Fixture {
+    tenant_id: string;
+    user_id: string;
+    campaign_id: string;
+    placeholder_household_id: string;
+    forms: { id: string; slug: string }[];
+    manifest: DemoSeedManifest;
+  }
+
+  /** Mirrors the signUp transaction's seeding-relevant steps for one fresh tenant. */
+  async function seedFixture(): Promise<Fixture> {
+    const trx = ctx.trx;
+    const tenant_id = rand();
+    const user_id = rand();
+    const campaign_id = rand();
+    const placeholder_household_id = rand();
+
+    await trx.insertInto('tenants').values({ id: tenant_id, name: 'Demo Spec Tenant' }).execute();
+    await trx
+      .insertInto('authusers')
+      .values({
+        id: user_id,
+        tenant_id,
+        email: `demo-spec-${user_id}@example.com`,
+        password: 'password',
+        first_name: 'Demo',
+        last_name: 'Owner',
+        role: 'owner',
+        verified: true,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })
+      .execute();
+    await trx
+      .insertInto('campaigns')
+      .values({
+        id: campaign_id,
+        tenant_id,
+        admin_id: user_id,
+        name: 'Demo Spec Office',
+        kind: 'office',
+        status: 'active',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })
+      .execute();
+    await trx
+      .insertInto('households')
+      .values({
+        id: placeholder_household_id,
+        tenant_id,
+        campaign_id,
+        is_placeholder: true,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })
+      .execute();
+    await trx
+      .updateTable('tenants')
+      .set({ admin_id: user_id, createdby_id: user_id, placeholder_household_id })
+      .where('id', '=', tenant_id)
+      .execute();
+    await new TagsRepo().ensureSystemTags({ tenant_id, user_id }, trx);
+
+    const forms = await seedStarterForms({ tenant_id, user_id, campaign_id }, trx);
+    const manifest = await seedDemoData({ tenant_id, user_id, campaign_id, placeholder_household_id, forms }, trx);
+    return { tenant_id, user_id, campaign_id, placeholder_household_id, forms, manifest };
+  }
+
+  const count = async (
+    table:
+      | 'persons'
+      | 'households'
+      | 'companies'
+      | 'tags'
+      | 'tasks'
+      | 'lists'
+      | 'teams'
+      | 'volunteer_events'
+      | 'volunteer_shifts'
+      | 'newsletters'
+      | 'newsletter_events'
+      | 'web_forms'
+      | 'form_submissions'
+      | 'campaign_person_facts'
+      | 'campaign_subscriptions'
+      | 'map_peoples_tags'
+      | 'map_households_tags'
+      | 'map_lists_persons'
+      | 'map_teams_persons'
+      | 'emails'
+      | 'authusers'
+      | 'profiles',
+    tenant_id: string,
+  ): Promise<number> => {
+    const rows = await ctx.trx.selectFrom(table).select('tenant_id').where('tenant_id', '=', tenant_id).execute();
+    return rows.length;
+  };
+
+  it('seeds the full related demo dataset with pre-baked geocoding and no sample markers', async () => {
+    const f = await seedFixture();
+    const trx = ctx.trx;
+
+    expect(await count('persons', f.tenant_id)).toBe(DEMO_PERSONS.length);
+    expect(await count('households', f.tenant_id)).toBe(DEMO_HOUSEHOLDS.length + 1); // + placeholder
+    expect(await count('companies', f.tenant_id)).toBe(DEMO_COMPANIES.length);
+    expect(await count('tags', f.tenant_id)).toBe(DEMO_TAGS.length + DEMO_ISSUES.length + 2); // + system tags
+    expect(await count('tasks', f.tenant_id)).toBe(DEMO_TASKS.length);
+    expect(await count('emails', f.tenant_id)).toBe(DEMO_EMAILS.length);
+    expect(await count('authusers', f.tenant_id)).toBe(DEMO_USERS.length + 1); // + owner
+    expect(await count('profiles', f.tenant_id)).toBe(DEMO_USERS.length);
+    expect(await count('lists', f.tenant_id)).toBe(DEMO_LISTS.length);
+    expect(await count('teams', f.tenant_id)).toBe(1);
+    expect(await count('volunteer_events', f.tenant_id)).toBe(DEMO_VOLUNTEER_EVENTS.length);
+    expect(await count('newsletters', f.tenant_id)).toBe(DEMO_NEWSLETTERS.length);
+    expect(await count('web_forms', f.tenant_id)).toBe(6);
+    expect(await count('form_submissions', f.tenant_id)).toBe(DEMO_SUBMISSIONS.length);
+    expect(await count('campaign_person_facts', f.tenant_id)).toBeGreaterThan(20);
+    expect(await count('campaign_subscriptions', f.tenant_id)).toBeGreaterThan(10);
+    expect(await count('map_peoples_tags', f.tenant_id)).toBeGreaterThan(20);
+
+    // Every person belongs to a household and has an identity; some live on the placeholder.
+    const persons = await trx
+      .selectFrom('persons')
+      .select(['household_id', 'public_id', 'slug', 'first_name', 'last_name', 'created_at'])
+      .where('tenant_id', '=', f.tenant_id)
+      .execute();
+    expect(persons.every((p) => p.household_id != null)).toBe(true);
+    expect(persons.every((p) => p.public_id != null && p.slug != null)).toBe(true);
+    expect(persons.filter((p) => String(p.household_id) === f.placeholder_household_id).length).toBeGreaterThan(5);
+    expect(persons.some((p) => `${p.first_name} ${p.last_name}`.includes('['))).toBe(false);
+    // created_at is staggered so the dashboard growth chart draws a curve.
+    const days = new Set(persons.map((p) => new Date(p.created_at as unknown as string).toDateString()));
+    expect(days.size).toBeGreaterThan(10);
+
+    // Geocoding is pre-baked: located, with coordinates and a real ward.
+    const households = await trx
+      .selectFrom('households')
+      .select(['geocoding_status', 'lat', 'lng', 'ward', 'slug'])
+      .where('tenant_id', '=', f.tenant_id)
+      .where('is_placeholder', '=', false)
+      .execute();
+    expect(households).toHaveLength(DEMO_HOUSEHOLDS.length);
+    expect(households.every((h) => h.geocoding_status === 'success')).toBe(true);
+    expect(households.every((h) => h.lat != null && h.lng != null && h.ward != null)).toBe(true);
+    expect(households.every((h) => h.slug != null)).toBe(true);
+
+    // The flag and the manifest are written atomically with the data.
+    const tenant = await trx
+      .selectFrom('tenants')
+      .select('demo_mode_at')
+      .where('id', '=', f.tenant_id)
+      .executeTakeFirstOrThrow();
+    expect(tenant.demo_mode_at).not.toBeNull();
+    const manifestRow = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('key', '=', DEMO_MANIFEST_SETTINGS_KEY)
+      .executeTakeFirstOrThrow();
+    expect(manifestRow.value).toBeTruthy();
+    expect(f.manifest.persons).toHaveLength(DEMO_PERSONS.length);
+    expect(f.manifest.households).toHaveLength(DEMO_HOUSEHOLDS.length);
+    expect(f.manifest.users).toHaveLength(DEMO_USERS.length);
+    expect(f.manifest.emails).toHaveLength(DEMO_EMAILS.length);
+
+    // Issues live in the tags table with type 'issue' and carry person assignments.
+    const issues = await trx
+      .selectFrom('tags')
+      .select('name')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('type', '=', 'issue')
+      .execute();
+    expect(issues).toHaveLength(DEMO_ISSUES.length);
+
+    // Some tasks and inbox emails are assigned to the demo teammates.
+    const assignedToDemoUsers = await trx
+      .selectFrom('tasks')
+      .select('id')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('assigned_to', 'in', f.manifest.users)
+      .execute();
+    expect(assignedToDemoUsers.length).toBeGreaterThan(0);
+
+    // While in demo mode, the config guard refuses (settings/domains/sync/sending use it).
+    await expect(assertNotDemoMode(trx, f.tenant_id)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('stores newsletter aggregates that reconcile with the raw events', async () => {
+    const f = await seedFixture();
+    const trx = ctx.trx;
+
+    const sent = await trx
+      .selectFrom('newsletters')
+      .selectAll()
+      .where('tenant_id', '=', f.tenant_id)
+      .where('name', '=', 'Spring community update')
+      .executeTakeFirstOrThrow();
+    expect(sent.status).toBe('sent');
+    expect(sent.send_date).not.toBeNull();
+
+    const events = await trx
+      .selectFrom('newsletter_events')
+      .select(['email', 'event_type', 'url'])
+      .where('tenant_id', '=', f.tenant_id)
+      .where('newsletter_id', '=', String(sent.id))
+      .execute();
+    expect(events.length).toBeGreaterThan(30);
+
+    const uniqueOpeners = new Set(events.filter((e) => e.event_type === 'open').map((e) => e.email)).size;
+    const uniqueClickers = new Set(events.filter((e) => e.event_type === 'click').map((e) => e.email)).size;
+    const bounces = events.filter((e) => e.event_type === 'bounce').length;
+    const unsubs = events.filter((e) => e.event_type === 'unsubscribe').length;
+    expect(Number(sent.unique_opens)).toBe(uniqueOpeners);
+    expect(Number(sent.unique_clicks)).toBe(uniqueClickers);
+    expect(Number(sent.bounce_count)).toBe(bounces);
+    expect(Number(sent.unsubscribe_count)).toBe(unsubs);
+    expect(Number(sent.delivered_count)).toBe(Number(sent.total_recipients) - bounces);
+
+    const topLinks: unknown = typeof sent.top_links === 'string' ? JSON.parse(sent.top_links) : sent.top_links;
+    expect(Array.isArray(topLinks)).toBe(true);
+    expect((topLinks as { url: string; clicks: number }[]).length).toBeGreaterThan(0);
+  });
+
+  it('exit-demo deletes exactly the manifest rows and keeps forms, system tags, and user data', async () => {
+    const f = await seedFixture();
+    const trx = ctx.trx;
+
+    // Simulate work the user did while exploring: a real person inside a demo
+    // household (with a demo tag), and a real task.
+    const demoHouseholdId = f.manifest.households[0] as string;
+    const demoTagId = f.manifest.tags[0] as string;
+    const realPerson = await trx
+      .insertInto('persons')
+      .values({
+        tenant_id: f.tenant_id,
+        campaign_id: f.campaign_id,
+        household_id: demoHouseholdId,
+        first_name: 'Really',
+        last_name: 'Mine',
+        createdby_id: f.user_id,
+        updatedby_id: f.user_id,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await trx
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id: f.tenant_id,
+        person_id: realPerson.id,
+        tag_id: demoTagId,
+        createdby_id: f.user_id,
+        updatedby_id: f.user_id,
+      })
+      .execute();
+    // A real task assigned to a demo teammate must survive with the assignment cleared.
+    const realTask = await trx
+      .insertInto('tasks')
+      .values({
+        tenant_id: f.tenant_id,
+        name: 'My real task',
+        assigned_to: f.manifest.users[0],
+        createdby_id: f.user_id,
+        updatedby_id: f.user_id,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+
+    await deleteDemoData(
+      {
+        tenant_id: f.tenant_id,
+        user_id: f.user_id,
+        manifest: f.manifest,
+        placeholder_household_id: f.placeholder_household_id,
+      },
+      trx,
+    );
+
+    // Demo data is gone.
+    expect(await count('companies', f.tenant_id)).toBe(0);
+    expect(await count('lists', f.tenant_id)).toBe(0);
+    expect(await count('teams', f.tenant_id)).toBe(0);
+    expect(await count('volunteer_events', f.tenant_id)).toBe(0);
+    expect(await count('volunteer_shifts', f.tenant_id)).toBe(0);
+    expect(await count('newsletters', f.tenant_id)).toBe(0);
+    expect(await count('newsletter_events', f.tenant_id)).toBe(0);
+    expect(await count('form_submissions', f.tenant_id)).toBe(0);
+    expect(await count('campaign_person_facts', f.tenant_id)).toBe(0);
+    expect(await count('campaign_subscriptions', f.tenant_id)).toBe(0);
+    expect(await count('map_peoples_tags', f.tenant_id)).toBe(0);
+    expect(await count('map_households_tags', f.tenant_id)).toBe(0);
+    expect(await count('emails', f.tenant_id)).toBe(0);
+    expect(await count('profiles', f.tenant_id)).toBe(0);
+    expect(await count('authusers', f.tenant_id)).toBe(1); // owner only
+
+    // Kept: starter forms (still drafts), system tags, the user's own rows.
+    const forms = await trx.selectFrom('web_forms').select('status').where('tenant_id', '=', f.tenant_id).execute();
+    expect(forms).toHaveLength(6);
+    expect(forms.every((w) => w.status === 'draft')).toBe(true);
+    const tags = await trx.selectFrom('tags').select('name').where('tenant_id', '=', f.tenant_id).execute();
+    expect(tags.map((t) => t.name).sort()).toEqual(['staff', 'volunteer']);
+    const persons = await trx
+      .selectFrom('persons')
+      .select(['id', 'household_id'])
+      .where('tenant_id', '=', f.tenant_id)
+      .execute();
+    expect(persons).toHaveLength(1);
+    expect(String(persons[0]?.id)).toBe(String(realPerson.id));
+    // The real person was re-pointed from the demo household to the placeholder.
+    expect(String(persons[0]?.household_id)).toBe(f.placeholder_household_id);
+    const tasks = await trx
+      .selectFrom('tasks')
+      .select(['id', 'assigned_to'])
+      .where('tenant_id', '=', f.tenant_id)
+      .execute();
+    expect(tasks.map((t) => String(t.id))).toEqual([String(realTask.id)]);
+    // The demo-teammate assignment was detached before the user was deleted.
+    expect(tasks[0]?.assigned_to).toBeNull();
+    // Only the placeholder household remains.
+    const households = await trx.selectFrom('households').select('id').where('tenant_id', '=', f.tenant_id).execute();
+    expect(households.map((h) => String(h.id))).toEqual([f.placeholder_household_id]);
+
+    // Flag + manifest cleared.
+    const tenant = await trx
+      .selectFrom('tenants')
+      .select('demo_mode_at')
+      .where('id', '=', f.tenant_id)
+      .executeTakeFirstOrThrow();
+    expect(tenant.demo_mode_at).toBeNull();
+    const manifestRow = await trx
+      .selectFrom('settings')
+      .select('key')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('key', '=', DEMO_MANIFEST_SETTINGS_KEY)
+      .executeTakeFirst();
+    expect(manifestRow).toBeUndefined();
+  });
+
+  it('exitDemoMode throws NotFoundError when there is no manifest (already exited)', async () => {
+    const controller = new DemoController();
+    await expect(
+      controller.exitDemoMode({ tenant_id: rand(), user_id: rand(), session_id: 'spec-session' }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('exitDemoMode requires an active subscription, then succeeds', async () => {
+    // The controller opens its own transaction, so this test uses real rows
+    // (cleaned up in finally) instead of the rollback harness.
+    const db = BaseRepository.dbInstance;
+    const controller = new DemoController();
+    const tenant_id = rand();
+    const user_id = rand();
+    const campaign_id = rand();
+    const placeholder_household_id = rand();
+    const auth = { tenant_id, user_id, session_id: 'spec-session' };
+    const emptyManifest = {
+      version: 1,
+      companies: [],
+      households: [],
+      persons: [],
+      tags: [],
+      tasks: [],
+      lists: [],
+      teams: [],
+      volunteer_events: [],
+      newsletters: [],
+      users: [],
+      emails: [],
+    };
+
+    try {
+      await db.insertInto('tenants').values({ id: tenant_id, name: 'Demo Gate Tenant' }).execute();
+      await db
+        .insertInto('authusers')
+        .values({
+          id: user_id,
+          tenant_id,
+          email: `demo-gate-${user_id}@example.com`,
+          password: 'password',
+          first_name: 'Gate',
+          last_name: 'Owner',
+          role: 'owner',
+          verified: true,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        })
+        .execute();
+      await db
+        .insertInto('campaigns')
+        .values({
+          id: campaign_id,
+          tenant_id,
+          admin_id: user_id,
+          name: 'Demo Gate Office',
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        })
+        .execute();
+      await db
+        .insertInto('households')
+        .values({
+          id: placeholder_household_id,
+          tenant_id,
+          campaign_id,
+          is_placeholder: true,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        })
+        .execute();
+      await db
+        .updateTable('tenants')
+        .set({ placeholder_household_id, demo_mode_at: new Date() })
+        .where('id', '=', tenant_id)
+        .execute();
+      await db
+        .insertInto('settings')
+        .values({
+          tenant_id,
+          key: DEMO_MANIFEST_SETTINGS_KEY,
+          value: JSON.stringify(emptyManifest),
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        })
+        .execute();
+
+      // No plan → refused.
+      await expect(controller.exitDemoMode(auth)).rejects.toBeInstanceOf(ForbiddenError);
+
+      // Active subscription → exit proceeds and clears the flag + manifest.
+      await db.updateTable('tenants').set({ subscription_status: 'active' }).where('id', '=', tenant_id).execute();
+      const result = await controller.exitDemoMode(auth);
+      expect(result.success).toBe(true);
+      const tenant = await db
+        .selectFrom('tenants')
+        .select('demo_mode_at')
+        .where('id', '=', tenant_id)
+        .executeTakeFirstOrThrow();
+      expect(tenant.demo_mode_at).toBeNull();
+    } finally {
+      await db.deleteFrom('settings').where('tenant_id', '=', tenant_id).execute();
+      await db.updateTable('tenants').set({ placeholder_household_id: null }).where('id', '=', tenant_id).execute();
+      await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
+      await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
+      await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tenant_id).execute();
+      await db.deleteFrom('authusers').where('tenant_id', '=', tenant_id).execute();
+      await db.deleteFrom('tenants').where('id', '=', tenant_id).execute();
+    }
+  });
+});

@@ -1,0 +1,126 @@
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
+    <span
+      class="tooltip-left"
+      [class.tooltip]="seatsRemaining() === 0"
+      [attr.data-tip]="
+        seatsRemaining() === 0
+          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
+          : null
+      "
+    >
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon>
+        Invite user
+      </button>
+    </span>
+  </pc-grid-header>
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>User</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>MFA</th>
+      <th>Last active</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="isDeactivated(row)">
+      <td>
+        <div class="flex items-center gap-3">
+          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <a
+                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+                [routerLink]="['/users', row.id]"
+              >
+                {{ displayName(row) }}
+              </a>
+              @if (isSelf(row)) {
+              <span class="text-xs text-base-content/50">(you)</span>
+              }
+            </div>
+            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
+          </div>
+        </div>
+      </td>
+      <td>
+        @if (roleLockReason(row); as reason) {
+        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
+            <option>{{ roleLabel(row.role) }}</option>
+          </select>
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-32"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Role for ' + displayName(row)"
+          (change)="changeRole(row, $event)"
+        >
+          @for (r of roleOptions(row); track r) {
+          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
+          }
+        </select>
+        }
+      </td>
+      <td>
+        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
+      </td>
+      <td>
+        @if (row.two_factor_enabled) {
+        <span class="tooltip" data-tip="MFA enabled">
+          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
+        </span>
+        } @else {
+        <span class="text-base-content/30">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
+          >
+            <li>
+              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+            </li>
+            <li>
+              <a (click)="sendPasswordReset(row)">
+                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+
+    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
+      Users are staff logins — volunteers live in
+      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
+      and don't need an account.
+    </div>
+  </pc-table>
+
+  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
+</div>

@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
@@ -15,6 +16,14 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly campaignContext = inject(CampaignContextService);
+
+  /** Campaigns §15 — a mailbox connection belongs to the active context. */
+  private campaignId(): string {
+    const id = this.campaignContext.activeCampaignId();
+    if (!id) throw new Error('No active campaign selected');
+    return id;
+  }
 
   protected readonly status = signal<{
     connected: boolean;
@@ -32,13 +41,13 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
 
-
   private async loadOnInit(): Promise<void> {
+    // Connections are per-campaign, so the active context must be resolved first.
+    await this.campaignContext.ensureLoaded();
+
     // Handle OAuth redirect result (google_connected or google_error query params)
     const params = this.route.snapshot.queryParamMap;
     if (params.has('google_connected')) {
@@ -55,7 +64,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
     this.connectError.set(null);
     try {
       const returnTo = window.location.pathname + window.location.search;
-      const result = await this.api.googleSync.getAuthUrl.query({ returnTo });
+      const result = await this.api.googleSync.getAuthUrl.query({ campaignId: this.campaignId(), returnTo });
       window.location.href = result.url;
     } catch {
       this.connectError.set('Failed to initiate Google sign-in. Please try again.');
@@ -67,7 +76,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
     this.isSyncing.set(true);
     this.lastSyncResult.set(null);
     try {
-      await this.api.googleSync.syncNow.mutate();
+      await this.api.googleSync.syncNow.mutate({ campaignId: this.campaignId() });
       await this.loadStatus();
     } catch {
       this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
@@ -87,8 +96,9 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
     this.isSyncing.set(true);
     this.lastSyncResult.set(null);
     try {
-      await this.api.googleSync.resetSync.mutate();
-      await this.api.googleSync.syncNow.mutate();
+      const campaignId = this.campaignId();
+      await this.api.googleSync.resetSync.mutate({ campaignId });
+      await this.api.googleSync.syncNow.mutate({ campaignId });
       await this.loadStatus();
     } catch {
       this.alertSvc.showError('Failed to start re-sync. Please try again.');
@@ -113,7 +123,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
       cancelText: 'Keep Emails',
     });
     try {
-      await this.api.googleSync.disconnect.mutate({ removeLocalEmails: removeLocal });
+      await this.api.googleSync.disconnect.mutate({ campaignId: this.campaignId(), removeLocalEmails: removeLocal });
       this.status.set({ connected: false, googleEmail: null, syncedAt: null });
       this.lastSyncResult.set(null);
       this.alertSvc.showSuccess('Google Suite account disconnected.');
@@ -129,7 +139,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 
   private async loadStatus() {
     try {
-      const s = await this.api.googleSync.getConnectionStatus.query();
+      const s = await this.api.googleSync.getConnectionStatus.query({ campaignId: this.campaignId() });
       this.status.set(s);
       if (s?.syncing) {
         this.isSyncing.set(true);
@@ -154,7 +164,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 
   private async pollStep(): Promise<void> {
     try {
-      const s = await this.api.googleSync.getConnectionStatus.query();
+      const s = await this.api.googleSync.getConnectionStatus.query({ campaignId: this.campaignId() });
       this.status.set(s);
       if (!s?.syncing) {
         this.isSyncing.set(false);

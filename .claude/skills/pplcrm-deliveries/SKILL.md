@@ -97,3 +97,10 @@ known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
   numbers, not strings.
 - Deferred (not yet built): web-form `yard_sign` intake branch, and the manual "Add request"
   household-picker dialog (backend `addRequest` + the volunteer-assignment picker exist; wire the UI).
+
+## Campaigns (§15) — requests and routes belong to a context
+
+- `delivery_requests.campaign_id` and `delivery_routes.campaign_id` (both NOT NULL): a manual
+  request resolves the explicit input or the office fallback; a route inherits the campaign of the
+  first request it serves (`createRoutesFromPlan`).
+  See `pplcrm-campaigns` for the full contexts model.

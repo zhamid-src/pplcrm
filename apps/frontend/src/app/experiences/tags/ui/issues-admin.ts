@@ -1,11 +1,14 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddIssueDialog } from './add-issue';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
 
 /**
@@ -17,7 +20,7 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem],
+  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
@@ -25,13 +28,14 @@ export class IssuesAdmin implements OnInit {
   private readonly alertSvc = inject(AlertService);
   protected readonly actions = inject(TagAdminActions);
 
+  protected readonly addDialog = viewChild.required(AddIssueDialog);
+
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
   protected readonly loaded = this._loading.loaded;
 
   protected readonly rows = signal<TagAdminRow[]>([]);
   protected readonly peopleSharedCount = signal(0);
-  protected readonly skeletonRows = [1, 2, 3, 4, 5];
 
   /** Ranked by PEOPLE INTERESTED, descending — `getAdminList` already returns this order. */
   protected readonly ranked = computed(() => this.rows().map((row, i) => ({ rank: i + 1, row })));
@@ -47,6 +51,14 @@ export class IssuesAdmin implements OnInit {
   });
 
   public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openAddDialog(): void {
+    this.addDialog().open();
+  }
+
+  protected onIssueSaved(): void {
     void this.load();
   }
 

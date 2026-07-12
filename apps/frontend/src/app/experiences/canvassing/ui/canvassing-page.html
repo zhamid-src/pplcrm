@@ -2,11 +2,12 @@
   <!-- Header -->
   <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-semibold text-base-content">Canvassing</h1>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h1 class="sr-only">Canvassing</h1>
       @if (headline()) {
-      <p class="mt-1 text-sm text-base-content/70">{{ headline() }}</p>
+      <p class="text-xs text-base-content/70">{{ headline() }}</p>
       } @else {
-      <p class="mt-1 text-sm text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
       }
     </div>
     <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
@@ -15,15 +16,8 @@
     </button>
   </div>
 
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-bordered mb-4">
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'turfs'" (click)="selectTab('turfs')">
-      Turfs &amp; assignments
-    </button>
-    <button role="tab" class="tab" [class.tab-active]="tab() === 'report'" (click)="selectTab('report')">
-      Field report
-    </button>
-  </div>
+  <!-- Tabs (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
 
   @if (tab() === 'turfs') {
   <!-- In the field today -->
@@ -96,7 +90,7 @@
   <!-- Turf table -->
   <section class="card border border-base-300 bg-base-100">
     <div class="overflow-x-auto">
-      <table class="table table-sm">
+      <table class="table pc-table">
         <thead>
           <tr class="text-xs uppercase text-base-content/50">
             <th>Turf</th>
@@ -119,10 +113,10 @@
               <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
               }
             </td>
-            <td class="whitespace-nowrap text-sm">{{ t.door_count }} doors</td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
             <td>
               @if (t.team_name) {
-              <span class="text-sm">{{ t.team_name }}</span>
+              <span>{{ t.team_name }}</span>
               } @else {
               <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
               }
@@ -189,7 +183,7 @@
         </button>
         }
       </div>
-      <button type="button" class="btn btn-outline btn-sm" (click)="exportReport()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
         <pc-icon name="arrow-down-tray" [size]="4" />
         Export CSV
       </button>
@@ -261,7 +255,7 @@
         </div>
         } @else {
         <div class="overflow-x-auto">
-          <table class="table table-sm">
+          <table class="table pc-table">
             <thead>
               <tr class="text-xs uppercase text-base-content/50">
                 <th>Ward</th>
@@ -342,7 +336,7 @@
     <div class="card mb-4 border border-base-300 bg-base-100">
       <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
       <div class="overflow-x-auto">
-        <table class="table table-sm">
+        <table class="table pc-table">
           <thead>
             <tr class="text-xs uppercase text-base-content/50">
               <th>Team</th>

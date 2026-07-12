@@ -6,78 +6,68 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from '@frontend/auth/auth-service';
-import { UserService } from '../../../services/user.service';
 import { UserViewComponent } from './user-view';
 
-describe('UserViewComponent', () => {
+const STATS = {
+  emails_assigned: { total: 5, open: 2, closed: 3 },
+  contacts_added: { total: 10, last_created_at: new Date('2026-05-19T20:00:00Z') },
+  files_imported: { count: 1, total_rows: 50, last_activity_at: new Date('2026-05-19T20:00:00Z') },
+  files_exported: { count: 2, total_rows: 100, last_activity_at: new Date('2026-05-19T20:00:00Z') },
+};
+
+function userDetail(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'user-123',
+    email: 'john@example.com',
+    first_name: 'John',
+    last_name: 'Doe',
+    role: 'user',
+    verified: true,
+    two_factor_enabled: false,
+    deletion_scheduled_at: null,
+    deactivated_at: null,
+    created_at: new Date('2026-06-25T12:00:00Z'),
+    updated_at: new Date('2026-07-04T12:00:00Z'),
+    stats: STATS,
+    ...overrides,
+  };
+}
+
+describe('UserViewComponent (merged view + edit)', () => {
   let component: UserViewComponent;
   let fixture: ComponentFixture<UserViewComponent>;
   let mockUsersSvc: any;
   let mockAlertSvc: any;
   let mockRouter: any;
-  let mockActivatedRoute: any;
   let mockDialogSvc: any;
+  let mockAuthSvc: any;
 
-  beforeEach(async () => {
+  async function setup(detail = userDetail(), currentUser = { id: 'current-user-id', role: 'owner' }) {
+    // Some tests re-run setup with a different user/viewer; the module must be reset first.
+    TestBed.resetTestingModule();
     mockUsersSvc = {
-      getById: vi.fn(),
+      getById: vi.fn().mockResolvedValue(detail),
+      update: vi.fn().mockResolvedValue(detail),
       delete: vi.fn(),
+      deactivate: vi.fn().mockResolvedValue({ success: true }),
+      reactivate: vi.fn().mockResolvedValue({ success: true }),
+      resendInvite: vi.fn().mockResolvedValue({ success: true }),
+      adminTriggerPasswordReset: vi.fn().mockResolvedValue({ success: true }),
+      triggerRefresh: vi.fn(),
     };
-
-    mockAlertSvc = {
-      showError: vi.fn(),
-      showSuccess: vi.fn(),
-    };
-
-    mockRouter = {
-      navigate: vi.fn(),
-    };
-
-    mockActivatedRoute = {
-      snapshot: {
-        paramMap: {
-          get: vi.fn().mockReturnValue('user-123'),
-        },
-      },
-    };
-
-    mockDialogSvc = {
-      confirm: vi.fn().mockResolvedValue(true),
-    };
-
-    const mockAuthSvc = {
-      getUser: vi.fn().mockReturnValue({ id: 'current-user-id', role: 'admin' }),
-      resolveAvatarUrl: vi.fn().mockImplementation((url: string | null) => (url ? `resolved-${url}` : null)),
-    };
-
-    const mockUserService = {
-      resolveAvatarUrl: vi.fn().mockImplementation((url: string | null) => (url ? `resolved-${url}` : null)),
-    };
-
-    mockUsersSvc.getById.mockResolvedValue({
-      id: 'user-123',
-      email: 'john@example.com',
-      first_name: 'John',
-      last_name: 'Doe',
-      role: 'editor',
-      verified: true,
-      stats: {
-        emails_assigned: { total: 5, open: 2, closed: 3 },
-        contacts_added: { total: 10, last_created_at: new Date('2026-05-19T20:00:00Z') },
-        files_imported: { count: 1, total_rows: 50, last_activity_at: new Date('2026-05-19T20:00:00Z') },
-        files_exported: { count: 2, total_rows: 100, last_activity_at: new Date('2026-05-19T20:00:00Z') },
-      },
-    });
+    mockAlertSvc = { showError: vi.fn(), showSuccess: vi.fn() };
+    mockRouter = { navigate: vi.fn() };
+    mockDialogSvc = { confirm: vi.fn().mockResolvedValue(true) };
+    mockAuthSvc = { getUser: vi.fn().mockReturnValue(currentUser) };
 
     await TestBed.configureTestingModule({
       imports: [UserViewComponent],
       providers: [
         { provide: UserAdminService, useValue: mockUsersSvc },
         { provide: AuthService, useValue: mockAuthSvc },
-        { provide: UserService, useValue: mockUserService },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
-        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: vi.fn().mockReturnValue('user-123') } } } },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
       ],
     }).compileComponents();
@@ -88,58 +78,85 @@ describe('UserViewComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await setup();
   });
 
-  it('should create and load user details', async () => {
-    expect(component).toBeTruthy();
-    expect(component['loading']()).toBe(false);
+  it('should load the user and seed the identity form', () => {
     expect(component['detail']()?.id).toBe('user-123');
     expect(component['displayName']()).toBe('John Doe');
+    expect(component['payload']()).toEqual({ email: 'john@example.com', first_name: 'John', last_name: 'Doe' });
+    expect(component['status']()?.label).toBe('Active');
   });
 
-  it('should compute resolved avatarUrl when user has avatar', () => {
-    component['detail'].set({
-      id: 'user-123',
+  it('should save identity fields in place and reload', async () => {
+    component['payload'].set({ email: 'john@example.com', first_name: 'Johnny', last_name: ' Doe ' });
+    await component['save']();
+    expect(mockUsersSvc.update).toHaveBeenCalledWith('user-123', {
       email: 'john@example.com',
-      first_name: 'John',
+      first_name: 'Johnny',
       last_name: 'Doe',
-      role: 'editor',
-      verified: true,
-      avatar_url: '/uploads/avatar-123.png',
-      stats: {} as any,
-      created_at: new Date(),
-      updated_at: new Date(),
     });
-    expect(component['avatarUrl']()).toBe('resolved-/uploads/avatar-123.png');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('User updated');
+    expect(mockUsersSvc.triggerRefresh).toHaveBeenCalled();
   });
 
-  it('should return null for avatarUrl when user has no avatar', () => {
-    component['detail'].set({
-      id: 'user-123',
-      email: 'john@example.com',
-      first_name: 'John',
-      last_name: 'Doe',
-      role: 'editor',
-      verified: true,
-      avatar_url: null,
-      stats: {} as any,
-      created_at: new Date(),
-      updated_at: new Date(),
-    });
-    expect(component['avatarUrl']()).toBeNull();
+  it('should apply a role change instantly without touching the identity form', async () => {
+    const select = { value: 'admin' };
+    await component['changeRole']({ target: select } as unknown as Event);
+    expect(mockUsersSvc.update).toHaveBeenCalledWith('user-123', { role: 'admin' });
+    expect(component['detail']()?.role).toBe('admin');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Role updated — John Doe is now Admin');
+    // Only one getById: the initial load. A role change must not clobber in-progress edits.
+    expect(mockUsersSvc.getById).toHaveBeenCalledTimes(1);
   });
 
-  it('should navigate to edit view on editUser', () => {
-    component['editUser']();
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['edit'], { relativeTo: mockActivatedRoute });
+  it('should lock the role with a reason when viewing yourself', async () => {
+    await setup(userDetail(), { id: 'user-123', role: 'owner' });
+    expect(component['isSelf']()).toBe(true);
+    expect(component['roleLock']()).toBe("You can't change your own role");
+    expect(component['canDelete']()).toBe(false);
   });
 
-  it('should prompt confirm dialog and delete user', async () => {
+  it('should offer resend invite for invited users and reactivate for deactivated ones', async () => {
+    await setup(userDetail({ verified: false }));
+    expect(component['lifecycleStrip']()?.action).toBe('resend');
+    await component['resendInvite']();
+    expect(mockUsersSvc.resendInvite).toHaveBeenCalledWith('user-123');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Invitation email sent to john@example.com');
+
+    await setup(userDetail({ deactivated_at: new Date('2026-07-02T12:00:00Z') }));
+    expect(component['status']()?.label).toBe('Deactivated');
+    expect(component['roleLock']()).toBe('Deactivated accounts keep their role');
+    expect(component['lifecycleStrip']()?.action).toBe('reactivate');
+    await component['reactivateUser']();
+    expect(mockUsersSvc.reactivate).toHaveBeenCalledWith('user-123');
+    expect(component['detail']()?.deactivated_at).toBeNull();
+  });
+
+  it('should deactivate behind a confirm and patch state in place', async () => {
+    await component['deactivateUser']();
+    expect(mockDialogSvc.confirm).toHaveBeenCalled();
+    expect(mockUsersSvc.deactivate).toHaveBeenCalledWith('user-123');
+    expect(component['detail']()?.deactivated_at).not.toBeNull();
+    expect(component['status']()?.label).toBe('Deactivated');
+  });
+
+  it('should delete behind a danger confirm and return to the list', async () => {
     mockUsersSvc.delete.mockResolvedValue(true);
     await component['deleteUser']();
     expect(mockDialogSvc.confirm).toHaveBeenCalled();
     expect(mockUsersSvc.delete).toHaveBeenCalledWith('user-123');
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('User deleted');
     expect(mockRouter.navigate).toHaveBeenCalledWith(['/users']);
+  });
+
+  it('should hide destructive actions when an admin views an owner', async () => {
+    await setup(userDetail({ role: 'owner' }), { id: 'current-user-id', role: 'admin' });
+    expect(component['canDelete']()).toBe(false);
+    expect(component['showDeactivateAction']()).toBe(false);
+    expect(component['roleLock']()).toBe("Only an owner can change an owner's role");
   });
 });

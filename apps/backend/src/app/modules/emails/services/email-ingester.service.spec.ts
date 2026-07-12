@@ -15,6 +15,7 @@ describe('EmailIngesterService dedup (integration)', () => {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
   let tenantId: string;
   let userId: string;
+  let campaignId: string;
   let ingester: EmailIngesterService;
 
   const SENT = '3';
@@ -23,6 +24,7 @@ describe('EmailIngesterService dedup (integration)', () => {
   beforeEach(async () => {
     tenantId = rand();
     userId = rand();
+    campaignId = rand();
     ingester = new EmailIngesterService(db, 'ms');
 
     await db.insertInto('tenants').values({ id: tenantId, name: 'Test Tenant' }).execute();
@@ -40,6 +42,17 @@ describe('EmailIngesterService dedup (integration)', () => {
         updatedby_id: userId,
       })
       .execute();
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaignId,
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Test Campaign',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
   });
 
   afterEach(async () => {
@@ -47,6 +60,7 @@ describe('EmailIngesterService dedup (integration)', () => {
       await db.deleteFrom(table).where('tenant_id', '=', tenantId).execute();
     }
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
   });
@@ -58,6 +72,7 @@ describe('EmailIngesterService dedup (integration)', () => {
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
+        campaign_id: campaignId,
         folder_id: SENT,
         from_email: `user-${userId}@example.com`,
         to_email: 'external@gmail.com',
@@ -117,7 +132,7 @@ describe('EmailIngesterService dedup (integration)', () => {
     await seedLocalSentEmail(imid, 'DRAFT_ID');
 
     // Sync pulls the Sent item back with a DIFFERENT provider ID.
-    const inserted = await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, userId, SENT);
+    const inserted = await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, campaignId, userId, SENT);
 
     expect(inserted).toBe(false); // reconciled, not inserted
     expect(await countByFolder(SENT)).toBe(1);
@@ -137,9 +152,9 @@ describe('EmailIngesterService dedup (integration)', () => {
     const imid = `<${rand()}@example.com>`;
     await seedLocalSentEmail(imid, 'DRAFT_ID');
 
-    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, userId, SENT);
-    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, userId, SENT);
-    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID_2'), tenantId, userId, SENT);
+    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, campaignId, userId, SENT);
+    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, campaignId, userId, SENT);
+    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID_2'), tenantId, campaignId, userId, SENT);
 
     expect(await countByFolder(SENT)).toBe(1);
   });
@@ -149,8 +164,8 @@ describe('EmailIngesterService dedup (integration)', () => {
     await seedLocalSentEmail(imid, 'DRAFT_ID');
 
     // Same message comes back from Sent and Inbox (each with its own provider ID).
-    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, userId, SENT);
-    await ingester.ingestEmail(makeIngestable(imid, 'INBOX_ID'), tenantId, userId, INBOX);
+    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, campaignId, userId, SENT);
+    await ingester.ingestEmail(makeIngestable(imid, 'INBOX_ID'), tenantId, campaignId, userId, INBOX);
 
     expect(await countByFolder(SENT)).toBe(1);
     expect(await countByFolder(INBOX)).toBe(1);
@@ -160,8 +175,8 @@ describe('EmailIngesterService dedup (integration)', () => {
     const imid = `<${rand()}@example.com>`;
     await seedLocalSentEmail(imid, 'DRAFT_ID');
 
-    await ingester.ingestEmail(makeIngestable(imid, 'INBOX_ID'), tenantId, userId, INBOX);
-    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, userId, SENT);
+    await ingester.ingestEmail(makeIngestable(imid, 'INBOX_ID'), tenantId, campaignId, userId, INBOX);
+    await ingester.ingestEmail(makeIngestable(imid, 'SENT_ID'), tenantId, campaignId, userId, SENT);
 
     expect(await countByFolder(SENT)).toBe(1);
     expect(await countByFolder(INBOX)).toBe(1);

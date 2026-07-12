@@ -19,7 +19,7 @@ Migrations are plain Kysely SQL files run by Kysely's `Migrator` + `FileMigratio
 
 Files live in `apps/backend/src/app/_migrations/`. Kysely runs them in **lexicographic filename order**, so the name is load-bearing:
 
-- Regular migrations: `YYYY-MM-DD-short-description.ts` — e.g. `2026-08-14-add-campaign-budget.ts`. (First one on top of the squashed baseline: `2026-07-07-record-slugs.ts` — a good worked example of an add-column + backfill + per-tenant-unique-index migration.)
+- Regular migrations: `YYYY-MM-DD-short-description.ts` — e.g. `2026-08-14-add-campaign-budget.ts`. (After the 2026-07-10 re-squash there are no dated files in the tree to crib from — for a worked add-column + backfill + per-tenant-unique-index example see `2026-07-07-record-slugs.ts` in git history.)
 - The baseline is `0001_baseline.ts` — the `0001_` numeric prefix sorts before every dated file so it always runs first.
 - **Same-day tie-break:** when two migrations share a date, disambiguate order with a letter segment: `2026-07-01-a-schema-improvements`, `2026-07-01-b-security-ops-improvements`. Use this if you add a second migration on a day that already has one.
 
@@ -35,7 +35,7 @@ Every file must export `up(db: Kysely<any>)` and `down(db: Kysely<any>)`.
 
 Most domain tables run `FORCE ROW LEVEL SECURITY` (the S-1 tenant backstop; grep `schema.sql` for it — persons, households, companies, tasks, and the `map_*` junctions all do). A migration runs with **no `app.tenant_id` GUC set**, but every `tenant_isolation` policy has the escape `NULLIF(current_setting('app.tenant_id', true), '') IS NULL OR …` in both `USING` and `WITH CHECK`, so an unset GUC makes the policy permit **every** row. A migration's `UPDATE`/`DELETE`/backfill therefore reaches all rows — **no per-migration RLS toggle is needed**, and you should not add one.
 
-This only works because `0001_baseline.ts` **strips `SET row_security = off`** out of the pg_dump preamble (same line-filter that strips `search_path`). That dump setting would otherwise leak forward through Kysely's single-session `migrateToLatest()` run, and `row_security = off` + FORCE RLS makes Postgres **reject** even policy-permitted writes with `SQLSTATE 42501` / _"query would be affected by row-level security policy"_ — rolling back the whole batch including the baseline, so no fresh DB (CI, new dev) can bootstrap. If you ever see that 42501 in a migration, the cause is a stray `row_security = off` in session scope, **not** a reason to disable FORCE RLS.
+This only works because `0001_baseline.ts` **strips `SET row_security = off`** out of the pg*dump preamble (same line-filter that strips `search_path`). That dump setting would otherwise leak forward through Kysely's single-session `migrateToLatest()` run, and `row_security = off` + FORCE RLS makes Postgres **reject** even policy-permitted writes with `SQLSTATE 42501` / *"query would be affected by row-level security policy"\_ — rolling back the whole batch including the baseline, so no fresh DB (CI, new dev) can bootstrap. If you ever see that 42501 in a migration, the cause is a stray `row_security = off` in session scope, **not** a reason to disable FORCE RLS.
 
 Always verify a new migration by running the whole batch against a **freshly provisioned** DB (`TEST_DB_NAME=pplcrm_x_test apps/backend/scripts/setup-test-db.sh`, then `migrateToLatest`) — an already-migrated `pplcrm_test` won't re-run your migration or a bootstrap. Pure DDL (`ADD COLUMN`, `CREATE INDEX`, `ADD CONSTRAINT`) is unaffected either way.
 
@@ -74,7 +74,7 @@ There is **no `kysely-codegen`**. The `Models` interface is maintained manually 
 
 `0001_baseline.ts` bootstraps a database by executing `schema.sql` (a `pg_dump --schema-only`). It does not re-run on a database that already recorded it.
 
-**As of the 2026-07-07 squash, the baseline IS the current, complete schema and there are no dated migrations.** The ~34 dated remediation migrations were collapsed into a fresh `pg_dump` and deleted (a deliberate one-time pre-ship reset — see "Re-squashing"). So on a fresh DB Kysely runs `0001_baseline` and nothing else, and — unlike before — `schema.sql` **does** reflect the current shape. (`libs/common/src/lib/kysely.models.ts` and a live `psql \d` are still the authoritative Kysely-side view.)
+**As of the 2026-07-10 re-squash, the baseline IS the current, complete schema and there are no dated migrations.** The 2026-07-07 squash collapsed the ~34 dated remediation migrations; on 2026-07-10 the 17 dated files that had accumulated since (record slugs → authusers-deactivated-at, plus `tenants.demo_mode_at`) were folded in the same way — fresh `pg_dump` taken with the PG18 client (`/opt/homebrew/opt/postgresql@18/bin/pg_dump`; the PATH default is a 17.6 client that refuses an 18 server), dated files deleted, dev and test DBs dropped and re-bootstrapped (see "Re-squashing"). So on a fresh DB Kysely runs `0001_baseline` and nothing else, and — unlike before — `schema.sql` **does** reflect the current shape. (`libs/common/src/lib/kysely.models.ts` and a live `psql \d` are still the authoritative Kysely-side view.)
 
 ### Fresh-database prerequisites — provisioning, run BEFORE the app first boots
 

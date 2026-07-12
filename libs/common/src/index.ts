@@ -9,7 +9,7 @@ export type {
   signUpInputType,
 } from './lib/auth';
 
-export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
 
 export type {
   INow,
@@ -18,12 +18,23 @@ export type {
   AddMarketingEmailType,
   AddTaskType,
   AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
   InviteAuthUserType,
   Verify2FAType,
   PERSONINHOUSEHOLDTYPE,
   PersonsType,
   MarketingEmailType,
   MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
   TasksType,
   ListsType,
   SettingsType,
@@ -99,6 +110,21 @@ export {
   isTaskStatus,
   isTaskBoardStatus,
   AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
   InviteAuthUserObj,
   Verify2FAObj,
   PersonsObj,
@@ -222,7 +248,24 @@ export {
   DONATION_METHOD_LABELS,
   donationMethodSchema,
   RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
 } from './lib/schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel } from './lib/schemas/persons.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 
 export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
 

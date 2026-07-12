@@ -1,12 +1,13 @@
 <div class="flex flex-col gap-4 p-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h2 class="text-xl font-semibold">Task board</h2>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Task board</h2>
       @if (countSentence()) {
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
       }
     </div>
-    <button type="button" class="btn btn-outline btn-sm gap-1.5" (click)="openList()">
+    <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openList()">
       <pc-icon name="queue-list" [size]="4"></pc-icon>
       Open list
     </button>

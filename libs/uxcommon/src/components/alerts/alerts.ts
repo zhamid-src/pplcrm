@@ -1,5 +1,6 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
 import { ALERTTYPE, AlertService } from './alert-service';
@@ -14,16 +15,16 @@ export class Alerts {
 
   public position = input<'top' | 'bottom' | 'relative'>('bottom');
 
-  protected OKBtnClick(id: string): void {
-    this.alertSvc.OKBtnCallback(id);
-    this.alertSvc.dismiss(id);
-  }
-
   protected readonly alerts = computed(() => {
     const list = this.alertSvc.alertList();
-    return this.position() === 'top' ? list.slice().reverse() : list;
+    // Service list is newest-first; render newest nearest the pinned edge
+    // (bottom of the stack when pinned bottom — spec §2).
+    return this.isPositionBottom() ? list.slice().reverse() : list;
   });
 
+  protected dismiss(id: string): void {
+    this.alertSvc.dismiss(id);
+  }
 
   protected getEnterAnim(): string {
     return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
@@ -33,14 +34,14 @@ export class Alerts {
     return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
   }
 
-  protected icon(type: ALERTTYPE) {
+  protected icon(type?: ALERTTYPE): PcIconNameType {
     return type === 'success'
       ? 'check-circle'
       : type === 'warning'
         ? 'exclamation-triangle'
         : type === 'error'
-          ? 'x-circle'
-          : 'exclamation-circle';
+          ? 'exclamation-circle'
+          : 'information-circle';
   }
 
   protected isPositionBottom() {
@@ -53,5 +54,16 @@ export class Alerts {
 
   protected isPositionTop() {
     return this.position() === 'top';
+  }
+
+  /** Tone lives only on the icon — the card surface and text stay neutral (spec §Anatomy). */
+  protected toneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'text-success'
+      : type === 'warning'
+        ? 'text-warning'
+        : type === 'error'
+          ? 'text-error'
+          : 'text-info';
   }
 }

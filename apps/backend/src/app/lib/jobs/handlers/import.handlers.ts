@@ -3,6 +3,7 @@ import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
 import { CompaniesController } from '../../../modules/companies/controller';
+import { HouseholdsController } from '../../../modules/households/controller';
 import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
 import { PersonsService } from '../../../modules/persons/services/persons.service';
 import { TasksController } from '../../../modules/tasks/controller';
@@ -46,6 +47,17 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
       payload.import_id,
       payload.tenant_id,
       payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'households') {
+    const householdsController = new HouseholdsController();
+    await householdsController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
       Number(payload.skipped || 0),
       rows,
     );

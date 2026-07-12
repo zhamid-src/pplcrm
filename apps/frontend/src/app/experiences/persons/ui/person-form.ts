@@ -1,4 +1,5 @@
 import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
@@ -12,7 +13,7 @@ import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -20,15 +21,29 @@ import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { PersonCampaignFacts } from './person-campaign-facts';
 
 @Component({
   selector: 'pc-person-form',
-  imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
+  imports: [
+    PcInput,
+    PcSelect,
+    PcTextarea,
+    Tags,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    SideDrawer,
+    PcCard,
+    DatePipe,
+    PersonCampaignFacts,
+  ],
   templateUrl: './person-form.html',
 })
 export class PersonForm implements OnInit {
@@ -65,8 +80,48 @@ export class PersonForm implements OnInit {
     return this.getFormattedAddress(hh);
   });
 
+  /** Overview rail (§6): everyone else sharing this person's household. */
+  protected readonly householdMembersResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getPeopleCount(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly companyName = computed(() => {
+    const id = this.person()?.company_id;
+    if (!id) return null;
+    return this.companies().find((c) => c.id === id)?.name ?? null;
+  });
+
+  protected readonly preferredContactLabel = computed(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return 'No preference';
+    }
+  });
+
   protected readonly isPlaceholderHousehold = computed(() => {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
+  protected readonly addressWithWard = computed(() => {
+    const base = this.addressString();
+    if (!base) return null;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
   });
 
   // Drawer state for assigning household
@@ -82,7 +137,7 @@ export class PersonForm implements OnInit {
     source: () => this.form.email().value(),
     computation: () => null as string | null,
   });
-  protected readonly person = signal<Persons | null>(null);
+  protected readonly person = signal<Selectable<Persons> | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly companies = signal<any[]>([]);
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
@@ -607,7 +662,7 @@ export class PersonForm implements OnInit {
 
     const end = this._loading.begin();
     try {
-      this.person.set((await this.personsSvc.getById(id)) as Persons);
+      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
 
       await this.updateTags();
       await this.loadVolunteerInfo();

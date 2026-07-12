@@ -160,7 +160,7 @@
             >. The footer disclaimer and unsubscribe link are appended automatically from
             <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
           </p>
-          <button type="button" class="btn btn-sm btn-outline" (click)="sendTestEmail()">
+          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="sendTestEmail()">
             <pc-icon name="paper-airplane" [size]="4"></pc-icon>
             Send test email
           </button>
@@ -521,7 +521,11 @@
           <div class="mt-4 grid gap-4 sm:grid-cols-2">
             <div class="relative flex flex-col gap-1">
               <label class="text-xs font-medium">Send date</label>
-              <button type="button" class="btn btn-sm btn-outline justify-between" (click)="toggleDatePicker()">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary justify-between"
+                (click)="toggleDatePicker()"
+              >
                 <span>{{ scheduledDateDisplay() }}</span>
                 <pc-icon name="chevron-down" [size]="4"></pc-icon>
               </button>

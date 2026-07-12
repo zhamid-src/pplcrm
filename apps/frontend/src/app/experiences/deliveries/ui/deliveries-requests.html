@@ -1,33 +1,24 @@
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
   <!-- Header -->
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">Yard-sign requests</h1>
-    </div>
+  <div class="flex flex-wrap items-end justify-end gap-3">
+    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+    <h1 class="sr-only">Delivery requests</h1>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-        <pc-icon name="map-pin" [size]="4"></pc-icon>
-        Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-      </button>
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
     </div>
   </div>
 
-  <!-- Tabs with live counts -->
-  <div role="tablist" class="tabs tabs-bordered w-fit">
-    @for (tab of tabs; track tab.key) {
-    <button
-      type="button"
-      role="tab"
-      class="tab gap-1.5"
-      [class.tab-active]="activeTab() === tab.key"
-      (click)="setTab(tab.key)"
-    >
-      {{ tab.label }}
-      <span class="text-xs font-semibold tabular-nums text-base-content/50">{{ countFor(tab.key) }}</span>
-    </button>
-    }
-  </div>
+  <!-- Tabs with live counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
 
   <!-- Bulk selection bar -->
   @if (selectedCount() > 0) {
@@ -58,83 +49,85 @@
   }
 
   <!-- Table -->
-  <div class="overflow-x-auto rounded-xl border border-base-300">
-    <table class="table table-sm">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">
-          <th class="w-8"></th>
-          <th>Requested by</th>
-          <th>Address</th>
-          <th>Status</th>
-          <th>Readiness</th>
-          <th>Source</th>
-          <th>Route</th>
-          <th>Requested</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (row of rows(); track row.id) {
-        <tr class="hover:bg-base-200/40">
-          <td>
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="isSelected(row.id)"
-              (change)="toggle(row.id)"
-              [attr.aria-label]="'Select ' + (row.person_name || row.address)"
-            />
-          </td>
-          <td>
-            @if (row.person_id) {
-            <a
-              class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
-              [routerLink]="['/people', row.person_id]"
-            >
-              {{ row.person_name || 'Unnamed person' }}
-            </a>
-            } @else {
-            <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
-            }
-          </td>
-          <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
-          <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
-          <td>
-            <div class="flex items-center gap-2">
-              <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
-              @if (row.geocoding_status === 'failed') {
-              <a
-                class="text-xs text-primary underline underline-offset-2"
-                [routerLink]="['/households', row.household_id]"
-              >
-                Edit household
-              </a>
-              }
-            </div>
-          </td>
-          <td class="text-sm text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
-          <td>
-            @if (row.route_id) {
-            <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
-              {{ row.route_name || 'Route' }}
-            </a>
-            } @else {
-            <span class="text-base-content/40">—</span>
-            }
-          </td>
-          <td class="whitespace-nowrap text-sm tabular-nums text-base-content/60">
-            {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th class="w-8"></th>
+      <th>Requested by</th>
+      <th>Address</th>
+      <th>Status</th>
+      <th>Readiness</th>
+      <th>Source</th>
+      <th>Route</th>
+      <th>Requested</th>
+    </ng-container>
 
     @if (loaded() && rows().length === 0) {
-    <div class="flex flex-col items-center gap-3 px-6 py-14 text-center">
-      <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-      <p class="text-sm text-base-content/60">No yard-sign requests in this view yet.</p>
-      <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">Plan routes</button>
-    </div>
-    }
-  </div>
+    <tr>
+      <td colspan="8" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
+          @if (readyCount() > 0) {
+          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+          </button>
+          } @else {
+          <p class="max-w-sm text-xs text-base-content/45">
+            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
+          </p>
+          }
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+          [checked]="isSelected(row.id)"
+          (change)="toggle(row.id)"
+          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+        />
+      </td>
+      <td>
+        @if (row.person_id) {
+        <a
+          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/people', row.person_id]"
+        >
+          {{ row.person_name || 'Unnamed person' }}
+        </a>
+        } @else {
+        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        }
+      </td>
+      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+          @if (row.geocoding_status === 'failed') {
+          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
+            Edit household
+          </a>
+          }
+        </div>
+      </td>
+      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td>
+        @if (row.route_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+          {{ row.route_name || 'Route' }}
+        </a>
+        } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
 </div>

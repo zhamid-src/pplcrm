@@ -8,27 +8,43 @@ import { CompanyInputObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { CompaniesService } from '../services/companies-service';
-import { PeopleInCompany } from './people-in-company';
+import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { StatusBadge as PcStatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PcIcon, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
+  imports: [PcInput, PcTextarea, PcIcon, RouterModule, PcDetailHeader, PcStatusBadge, PcCard],
   templateUrl: './company-form.html',
 })
 export class CompanyForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly company = signal<any | null>(null);
+
+  /** People employed here — feeds the Overview rail (§7). */
+  protected readonly employeeCount = signal(0);
+
+  /** Whether Google enrichment has run, for the Overview status badge. */
+  protected readonly isEnriched = computed(() => {
+    const raw = this.company()?.enrichment;
+    if (!raw) return false;
+    try {
+      const enrichment = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return !!enrichment.google_enriched;
+    } catch {
+      return false;
+    }
+  });
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
     const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
@@ -112,6 +128,11 @@ export class CompanyForm implements OnInit {
           notes: data.notes ?? '',
         });
         this.form().reset();
+      }
+      try {
+        this.employeeCount.set(await this.personsSvc.countByCompanyId(this.id()!));
+      } catch {
+        this.employeeCount.set(0);
       }
     } catch (err) {
       console.error('Failed to load company details:', err);

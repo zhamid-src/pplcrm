@@ -17,6 +17,7 @@ import { env } from '../../../env';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import type { PublicTenant } from '../../lib/public-tenant';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
 import { WorkflowsController } from '../workflows/controller';
@@ -29,6 +30,8 @@ const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 
 export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
   constructor() {
     super(new WebFormsRepo());
   }
@@ -54,6 +57,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
   public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
     const row = {
       tenant_id: auth.tenant_id,
+      campaign_id: await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id }),
       slug: await this.uniqueSlug(auth.tenant_id, payload.name),
       name: payload.name,
       description: payload.description ?? null,
@@ -348,7 +352,11 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           throw new Error('Tenant placeholder household is not configured.');
         }
 
-        const campaignId = await this.getCampaignId(tenantId, trx);
+        // Submissions belong to the FORM's campaign (§15) — a campaign sign-up
+        // form collects that campaign's consent, not the office's. Older rows
+        // without a campaign fall back to the legacy current_campaign setting.
+        const formCampaignId = (form as Record<string, unknown>)['campaign_id'];
+        const campaignId = formCampaignId != null ? String(formCampaignId) : await this.getCampaignId(tenantId, trx);
 
         // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
         // counted once they confirm via the emailed link (see confirm-subscription route).
@@ -460,7 +468,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             email: email,
             mobile: mobile,
             notes: notes,
-            opt_in_status: doubleOptIn ? 'pending' : null,
           };
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);
@@ -486,6 +493,26 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         resolvedPersonId = personId;
 
+        // Consent lives in campaign_subscriptions (§15): a form submission is
+        // consent for THIS form's campaign only — pending until confirmed when
+        // the tenant requires double opt-in. doNothing keeps an existing row
+        // (including a deliberate 'unsubscribed') authoritative over re-submits.
+        await trx
+          .insertInto('campaign_subscriptions')
+          .values({
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            person_id: personId,
+            email,
+            status: doubleOptIn ? 'pending' : 'subscribed',
+            consent_source: 'form',
+            consent_at: doubleOptIn ? null : new Date(),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .onConflict((oc) => oc.columns(['tenant_id', 'campaign_id', 'person_id']).doNothing())
+          .execute();
+
         const workflowsController = new WorkflowsController();
 
         // Add target custom tags & read-only system tag
@@ -493,10 +520,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           ? form.target_tags
           : JSON.parse((form.target_tags as any) || '[]');
         const systemTagName = `source: ${form.name}`;
+        // "Donor" is derived from donations data (§15) — no tag on donation forms.
         const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-          allTagsToApply.push('donor');
-        }
 
         for (const tagName of allTagsToApply) {
           const normalizedTagName = tagName.trim().toLowerCase();
@@ -714,11 +739,15 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
     }
 
+    // Double opt-in confirmed: every pending subscription for this person
+    // becomes subscribed (§15). Deliberately allowed even if the campaign has
+    // since been archived — the confirmation belongs to when the link was sent.
     await this.getRepo()
-      .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .db.updateTable('campaign_subscriptions')
+      .set({ status: 'subscribed', consent_at: sql`now()`, updated_at: sql`now()` })
       .where('tenant_id', '=', String(payload.tenant_id))
-      .where('id', '=', String(payload.person_id))
+      .where('person_id', '=', String(payload.person_id))
+      .where('status', '=', 'pending')
       .execute();
 
     return { success: true };
@@ -895,6 +924,11 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     const fields = fieldsForTemplate(payload.type);
     const row = {
       tenant_id: auth.tenant_id,
+      // A form collects consent for exactly one campaign (§15).
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: payload.campaign_id,
+      }),
       name: payload.name,
       description: template.description,
       redirect_url: null,

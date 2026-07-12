@@ -37,8 +37,11 @@ export class TRPCService<T> {
     this.api = createTRPCClient<TRPCRouter>({
       links: [
         loggerLink(),
-        refreshLink(this.tokenService, this.router),
+        // errorLink must sit OUTSIDE refreshLink: refreshLink transparently refreshes and retries
+        // an UNAUTHORIZED call once (e.g. after another tab rotated the session), and errorLink
+        // must only see the error — and redirect to /signin — when that retry has already failed.
         errorLink(this.errorSvc),
+        refreshLink(this.tokenService, this.router),
         httpUnbatchedLink(this.tokenService, () => this.ac.signal),
       ],
     });

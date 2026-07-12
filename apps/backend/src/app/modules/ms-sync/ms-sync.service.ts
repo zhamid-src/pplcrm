@@ -67,8 +67,8 @@ export class MsSyncService {
     this.ingester = new EmailIngesterService(db, 'ms');
   }
 
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+  public async syncTenant(tenantId: string, campaignId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId, campaignId);
     const client = this.buildGraphClient(accessToken);
 
     const syncFolders = [
@@ -82,7 +82,7 @@ export class MsSyncService {
     // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
     // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
     // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId, campaignId);
     let deltaMap: Record<string, string> = {};
     if (dbDeltaLink) {
       try {
@@ -147,13 +147,13 @@ export class MsSyncService {
         if (msg['@removed']) {
           const msId = msg.id;
           if (msId) {
-            await this.ingester.deleteMessage(tenantId, msId);
+            await this.ingester.deleteMessage(tenantId, campaignId, msId);
           }
           continue;
         }
 
         try {
-          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
+          const wasSaved = await this.saveMessage(client, msg, tenantId, campaignId, requestedBy, folder.pplcrmId);
           if (wasSaved) inserted++;
         } catch (err) {
           logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
@@ -169,6 +169,7 @@ export class MsSyncService {
           .selectFrom('emails')
           .select(['id', 'preview'])
           .where('tenant_id', '=', tenantId)
+          .where('campaign_id', '=', campaignId)
           .where('folder_id', '=', folder.pplcrmId)
           .where('preview', 'like', 'ms:%')
           .execute();
@@ -177,26 +178,27 @@ export class MsSyncService {
           const previewKey = localEmail.preview ?? '';
           const msId = previewKey.replace(/^ms:/, '');
           if (!serverMsIds.has(msId)) {
-            await this.ingester.deleteMessage(tenantId, msId);
+            await this.ingester.deleteMessage(tenantId, campaignId, msId);
           }
         }
       }
     }
 
     // Save updated delta map back to database
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+    await this.oauthSvc.saveDeltaLink(tenantId, campaignId, JSON.stringify(nextDeltaMap));
 
     return { inserted };
   }
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
+  public async removeAllLocalEmails(tenantId: string, campaignId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId, campaignId);
   }
 
   private async saveMessage(
     client: Client,
     msg: any,
     tenantId: string,
+    campaignId: string,
     requestedBy: string,
     folderId: string,
   ): Promise<boolean> {
@@ -266,7 +268,7 @@ export class MsSyncService {
       attachments,
     };
 
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+    return this.ingester.ingestEmail(ingestable, tenantId, campaignId, requestedBy, folderId);
   }
 
   private buildGraphClient(accessToken: string): Client {

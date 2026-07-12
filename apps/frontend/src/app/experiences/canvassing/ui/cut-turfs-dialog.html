@@ -38,6 +38,7 @@
           class="btn btn-sm"
           [class.btn-primary]="doorsPerTurf() === p"
           [class.btn-outline]="doorsPerTurf() !== p"
+          [class.btn-accent]="doorsPerTurf() !== p"
           (click)="setDoors(p)"
         >
           {{ p }}
@@ -72,7 +73,7 @@
     }
 
     <div class="modal-action">
-      <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn btn-outline btn-accent" (click)="cancel()">Cancel</button>
       <button
         type="button"
         class="btn btn-primary"
