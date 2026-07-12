@@ -50,7 +50,7 @@
 
     <!-- Public link row -->
     <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="pc-eyebrow">Public link</span>
       <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
       <div class="flex items-center gap-1">
         <button
@@ -354,7 +354,7 @@
     <!-- Chosen template summary -->
     <div class="rounded-2xl border-y border-r border-l-4 border-base-300 border-l-primary bg-base-100 p-4">
       <div class="flex items-center justify-between">
-        <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Template</span>
+        <span class="pc-eyebrow">Template</span>
         <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="backToTemplates()">Change</button>
       </div>
       <div class="mt-2 flex items-center gap-3">
@@ -428,7 +428,7 @@
     <div class="flex flex-col gap-6">
       <!-- FORM -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <h2 class="pc-eyebrow">Form</h2>
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium text-base-content">Form name</span>
           <input
@@ -468,7 +468,7 @@
 
       <!-- AFTER SUBMIT -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <h2 class="pc-eyebrow">After submit</h2>
         <label class="flex items-start gap-3">
           <input
             type="checkbox"
@@ -506,7 +506,7 @@
 
       <!-- FIELDS -->
       <section class="flex flex-col gap-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        <h2 class="pc-eyebrow">Fields</h2>
         @for (field of form.fields; track field.key) {
         <div class="flex items-center gap-2">
           <input
@@ -539,7 +539,7 @@
 
       <!-- AUDIENCE -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <h2 class="pc-eyebrow">Audience</h2>
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium text-base-content">Add responses to a list</span>
           <select
@@ -594,7 +594,7 @@
 
       <!-- ARCHIVE -->
       <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        <h2 class="pc-eyebrow">Archive</h2>
         @if (canDelete(form)) {
         <p class="text-xs text-base-content/60">
           This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.

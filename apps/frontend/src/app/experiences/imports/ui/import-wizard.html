@@ -1,7 +1,7 @@
 <div class="p-6 max-w-4xl mx-auto">
   <!-- Where am I? / Where was I? -->
   <div class="mb-6">
-    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
+    <p class="pc-eyebrow">Import / export</p>
     <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import {{ config().noun }} from CSV</h1>
     <p class="text-sm text-base-content/60 mt-1">{{ config().subtitle }}</p>
   </div>
@@ -26,7 +26,7 @@
     <!-- What are you importing? -->
     <div class="card bg-base-100 border border-base-300 shadow-xl">
       <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">What are you importing?</p>
+        <p class="pc-eyebrow">What are you importing?</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           @for (t of entityTypes; track t) {
           <button
@@ -207,9 +207,7 @@
     } @if (duplicateMatches().length > 0) {
     <div class="card bg-base-100 border border-base-300 shadow-xl">
       <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ duplicateRowCount() }} rows match people you already have
-        </p>
+        <p class="pc-eyebrow">{{ duplicateRowCount() }} rows match people you already have</p>
         <ul class="space-y-1">
           @for (match of duplicateMatches(); track match.person_id) {
           <li class="text-sm flex items-center gap-2">
@@ -275,9 +273,7 @@
     } @if (badEmailRows().length > 0) {
     <div class="card bg-base-100 border border-base-300 shadow-xl">
       <div class="card-body gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          {{ badEmailRows().length }} rows have email problems
-        </p>
+        <p class="pc-eyebrow">{{ badEmailRows().length }} rows have email problems</p>
         <ul class="space-y-1">
           @for (row of badEmailRows(); track row.idx) {
           <li class="text-sm">

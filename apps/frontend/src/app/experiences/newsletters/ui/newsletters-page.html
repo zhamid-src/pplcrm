@@ -11,7 +11,7 @@
   <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Sent campaigns</div>
+        <div class="stat-title pc-eyebrow">Sent campaigns</div>
         <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
           {{ formatNumber(stats().sentCount) }}
         </div>
@@ -21,7 +21,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
+        <div class="stat-title pc-eyebrow">Delivered</div>
         <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
           {{ formatNumber(stats().delivered) }}
         </div>
@@ -31,7 +31,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg open rate</div>
+        <div class="stat-title pc-eyebrow">Avg open rate</div>
         <div
           class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
           [class.text-success]="stats().avgOpenRate > 0"
@@ -45,7 +45,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg click rate</div>
+        <div class="stat-title pc-eyebrow">Avg click rate</div>
         <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
           {{ formatPercent(stats().avgClickRate) }}
         </div>
@@ -55,7 +55,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+        <div class="stat-title pc-eyebrow">Bounces</div>
         <div
           class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
           [class.text-warning]="stats().bounces > 0"

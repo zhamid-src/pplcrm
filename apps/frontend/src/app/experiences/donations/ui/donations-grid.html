@@ -26,7 +26,7 @@
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-title pc-eyebrow">This Month</div>
         <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
           {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
         </div>
@@ -44,7 +44,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-title pc-eyebrow">Average Gift</div>
         <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
           {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
         </div>
@@ -54,7 +54,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-title pc-eyebrow">Monthly Donors</div>
         <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
           {{ monthlyDonorCount() }}
         </div>
@@ -64,7 +64,7 @@
 
     <div class="stats border border-base-200 bg-base-100 shadow-sm">
       <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-title pc-eyebrow">Receipts</div>
         <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
           {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
         </div>

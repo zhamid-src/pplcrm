@@ -93,7 +93,7 @@ const COUNTRY_OPTIONS = [
                 <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
               </div>
 
-              <p class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+              <p class="pc-eyebrow mb-1">
                 {{ kind === 'volunteer' ? 'Volunteer event' : 'Event' }}
               </p>
               <h1 class="mb-1 text-xl font-semibold text-base-content">{{ event()!.name }}</h1>
@@ -103,9 +103,7 @@ const COUNTRY_OPTIONS = [
 
               <div class="mb-6 flex flex-col gap-2 text-sm text-base-content">
                 <div class="flex items-baseline gap-2">
-                  <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                    >When</span
-                  >
+                  <span class="pc-eyebrow w-24 shrink-0">When</span>
                   <span>
                     {{ event()!.start_time | date: 'EEEE, MMMM d, y' }} ·
                     {{ event()!.start_time | date: 'shortTime' }} – {{ event()!.end_time | date: 'shortTime' }}
@@ -113,25 +111,19 @@ const COUNTRY_OPTIONS = [
                 </div>
                 @if (event()!.location_address) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Where</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Where</span>
                     <span>{{ event()!.location_address }}</span>
                   </div>
                 }
                 @if (event()!.capacity !== null) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Spots</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Spots</span>
                     <span class="tabular-nums">{{ remaining() }} of {{ event()!.capacity }} left</span>
                   </div>
                 }
                 @if (event()!.contact_email || event()!.contact_phone) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Questions</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Questions</span>
                     <span>
                       @if (event()!.contact_email) {
                         <a class="link-hover link text-primary" [href]="'mailto:' + event()!.contact_email">{{

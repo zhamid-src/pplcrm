@@ -11,7 +11,7 @@ import { PcIconNameType } from '@icons/icons.index';
     >
       <div class="stat p-0 leading-normal">
         @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          <div class="stat-title pc-eyebrow">
             {{ title() }}
           </div>
         }

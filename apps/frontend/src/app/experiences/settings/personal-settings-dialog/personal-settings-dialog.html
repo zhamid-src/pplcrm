@@ -28,15 +28,9 @@
     <!-- NOTIFICATIONS matrix -->
     <div class="mt-5">
       <div class="flex items-end gap-2">
-        <span class="flex-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45"
-          >Notifications</span
-        >
-        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
-          >Email</span
-        >
-        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
-          >In-app</span
-        >
+        <span class="flex-1 pc-eyebrow">Notifications</span>
+        <span class="w-10 text-center pc-eyebrow">Email</span>
+        <span class="w-10 text-center pc-eyebrow">In-app</span>
       </div>
       <div class="mt-2 flex flex-col">
         @for (row of rows; track row.emailKey) {
@@ -72,7 +66,7 @@
 
     <!-- APPEARANCE -->
     <div>
-      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Appearance</span>
+      <span class="pc-eyebrow">Appearance</span>
       <div class="mt-3 flex items-center justify-between">
         <span class="text-xs font-medium">Theme</span>
         <div class="join">
@@ -94,7 +88,7 @@
 
     <!-- PASSKEYS -->
     <div>
-      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Passkeys</span>
+      <span class="pc-eyebrow">Passkeys</span>
       <div class="mt-2">
         <pc-passkey-settings></pc-passkey-settings>
       </div>

@@ -74,7 +74,7 @@
 
   <!-- Archived campaigns: read-only history, disclosed rather than hidden (§3) -->
   @if (archived().length) {
-  <h2 class="mb-3 mt-8 text-[10px] font-semibold uppercase tracking-widest text-base-content/50" i18n>Archived</h2>
+  <h2 class="pc-eyebrow mb-3 mt-8" i18n>Archived</h2>
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     @for (campaign of archived(); track campaign.id) {
     <a

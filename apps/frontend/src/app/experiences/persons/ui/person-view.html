@@ -50,7 +50,7 @@
     <div class="lg:col-span-1 flex flex-col gap-6">
       <!-- Contact card -->
       <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+        <h3 class="mb-3 block pc-eyebrow">Contact</h3>
 
         <div class="flex w-full flex-col text-xs">
           <pc-detail-item
@@ -100,7 +100,7 @@
         <!-- Tags & Issues of Interest -->
         <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
           <div>
-            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Tags</span>
+            <span class="mb-1.5 block pc-eyebrow">Tags</span>
             @if (tags().length > 0) {
             <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
@@ -108,9 +108,7 @@
             }
           </div>
           <div>
-            <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-base-content/50"
-              >Issues of Interest</span
-            >
+            <span class="mb-1.5 block pc-eyebrow">Issues of Interest</span>
             @if (issues().length > 0) {
             <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
@@ -141,7 +139,7 @@
       <!-- Internal Notes (own card) -->
       @if (person().notes) {
       <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        <h3 class="mb-2 block pc-eyebrow">Internal notes</h3>
         <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
       </pc-card>
       }
@@ -205,9 +203,7 @@
             <!-- Newsletter engagement (folded into Emails) -->
             @if (activityData().newsletters.length > 0) {
             <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
-                >Newsletter activity</span
-              >
+              <span class="pc-eyebrow">Newsletter activity</span>
               @for (ev of activityData().newsletters; track ev.id) {
               <div
                 class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
@@ -266,11 +262,11 @@
             <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
             } @else {
             <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
+              <table class="table pc-table w-full">
                 <thead>
                   <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
+                    <th>Event name</th>
+                    <th>Date & time</th>
                     <th>Status</th>
                     <th>Hours</th>
                     <th>Notes</th>
@@ -338,7 +334,7 @@
             </div>
             } @else {
             <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
+              <table class="table pc-table w-full">
                 <thead>
                   <tr class="bg-base-50 border-b border-base-200">
                     <th class="font-bold text-base-content/70">Date</th>
@@ -389,7 +385,7 @@
             </div>
             } @else {
             <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
+              <table class="table pc-table w-full">
                 <thead>
                   <tr class="bg-base-200">
                     <th>Event</th>
