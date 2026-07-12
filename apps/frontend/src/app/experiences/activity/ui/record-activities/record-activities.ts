@@ -130,36 +130,32 @@ export class RecordActivities {
     return activity === 'call' || activity === 'door_knock' || activity === 'note' || activity === 'meeting';
   }
 
+  /** Semantic-token dot tints only (design §5): color appears where it MEANS
+   *  something — success/error/warning for outcomes, primary for human-authored
+   *  interactions — and everything mechanical stays a neutral base wash. Both
+   *  themes resolve through the tokens, so no hand-maintained dark: pairs. */
   protected getActivityDotClass(activity: string): string {
     switch (activity) {
       case 'create':
-        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
-      case 'update':
-        return 'bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400';
-      case 'delete':
-        return 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400';
-      case 'merge':
-        return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400';
-      case 'import':
-        return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400';
-      case 'export':
-        return 'bg-purple-100 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400';
-      case 'assign':
-        return 'bg-teal-100 text-teal-600 dark:bg-teal-950/50 dark:text-teal-400';
-      case 'unassign':
-        return 'bg-gray-100 text-gray-500 dark:bg-neutral/50 dark:text-neutral-content/70';
       case 'close':
-        return 'bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400';
+        return 'bg-success/10 text-success';
+      case 'update':
+        return 'bg-info/10 text-info';
+      case 'delete':
+        return 'bg-error/10 text-error';
+      case 'merge':
       case 'reopen':
-        return 'bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400';
+        return 'bg-warning/15 text-warning';
       // Logged interactions share one soft-primary treatment (semantic, theme-safe).
       case 'call':
       case 'door_knock':
       case 'note':
       case 'meeting':
         return 'bg-primary/10 text-primary';
+      // Mechanical events (import/export/assign/unassign) and anything unknown
+      // are inert — neutral wash, no decorative hue.
       default:
-        return 'bg-gray-100 text-gray-400 dark:bg-neutral/30 dark:text-neutral-content/50';
+        return 'bg-base-200 text-base-content/60';
     }
   }
 
