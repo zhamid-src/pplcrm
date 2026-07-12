@@ -47,8 +47,18 @@ apps/
     src/
       app/
         canvass/
+          canvass-derive.ts
+          canvass-household.ts
+          canvass-landing.ts
+          canvass-list.ts
+          canvass-map.ts
+          canvass-me.ts
           canvass-page.ts
+          canvass-store.ts
+          canvass-survey.ts
+          canvass-ui.ts
         deliveries/
+          route-page.html
           route-page.ts
         gate/
           companion-api.ts
@@ -150,6 +160,7 @@ apps/
               assign-turf-dialog.ts
               canvassing-page.html
               canvassing-page.ts
+              companion-settings-dialog.ts
               cut-turfs-dialog.html
               cut-turfs-dialog.ts
           companies/
@@ -175,8 +186,6 @@ apps/
               deliveries-route-detail.ts
               deliveries-routes.html
               deliveries-routes.ts
-              public-route.html
-              public-route.ts
           donations/
             ui/
               donations-grid.html
@@ -628,6 +637,199 @@ apps/
 ```
 
 # Files
+
+## File: apps/companion/src/app/deliveries/route-page.html
+
+```html
+<pc-companion-gate kind="route" [token]="token()" (ready)="load()">
+  <div class="min-h-screen bg-base-200">
+    @switch (state()) { @case ('loading') {
+    <div class="flex min-h-screen items-center justify-center">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+    </div>
+    } @case ('notfound') {
+    <div class="flex min-h-screen items-center justify-center px-6">
+      <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+        <h1 class="mb-2 text-lg font-semibold">This route link isn't active</h1>
+        <p class="text-sm text-base-content/60">Ask your organizer for a new one.</p>
+      </div>
+    </div>
+    } @case ('session-expired') {
+    <div class="flex min-h-screen items-center justify-center px-6">
+      <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+        <h1 class="mb-2 text-lg font-semibold">Let's confirm it's you again</h1>
+        <p class="text-sm text-base-content/60">Your device verification has lapsed. Reload to verify and continue.</p>
+        <button type="button" class="btn btn-primary mt-4 min-h-11" (click)="reload()">Reload this page</button>
+      </div>
+    </div>
+    } @case ('ready') { @if (data(); as d) {
+    <div class="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-3 py-4">
+      <!-- Header -->
+      <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
+            {{ d.organization_name }}
+          </p>
+          <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
+        </div>
+        <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>
+        <p class="mt-2 text-sm tabular-nums text-base-content/70">
+          @if (isDone()) { {{ d.stops_total }} of {{ d.stops_total }} handled } @else { {{ d.stops_delivered }} of {{
+          d.stops_total }} delivered }
+        </p>
+        <progress
+          class="progress mt-1 w-full"
+          [class.progress-success]="isDone()"
+          [class.progress-primary]="!isDone()"
+          [value]="handled()"
+          [max]="d.stops_total || 1"
+        ></progress>
+
+        <div class="mt-3 flex items-center gap-2">
+          <pc-tab-bar [tabs]="viewTabs" [activeTab]="view()" (activeTabChange)="setView($event)" />
+          <button type="button" class="btn btn-ghost btn-sm ml-auto" (click)="openFullRoute()">
+            <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
+          </button>
+        </div>
+      </div>
+
+      @if (isDone()) {
+      <div class="rounded-2xl border border-success/30 bg-success/[0.08] p-5 text-center">
+        <p class="text-base font-semibold text-base-content">All {{ d.stops_total }} stops handled — thank you!</p>
+        <p class="mt-1 text-sm text-base-content/70">Your organizer already has the results.</p>
+      </div>
+      }
+
+      <!-- Map view -->
+      @if (view() === 'map') {
+      <pc-map
+        class="block h-72 overflow-hidden rounded-2xl border border-base-300"
+        [markers]="markers()"
+        (markerClicked)="selectStop($event)"
+      ></pc-map>
+      }
+
+      <!-- Stop list -->
+      @if (view() === 'list') {
+      <div class="flex flex-col gap-2.5">
+        @for (stop of d.stops; track stop.id) {
+        <div
+          class="rounded-2xl border p-4"
+          [class.border-base-300]="stop.status === 'pending'"
+          [class.bg-base-100]="stop.status === 'pending'"
+          [class.border-success]="stop.status === 'delivered'"
+          [class.bg-success]="stop.status === 'delivered'"
+          [class.bg-opacity-[0.06]]="stop.status !== 'pending'"
+          [class.border-warning]="stop.status === 'skipped'"
+          [class.bg-warning]="stop.status === 'skipped'"
+        >
+          <div class="flex items-start gap-3">
+            <span
+              class="flex size-7 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold tabular-nums"
+              >{{ stop.seq }}</span
+            >
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold text-base-content">{{ stop.first_name }}</p>
+              <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+              @if (stop.status === 'skipped' && stop.reason) {
+              <span class="mt-1 inline-block"><pc-status-badge type="warning">{{ stop.reason }}</pc-status-badge></span>
+              }
+            </div>
+            @if (stop.status === 'delivered') {
+            <pc-status-badge type="success">Delivered</pc-status-badge>
+            }
+          </div>
+
+          <!-- Actions for the active (first pending) stop -->
+          @if (stop.status === 'pending' && stop.id === activeStopId()) { @if (reasonPickerFor() === stop.id) {
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            @for (reason of reasons; track reason) {
+            <button type="button" class="btn btn-outline btn-warning min-h-11 text-sm" (click)="skip(stop.id, reason)">
+              {{ reason }}
+            </button>
+            }
+            <button type="button" class="btn btn-ghost col-span-2 min-h-11 text-sm" (click)="cancelReason()">
+              Never mind — keep it pending
+            </button>
+          </div>
+          <p class="mt-2 text-xs text-base-content/50">
+            A skipped house goes back to your organizer's list automatically.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col gap-2">
+            <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+              Mark delivered
+            </button>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="btn btn-ghost min-h-11 text-sm"
+                [disabled]="busy()"
+                (click)="openReasonPicker(stop.id)"
+              >
+                Couldn't deliver
+              </button>
+              <button type="button" class="btn btn-ghost min-h-11 text-sm" [disabled]="busy()" (click)="defer(stop.id)">
+                Skip for now
+              </button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">
+              <pc-icon name="map-pin" [size]="4"></pc-icon> Navigate
+            </button>
+          </div>
+          } }
+
+          <!-- Undo on every finished row — a wrong tap is fixable even after a reload
+               or from a completed route (undoing reopens it). -->
+          @if (stop.status !== 'pending') {
+          <div class="mt-2 flex items-center gap-2">
+            <button type="button" class="btn btn-ghost btn-sm min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
+              <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
+            </button>
+            @if (stop.id === lastActioned()) {
+            <span class="text-xs text-base-content/50">
+              @if (stop.status === 'delivered') { Delivered just now } @else { Skipped just now }
+            </span>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+      }
+
+      <!-- Selected pin card (map view) -->
+      @if (view() === 'map' && selectedStopId(); as sid) { @for (stop of d.stops; track stop.id) { @if (stop.id === sid)
+      {
+      <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+        <p class="font-semibold">{{ stop.seq }}. {{ stop.first_name }}</p>
+        <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+        @if (stop.status === 'pending') {
+        <div class="mt-3 flex flex-col gap-2">
+          <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+            Mark delivered
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">Navigate</button>
+        </div>
+        } @else {
+        <div class="mt-2 flex items-center gap-2">
+          <pc-status-badge [type]="stop.status === 'delivered' ? 'success' : 'warning'"
+            >{{ stop.status }}</pc-status-badge
+          >
+          <button type="button" class="btn btn-ghost btn-sm min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
+            <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
+          </button>
+        </div>
+        }
+      </div>
+      } } }
+
+      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+    </div>
+    } } }
+  </div>
+</pc-companion-gate>
+```
 
 ## File: apps/frontend/archive/old-tailwind.config.ts
 
@@ -2603,252 +2805,6 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-
-import type {
-  AddTurfType,
-  AssignTurfType,
-  CutTurfsType,
-  FieldReportRangeType,
-  UpdateTurfType,
-} from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-import type { RouterOutputs } from '../../../services/api/trpc-types';
-
-export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
-export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
-export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
-export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
-export type Coverage = RouterOutputs['canvassing']['getCoverage'];
-export type CutPreview = RouterOutputs['canvassing']['previewCut'];
-
-@Service()
-export class CanvassingService extends TRPCService<unknown> {
-  public getTurfs(): Promise<TurfListItem[]> {
-    return this.api.canvassing.getTurfs.query();
-  }
-
-  public getFieldSummary(): Promise<FieldSummary> {
-    return this.api.canvassing.getFieldSummary.query();
-  }
-
-  public getInFieldToday(): Promise<InFieldToday> {
-    return this.api.canvassing.getInFieldToday.query();
-  }
-
-  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
-    return this.api.canvassing.getFieldReport.query(input);
-  }
-
-  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
-    return this.api.canvassing.exportFieldReport.query(input);
-  }
-
-  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
-    return this.api.canvassing.getCoverage.query(input);
-  }
-
-  public previewCut(input: CutTurfsType): Promise<CutPreview> {
-    return this.api.canvassing.previewCut.query(input);
-  }
-
-  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
-    return this.api.canvassing.cutTurfs.mutate(input);
-  }
-
-  public assign(input: AssignTurfType): Promise<{ token: string }> {
-    return this.api.canvassing.assign.mutate(input);
-  }
-
-  public retire(turfId: string): Promise<void> {
-    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
-  }
-
-  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
-    return this.api.canvassing.refreshFromList.mutate(turfId);
-  }
-
-  public addTurf(input: AddTurfType): Promise<{ id: string }> {
-    return this.api.canvassing.addTurf.mutate(input);
-  }
-
-  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
-    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/assign-turf-dialog.ts
-
-```typescript
-import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { debounce } from '../../../../../../../libs/common/src';
-import { PersonsService } from '../../persons/services/persons-service';
-import { CanvassingService } from '../services/canvassing-service';
-
-interface PersonOption {
-  id: string;
-  name: string;
-  contact: string;
-}
-
-/**
- * Assign a turf to a volunteer (COMPANION-APPS-PLAN.md §5 B1). Companion links
- * are personal — the access layer verifies the holder against this person's
- * email/mobile on file — so assignment starts with picking who it's for.
- */
-@Component({
-  selector: 'pc-assign-turf-dialog',
-  imports: [FormsModule],
-  template: `
-    <dialog class="modal" [open]="true">
-      <div class="modal-box flex max-w-md flex-col gap-4">
-        <h3 class="text-sm font-semibold">Assign "{{ turfName() }}"</h3>
-        <p class="text-xs text-base-content/60">
-          The link is personal: the volunteer verifies a code sent to their email or mobile on file, and new volunteers
-          need a one-time approval from an admin.
-        </p>
-
-        @if (!selected()) {
-          <label class="input input-bordered flex w-full items-center gap-2">
-            <input
-              type="text"
-              class="grow"
-              placeholder="Search people by name…"
-              aria-label="Search people"
-              [ngModel]="query()"
-              (ngModelChange)="onQuery($event)"
-            />
-          </label>
-          @if (searching()) {
-            <progress class="progress w-full"></progress>
-          } @else if (options().length > 0) {
-            <ul class="menu w-full rounded-box border border-base-300 bg-base-100 p-1">
-              @for (opt of options(); track opt.id) {
-                <li>
-                  <button type="button" (click)="choose(opt)">
-                    <span class="font-medium">{{ opt.name }}</span>
-                    <span class="text-xs text-base-content/50">{{ opt.contact }}</span>
-                  </button>
-                </li>
-              }
-            </ul>
-          } @else if (query().trim().length > 1) {
-            <p class="text-xs text-base-content/60">No people match — check the spelling or add them first.</p>
-          }
-        } @else {
-          <div class="flex items-center justify-between rounded-box border border-base-300 p-3">
-            <div>
-              <p class="font-medium">{{ selected()?.name }}</p>
-              <p class="text-xs text-base-content/50">{{ selected()?.contact }}</p>
-            </div>
-            <button type="button" class="btn btn-ghost btn-xs" (click)="selected.set(null)">Change</button>
-          </div>
-          @if (!selected()?.contact) {
-            <p class="text-xs text-warning-content">
-              No email or mobile on file — add one to their person record or the verification step can't reach them.
-            </p>
-          }
-        }
-
-        <div class="modal-action">
-          <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">Cancel</button>
-          <span [class.tooltip]="!selected()" [attr.data-tip]="!selected() ? 'Pick a volunteer to assign' : null">
-            <button type="button" class="btn btn-primary btn-sm" [disabled]="!selected() || saving()" (click)="save()">
-              @if (saving()) {
-                Assigning…
-              } @else {
-                Assign & copy link
-              }
-            </button>
-          </span>
-        </div>
-      </div>
-      <div class="modal-backdrop" (click)="cancelled.emit()"></div>
-    </dialog>
-  `,
-})
-export class AssignTurfDialog {
-  public readonly turfId = input.required<string>();
-  public readonly turfName = input.required<string>();
-  public readonly cancelled = output<void>();
-  /** Emits the minted token once assigned (page copies the /t/ link). */
-  public readonly assigned = output<string>();
-
-  protected readonly options = signal<PersonOption[]>([]);
-  protected readonly query = signal('');
-  protected readonly saving = signal(false);
-  protected readonly selected = signal<PersonOption | null>(null);
-
-  protected readonly searching = computed(() => this.searchGate.visible());
-
-  private readonly alerts = inject(AlertService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly searchGate = createLoadingGate();
-  private readonly svc = inject(CanvassingService);
-
-  private readonly debouncedSearch = debounce(async (term: string) => {
-    if (term.trim().length < 2) {
-      this.options.set([]);
-      return;
-    }
-    const end = this.searchGate.begin();
-    try {
-      const res = await this.personsSvc.getAllWithAddress({ searchStr: term.trim(), startRow: 0, endRow: 8 });
-      const rows = (res?.rows ?? []) as Record<string, unknown>[];
-      this.options.set(
-        rows.map((r) => ({
-          id: String(r['id']),
-          name: [r['first_name'], r['last_name']].filter(Boolean).join(' ') || String(r['name'] ?? 'Unnamed person'),
-          contact: [r['email'], r['mobile']].filter(Boolean).join(' · '),
-        })),
-      );
-    } catch {
-      this.options.set([]);
-    } finally {
-      end();
-    }
-  }, 250);
-
-  protected choose(opt: PersonOption): void {
-    this.selected.set(opt);
-    this.options.set([]);
-  }
-
-  protected onQuery(value: string): void {
-    this.query.set(value);
-    this.debouncedSearch(value);
-  }
-
-  protected async save(): Promise<void> {
-    const person = this.selected();
-    if (!person || this.saving()) return;
-    this.saving.set(true);
-    try {
-      const { token } = await this.svc.assign({
-        turf_id: this.turfId(),
-        team_id: null,
-        volunteer_person_id: person.id,
-      });
-      this.assigned.emit(token);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/canvassing/ui/cut-turfs-dialog.ts
 
 ```typescript
@@ -3171,6 +3127,159 @@ export class DeliveriesRoutesService extends AbstractAPIService<'delivery_routes
   }
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Route export is not available'));
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.ts
+
+```typescript
+import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { DONATION_METHODS, DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
+import { DonationsService } from '../../../services/api/donations-service';
+import { PersonsService } from '../../persons/services/persons-service';
+
+type DonorSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
+
+/**
+ * Fig. 15 "Record donation" dialog — records an offline gift (cash, check, bank transfer, or a
+ * card payment taken outside Stripe checkout) against a donor. Distinct from the "Collect
+ * donation" flow on the person page, which redirects to Stripe Checkout for a real card charge.
+ */
+@Component({
+  selector: 'pc-record-donation-dialog',
+  imports: [Icon, FormsModule],
+  templateUrl: './record-donation-dialog.html',
+})
+export class RecordDonationDialog {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  private readonly _loading = createLoadingGate();
+
+  public readonly saved = output<void>();
+
+  protected readonly methods = DONATION_METHODS;
+  protected readonly methodLabels = DONATION_METHOD_LABELS;
+
+  protected readonly donorSearch = signal('');
+  protected readonly donorResults = signal<DonorSearchResult[]>([]);
+  protected readonly selectedDonor = signal<DonorSearchResult | null>(null);
+  protected readonly isSearching = signal(false);
+  protected readonly touchedDonor = signal(false);
+
+  protected readonly amount = signal<number | null>(null);
+  protected readonly touchedAmount = signal(false);
+
+  protected readonly method = signal<DonationMethod>('card');
+  protected readonly submitting = signal(false);
+  protected readonly isLoading = this._loading.visible;
+
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly donorInvalid = () => this.touchedDonor() && !this.selectedDonor();
+  protected readonly amountInvalid = () => {
+    const amt = this.amount();
+    return this.touchedAmount() && (amt === null || amt <= 0);
+  };
+  public open(): void {
+    this.resetForm();
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close(): void {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected initials(p: DonorSearchResult): string {
+    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
+  }
+
+  protected onDonorSearchChange(value: string): void {
+    this.donorSearch.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (!value.trim()) {
+      this.donorResults.set([]);
+      return;
+    }
+    this.isSearching.set(true);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
+  }
+
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const rows = (result as { rows?: unknown[] })?.rows ?? [];
+      this.donorResults.set(
+        rows.map((raw) => {
+          const p = raw as { id: string; first_name: string | null; last_name: string | null; email: string | null };
+          return { id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email };
+        }),
+      );
+    } catch {
+      this.donorResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
+  }
+
+  protected selectDonor(p: DonorSearchResult): void {
+    this.selectedDonor.set(p);
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+  }
+
+  protected clearDonor(): void {
+    this.selectedDonor.set(null);
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+  }
+
+  protected donorName(p: DonorSearchResult): string {
+    return `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'this donor';
+  }
+
+  protected async submit(): Promise<void> {
+    this.touchedDonor.set(true);
+    this.touchedAmount.set(true);
+    const donor = this.selectedDonor();
+    const amt = this.amount();
+    if (!donor || amt === null || amt <= 0) return;
+
+    this.submitting.set(true);
+    const end = this._loading.begin();
+    try {
+      await this.donationsSvc.recordDonation({
+        personId: donor.id,
+        amountCents: Math.round(amt * 100),
+        method: this.method(),
+      });
+      this.alertSvc.showSuccess(`Saved — $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
+      this.saved.emit();
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to record donation');
+    } finally {
+      this.submitting.set(false);
+      end();
+    }
+  }
+
+  private resetForm(): void {
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+    this.selectedDonor.set(null);
+    this.touchedDonor.set(false);
+    this.amount.set(null);
+    this.touchedAmount.set(false);
+    this.method.set('card');
+    this.submitting.set(false);
   }
 }
 ```
@@ -16847,6 +16956,143 @@ export class ConnectionsService extends TRPCService<'person_connections'> {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/donations-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from './trpc-service';
+
+@Service()
+export class DonationsService extends TRPCService<'donations'> {
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  public listDonations() {
+    return this.api.donations.listDonations.query();
+  }
+
+  public getHistory(personId: string) {
+    return this.api.donations.getPersonDonationHistory.query(personId);
+  }
+
+  public getStats(personId: string) {
+    return this.api.donations.getDonationStats.query(personId);
+  }
+
+  public checkEligibility(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+    isRecurring?: boolean;
+    remainingMonths?: number;
+  }) {
+    return this.api.donations.checkEligibility.query(payload);
+  }
+
+  public createCheckout(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createCheckout.mutate(payload);
+  }
+
+  public confirmDonation(sessionId: string) {
+    return this.api.donations.confirmDonation.mutate({ sessionId });
+  }
+
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer. */
+  public recordDonation(payload: {
+    personId: string;
+    amountCents: number;
+    method: 'card' | 'check' | 'cash' | 'bank_transfer';
+  }) {
+    return this.api.donations.recordDonation.mutate(payload);
+  }
+
+  public confirmMockDonation(payload: {
+    personId: string;
+    amountCents: number;
+    sessionId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockDonation.mutate(payload);
+  }
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  public createRecurringCheckout(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createRecurringCheckout.mutate(payload);
+  }
+
+  public confirmMockPledge(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    mockSubId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockPledge.mutate(payload);
+  }
+
+  public listPledges() {
+    return this.api.donations.listPledges.query();
+  }
+
+  public getPersonPledges(personId: string) {
+    return this.api.donations.getPersonPledges.query(personId);
+  }
+
+  public cancelPledge(pledgeId: string) {
+    return this.api.donations.cancelPledge.mutate({ pledgeId });
+  }
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  public getDonationPeriods() {
+    return this.api.donations.getDonationPeriods.query();
+  }
+
+  public createDonationPeriod(payload: {
+    name: string;
+    start_date: string;
+    end_date?: string | null;
+    limit_amount: number;
+  }) {
+    return this.api.donations.createDonationPeriod.mutate(payload);
+  }
+
+  public updateDonationPeriod(payload: {
+    id: string;
+    name?: string;
+    start_date?: string;
+    end_date?: string | null;
+    limit_amount?: number;
+    is_active?: boolean;
+  }) {
+    return this.api.donations.updateDonationPeriod.mutate(payload);
+  }
+
+  public deleteDonationPeriod(id: string) {
+    return this.api.donations.deleteDonationPeriod.mutate({ id });
+  }
+
+  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
+
+  public getWebhookTokenStatus() {
+    return this.api.donations.getWebhookTokenStatus.query();
+  }
+
+  public regenerateWebhookToken() {
+    return this.api.donations.regenerateWebhookToken.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/events-service.ts
 
 ```typescript
@@ -21487,103 +21733,6 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-## File: apps/frontend/src/app/app.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
-
-export const appRoutes = [
-  // Default redirect to the dashboard inside the app shell
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'new-password',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'f/:slug',
-    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
-  },
-  {
-    path: 'e/:slug',
-    data: { kind: 'event' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'v/:slug',
-    data: { kind: 'volunteer' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'volunteer',
-    loadComponent: () =>
-      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
-  },
-  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
-  // the separate apps/companion build — served path-routed on the same domain.
-  {
-    // Deliveries volunteer route — tokenised, account-less (§14). Moves to
-    // apps/companion in Phase D of COMPANION-APPS-PLAN.md.
-    path: 'r/:token',
-    loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
-  },
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
-
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
-
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
-```
-
 ## File: apps/frontend/src/app/environment-token.ts
 
 ```typescript
@@ -22215,6 +22364,1973 @@ export default defineConfig({
     "types": ["node", "@playwright/test"]
   },
   "include": ["src/**/*.ts", "playwright.config.ts"]
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-derive.ts
+
+```typescript
+import type {
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionOpType,
+  CompanionPerson,
+  CompanionSurveyPrefill,
+  KnockResponse,
+} from '@common';
+
+/**
+ * Pure derivations over the Companion turf payload (spec §3 "derived, never
+ * stored"). No Angular here — every door status, progress number, and Me-tab
+ * stat is recomputed from the households array (server payload + the local
+ * optimistic ops replayed on top by `applyLocalOps`), so the UI can never
+ * disagree with the data it was derived from.
+ */
+
+// ---------------------------------------------------------------------------
+// Door status
+// ---------------------------------------------------------------------------
+
+export type DoorStatus = 'dnc' | `outcome:${CompanionDoorOutcome}` | 'canvassed' | 'in_progress' | 'not_visited';
+
+/**
+ * The one derivation the whole walk list hangs off. Precedence: DNC beats
+ * everything (skip the door — it still counts), then an explicit door outcome,
+ * then survey completion.
+ */
+export function doorStatus(h: CompanionHousehold): DoorStatus {
+  if (h.dnc) return 'dnc';
+  if (h.door_outcome != null) return `outcome:${h.door_outcome}`;
+  const resulted = h.people.filter((p) => p.result != null).length;
+  if (h.hh_survey != null || (h.people.length > 0 && resulted === h.people.length)) return 'canvassed';
+  if (resulted > 0) return 'in_progress';
+  return 'not_visited';
+}
+
+/** Sentence-case chip label for a derived door status. */
+export function doorStatusLabel(status: DoorStatus): string {
+  switch (status) {
+    case 'dnc':
+      return 'Do not contact';
+    case 'outcome:no_answer':
+      return 'No answer';
+    case 'outcome:inaccessible':
+      return 'Inaccessible';
+    case 'outcome:refused':
+      return 'Refused';
+    case 'canvassed':
+      return 'Canvassed';
+    case 'in_progress':
+      return 'In progress';
+    case 'not_visited':
+      return 'Not visited';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * A door counts toward progress once it is resolved: canvassed, marked with a
+ * door outcome, or DNC ("DNC doors still count toward your turf" — spec §3.4).
+ * In-progress doors are not yet attempted.
+ */
+export function isAttempted(h: CompanionHousehold): boolean {
+  const status = doorStatus(h);
+  return status !== 'not_visited' && status !== 'in_progress';
+}
+
+/** The next open door: lowest walk_order not yet attempted. */
+export function nextDoor(households: readonly CompanionHousehold[]): CompanionHousehold | null {
+  let next: CompanionHousehold | null = null;
+  for (const h of households) {
+    if (isAttempted(h)) continue;
+    if (next == null || h.walk_order < next.walk_order) next = h;
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Conversations + consensus
+// ---------------------------------------------------------------------------
+
+/** Completed surveys: people surveyed ('canvassed') plus household-level surveys. */
+export function conversations(households: readonly CompanionHousehold[]): number {
+  let count = 0;
+  for (const h of households) {
+    if (h.hh_survey != null) count += 1;
+    count += h.people.filter((p) => p.result === 'canvassed').length;
+  }
+  return count;
+}
+
+/**
+ * The door's surveyed stance. Every survey at the door (each surveyed person
+ * plus the anonymous household survey) casts a voice; all agree → that level,
+ * any disagreement → 'mixed', no stance recorded → null.
+ */
+export function supportConsensus(h: CompanionHousehold): KnockResponse | 'mixed' | null {
+  const voices: KnockResponse[] = [];
+  for (const p of h.people) {
+    if (p.survey?.support != null) voices.push(p.survey.support);
+  }
+  if (h.hh_survey?.support != null) voices.push(h.hh_survey.support);
+  const first = voices[0];
+  if (first === undefined) return null;
+  return voices.every((v) => v === first) ? first : 'mixed';
+}
+
+// ---------------------------------------------------------------------------
+// Me-tab stats
+// ---------------------------------------------------------------------------
+
+export interface IssueCount {
+  issue: string;
+  count: number;
+}
+
+export interface MeStats {
+  doors_attempted: number;
+  doors_total: number;
+  conversations: number;
+  /** Surveys (person or household) recorded with support = 'supporter'. */
+  supporters: number;
+  /** Doors with at least one conversation ÷ doors attempted, as a 0–100 integer. */
+  contact_rate: number;
+  /** Issues ranked by mentions across all surveys; count desc, then A–Z. */
+  top_issues: IssueCount[];
+}
+
+export function meStats(households: readonly CompanionHousehold[]): MeStats {
+  let attempted = 0;
+  let supporters = 0;
+  let doorsWithConversation = 0;
+  const issueCounts = new Map<string, number>();
+
+  const tally = (survey: CompanionSurveyPrefill | null): void => {
+    if (survey == null) return;
+    if (survey.support === 'supporter') supporters += 1;
+    for (const issue of survey.issues) issueCounts.set(issue, (issueCounts.get(issue) ?? 0) + 1);
+  };
+
+  for (const h of households) {
+    if (isAttempted(h)) attempted += 1;
+    const talked = h.hh_survey != null || h.people.some((p) => p.result === 'canvassed');
+    if (talked) doorsWithConversation += 1;
+    tally(h.hh_survey);
+    for (const p of h.people) tally(p.survey);
+  }
+
+  const top_issues = [...issueCounts.entries()]
+    .map(([issue, count]): IssueCount => ({ issue, count }))
+    .sort((a, b) => b.count - a.count || a.issue.localeCompare(b.issue));
+
+  return {
+    doors_attempted: attempted,
+    doors_total: households.length,
+    conversations: conversations(households),
+    supporters,
+    contact_rate: attempted > 0 ? Math.round((doorsWithConversation / attempted) * 100) : 0,
+    top_issues,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Local optimistic overlay — replay queued/acked ops over the server payload
+// ---------------------------------------------------------------------------
+
+/**
+ * One locally-recorded op. `temp_person_id` exists only for `person_create`:
+ * the placeholder id the UI shows until the server ack supplies the real one.
+ */
+export interface LocalOp {
+  op: CompanionOpType;
+  temp_person_id?: string;
+}
+
+/** Client-side placeholder ids for people added at the door, pre-ack. */
+export function isTempPersonId(id: string): boolean {
+  return id.startsWith('tmp-');
+}
+
+/** The person id an op targets, if the op type carries one. */
+export function opPersonId(op: CompanionOpType): string | null {
+  switch (op.type) {
+    case 'survey':
+      return op.payload.person_id == null ? null : String(op.payload.person_id);
+    case 'person_result':
+      return String(op.payload.person_id);
+    case 'door_outcome':
+    case 'clear_outcome':
+    case 'person_create':
+      return null;
+    default: {
+      const _exhaustive: never = op;
+      return _exhaustive;
+    }
+  }
+}
+
+function toPrefill(payload: Extract<CompanionOpType, { type: 'survey' }>['payload']): CompanionSurveyPrefill {
+  return {
+    support: payload.support ?? null,
+    issues: [...payload.issues],
+    wants_volunteer: payload.wants_volunteer,
+    wants_yard_sign: payload.wants_yard_sign,
+    set_dnc: payload.set_dnc,
+    subscribe: payload.subscribe,
+  };
+}
+
+/**
+ * Replay local ops (queued + already-acked-this-session) over the server
+ * households, newest last so the latest action wins — the same "latest knock
+ * wins" rule the backend derives from. Pure and non-mutating.
+ */
+export function applyLocalOps(
+  households: readonly CompanionHousehold[],
+  ops: readonly LocalOp[],
+): CompanionHousehold[] {
+  const byId = new Map<string, CompanionHousehold>(
+    households.map((h) => [h.id, { ...h, people: h.people.map((p): CompanionPerson => ({ ...p })) }]),
+  );
+
+  for (const entry of ops) {
+    const op = entry.op;
+    const h = byId.get(String(op.payload.household_id));
+    if (!h) continue;
+    switch (op.type) {
+      case 'survey': {
+        const prefill = toPrefill(op.payload);
+        if (op.payload.person_id == null) {
+          h.hh_survey = prefill;
+        } else {
+          const person = h.people.find((p) => p.id === String(op.payload.person_id));
+          if (person) {
+            person.result = 'canvassed';
+            person.survey = prefill;
+          }
+        }
+        break;
+      }
+      case 'person_result': {
+        const person = h.people.find((p) => p.id === String(op.payload.person_id));
+        if (person) {
+          person.result = op.payload.result;
+          person.survey = null;
+        }
+        break;
+      }
+      case 'door_outcome':
+        h.door_outcome = op.payload.outcome;
+        break;
+      case 'clear_outcome':
+        h.door_outcome = null;
+        break;
+      case 'person_create': {
+        const id = entry.temp_person_id ?? `tmp-${op.op_id}`;
+        if (!h.people.some((p) => p.id === id)) {
+          h.people.push({ id, name: op.payload.name, dnc: false, result: null, survey: null });
+        }
+        break;
+      }
+      default: {
+        const _exhaustive: never = op;
+        void _exhaustive;
+      }
+    }
+  }
+
+  return households.map((h) => byId.get(h.id) ?? h);
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-household.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionDoorOutcome, CompanionHousehold, CompanionPerson } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { doorStatus, doorStatusLabel } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+import { initialsOf, personResultLabel, statusBadgeClass } from './canvass-ui';
+
+/**
+ * Household detail (spec §3.4): the doorstep screen. Person cards open the
+ * survey; the dashed "This household" card covers the no-name conversation;
+ * the bottom 3-up records door-level outcomes (tap the active one again to
+ * clear it). A DNC door blocks recording but still counts toward the turf.
+ */
+@Component({
+  selector: 'pc-canvass-household',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    @if (household(); as h) {
+      <div class="flex flex-1 flex-col gap-4 p-4">
+        <header class="flex items-start gap-2">
+          <button type="button" class="btn btn-ghost btn-circle" aria-label="Back to the walk list" (click)="back()">
+            <pc-icon name="chevron-left" [size]="5"></pc-icon>
+          </button>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h1 class="text-lg font-bold">{{ h.address }}</h1>
+              <span [class]="chipClass(h)">{{ chipLabel(h) }}</span>
+            </div>
+            <p class="text-xs text-base-content/70">
+              Walk order {{ h.walk_order }} · {{ h.people.length }} {{ h.people.length === 1 ? 'person' : 'people' }} on
+              file
+            </p>
+          </div>
+        </header>
+
+        @if (h.dnc) {
+          <div
+            class="flex items-center gap-3 rounded-lg border border-error/30 bg-error/10 p-3 text-error"
+            role="alert"
+          >
+            <pc-icon name="shield-exclamation" [size]="5"></pc-icon>
+            <p class="text-sm font-medium">Skip this door — it still counts toward your turf.</p>
+          </div>
+        }
+
+        <!-- The anonymous household-level conversation. -->
+        <button
+          type="button"
+          class="w-full rounded-lg border p-4 text-left"
+          [class.border-dashed]="!h.hh_survey"
+          [class.border-primary]="!h.hh_survey"
+          [class.border-base-300]="!!h.hh_survey"
+          [class.bg-base-100]="!!h.hh_survey"
+          [class.opacity-50]="h.dnc"
+          [disabled]="h.dnc"
+          (click)="openSurvey(null)"
+        >
+          <span class="font-medium" [class.text-primary]="!h.hh_survey">This household</span>
+          @if (!h.hh_survey) {
+            <span class="mt-1 block text-xs text-base-content/70">No name? Log the conversation for the door.</span>
+          } @else {
+            <span class="mt-2 flex flex-wrap items-center gap-1.5">
+              <span class="badge badge-success">{{ hhSurveyLabel(h) }}</span>
+              @for (issue of h.hh_survey.issues; track issue) {
+                <span class="badge badge-ghost">{{ issue }}</span>
+              }
+              @for (chip of surveyChips(h.hh_survey); track chip.label) {
+                <span [class]="chip.cls">{{ chip.label }}</span>
+              }
+            </span>
+          }
+        </button>
+
+        <!-- People on file. -->
+        <div class="flex flex-col gap-2">
+          @for (p of h.people; track p.id) {
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 text-left"
+              [class.opacity-50]="h.dnc || p.dnc"
+              [disabled]="h.dnc || p.dnc"
+              (click)="openSurvey(p.id)"
+            >
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/80"
+              >
+                {{ initials(p.name) }}
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-medium">{{ p.name }}</span>
+                <span class="mt-1 flex flex-wrap items-center gap-1.5">
+                  @if (p.dnc) {
+                    <span class="badge badge-error">Do not contact</span>
+                  } @else if (p.result; as result) {
+                    <span [class]="resultChipClass(result)">{{ resultLabel(p) }}</span>
+                  } @else {
+                    <span class="text-xs font-medium text-primary">Tap to survey</span>
+                  }
+                  @if (p.survey; as survey) {
+                    @for (issue of survey.issues; track issue) {
+                      <span class="badge badge-ghost">{{ issue }}</span>
+                    }
+                    @for (chip of surveyChips(survey); track chip.label) {
+                      <span [class]="chip.cls">{{ chip.label }}</span>
+                    }
+                  }
+                </span>
+              </span>
+            </button>
+          }
+        </div>
+
+        @if (!h.dnc) {
+          <!-- Add someone met at the door — inline, no modal. -->
+          @if (!adding()) {
+            <button type="button" class="btn btn-outline btn-secondary w-full border-dashed" (click)="adding.set(true)">
+              + Add someone at this door
+            </button>
+          } @else {
+            <form class="flex gap-2" (submit)="addPerson($event)">
+              <input
+                class="input input-bordered min-h-11 flex-1"
+                type="text"
+                placeholder="Their name"
+                aria-label="Name of the person at this door"
+                [value]="newName()"
+                (input)="onNameInput($event)"
+              />
+              <button type="submit" class="btn btn-primary" [disabled]="!newName().trim()">
+                {{ newName().trim() ? 'Add' : 'Enter a name' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-circle" aria-label="Cancel adding" (click)="cancelAdd()">
+                <pc-icon name="x-mark" [size]="5"></pc-icon>
+              </button>
+            </form>
+          }
+
+          <!-- Door-level outcomes. -->
+          <div class="mt-auto flex flex-col gap-2 pt-2">
+            <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+              No answer at the door?
+            </p>
+            <div class="grid grid-cols-3 gap-2">
+              @for (option of outcomeOptions; track option.outcome) {
+                <button
+                  type="button"
+                  class="btn"
+                  [class.btn-warning]="h.door_outcome === option.outcome"
+                  [class.btn-outline]="h.door_outcome !== option.outcome"
+                  [class.btn-secondary]="h.door_outcome !== option.outcome"
+                  [attr.aria-pressed]="h.door_outcome === option.outcome"
+                  (click)="mark(option.outcome)"
+                >
+                  {{ option.label }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+        <p class="text-base-content/70">This door isn't in your turf anymore.</p>
+        <button type="button" class="btn btn-primary" (click)="back()">Back to the walk list</button>
+      </div>
+    }
+  `,
+})
+export class CanvassHousehold {
+  private readonly alerts = inject(AlertService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly adding = signal(false);
+  protected readonly newName = signal('');
+
+  protected readonly outcomeOptions: { outcome: CompanionDoorOutcome; label: string; toast: string }[] = [
+    { outcome: 'no_answer', label: 'Nobody home', toast: 'Marked "Not home"' },
+    { outcome: 'inaccessible', label: 'Inaccessible', toast: 'Marked "Inaccessible"' },
+    { outcome: 'refused', label: 'Refused', toast: 'Marked "Refused"' },
+  ];
+
+  protected readonly household = computed<CompanionHousehold | null>(() => {
+    const view = this.store.view();
+    return view.kind === 'household' ? this.store.householdById(view.household_id) : null;
+  });
+
+  protected addPerson(event: Event): void {
+    event.preventDefault();
+    const h = this.household();
+    const name = this.newName().trim();
+    if (!h || !name) return;
+    this.store.addPerson(h.id, name);
+    this.alerts.showSuccess('Added — will be created in PeopleCRM');
+    this.cancelAdd();
+  }
+
+  protected back(): void {
+    this.store.view.set({ kind: 'list' });
+  }
+
+  protected cancelAdd(): void {
+    this.adding.set(false);
+    this.newName.set('');
+  }
+
+  protected chipClass(h: CompanionHousehold): string {
+    return statusBadgeClass(doorStatus(h));
+  }
+
+  protected chipLabel(h: CompanionHousehold): string {
+    return doorStatusLabel(doorStatus(h));
+  }
+
+  protected hhSurveyLabel(h: CompanionHousehold): string {
+    return personResultLabel('canvassed', h.hh_survey?.support ?? null);
+  }
+
+  protected initials(name: string): string {
+    return initialsOf(name);
+  }
+
+  protected mark(outcome: CompanionDoorOutcome): void {
+    const h = this.household();
+    if (!h) return;
+    const result = this.store.doorOutcome(h.id, outcome);
+    if (result === 'set') {
+      const option = this.outcomeOptions.find((o) => o.outcome === outcome);
+      this.alerts.showSuccess(option?.toast ?? 'Marked');
+      this.back();
+    } else {
+      this.alerts.showSuccess('Cleared — door is back on your list');
+    }
+  }
+
+  protected onNameInput(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) this.newName.set(target.value);
+  }
+
+  protected openSurvey(personId: string | null): void {
+    const h = this.household();
+    if (!h || h.dnc) return;
+    this.store.view.set({ kind: 'survey', household_id: h.id, person_id: personId });
+  }
+
+  protected resultChipClass(result: CompanionPerson['result']): string {
+    if (result === 'canvassed') return 'badge badge-success';
+    if (result === 'refused') return 'badge badge-error';
+    return 'badge badge-warning';
+  }
+
+  protected resultLabel(p: CompanionPerson): string {
+    return p.result == null ? '' : personResultLabel(p.result, p.survey?.support ?? null);
+  }
+
+  /** Follow-up toggle chips shown on a surveyed card. */
+  protected surveyChips(survey: {
+    wants_volunteer: boolean;
+    wants_yard_sign: boolean;
+    set_dnc: boolean;
+    subscribe: boolean;
+  }): { label: string; cls: string }[] {
+    const chips: { label: string; cls: string }[] = [];
+    if (survey.wants_volunteer) chips.push({ label: 'Wants to volunteer', cls: 'badge badge-info badge-outline' });
+    if (survey.wants_yard_sign) chips.push({ label: 'Yard sign', cls: 'badge badge-info badge-outline' });
+    if (survey.subscribe) chips.push({ label: 'Subscribed', cls: 'badge badge-info badge-outline' });
+    if (survey.set_dnc) chips.push({ label: 'Do not contact', cls: 'badge badge-error' });
+    return chips;
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-landing.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+
+import { CanvassStore } from './canvass-store';
+import { firstNameOf } from './canvass-ui';
+
+/**
+ * Landing view (spec §3.3): who am I walking as, what am I assigned, and one
+ * primary action. The escape hatch below the fold covers the forwarded-link
+ * case the access layer can't ("this is Sam's link, not mine").
+ */
+@Component({
+  selector: 'pc-canvass-landing',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (store.payload(); as payload) {
+      <div class="flex flex-1 flex-col justify-center gap-6 p-6">
+        <header class="flex flex-col gap-2 text-center">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+            {{ payload.campaign_name }} · {{ payload.turf_name }}
+          </p>
+          <h1 class="text-2xl font-bold">You're assigned {{ payload.turf_name }}</h1>
+          <p class="text-base-content/70">
+            {{ store.stats().doors_total }} {{ store.stats().doors_total === 1 ? 'door' : 'doors' }} ·
+            {{ peopleCount() }} {{ peopleCount() === 1 ? 'person' : 'people' }}
+          </p>
+        </header>
+
+        <div class="rounded-lg border border-base-300 bg-base-200/50 p-4 text-center">
+          <p class="font-medium">Walking as {{ payload.canvasser_name }}</p>
+          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to PeopleCRM.</p>
+        </div>
+
+        <button type="button" class="btn btn-primary w-full" (click)="start()">Start walking</button>
+
+        <p class="text-center text-xs text-base-content/60">
+          Not {{ firstName() }}? Ask your organizer to send you your own link.
+        </p>
+      </div>
+    }
+  `,
+})
+export class CanvassLanding {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly peopleCount = computed(() => this.store.households().reduce((sum, h) => sum + h.people.length, 0));
+
+  protected firstName(): string {
+    return firstNameOf(this.store.payload()?.canvasser_name ?? '');
+  }
+
+  protected start(): void {
+    this.store.view.set({ kind: 'list' });
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-list.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionHousehold } from '@common';
+
+import { conversations, doorStatus, doorStatusLabel, isAttempted } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+import { firstNameOf, statusBadgeClass } from './canvass-ui';
+
+type ListFilter = 'all' | 'remaining' | 'visited';
+
+/**
+ * The walk list (spec §3.3): progress first ("6 of 14 doors attempted"), then
+ * doors in walk order. The next open door — lowest walk order not attempted —
+ * gets the primary ring and a filled number bubble.
+ */
+@Component({
+  selector: 'pc-canvass-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.turf_name }}</h1>
+      </header>
+
+      <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="font-medium">{{ attempted() }} of {{ total() }} doors attempted</p>
+        <progress
+          class="progress progress-primary mt-2 w-full"
+          [value]="attempted()"
+          [max]="total()"
+          aria-label="Turf progress"
+        ></progress>
+        <p class="mt-1 text-xs text-base-content/70">
+          {{ conversationCount() }} {{ conversationCount() === 1 ? 'conversation' : 'conversations' }}
+        </p>
+      </div>
+
+      <div class="flex gap-2" role="group" aria-label="Filter doors">
+        @for (option of filterOptions; track option.id) {
+          <button
+            type="button"
+            class="btn flex-1"
+            [class.btn-primary]="filter() === option.id"
+            [class.btn-outline]="filter() !== option.id"
+            [class.btn-secondary]="filter() !== option.id"
+            [attr.aria-pressed]="filter() === option.id"
+            (click)="filter.set(option.id)"
+          >
+            {{ option.label }} ({{ countFor(option.id) }})
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        @for (h of filtered(); track h.id) {
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 text-left"
+            [class.ring-2]="h.id === store.nextDoorId()"
+            [class.ring-primary]="h.id === store.nextDoorId()"
+            (click)="open(h.id)"
+          >
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
+              [class.bg-primary]="h.id === store.nextDoorId()"
+              [class.text-primary-content]="h.id === store.nextDoorId()"
+              [class.border-primary]="h.id === store.nextDoorId()"
+              [class.border-base-300]="h.id !== store.nextDoorId()"
+              [class.text-base-content]="h.id !== store.nextDoorId()"
+            >
+              {{ h.walk_order }}
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-medium">{{ h.address }}</span>
+              @if (residentNames(h)) {
+                <span class="block truncate text-xs text-base-content/70">{{ residentNames(h) }}</span>
+              }
+            </span>
+            <span [class]="chipClass(h)">{{ chipLabel(h) }}</span>
+          </button>
+        } @empty {
+          <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-6 text-center">
+            <p class="text-base-content/70">{{ emptyMessage() }}</p>
+            @if (filter() !== 'all') {
+              <button type="button" class="btn btn-outline btn-secondary" (click)="filter.set('all')">
+                Show all doors
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  `,
+})
+export class CanvassList {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly filter = signal<ListFilter>('all');
+  protected readonly filterOptions: { id: ListFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'remaining', label: 'Remaining' },
+    { id: 'visited', label: 'Visited' },
+  ];
+
+  protected readonly attempted = computed(() => this.store.stats().doors_attempted);
+  protected readonly total = computed(() => this.store.stats().doors_total);
+  protected readonly conversationCount = computed(() => conversations(this.store.households()));
+
+  protected readonly filtered = computed<CompanionHousehold[]>(() => {
+    const households = [...this.store.households()].sort((a, b) => a.walk_order - b.walk_order);
+    const filter = this.filter();
+    switch (filter) {
+      case 'remaining':
+        return households.filter((h) => !isAttempted(h));
+      case 'visited':
+        return households.filter((h) => isAttempted(h));
+      case 'all':
+        return households;
+      default: {
+        const _exhaustive: never = filter;
+        return _exhaustive;
+      }
+    }
+  });
+
+  protected chipClass(h: CompanionHousehold): string {
+    return statusBadgeClass(doorStatus(h));
+  }
+
+  protected chipLabel(h: CompanionHousehold): string {
+    return doorStatusLabel(doorStatus(h));
+  }
+
+  protected countFor(filter: ListFilter): number {
+    const households = this.store.households();
+    if (filter === 'remaining') return households.filter((h) => !isAttempted(h)).length;
+    if (filter === 'visited') return households.filter((h) => isAttempted(h)).length;
+    return households.length;
+  }
+
+  protected emptyMessage(): string {
+    const filter = this.filter();
+    switch (filter) {
+      case 'remaining':
+        return 'Every door is attempted — nice work.';
+      case 'visited':
+        return 'No doors visited yet — start with door 1.';
+      case 'all':
+        return 'There are no doors in this turf yet.';
+      default: {
+        const _exhaustive: never = filter;
+        return _exhaustive;
+      }
+    }
+  }
+
+  protected open(householdId: string): void {
+    this.store.view.set({ kind: 'household', household_id: householdId });
+  }
+
+  protected residentNames(h: CompanionHousehold): string {
+    return h.people.map((p) => firstNameOf(p.name)).join(', ');
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-map.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+
+import type { CompanionHousehold } from '@common';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+
+import { doorStatus, supportConsensus } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+
+/**
+ * Map view (spec §3.3): every geocoded door as a pin colored by its derived
+ * state. `<pc-map>` degrades to an honest placeholder without a Maps key, so
+ * this view is safe everywhere. Pins carry "walk order · address" tooltips
+ * (the pc-map pin primitive has no in-pin number labels).
+ */
+@Component({
+  selector: 'pc-canvass-map',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [PcMap],
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.turf_name }} on the map</h1>
+      </header>
+
+      <div class="h-[55vh] overflow-hidden rounded-lg border border-base-300">
+        <pc-map [markers]="markers()" ariaLabel="Turf map" (markerClicked)="openMarker($event)"></pc-map>
+      </div>
+
+      @if (unmappedCount() > 0) {
+        <p class="text-xs text-base-content/60">{{ unmappedMessage() }}</p>
+      }
+
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg border border-base-300 bg-base-100 p-3">
+        @for (item of legend; track item.label) {
+          <div class="flex items-center gap-2 text-xs text-base-content/80">
+            <span class="h-3 w-3 shrink-0 rounded-full" [class]="item.dotClass"></span>
+            {{ item.label }}
+          </div>
+        }
+      </div>
+    </div>
+  `,
+})
+export class CanvassMap {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly legend: { label: string; dotClass: string }[] = [
+    { label: 'Next door', dotClass: 'bg-primary' },
+    { label: 'Not visited or no answer', dotClass: 'bg-base-content/40' },
+    { label: 'Supporter', dotClass: 'bg-success' },
+    { label: 'Undecided or mixed', dotClass: 'bg-warning' },
+    { label: 'Refused or do not contact', dotClass: 'bg-error' },
+    { label: 'Canvassed — other', dotClass: 'bg-neutral' },
+  ];
+
+  protected readonly markers = computed<PcMapMarker[]>(() =>
+    this.store
+      .households()
+      .filter((h) => h.lat != null && h.lng != null)
+      .map(
+        (h): PcMapMarker => ({
+          // lat/lng narrowed by the filter above; ?? 0 keeps the types honest.
+          position: { lat: h.lat ?? 0, lng: h.lng ?? 0 },
+          id: h.id,
+          tooltip: `${h.walk_order} · ${h.address}`,
+          variant: this.variantFor(h),
+        }),
+      ),
+  );
+
+  protected readonly unmappedCount = computed(
+    () => this.store.households().filter((h) => h.lat == null || h.lng == null).length,
+  );
+
+  protected unmappedMessage(): string {
+    const count = this.unmappedCount();
+    return count === 1
+      ? `1 door isn't on the map yet — find it in the Turf list.`
+      : `${count} doors aren't on the map yet — find them in the Turf list.`;
+  }
+
+  protected openMarker(marker: PcMapMarker): void {
+    if (marker.id != null) this.store.view.set({ kind: 'household', household_id: marker.id });
+  }
+
+  private variantFor(h: CompanionHousehold): PcMapVariant {
+    if (h.id === this.store.nextDoorId()) return 'primary';
+    if (h.dnc) return 'error';
+    const status = doorStatus(h);
+    switch (status) {
+      case 'outcome:refused':
+        return 'error';
+      case 'outcome:no_answer':
+      case 'outcome:inaccessible':
+      case 'in_progress':
+      case 'not_visited':
+        return 'muted';
+      case 'canvassed': {
+        const consensus = supportConsensus(h);
+        if (consensus === 'supporter') return 'success';
+        if (consensus === 'undecided' || consensus === 'mixed') return 'warning';
+        if (consensus === 'non_supporter') return 'error';
+        return 'neutral';
+      }
+      case 'dnc':
+        return 'error';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-me.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+
+import { CanvassStore } from './canvass-store';
+
+const CLOCK_TICK_MS = 30_000;
+
+/**
+ * Me tab (spec §3.6): identity + provenance, today's derived stats, top
+ * issues heard, and the sync card (queue, work-offline, sync now). "End shift
+ * on this device" wipes every local trace behind the project confirm dialog.
+ */
+@Component({
+  selector: 'pc-canvass-me',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.canvasser_name }}</h1>
+      </header>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-xs text-base-content/70">
+          Signed in through your assignment link — your organizer can revoke it. No voter data stays in this browser
+          after your shift.
+        </p>
+        <button type="button" class="btn btn-outline btn-error w-full" (click)="endShift()">
+          End shift on this device
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Doors attempted</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().doors_attempted }} of {{ stats().doors_total }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Conversations</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().conversations }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Supporters ID'd</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().supporters }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Contact rate</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().contact_rate }}%</p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Top issues heard</p>
+        @if (stats().top_issues.length > 0) {
+          <ul class="mt-2 flex flex-col gap-1.5">
+            @for (item of topIssues(); track item.issue) {
+              <li class="flex items-center justify-between text-sm">
+                <span>{{ item.issue }}</span>
+                <span class="tabular-nums text-base-content/70">{{ item.count }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-2 text-xs text-base-content/60">
+            No issues recorded yet — they appear as you log conversations.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Sync</p>
+          <span [class]="syncChip().cls">{{ syncChip().label }}</span>
+        </div>
+        <p class="text-xs text-base-content/70">{{ lastSyncedLabel() }}</p>
+
+        @if (store.queue().length > 0) {
+          <div>
+            <p class="text-xs font-medium text-base-content/80">Waiting to sync</p>
+            <ul class="mt-1 flex flex-col gap-1">
+              @for (entry of store.queue(); track entry.op.op_id) {
+                <li class="truncate text-xs text-base-content/70">{{ entry.label }}</li>
+              }
+            </ul>
+          </div>
+        }
+
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Work offline
+            <span class="block text-xs text-base-content/60">Hold results on this phone until you sync</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="store.workOffline()"
+            (change)="onWorkOffline($event)"
+          />
+        </label>
+
+        <button
+          type="button"
+          class="btn btn-outline btn-secondary w-full"
+          [disabled]="store.queue().length === 0"
+          (click)="syncNow()"
+        >
+          {{ store.queue().length > 0 ? 'Sync now' : 'All synced' }}
+        </button>
+      </div>
+    </div>
+  `,
+})
+export class CanvassMe {
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly stats = computed(() => this.store.stats());
+  protected readonly topIssues = computed(() => this.stats().top_issues.slice(0, 5));
+
+  /** Ticks so "Last synced N min ago" stays honest while the tab sits open. */
+  private readonly now = signal(Date.now());
+
+  protected readonly lastSyncedLabel = computed(() => {
+    const at = this.store.lastSyncedAt();
+    if (at == null) return 'Not synced yet this visit';
+    const minutes = Math.floor((this.now() - at.getTime()) / 60_000);
+    if (minutes < 1) return 'Last synced just now';
+    if (minutes < 60) return `Last synced ${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return `Last synced ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  });
+
+  protected readonly syncChip = computed<{ label: string; cls: string }>(() => {
+    const status = this.store.syncStatus();
+    switch (status) {
+      case 'syncing':
+        return { label: 'Syncing…', cls: 'badge badge-info' };
+      case 'offline':
+        return { label: 'Offline', cls: 'badge badge-warning' };
+      case 'error':
+        return { label: 'Sync issue', cls: 'badge badge-error' };
+      case 'idle':
+        return this.store.queue().length > 0
+          ? { label: 'Waiting to sync', cls: 'badge badge-warning' }
+          : { label: 'Up to date', cls: 'badge badge-success' };
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  });
+
+  constructor() {
+    const timer = setInterval(() => this.now.set(Date.now()), CLOCK_TICK_MS);
+    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+  }
+
+  protected async endShift(): Promise<void> {
+    const queued = this.store.queue().length;
+    const confirmed = await this.dialogs.confirm({
+      title: 'End shift on this device?',
+      message:
+        queued > 0
+          ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
+          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+      variant: 'danger',
+      confirmText: 'End shift',
+      cancelText: 'Keep walking',
+    });
+    if (!confirmed) return;
+    this.store.endShift();
+    this.alerts.showSuccess('Shift ended — reopen your link anytime');
+  }
+
+  protected onWorkOffline(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) this.store.setWorkOffline(target.checked);
+  }
+
+  protected syncNow(): void {
+    void this.store.flush(true);
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-store.ts
+
+```typescript
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+
+import type {
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionOpAck,
+  CompanionOpType,
+  CompanionPersonResult,
+  CompanionTurfPayload,
+  KnockResponse,
+} from '@common';
+import { CompanionOpObj } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { CompanionSessionService } from '../gate/companion-api';
+import { applyLocalOps, isTempPersonId, meStats, nextDoor, opPersonId, type LocalOp } from './canvass-derive';
+
+/**
+ * The canvass companion's signals store (COMPANION-APPS-PLAN.md §6). Provided
+ * by the page component (NOT root) so its state lives and dies with /t/:token.
+ *
+ * The invariant: the server payload is never mutated. Every action becomes an
+ * op in `localOps`, and the visible households are a computed replay of those
+ * ops over the payload (`applyLocalOps`) — "derived, never stored". The queue
+ * (ops not yet acked) persists to localStorage so an offline shift survives a
+ * reload, and drains in order through one idempotent POST.
+ */
+
+export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'error';
+
+/** Client-side view state — nothing beyond the token is routable (spec §5). */
+export type CanvassView =
+  | { kind: 'landing' }
+  | { kind: 'list' }
+  | { kind: 'map' }
+  | { kind: 'me' }
+  | { kind: 'household'; household_id: string }
+  | { kind: 'survey'; household_id: string; person_id: string | null };
+
+/** A locally recorded op plus its human queue label ("Alice Door · 218 Alder St"). */
+export interface QueuedOp extends LocalOp {
+  label: string;
+}
+
+/** Everything the survey view collects; maps 1:1 onto the survey op payload. */
+export interface SurveyDraft {
+  support: KnockResponse | null;
+  issues: string[];
+  wants_volunteer: boolean;
+  wants_yard_sign: boolean;
+  set_dnc: boolean;
+  contact_phone: string | null;
+  contact_email: string | null;
+  subscribe: boolean;
+  notes: string | null;
+}
+
+interface LastAction {
+  op_id: string;
+  type: CompanionOpType['type'];
+  household_id: string;
+}
+
+const QUEUE_KEY_PREFIX = 'pc-canvass-queue:';
+
+function isQueuedOp(value: unknown): value is QueuedOp {
+  if (value == null || typeof value !== 'object') return false;
+  const candidate = value as { label?: unknown; op?: unknown; temp_person_id?: unknown };
+  if (typeof candidate.label !== 'string') return false;
+  if (candidate.temp_person_id !== undefined && typeof candidate.temp_person_id !== 'string') return false;
+  return CompanionOpObj.safeParse(candidate.op).success;
+}
+
+@Injectable()
+export class CanvassStore {
+  private readonly alerts = inject(AlertService);
+  private readonly session = inject(CompanionSessionService);
+
+  /** The server turf payload — never mutated after load. */
+  public readonly payload = signal<CompanionTurfPayload | null>(null);
+  /** Ops not yet acked by the server; persisted to localStorage. */
+  public readonly queue = signal<QueuedOp[]>([]);
+  public readonly syncStatus = signal<SyncStatus>('idle');
+  public readonly lastSyncedAt = signal<Date | null>(null);
+  /** Volunteer chose to hold the queue; flush waits for toggle-off or "Sync now". */
+  public readonly workOffline = signal(false);
+  /** Browser connectivity, tracked via the window online/offline events. */
+  public readonly online = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
+  /** 401/403 from a data call — the page sends the user back through the gate. */
+  public readonly sessionExpired = signal(false);
+  public readonly loadError = signal<string | null>(null);
+  public readonly view = signal<CanvassView>({ kind: 'landing' });
+
+  /** All ops recorded this session (queued + acked) — the optimistic overlay source. */
+  private readonly localOps = signal<QueuedOp[]>([]);
+  private readonly lastAction = signal<LastAction | null>(null);
+
+  /** Server payload with the local overlay replayed on top — the one source the views read. */
+  public readonly households = computed<CompanionHousehold[]>(() => {
+    const payload = this.payload();
+    return payload ? applyLocalOps(payload.households, this.localOps()) : [];
+  });
+  public readonly stats = computed(() => meStats(this.households()));
+  public readonly nextDoorId = computed(() => nextDoor(this.households())?.id ?? null);
+  /** Undo is offered for door outcomes (inverse op) or while the op is still queued. */
+  public readonly canUndo = computed<boolean>(() => {
+    const action = this.lastAction();
+    if (!action) return false;
+    if (action.type === 'door_outcome') return true;
+    return this.queue().some((entry) => entry.op.op_id === action.op_id);
+  });
+
+  private flushing = false;
+  private token = '';
+
+  constructor() {
+    const onOnline = (): void => {
+      this.online.set(true);
+      void this.flush();
+    };
+    const onOffline = (): void => {
+      this.online.set(false);
+      if (this.queue().length > 0) this.syncStatus.set('offline');
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    inject(DestroyRef).onDestroy(() => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    });
+  }
+
+  // ------------------------------------------------------------------ load --
+
+  public async load(token: string): Promise<void> {
+    this.token = token;
+    this.restoreQueue();
+    this.loadError.set(null);
+    try {
+      const res = await fetch(`/api/canvass/t/${encodeURIComponent(token)}`, { headers: this.session.headers() });
+      if (res.status === 401 || res.status === 403) {
+        this.expireSession();
+        return;
+      }
+      if (!res.ok) {
+        this.loadError.set('Could not load your turf — check your connection and try again.');
+        return;
+      }
+      this.payload.set((await res.json()) as CompanionTurfPayload);
+      void this.flush();
+    } catch {
+      this.loadError.set('Could not load your turf — check your connection and try again.');
+      if (this.queue().length > 0) this.syncStatus.set('offline');
+    }
+  }
+
+  public householdById(id: string): CompanionHousehold | null {
+    return this.households().find((h) => h.id === id) ?? null;
+  }
+
+  // --------------------------------------------------------------- actions --
+
+  /** Save a survey for a person (or the door itself when personId is null). */
+  public submitSurvey(householdId: string, personId: string | null, draft: SurveyDraft): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'survey',
+      payload: {
+        household_id: householdId,
+        person_id: personId,
+        support: draft.support,
+        issues: draft.issues,
+        wants_volunteer: draft.wants_volunteer,
+        wants_yard_sign: draft.wants_yard_sign,
+        set_dnc: draft.set_dnc,
+        contact_phone: draft.contact_phone,
+        contact_email: draft.contact_email,
+        subscribe: draft.subscribe,
+        notes: draft.notes,
+      },
+    };
+    this.record(op, `${this.personLabel(householdId, personId)} · ${this.addressOf(householdId)}`);
+  }
+
+  /** One-tap no-conversation code for a person. */
+  public personResult(
+    householdId: string,
+    personId: string,
+    result: Exclude<CompanionPersonResult, 'canvassed'>,
+  ): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'person_result',
+      payload: { household_id: householdId, person_id: personId, result },
+    };
+    this.record(op, `${this.personLabel(householdId, personId)} · ${this.addressOf(householdId)}`);
+  }
+
+  /**
+   * Set a door-level outcome; tapping the active outcome again clears it
+   * (enqueues the append-only clear_outcome inverse). Returns which happened.
+   */
+  public doorOutcome(householdId: string, outcome: CompanionDoorOutcome): 'set' | 'cleared' {
+    const current = this.householdById(householdId)?.door_outcome ?? null;
+    const address = this.addressOf(householdId);
+    if (current === outcome) {
+      const op: CompanionOpType = { ...this.baseOp(), type: 'clear_outcome', payload: { household_id: householdId } };
+      this.record(op, `Cleared outcome · ${address}`);
+      return 'cleared';
+    }
+    const labels: Record<CompanionDoorOutcome, string> = {
+      no_answer: 'Nobody home',
+      inaccessible: 'Inaccessible',
+      refused: 'Refused',
+    };
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'door_outcome',
+      payload: { household_id: householdId, outcome },
+    };
+    this.record(op, `${labels[outcome]} · ${address}`);
+    return 'set';
+  }
+
+  /** "+ Add someone at this door" — shows a temp person until the ack swaps in the real id. */
+  public addPerson(householdId: string, name: string): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'person_create',
+      payload: { household_id: householdId, name },
+    };
+    this.record(op, `Added ${name} · ${this.addressOf(householdId)}`, `tmp-${op.op_id}`);
+  }
+
+  /**
+   * Undo the last action. A queued op is simply removed (the replay overlay
+   * reverts with it). A door outcome that already synced gets the inverse
+   * clear_outcome op. A synced survey/person result cannot be undone — the
+   * server keeps knock history append-only.
+   */
+  public undo(): boolean {
+    const action = this.lastAction();
+    if (!action) return false;
+    const queued = this.queue().some((entry) => entry.op.op_id === action.op_id);
+    this.lastAction.set(null);
+    if (queued) {
+      this.queue.update((q) => q.filter((entry) => entry.op.op_id !== action.op_id));
+      this.localOps.update((l) => l.filter((entry) => entry.op.op_id !== action.op_id));
+      this.persistQueue();
+      return true;
+    }
+    if (action.type === 'door_outcome') {
+      const op: CompanionOpType = {
+        ...this.baseOp(),
+        type: 'clear_outcome',
+        payload: { household_id: action.household_id },
+      };
+      this.record(op, `Cleared outcome · ${this.addressOf(action.household_id)}`);
+      return true;
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------------ sync --
+
+  /** Drain the queue in order. Manual = the "Sync now" button (overrides work-offline). */
+  public async flush(manual = false): Promise<void> {
+    if (this.flushing) return;
+    if (this.workOffline() && !manual) return;
+    if (this.queue().length === 0) {
+      this.syncStatus.set('idle');
+      return;
+    }
+    if (!this.online()) {
+      this.syncStatus.set('offline');
+      return;
+    }
+    this.flushing = true;
+    this.syncStatus.set('syncing');
+    try {
+      while (this.queue().length > 0) {
+        // Hold back ops that reference a temp person id — their person_create
+        // (earlier in the queue) must ack first so the real id can swap in.
+        const batch = this.sendableBatch();
+        if (batch.length === 0) {
+          this.syncStatus.set('error');
+          return;
+        }
+        const res = await fetch(`/api/canvass/t/${encodeURIComponent(this.token)}/results`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...this.session.headers() },
+          body: JSON.stringify({ ops: batch.map((entry) => entry.op) }),
+        });
+        if (res.status === 401 || res.status === 403) {
+          this.expireSession();
+          return;
+        }
+        if (!res.ok) {
+          this.syncStatus.set('error');
+          return;
+        }
+        const { acks } = (await res.json()) as { acks: CompanionOpAck[] };
+        this.applyAcks(batch, acks);
+      }
+      this.syncStatus.set('idle');
+      this.lastSyncedAt.set(new Date());
+    } catch {
+      this.syncStatus.set('offline');
+    } finally {
+      this.flushing = false;
+      this.persistQueue();
+    }
+  }
+
+  public setWorkOffline(on: boolean): void {
+    this.workOffline.set(on);
+    if (!on) void this.flush();
+  }
+
+  /** "End shift on this device" — wipe local traces, back to the landing view. */
+  public endShift(): void {
+    try {
+      localStorage.removeItem(this.storageKey());
+    } catch {
+      // Storage unavailable — the in-memory clear below still applies.
+    }
+    this.queue.set([]);
+    this.localOps.set([]);
+    this.lastAction.set(null);
+    this.workOffline.set(false);
+    this.syncStatus.set('idle');
+    this.view.set({ kind: 'landing' });
+  }
+
+  // --------------------------------------------------------------- private --
+
+  private addressOf(householdId: string): string {
+    return this.householdById(householdId)?.address ?? 'this door';
+  }
+
+  private applyAcks(batch: QueuedOp[], acks: CompanionOpAck[]): void {
+    for (const ack of acks) {
+      const entry = batch.find((e) => e.op.op_id === ack.op_id);
+      if (!entry) continue;
+      this.queue.update((q) => q.filter((e) => e.op.op_id !== ack.op_id));
+      if (ack.status === 'rejected') {
+        // Drop the op and revert its optimistic overlay (the replay recomputes).
+        this.localOps.update((l) => l.filter((e) => e.op.op_id !== ack.op_id));
+        if (entry.temp_person_id != null) this.dropOpsReferencing(entry.temp_person_id);
+        if (this.lastAction()?.op_id === ack.op_id) this.lastAction.set(null);
+        this.alerts.showError(`Couldn't sync "${entry.label}" — ${ack.error ?? 'it was rejected'}`);
+      } else if (entry.op.type === 'person_create' && entry.temp_person_id != null && ack.person_id != null) {
+        this.swapTempId(entry.temp_person_id, ack.person_id);
+      }
+    }
+    this.persistQueue();
+  }
+
+  private baseOp(): { op_id: string; recorded_at: string } {
+    return { op_id: crypto.randomUUID(), recorded_at: new Date().toISOString() };
+  }
+
+  /** A rejected person_create orphans any queued ops aimed at its temp person. */
+  private dropOpsReferencing(tempId: string): void {
+    const keep = (entry: QueuedOp): boolean => opPersonId(entry.op) !== tempId;
+    this.queue.update((q) => q.filter(keep));
+    this.localOps.update((l) => l.filter(keep));
+  }
+
+  private expireSession(): void {
+    this.session.clearSession();
+    this.sessionExpired.set(true);
+  }
+
+  private personLabel(householdId: string, personId: string | null): string {
+    if (personId == null) return 'This household';
+    const person = this.householdById(householdId)?.people.find((p) => p.id === personId);
+    return person?.name ?? 'Someone';
+  }
+
+  private persistQueue(): void {
+    try {
+      localStorage.setItem(this.storageKey(), JSON.stringify(this.queue()));
+    } catch {
+      // Storage full/blocked — the queue still lives in memory for this visit.
+    }
+  }
+
+  private record(op: CompanionOpType, label: string, tempPersonId?: string): void {
+    const entry: QueuedOp = tempPersonId == null ? { op, label } : { op, label, temp_person_id: tempPersonId };
+    this.lastAction.set({ op_id: op.op_id, type: op.type, household_id: String(op.payload.household_id) });
+    this.localOps.update((l) => [...l, entry]);
+    this.queue.update((q) => [...q, entry]);
+    this.persistQueue();
+    void this.flush();
+  }
+
+  private restoreQueue(): void {
+    try {
+      const raw = localStorage.getItem(this.storageKey());
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const entries = parsed.filter(isQueuedOp);
+      this.localOps.set(entries);
+      this.queue.set(entries);
+    } catch {
+      // Corrupt/blocked storage — start with an empty queue rather than crash.
+    }
+  }
+
+  private sendableBatch(): QueuedOp[] {
+    const out: QueuedOp[] = [];
+    for (const entry of this.queue()) {
+      const personId = opPersonId(entry.op);
+      if (personId != null && isTempPersonId(personId)) break;
+      out.push(entry);
+    }
+    return out;
+  }
+
+  private storageKey(): string {
+    return `${QUEUE_KEY_PREFIX}${this.token}`;
+  }
+
+  /** The server created the person — swap the temp id everywhere it appears. */
+  private swapTempId(tempId: string, realId: string): void {
+    const swap = (entries: QueuedOp[]): QueuedOp[] =>
+      entries.map((entry) => {
+        let next = entry;
+        if (entry.temp_person_id === tempId) next = { ...next, temp_person_id: realId };
+        const op = next.op;
+        if (op.type === 'survey' && op.payload.person_id != null && String(op.payload.person_id) === tempId) {
+          next = { ...next, op: { ...op, payload: { ...op.payload, person_id: realId } } };
+        } else if (op.type === 'person_result' && String(op.payload.person_id) === tempId) {
+          next = { ...next, op: { ...op, payload: { ...op.payload, person_id: realId } } };
+        }
+        return next;
+      });
+    this.localOps.update(swap);
+    this.queue.update(swap);
+    // Keep an open survey view pointed at the person after their id changes.
+    const view = this.view();
+    if (view.kind === 'survey' && view.person_id === tempId) {
+      this.view.set({ ...view, person_id: realId });
+    }
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-survey.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionPerson, KnockResponse } from '@common';
+import { KNOCK_RESPONSES, KNOCK_RESPONSE_LABELS } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { CanvassStore } from './canvass-store';
+
+const EMAIL_SHAPE = /^\S+@\S+\.\S+$/;
+
+/**
+ * The survey (spec §3.5) for one person — or the anonymous household-level
+ * conversation when the view carries no person. No-conversation codes come
+ * first (one tap and out); support level is the one required field, except
+ * that a DNC-only save is allowed. Pre-fills from the previous survey when
+ * re-opened.
+ */
+@Component({
+  selector: 'pc-canvass-survey',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    <div class="flex flex-1 flex-col gap-4 p-4">
+      <header class="flex items-start gap-2">
+        <button type="button" class="btn btn-ghost btn-circle" aria-label="Back to the household" (click)="back()">
+          <pc-icon name="chevron-left" [size]="5"></pc-icon>
+        </button>
+        <div class="min-w-0 flex-1">
+          <h1 class="text-lg font-bold">{{ title() }}</h1>
+          <p class="text-xs text-base-content/70">{{ address() }}</p>
+        </div>
+      </header>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">No conversation?</p>
+          <div class="grid grid-cols-3 gap-2">
+            @for (option of noConversationOptions; track option.result) {
+              <button type="button" class="btn btn-outline btn-secondary" (click)="recordNoConversation(option.result)">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      @if (script(); as script) {
+        <div class="collapse-arrow collapse border border-base-300 bg-base-200/50">
+          <input type="checkbox" aria-label="Show or hide the door script" />
+          <div class="collapse-title font-medium">Door script</div>
+          <div class="collapse-content text-base-content/80">
+            <p class="whitespace-pre-wrap">{{ script }}</p>
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2" role="radiogroup" aria-label="Support level">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Support level</p>
+        @for (response of responses; track response) {
+          <button
+            type="button"
+            role="radio"
+            class="btn justify-start"
+            [class.btn-primary]="support() === response"
+            [class.btn-outline]="support() !== response"
+            [class.btn-secondary]="support() !== response"
+            [attr.aria-checked]="support() === response"
+            (click)="pickSupport(response)"
+          >
+            {{ responseLabels[response] }}
+          </button>
+        }
+      </div>
+
+      @if (issueOptions().length > 0) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Issues they raised</p>
+          <div class="flex flex-wrap gap-2">
+            @for (issue of issueOptions(); track issue) {
+              <button
+                type="button"
+                class="btn rounded-full"
+                [class.btn-primary]="issues().includes(issue)"
+                [class.btn-outline]="!issues().includes(issue)"
+                [class.btn-secondary]="!issues().includes(issue)"
+                [attr.aria-pressed]="issues().includes(issue)"
+                (click)="toggleIssue(issue)"
+              >
+                {{ issue }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-1 rounded-lg border border-base-300 bg-base-100 p-3">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Follow-ups</p>
+        @if (isPerson()) {
+          <label class="flex min-h-11 items-center justify-between gap-3">
+            <span>Wants to volunteer</span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="wantsVolunteer()"
+              (change)="onToggle('volunteer', $event)"
+            />
+          </label>
+        }
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Wants a yard sign
+            <span class="block text-xs text-base-content/60">Adds them to the sign delivery list</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="wantsYardSign()"
+            (change)="onToggle('yard_sign', $event)"
+          />
+        </label>
+        <label class="flex min-h-11 items-center justify-between gap-3 text-error">
+          <span>Do not contact</span>
+          <input type="checkbox" class="toggle toggle-error" [checked]="setDnc()" (change)="onToggle('dnc', $event)" />
+        </label>
+      </div>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2 rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Contact info</p>
+          <input
+            type="tel"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Phone"
+            aria-label="Phone"
+            [value]="phone()"
+            (input)="onText('phone', $event)"
+          />
+          <input
+            type="email"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Email"
+            aria-label="Email"
+            [value]="email()"
+            (input)="onText('email', $event)"
+          />
+          @if (email().trim() && !emailValid()) {
+            <p class="text-xs text-error" role="alert">That email doesn't look complete.</p>
+          }
+          <label class="flex min-h-11 items-center justify-between gap-3" [class.opacity-60]="!canSubscribe()">
+            <span>
+              Subscribe to updates
+              @if (!canSubscribe()) {
+                <span class="block text-xs text-base-content/60">Add a phone or email to subscribe</span>
+              }
+            </span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="subscribe() && canSubscribe()"
+              [disabled]="!canSubscribe()"
+              (change)="onToggle('subscribe', $event)"
+            />
+          </label>
+        </div>
+      }
+
+      <textarea
+        class="textarea textarea-bordered min-h-24 w-full"
+        placeholder="Anything the organizer should know?"
+        aria-label="Notes for the organizer"
+        [value]="notes()"
+        (input)="onText('notes', $event)"
+      ></textarea>
+
+      <button type="button" class="btn btn-primary w-full" [disabled]="saveBlocker() !== null" (click)="save()">
+        {{ saveBlocker() ?? 'Save & sync' }}
+      </button>
+    </div>
+  `,
+})
+export class CanvassSurvey {
+  private readonly alerts = inject(AlertService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly responses: readonly KnockResponse[] = KNOCK_RESPONSES;
+  protected readonly responseLabels = KNOCK_RESPONSE_LABELS;
+  protected readonly noConversationOptions: { result: 'not_home' | 'moved' | 'refused'; label: string }[] = [
+    { result: 'not_home', label: 'Not home' },
+    { result: 'moved', label: 'Moved' },
+    { result: 'refused', label: 'Refused' },
+  ];
+
+  // Draft state — seeded once from the existing survey prefill (if any).
+  protected readonly support = signal<KnockResponse | null>(null);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly wantsVolunteer = signal(false);
+  protected readonly wantsYardSign = signal(false);
+  protected readonly setDnc = signal(false);
+  protected readonly phone = signal('');
+  protected readonly email = signal('');
+  protected readonly subscribe = signal(false);
+  protected readonly notes = signal('');
+
+  protected readonly householdId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.household_id : null;
+  });
+  protected readonly personId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.person_id : null;
+  });
+  protected readonly isPerson = computed(() => this.personId() != null);
+  protected readonly person = computed<CompanionPerson | null>(() => {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return null;
+    return this.store.householdById(householdId)?.people.find((p) => p.id === personId) ?? null;
+  });
+
+  protected readonly address = computed(() => {
+    const householdId = this.householdId();
+    return householdId != null ? (this.store.householdById(householdId)?.address ?? '') : '';
+  });
+  protected readonly title = computed(() => this.person()?.name ?? 'This household');
+  protected readonly script = computed(() => this.store.payload()?.script?.trim() ?? '');
+  protected readonly issueOptions = computed(() => this.store.payload()?.issues ?? []);
+
+  protected readonly emailValid = computed(() => {
+    const email = this.email().trim();
+    return email === '' || EMAIL_SHAPE.test(email);
+  });
+  protected readonly canSubscribe = computed(() => this.phone().trim() !== '' || this.email().trim() !== '');
+
+  /** Why the save is blocked — or null when it can go. Explained-disabled (§3). */
+  protected readonly saveBlocker = computed<string | null>(() => {
+    if (!this.emailValid()) return 'Fix the email to save';
+    if (this.support() == null && !this.setDnc()) return 'Pick a support level to save';
+    return null;
+  });
+
+  constructor() {
+    // Pre-fill from the earlier survey when re-opening (notes and contact info
+    // are deliberately never echoed back — payload minimization, spec §2).
+    const view = this.store.view();
+    if (view.kind !== 'survey') return;
+    const household = this.store.householdById(view.household_id);
+    const prefill =
+      view.person_id == null ? household?.hh_survey : household?.people.find((p) => p.id === view.person_id)?.survey;
+    if (!prefill) return;
+    this.support.set(prefill.support);
+    this.issues.set([...prefill.issues]);
+    this.wantsVolunteer.set(prefill.wants_volunteer);
+    this.wantsYardSign.set(prefill.wants_yard_sign);
+    this.setDnc.set(prefill.set_dnc);
+    this.subscribe.set(prefill.subscribe);
+  }
+
+  protected back(): void {
+    const householdId = this.householdId();
+    if (householdId != null) this.store.view.set({ kind: 'household', household_id: householdId });
+    else this.store.view.set({ kind: 'list' });
+  }
+
+  protected onText(field: 'phone' | 'email' | 'notes', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+    if (field === 'phone') this.phone.set(target.value);
+    else if (field === 'email') this.email.set(target.value);
+    else this.notes.set(target.value);
+  }
+
+  protected onToggle(field: 'volunteer' | 'yard_sign' | 'dnc' | 'subscribe', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const checked = target.checked;
+    switch (field) {
+      case 'volunteer':
+        this.wantsVolunteer.set(checked);
+        break;
+      case 'yard_sign':
+        this.wantsYardSign.set(checked);
+        break;
+      case 'dnc':
+        this.setDnc.set(checked);
+        break;
+      case 'subscribe':
+        this.subscribe.set(checked);
+        break;
+      default: {
+        const _exhaustive: never = field;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Tap the selected level again to unpick it (a DNC-only save stays possible). */
+  protected pickSupport(response: KnockResponse): void {
+    this.support.set(this.support() === response ? null : response);
+  }
+
+  protected recordNoConversation(result: 'not_home' | 'moved' | 'refused'): void {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return;
+    this.store.personResult(householdId, personId, result);
+    const option = this.noConversationOptions.find((o) => o.result === result);
+    this.alerts.showSuccess(`Marked "${option?.label ?? result}"`);
+    this.back();
+  }
+
+  protected save(): void {
+    const householdId = this.householdId();
+    if (householdId == null || this.saveBlocker() != null) return;
+    const isPerson = this.isPerson();
+    this.store.submitSurvey(householdId, this.personId(), {
+      support: this.support(),
+      issues: this.issues(),
+      wants_volunteer: isPerson ? this.wantsVolunteer() : false,
+      wants_yard_sign: this.wantsYardSign(),
+      set_dnc: this.setDnc(),
+      contact_phone: isPerson && this.phone().trim() ? this.phone().trim() : null,
+      contact_email: isPerson && this.email().trim() ? this.email().trim() : null,
+      subscribe: isPerson && this.canSubscribe() ? this.subscribe() : false,
+      notes: this.notes().trim() ? this.notes().trim() : null,
+    });
+    const syncing = this.store.online() && !this.store.workOffline();
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.back();
+  }
+
+  protected toggleIssue(issue: string): void {
+    this.issues.update((current) =>
+      current.includes(issue) ? current.filter((i) => i !== issue) : [...current, issue],
+    );
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-ui.ts
+
+```typescript
+import type { CompanionPersonResult, KnockResponse } from '@common';
+import { KNOCK_RESPONSE_LABELS } from '@common';
+
+import type { DoorStatus } from './canvass-derive';
+
+/** Small presentational helpers shared by the canvass views. No state. */
+
+/** DaisyUI badge classes for a derived door status — color only where it means something (§5). */
+export function statusBadgeClass(status: DoorStatus): string {
+  switch (status) {
+    case 'canvassed':
+      return 'badge badge-success';
+    case 'dnc':
+    case 'outcome:refused':
+      return 'badge badge-error';
+    case 'outcome:no_answer':
+    case 'outcome:inaccessible':
+      return 'badge badge-warning';
+    case 'in_progress':
+      return 'badge badge-info badge-outline';
+    case 'not_visited':
+      return 'badge badge-ghost';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+export function firstNameOf(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
+}
+
+export function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.charAt(0) ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? '') : '';
+  return `${first}${last}`.toUpperCase() || '?';
+}
+
+/** Label for a door's surveyed stance, including the disagreement case. */
+export function consensusLabel(consensus: KnockResponse | 'mixed' | null): string | null {
+  if (consensus == null) return null;
+  return consensus === 'mixed' ? 'Mixed support' : KNOCK_RESPONSE_LABELS[consensus];
+}
+
+/** Chip label for a person's recorded result. */
+export function personResultLabel(result: CompanionPersonResult, support: KnockResponse | null): string {
+  switch (result) {
+    case 'canvassed':
+      return support != null ? KNOCK_RESPONSE_LABELS[support] : 'Surveyed';
+    case 'not_home':
+      return 'Not home';
+    case 'moved':
+      return 'Moved';
+    case 'refused':
+      return 'Refused';
+    default: {
+      const _exhaustive: never = result;
+      return _exhaustive;
+    }
+  }
 }
 ```
 
@@ -24515,363 +26631,319 @@ export class CampaignViewComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
+## File: apps/frontend/src/app/experiences/canvassing/ui/assign-turf-dialog.ts
 
 ```typescript
-import { Component, type OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 
-import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
-import {
-  CanvassingService,
-  type Coverage,
-  type FieldReport,
-  type FieldSummary,
-  type InFieldToday,
-  type TurfListItem,
-} from '../services/canvassing-service';
-import { AssignTurfDialog } from './assign-turf-dialog';
-import { CutTurfsDialog } from './cut-turfs-dialog';
+import { debounce } from '../../../../../../../libs/common/src';
+import { PersonsService } from '../../persons/services/persons-service';
+import { CanvassingService } from '../services/canvassing-service';
 
-type TurfStatus = TurfListItem['status'];
-type Tab = 'turfs' | 'report';
-type ReportRange = FieldReportRangeType['range'];
-type CoverageStatus = Coverage['doors'][number]['status'];
-type CoverageView = 'map' | 'ward';
+interface PersonOption {
+  id: string;
+  name: string;
+  contact: string;
+}
 
-/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
-const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
-  conversation: 'success',
-  attempted: 'warning',
-  not_yet: 'muted',
-};
-
-const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
-  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
-  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
-  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
-];
-
-const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
-  draft: 'neutral',
-  assigned: 'info',
-  in_field: 'success',
-  complete: 'primary',
-  retired: 'muted',
-};
-
-const STATUS_LABEL: Record<TurfStatus, string> = {
-  draft: 'Draft — unassigned',
-  assigned: 'Sent to app',
-  in_field: 'In field now',
-  complete: 'Complete',
-  retired: 'Retired',
-};
-
-const STATUS_BADGE: Record<TurfStatus, string> = {
-  draft: 'badge-ghost',
-  assigned: 'badge-info',
-  in_field: 'badge-success',
-  complete: 'badge-primary',
-  retired: 'badge-ghost opacity-60',
-};
-
-const RANGES: { key: ReportRange; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-  { key: 'campaign', label: 'Campaign' },
-];
-
+/**
+ * Assign a turf to a volunteer (COMPANION-APPS-PLAN.md §5 B1). Companion links
+ * are personal — the access layer verifies the holder against this person's
+ * email/mobile on file — so assignment starts with picking who it's for.
+ */
 @Component({
-  selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog],
-  templateUrl: './canvassing-page.html',
+  selector: 'pc-assign-turf-dialog',
+  imports: [FormsModule],
+  template: `
+    <dialog class="modal" [open]="true">
+      <div class="modal-box flex max-w-md flex-col gap-4">
+        <h3 class="text-sm font-semibold">Assign "{{ turfName() }}"</h3>
+        <p class="text-xs text-base-content/60">
+          The link is personal: the volunteer verifies a code sent to their email or mobile on file, and new volunteers
+          need a one-time approval from an admin.
+        </p>
+
+        @if (!selected()) {
+          <label class="input input-bordered flex w-full items-center gap-2">
+            <input
+              type="text"
+              class="grow"
+              placeholder="Search people by name…"
+              aria-label="Search people"
+              [ngModel]="query()"
+              (ngModelChange)="onQuery($event)"
+            />
+          </label>
+          @if (searching()) {
+            <progress class="progress w-full"></progress>
+          } @else if (options().length > 0) {
+            <ul class="menu w-full rounded-box border border-base-300 bg-base-100 p-1">
+              @for (opt of options(); track opt.id) {
+                <li>
+                  <button type="button" (click)="choose(opt)">
+                    <span class="font-medium">{{ opt.name }}</span>
+                    <span class="text-xs text-base-content/50">{{ opt.contact }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          } @else if (query().trim().length > 1) {
+            <p class="text-xs text-base-content/60">No people match — check the spelling or add them first.</p>
+          }
+        } @else {
+          <div class="flex items-center justify-between rounded-box border border-base-300 p-3">
+            <div>
+              <p class="font-medium">{{ selected()?.name }}</p>
+              <p class="text-xs text-base-content/50">{{ selected()?.contact }}</p>
+            </div>
+            <button type="button" class="btn btn-ghost btn-xs" (click)="selected.set(null)">Change</button>
+          </div>
+          @if (!selected()?.contact) {
+            <p class="text-xs text-warning-content">
+              No email or mobile on file — add one to their person record or the verification step can't reach them.
+            </p>
+          }
+        }
+
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">Cancel</button>
+          <span [class.tooltip]="!selected()" [attr.data-tip]="!selected() ? 'Pick a volunteer to assign' : null">
+            <button type="button" class="btn btn-primary btn-sm" [disabled]="!selected() || saving()" (click)="save()">
+              @if (saving()) {
+                Assigning…
+              } @else {
+                Assign & copy link
+              }
+            </button>
+          </span>
+        </div>
+      </div>
+      <div class="modal-backdrop" (click)="cancelled.emit()"></div>
+    </dialog>
+  `,
 })
-export class CanvassingPage implements OnInit {
-  private readonly svc = inject(CanvassingService);
+export class AssignTurfDialog {
+  public readonly turfId = input.required<string>();
+  public readonly turfName = input.required<string>();
+  public readonly cancelled = output<void>();
+  /** Emits the minted token once assigned (page copies the /t/ link). */
+  public readonly assigned = output<string>();
+
+  protected readonly options = signal<PersonOption[]>([]);
+  protected readonly query = signal('');
+  protected readonly saving = signal(false);
+  protected readonly selected = signal<PersonOption | null>(null);
+
+  protected readonly searching = computed(() => this.searchGate.visible());
+
   private readonly alerts = inject(AlertService);
-  private readonly dialog = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly searchGate = createLoadingGate();
+  private readonly svc = inject(CanvassingService);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly tab = signal<Tab>('turfs');
-
-  protected readonly pageTabs: PcTabOption[] = [
-    { id: 'turfs', label: 'Turfs & assignments' },
-    { id: 'report', label: 'Field report' },
-  ];
-  protected readonly turfs = signal<TurfListItem[]>([]);
-  protected readonly summary = signal<FieldSummary | null>(null);
-  protected readonly today = signal<InFieldToday | null>(null);
-
-  protected readonly reportRange = signal<ReportRange>('week');
-  protected readonly report = signal<FieldReport | null>(null);
-  protected readonly coverage = signal<Coverage | null>(null);
-  protected readonly coverageView = signal<CoverageView>('map');
-
-  protected readonly cutOpen = signal(false);
-  /** Turf currently being assigned in the pick-a-volunteer dialog (null = closed). */
-  protected readonly assignTarget = signal<TurfListItem | null>(null);
-
-  protected readonly ranges = RANGES;
-  protected readonly statusLabel = STATUS_LABEL;
-  protected readonly statusBadge = STATUS_BADGE;
-  protected readonly coverageLegend = COVERAGE_LEGEND;
-
-  ngOnInit(): void {
-    void this.loadTurfs();
-  }
-
-  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
-  protected readonly headline = computed<string>(() => {
-    const s = this.summary();
-    if (!s) return '';
-    const parts = [
-      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
-      `${s.inFieldCount} in the field now`,
-      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
-      `${s.waitingCount} waiting for a canvasser`,
-    ];
-    return parts.join(' · ');
-  });
-
-  /** Response-mix stacked bar segments for the "in the field today" card. */
-  protected readonly todaySegments = computed(() => {
-    const t = this.today();
-    if (!t) return [];
-    const m = t.responseMix;
-    return [
-      { key: 'supporter', label: 'Supporters', value: m.supporter, cls: 'bg-success' },
-      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
-      { key: 'non_supporter', label: 'Non-supporters', value: m.non_supporter, cls: 'bg-error' },
-      { key: 'not_voting', label: 'Not voting', value: m.not_voting, cls: 'bg-base-content/30' },
-      { key: 'already_voted', label: 'Already voted', value: m.already_voted, cls: 'bg-info' },
-      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
-    ].filter((s) => s.value > 0);
-  });
-
-  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
-
-  /**
-   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
-   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
-   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
-   */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    return this.turfs()
-      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
-      .map((t) => ({
-        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
-        variant: this.variantFor(t.status),
-        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
-        id: t.id,
-        payload: t.id,
-      }));
-  });
-
-  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
-
-  protected variantFor(status: TurfStatus): PcMapVariant {
-    return STATUS_VARIANT[status];
-  }
-
-  protected progressPct(t: TurfListItem): number {
-    if (t.door_count <= 0) return 0;
-    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
-  }
-
-  protected async loadTurfs(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [turfs, summary, today] = await Promise.all([
-        this.svc.getTurfs(),
-        this.svc.getFieldSummary(),
-        this.svc.getInFieldToday(),
-      ]);
-      this.turfs.set(turfs);
-      this.summary.set(summary);
-      this.today.set(today);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async loadReport(): Promise<void> {
-    const end = this._loading.begin();
-    const range = { range: this.reportRange(), from: null, to: null };
-    try {
-      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
-      this.report.set(report);
-      this.coverage.set(coverage);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
-    } finally {
-      end();
-    }
-  }
-
-  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
-  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.doors.map((d) => ({
-      position: { lat: d.lat, lng: d.lng },
-      variant: COVERAGE_VARIANT[d.status],
-    }));
-  });
-
-  /** Dashed turf boundaries (convex hull of each turf's doors). */
-  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
-    const cov = this.coverage();
-    if (!cov) return [];
-    return cov.turfs.map((t) => ({
-      path: t.path,
-      variant: 'neutral' as const,
-      dashed: true,
-      label: t.name,
-      id: t.id,
-    }));
-  });
-
-  protected selectTab(tab: string): void {
-    if (tab !== 'turfs' && tab !== 'report') return;
-    this.tab.set(tab);
-    if (tab === 'report' && !this.report()) void this.loadReport();
-  }
-
-  protected setRange(range: ReportRange): void {
-    this.reportRange.set(range);
-    void this.loadReport();
-  }
-
-  protected openCut(): void {
-    this.cutOpen.set(true);
-  }
-
-  protected onCutDone(created: number): void {
-    this.cutOpen.set(false);
-    if (created > 0) {
-      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
-      void this.loadTurfs();
-    }
-  }
-
-  /** Assignment is personal now — open the pick-a-volunteer dialog (plan §5 B1). */
-  protected assign(t: TurfListItem): void {
-    this.assignTarget.set(t);
-  }
-
-  /** An existing link can be re-copied; a missing one needs an assignment first. */
-  protected async copyLink(t: TurfListItem): Promise<void> {
-    if (t.token) {
-      await this.copyCompanionLink(t.token);
+  private readonly debouncedSearch = debounce(async (term: string) => {
+    if (term.trim().length < 2) {
+      this.options.set([]);
       return;
     }
-    this.assign(t);
-  }
-
-  protected async onAssigned(token: string): Promise<void> {
-    this.assignTarget.set(null);
-    await this.copyCompanionLink(token);
-    await this.loadTurfs();
-  }
-
-  private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/t/${encodeURIComponent(token)}`;
+    const end = this.searchGate.begin();
     try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');
+      const res = await this.personsSvc.getAllWithAddress({ searchStr: term.trim(), startRow: 0, endRow: 8 });
+      const rows = (res?.rows ?? []) as Record<string, unknown>[];
+      this.options.set(
+        rows.map((r) => ({
+          id: String(r['id']),
+          name: [r['first_name'], r['last_name']].filter(Boolean).join(' ') || String(r['name'] ?? 'Unnamed person'),
+          contact: [r['email'], r['mobile']].filter(Boolean).join(' · '),
+        })),
+      );
     } catch {
-      this.alerts.showSuccess(`Companion link: ${url}`);
-    }
-  }
-
-  protected async refresh(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const res = await this.svc.refreshFromList(t.id);
-      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
+      this.options.set([]);
     } finally {
       end();
     }
+  }, 250);
+
+  protected choose(opt: PersonOption): void {
+    this.selected.set(opt);
+    this.options.set([]);
   }
 
-  protected async retire(t: TurfListItem): Promise<void> {
-    const ok = await this.dialog.confirm({
-      title: 'Retire this turf?',
-      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
-      confirmText: 'Retire turf',
-    });
-    if (!ok) return;
-    const end = this._loading.begin();
-    try {
-      await this.svc.retire(t.id);
-      this.alerts.showSuccess('Turf retired.');
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
-    } finally {
-      end();
-    }
+  protected onQuery(value: string): void {
+    this.query.set(value);
+    this.debouncedSearch(value);
   }
 
-  protected async exportReport(): Promise<void> {
+  protected async save(): Promise<void> {
+    const person = this.selected();
+    if (!person || this.saving()) return;
+    this.saving.set(true);
     try {
-      const { filename, content } = await this.svc.exportFieldReport({
-        range: this.reportRange(),
-        from: null,
-        to: null,
+      const { token } = await this.svc.assign({
+        turf_id: this.turfId(),
+        team_id: null,
+        volunteer_person_id: person.id,
       });
-      const blob = new Blob([content], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+      this.assigned.emit(token);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/companion-settings-dialog.ts
+
+```typescript
+import { Component, type OnInit, inject, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { CanvassingService } from '../services/canvassing-service';
+
+const MAX_ISSUES = 30;
+
+/**
+ * Companion survey settings (COMPANION-APPS-PLAN.md §5): the issue-chip
+ * vocabulary and the collapsible door script every Companion survey shows —
+ * campaign-scoped, stored on the write campaign.
+ */
+@Component({
+  selector: 'pc-companion-settings-dialog',
+  imports: [FormsModule, Icon],
+  template: `
+    <dialog class="modal" [open]="true">
+      <div class="modal-box flex max-w-md flex-col gap-4">
+        <h3 class="text-sm font-semibold">Companion survey settings</h3>
+        @if (campaignName()) {
+          <p class="text-xs text-base-content/60">
+            Applies to every Companion working a turf cut for {{ campaignName() }}.
+          </p>
+        }
+
+        <div class="flex flex-col gap-2">
+          <span class="text-xs font-medium">Top issues (survey chips)</span>
+          <div class="flex flex-wrap gap-1.5">
+            @for (issue of issues(); track issue) {
+              <span class="badge badge-ghost gap-1">
+                {{ issue }}
+                <button
+                  type="button"
+                  class="opacity-60 hover:opacity-100"
+                  (click)="removeIssue(issue)"
+                  [attr.aria-label]="'Remove ' + issue"
+                >
+                  <pc-icon name="x-mark" [size]="3" />
+                </button>
+              </span>
+            } @empty {
+              <span class="text-xs text-base-content/50">No issues yet — canvassers see no issue chips.</span>
+            }
+          </div>
+          <input
+            class="input input-bordered input-sm w-full"
+            type="text"
+            placeholder="Add an issue and press Enter…"
+            aria-label="Add an issue"
+            [ngModel]="draft()"
+            (ngModelChange)="draft.set($event)"
+            (keydown.enter)="addIssue($event)"
+            [disabled]="issues().length >= maxIssues"
+          />
+        </div>
+
+        <label class="flex flex-col gap-2">
+          <span class="text-xs font-medium">Door script (shown collapsed at the top of the survey)</span>
+          <textarea
+            class="textarea textarea-bordered h-28 w-full text-xs"
+            placeholder="Hi, I'm {name} with {campaign} — do you have a minute to talk about the issues that matter to you?"
+            [ngModel]="script()"
+            (ngModelChange)="script.set($event)"
+          ></textarea>
+        </label>
+
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="closed.emit()">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="save()">
+            @if (saving()) {
+              Saving…
+            } @else {
+              Save settings
+            }
+          </button>
+        </div>
+      </div>
+      <div class="modal-backdrop" (click)="closed.emit()"></div>
+    </dialog>
+  `,
+})
+export class CompanionSettingsDialog implements OnInit {
+  public readonly closed = output<void>();
+
+  protected readonly campaignName = signal('');
+  protected readonly draft = signal('');
+  protected readonly issues = signal<string[]>([]);
+  protected readonly maxIssues = MAX_ISSUES;
+  protected readonly saving = signal(false);
+
+  private readonly alerts = inject(AlertService);
+  private campaignId: string | undefined;
+  private readonly svc = inject(CanvassingService);
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected addIssue(event: Event): void {
+    event.preventDefault();
+    const value = this.draft().trim();
+    if (!value || this.issues().includes(value) || this.issues().length >= MAX_ISSUES) return;
+    this.issues.set([...this.issues(), value]);
+    this.draft.set('');
+  }
+
+  protected removeIssue(issue: string): void {
+    this.issues.set(this.issues().filter((i) => i !== issue));
+  }
+
+  protected async save(): Promise<void> {
+    this.saving.set(true);
+    try {
+      await this.svc.updateCompanionSettings({
+        campaign_id: this.campaignId,
+        issues: this.issues(),
+        script: this.script().trim() || null,
+      });
+      this.alerts.showSuccess('Saved — Companions pick this up on their next sync');
+      this.closed.emit();
+    } catch {
+      this.alerts.showError('Could not save settings — try again');
+    } finally {
+      this.saving.set(false);
     }
   }
 
-  protected hourLabel(h: number): string {
-    const am = h < 12;
-    const base = h % 12 === 0 ? 12 : h % 12;
-    return `${base}${am ? 'am' : 'pm'}`;
-  }
+  protected readonly script = signal('');
 
-  protected barPct(value: number, max: number): number {
-    if (max <= 0) return 0;
-    return Math.round((value / max) * 100);
-  }
-
-  protected maxPerDay(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
-  }
-
-  protected maxByHour(): number {
-    const r = this.report();
-    if (!r) return 0;
-    return Math.max(1, ...r.byHour.map((h) => h.attempts));
+  private async load(): Promise<void> {
+    try {
+      const settings = await this.svc.getCompanionSettings();
+      this.campaignId = settings.campaign_id;
+      this.campaignName.set(settings.campaign_name);
+      this.issues.set(settings.issues);
+      this.script.set(settings.script);
+    } catch {
+      this.alerts.showError('Could not load settings');
+      this.closed.emit();
+    }
   }
 }
 ```
@@ -25455,537 +27527,164 @@ export class DeliveriesRoutes implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/public-route.html
+## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
 
 ```html
-<div class="min-h-screen bg-base-200">
-  @switch (state()) { @case ('loading') {
-  <div class="flex min-h-screen items-center justify-center">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-  </div>
-  } @case ('notfound') {
-  <div class="flex min-h-screen items-center justify-center px-6">
-    <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
-      <h1 class="mb-2 text-lg font-semibold">This route link isn't active</h1>
-      <p class="text-sm text-base-content/60">Ask your organizer for a new one.</p>
-    </div>
-  </div>
-  } @case ('ready') { @if (data(); as d) {
-  <div class="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-3 py-4">
-    <!-- Header -->
-    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-      <div class="flex items-center justify-between">
-        <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
-          {{ d.campaign_name }}
-        </p>
-        <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
-      </div>
-      <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>
-      <p class="mt-2 text-sm tabular-nums text-base-content/70">
-        @if (isDone()) { {{ d.stops_total }} of {{ d.stops_total }} handled } @else { {{ d.stops_delivered }} of {{
-        d.stops_total }} delivered }
-      </p>
-      <progress
-        class="progress mt-1 w-full"
-        [class.progress-success]="isDone()"
-        [class.progress-primary]="!isDone()"
-        [value]="handled()"
-        [max]="d.stops_total || 1"
-      ></progress>
-
-      <div class="mt-3 flex items-center gap-2">
-        <pc-tab-bar [tabs]="viewTabs" [activeTab]="view()" (activeTabChange)="setView($event)" />
-        <button type="button" class="btn btn-ghost btn-sm ml-auto" (click)="openFullRoute()">
-          <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
-        </button>
-      </div>
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-md">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-xl font-bold flex items-center gap-2">
+        <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
+        Record donation
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
     </div>
 
-    @if (isDone()) {
-    <div class="rounded-2xl border border-success/30 bg-success/[0.08] p-5 text-center">
-      <p class="text-base font-semibold text-base-content">All {{ d.stops_total }} stops handled — thank you!</p>
-      <p class="mt-1 text-sm text-base-content/70">Your organizer already has the results.</p>
-    </div>
-    }
-
-    <!-- Map view -->
-    @if (view() === 'map') {
-    <pc-map
-      class="block h-72 overflow-hidden rounded-2xl border border-base-300"
-      [markers]="markers()"
-      (markerClicked)="selectStop($event)"
-    ></pc-map>
-    }
-
-    <!-- Stop list -->
-    @if (view() === 'list') {
-    <div class="flex flex-col gap-2.5">
-      @for (stop of d.stops; track stop.id) {
-      <div
-        class="rounded-2xl border p-4"
-        [class.border-base-300]="stop.status === 'pending'"
-        [class.bg-base-100]="stop.status === 'pending'"
-        [class.border-success]="stop.status === 'delivered'"
-        [class.bg-success]="stop.status === 'delivered'"
-        [class.bg-opacity-[0.06]]="stop.status !== 'pending'"
-        [class.border-warning]="stop.status === 'skipped'"
-        [class.bg-warning]="stop.status === 'skipped'"
-      >
-        <div class="flex items-start gap-3">
-          <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold tabular-nums"
-            >{{ stop.seq }}</span
+    <form class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
+      <!-- Donor -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
+        @if (selectedDonor()) {
+        <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
+          <div
+            class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
           >
-          <div class="min-w-0 flex-1">
-            <p class="font-semibold text-base-content">{{ stop.first_name }}</p>
-            <p class="text-sm text-base-content/70">{{ stop.address }}</p>
-            @if (stop.status === 'skipped' && stop.reason) {
-            <span class="mt-1 inline-block"><pc-status-badge type="warning">{{ stop.reason }}</pc-status-badge></span>
-            }
+            {{ initials(selectedDonor()!) }}
           </div>
-          @if (stop.status === 'delivered') {
-          <pc-status-badge type="success">Delivered</pc-status-badge>
-          }
-        </div>
-
-        <!-- Actions for the active (first pending) stop -->
-        @if (stop.status === 'pending' && stop.id === activeStopId()) { @if (reasonPickerFor() === stop.id) {
-        <div class="mt-3 grid grid-cols-2 gap-2">
-          @for (reason of reasons; track reason) {
-          <button type="button" class="btn btn-outline btn-warning min-h-11 text-sm" (click)="skip(stop.id, reason)">
-            {{ reason }}
-          </button>
-          }
-          <button type="button" class="btn btn-ghost col-span-2 min-h-11 text-sm" (click)="cancelReason()">
-            Never mind — keep it pending
+          <span class="text-sm font-medium flex-1 truncate"
+            >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
+          >
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle"
+            (click)="clearDonor()"
+            aria-label="Change donor"
+          >
+            <pc-icon name="x-mark" [size]="3"></pc-icon>
           </button>
         </div>
-        <p class="mt-2 text-xs text-base-content/50">
-          A skipped house goes back to your organizer's list automatically.
-        </p>
         } @else {
-        <div class="mt-3 flex flex-col gap-2">
-          <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
-            Mark delivered
-          </button>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              class="btn btn-ghost min-h-11 text-sm"
-              [disabled]="busy()"
-              (click)="openReasonPicker(stop.id)"
-            >
-              Couldn't deliver
-            </button>
-            <button type="button" class="btn btn-ghost min-h-11 text-sm" [disabled]="busy()" (click)="defer(stop.id)">
-              Skip for now
-            </button>
-          </div>
-          <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">
-            <pc-icon name="map-pin" [size]="4"></pc-icon> Navigate
-          </button>
+        <div class="relative">
+          <input
+            id="rd-donor"
+            type="text"
+            class="input input-bordered w-full pr-10 text-sm"
+            [class.input-error]="donorInvalid()"
+            placeholder="Search by name or email..."
+            [ngModel]="donorSearch()"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="onDonorSearchChange($event)"
+            (blur)="touchedDonor.set(true)"
+            autofocus
+          />
+          <pc-icon
+            name="magnifying-glass"
+            [size]="4"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+          ></pc-icon>
         </div>
+        @if (donorResults().length > 0) {
+        <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
+          @for (p of donorResults(); track p.id) {
+          <button
+            type="button"
+            class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
+            (click)="selectDonor(p)"
+          >
+            <div
+              class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+            >
+              {{ initials(p) }}
+            </div>
+            <div class="flex flex-col min-w-0">
+              <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
+              @if (p.email) {
+              <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
+              }
+            </div>
+          </button>
+          }
+        </div>
+        } @if (isSearching() && donorSearch().length > 0) {
+        <span class="text-xs text-base-content/40 italic">Searching...</span>
+        } @if (donorInvalid()) {
+        <p class="text-xs text-error mt-1 flex items-center gap-1">
+          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+          Choose who gave this gift — receipts need a name.
+        </p>
         } }
+      </div>
 
-        <!-- Undo on the most-recently actioned row -->
-        @if (stop.status !== 'pending' && stop.id === lastActioned()) {
-        <button type="button" class="btn btn-ghost btn-sm mt-2 min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
-          <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
-        </button>
+      <!-- Amount -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
+        <div class="relative">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+          <input
+            id="rd-amount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputmode="decimal"
+            class="input input-bordered w-full pl-7 text-sm tabular-nums"
+            [class.input-error]="amountInvalid()"
+            placeholder="50.00"
+            [ngModel]="amount()"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="amount.set($event === '' ? null : +$event)"
+            (blur)="touchedAmount.set(true)"
+          />
+        </div>
+        @if (amountInvalid()) {
+        <p class="text-xs text-error mt-1 flex items-center gap-1">
+          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+          Enter an amount above zero, like 50.
+        </p>
         }
       </div>
-      }
-    </div>
-    }
 
-    <!-- Selected pin card (map view) -->
-    @if (view() === 'map' && selectedStopId(); as sid) { @for (stop of d.stops; track stop.id) { @if (stop.id === sid) {
-    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
-      <p class="font-semibold">{{ stop.seq }}. {{ stop.first_name }}</p>
-      <p class="text-sm text-base-content/70">{{ stop.address }}</p>
-      @if (stop.status === 'pending') {
-      <div class="mt-3 flex flex-col gap-2">
-        <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
-          Mark delivered
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">Navigate</button>
+      <!-- Method -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
+        <select
+          id="rd-method"
+          class="select select-bordered w-full text-sm"
+          [ngModel]="method()"
+          [ngModelOptions]="{ standalone: true }"
+          (ngModelChange)="method.set($event)"
+        >
+          @for (m of methods; track m) {
+          <option [value]="m">{{ methodLabels[m] }}</option>
+          }
+        </select>
       </div>
-      } @else {
-      <span class="mt-2 inline-block"
-        ><pc-status-badge [type]="stop.status === 'delivered' ? 'success' : 'warning'"
-          >{{ stop.status }}</pc-status-badge
-        ></span
-      >
-      }
-    </div>
-    } } }
 
-    <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+      <p class="text-xs text-base-content/50 flex items-start gap-1.5">
+        <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
+        A receipt goes out automatically — that's set in Workspace settings → Donations.
+      </p>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+          <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          } Record donation
+        </button>
+      </div>
+    </form>
   </div>
-  } } }
-</div>
-```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/public-route.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-
-import { PcMap } from '@uxcommon/components/map/map';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
-import { DELIVERY_SKIP_REASONS } from '@common';
-import { Icon } from '@icons/icon';
-
-import { apiBase } from '../../../shared/public-pages';
-
-interface PublicStop {
-  id: string;
-  seq: number;
-  first_name: string;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  status: 'pending' | 'delivered' | 'skipped';
-  reason: string | null;
-  acted_at: string | null;
-}
-
-interface PublicRouteData {
-  campaign_name: string;
-  route_name: string;
-  status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled';
-  start: { lat: number; lng: number };
-  stops_total: number;
-  stops_delivered: number;
-  stops: PublicStop[];
-}
-
-type PageState = 'loading' | 'ready' | 'notfound';
-type ViewMode = 'list' | 'map';
-
-/**
- * Public tokenized volunteer route page (spec §4.4–4.5), served at /r/:token outside the app shell.
- * The token is the only credential; the payload carries first name + address only. Every action
- * posts to the public endpoint and re-renders from the authoritative response.
- */
-@Component({
-  selector: 'pc-public-route',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PcMap, StatusBadge, Icon, TabBar],
-  templateUrl: './public-route.html',
-})
-export class PublicRoute implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  protected readonly reasons = DELIVERY_SKIP_REASONS;
-
-  protected readonly state = signal<PageState>('loading');
-  protected readonly data = signal<PublicRouteData | null>(null);
-  protected readonly view = signal<ViewMode>('list');
-
-  protected readonly viewTabs: PcTabOption[] = [
-    { id: 'list', label: 'List' },
-    { id: 'map', label: 'Map' },
-  ];
-
-  protected setView(view: string): void {
-    if (view === 'list' || view === 'map') this.view.set(view);
-  }
-  protected readonly reasonPickerFor = signal<string | null>(null);
-  protected readonly lastActioned = signal<string | null>(null);
-  protected readonly selectedStopId = signal<string | null>(null);
-  protected readonly busy = signal(false);
-
-  private token = '';
-
-  protected readonly activeStopId = computed(() => this.data()?.stops.find((s) => s.status === 'pending')?.id ?? null);
-  protected readonly handled = computed(() => this.data()?.stops.filter((s) => s.status !== 'pending').length ?? 0);
-  protected readonly isDone = computed(() => this.data()?.status === 'completed');
-
-  protected readonly markers = computed<PcMapMarker<PublicStop>[]>(() => {
-    const d = this.data();
-    if (!d) return [];
-    const active = this.activeStopId();
-    return d.stops
-      .filter((s) => s.lat != null && s.lng != null)
-      .map((s) => ({
-        position: { lat: s.lat as number, lng: s.lng as number },
-        variant: this.pinVariant(s, active),
-        tooltip: `${s.seq}. ${s.address}`,
-        id: s.id,
-        payload: s,
-      }));
-  });
-
-  public ngOnInit(): void {
-    this.token = this.route.snapshot.paramMap.get('token') ?? '';
-    void this.load();
-  }
-
-  private pinVariant(s: PublicStop, activeId: string | null): PcMapVariant {
-    if (s.status === 'delivered') return 'success';
-    if (s.status === 'skipped') return 'warning';
-    if (s.id === activeId) return 'primary';
-    return 'muted';
-  }
-
-  protected statusChip(): { type: 'neutral' | 'warning' | 'success'; label: string } {
-    const s = this.data()?.status;
-    if (s === 'completed') return { type: 'success', label: 'Completed' };
-    if (s === 'in_progress') return { type: 'warning', label: 'In progress' };
-    return { type: 'neutral', label: 'Not started' };
-  }
-
-  protected selectStop(marker: PcMapMarker): void {
-    // pc-map's markerClicked emits PcMapMarker<unknown>; the marker id carries our stop id.
-    this.selectedStopId.set(marker.id ?? null);
-  }
-
-  protected navigate(stop: PublicStop): void {
-    if (stop.lat == null || stop.lng == null) return;
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`, '_blank', 'noopener');
-  }
-
-  protected openFullRoute(): void {
-    const d = this.data();
-    if (!d) return;
-    const located = d.stops.filter((s) => s.lat != null && s.lng != null);
-    if (located.length === 0) return;
-    const origin = `${d.start.lat},${d.start.lng}`;
-    const dest = located[located.length - 1];
-    const waypoints = located
-      .slice(0, -1)
-      .map((s) => `${s.lat},${s.lng}`)
-      .join('|');
-    const params = new URLSearchParams({ api: '1', origin, destination: `${dest?.lat},${dest?.lng}` });
-    if (waypoints) params.set('waypoints', waypoints);
-    window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
-  }
-
-  protected openReasonPicker(stopId: string): void {
-    this.reasonPickerFor.set(stopId);
-  }
-
-  protected cancelReason(): void {
-    this.reasonPickerFor.set(null);
-  }
-
-  protected async deliver(stopId: string): Promise<void> {
-    await this.post(stopId, 'deliver');
-  }
-
-  protected async skip(stopId: string, reason: string): Promise<void> {
-    await this.post(stopId, 'skip', reason);
-    this.reasonPickerFor.set(null);
-  }
-
-  protected async defer(stopId: string): Promise<void> {
-    await this.post(stopId, 'defer');
-  }
-
-  protected async undo(stopId: string): Promise<void> {
-    await this.post(stopId, 'undo');
-  }
-
-  private async load(): Promise<void> {
-    if (!this.token) {
-      this.state.set('notfound');
-      return;
-    }
-    try {
-      const res = await fetch(`${apiBase()}/api/deliveries/r/${encodeURIComponent(this.token)}`);
-      if (!res.ok) {
-        this.state.set('notfound');
-        return;
-      }
-      this.data.set((await res.json()) as PublicRouteData);
-      this.state.set('ready');
-    } catch {
-      this.state.set('notfound');
-    }
-  }
-
-  private async post(stopId: string, action: 'deliver' | 'skip' | 'defer' | 'undo', reason?: string): Promise<void> {
-    if (this.busy()) return;
-    this.busy.set(true);
-    try {
-      const res = await fetch(
-        `${apiBase()}/api/deliveries/r/${encodeURIComponent(this.token)}/stops/${encodeURIComponent(stopId)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ action, reason: reason ?? null }),
-        },
-      );
-      if (!res.ok) {
-        this.state.set('notfound');
-        return;
-      }
-      this.data.set((await res.json()) as PublicRouteData);
-      if (action === 'deliver' || action === 'skip') this.lastActioned.set(stopId);
-      else if (action === 'undo') this.lastActioned.set(null);
-    } catch {
-      // Leave state as-is; the volunteer can retry.
-    } finally {
-      this.busy.set(false);
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.ts
-
-```typescript
-import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { DONATION_METHODS, DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
-import { DonationsService } from '../../../services/api/donations-service';
-import { PersonsService } from '../../persons/services/persons-service';
-
-type DonorSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
-
-/**
- * Fig. 15 "Record donation" dialog — records an offline gift (cash, check, bank transfer, or a
- * card payment taken outside Stripe checkout) against a donor. Distinct from the "Collect
- * donation" flow on the person page, which redirects to Stripe Checkout for a real card charge.
- */
-@Component({
-  selector: 'pc-record-donation-dialog',
-  imports: [Icon, FormsModule],
-  templateUrl: './record-donation-dialog.html',
-})
-export class RecordDonationDialog {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alertSvc = inject(AlertService);
-
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  private readonly _loading = createLoadingGate();
-
-  public readonly saved = output<void>();
-
-  protected readonly methods = DONATION_METHODS;
-  protected readonly methodLabels = DONATION_METHOD_LABELS;
-
-  protected readonly donorSearch = signal('');
-  protected readonly donorResults = signal<DonorSearchResult[]>([]);
-  protected readonly selectedDonor = signal<DonorSearchResult | null>(null);
-  protected readonly isSearching = signal(false);
-  protected readonly touchedDonor = signal(false);
-
-  protected readonly amount = signal<number | null>(null);
-  protected readonly touchedAmount = signal(false);
-
-  protected readonly method = signal<DonationMethod>('card');
-  protected readonly submitting = signal(false);
-  protected readonly isLoading = this._loading.visible;
-
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly donorInvalid = () => this.touchedDonor() && !this.selectedDonor();
-  protected readonly amountInvalid = () => {
-    const amt = this.amount();
-    return this.touchedAmount() && (amt === null || amt <= 0);
-  };
-  public open(): void {
-    this.resetForm();
-    this.dlgRef().nativeElement.showModal();
-  }
-
-  public close(): void {
-    this.dlgRef().nativeElement.close();
-  }
-
-  protected initials(p: DonorSearchResult): string {
-    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
-  }
-
-  protected onDonorSearchChange(value: string): void {
-    this.donorSearch.set(value);
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    if (!value.trim()) {
-      this.donorResults.set([]);
-      return;
-    }
-    this.isSearching.set(true);
-    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
-  }
-
-  private async executeSearch(value: string): Promise<void> {
-    try {
-      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
-      const rows = (result as { rows?: unknown[] })?.rows ?? [];
-      this.donorResults.set(
-        rows.map((raw) => {
-          const p = raw as { id: string; first_name: string | null; last_name: string | null; email: string | null };
-          return { id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email };
-        }),
-      );
-    } catch {
-      this.donorResults.set([]);
-    } finally {
-      this.isSearching.set(false);
-    }
-  }
-
-  protected selectDonor(p: DonorSearchResult): void {
-    this.selectedDonor.set(p);
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-  }
-
-  protected clearDonor(): void {
-    this.selectedDonor.set(null);
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-  }
-
-  protected donorName(p: DonorSearchResult): string {
-    return `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'this donor';
-  }
-
-  protected async submit(): Promise<void> {
-    this.touchedDonor.set(true);
-    this.touchedAmount.set(true);
-    const donor = this.selectedDonor();
-    const amt = this.amount();
-    if (!donor || amt === null || amt <= 0) return;
-
-    this.submitting.set(true);
-    const end = this._loading.begin();
-    try {
-      await this.donationsSvc.recordDonation({
-        personId: donor.id,
-        amountCents: Math.round(amt * 100),
-        method: this.method(),
-      });
-      this.alertSvc.showSuccess(`Saved — $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
-      this.saved.emit();
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to record donation');
-    } finally {
-      this.submitting.set(false);
-      end();
-    }
-  }
-
-  private resetForm(): void {
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-    this.selectedDonor.set(null);
-    this.touchedDonor.set(false);
-    this.amount.set(null);
-    this.touchedAmount.set(false);
-    this.method.set('card');
-    this.submitting.set(false);
-  }
-}
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
+  </form>
+</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
@@ -38000,143 +39699,6 @@ export class KeyboardShortcutsHelp {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/donations-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { TRPCService } from './trpc-service';
-
-@Service()
-export class DonationsService extends TRPCService<'donations'> {
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  public listDonations() {
-    return this.api.donations.listDonations.query();
-  }
-
-  public getHistory(personId: string) {
-    return this.api.donations.getPersonDonationHistory.query(personId);
-  }
-
-  public getStats(personId: string) {
-    return this.api.donations.getDonationStats.query(personId);
-  }
-
-  public checkEligibility(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-    isRecurring?: boolean;
-    remainingMonths?: number;
-  }) {
-    return this.api.donations.checkEligibility.query(payload);
-  }
-
-  public createCheckout(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createCheckout.mutate(payload);
-  }
-
-  public confirmDonation(sessionId: string) {
-    return this.api.donations.confirmDonation.mutate({ sessionId });
-  }
-
-  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer. */
-  public recordDonation(payload: {
-    personId: string;
-    amountCents: number;
-    method: 'card' | 'check' | 'cash' | 'bank_transfer';
-  }) {
-    return this.api.donations.recordDonation.mutate(payload);
-  }
-
-  public confirmMockDonation(payload: {
-    personId: string;
-    amountCents: number;
-    sessionId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockDonation.mutate(payload);
-  }
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  public createRecurringCheckout(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createRecurringCheckout.mutate(payload);
-  }
-
-  public confirmMockPledge(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    mockSubId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockPledge.mutate(payload);
-  }
-
-  public listPledges() {
-    return this.api.donations.listPledges.query();
-  }
-
-  public getPersonPledges(personId: string) {
-    return this.api.donations.getPersonPledges.query(personId);
-  }
-
-  public cancelPledge(pledgeId: string) {
-    return this.api.donations.cancelPledge.mutate({ pledgeId });
-  }
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  public getDonationPeriods() {
-    return this.api.donations.getDonationPeriods.query();
-  }
-
-  public createDonationPeriod(payload: {
-    name: string;
-    start_date: string;
-    end_date?: string | null;
-    limit_amount: number;
-  }) {
-    return this.api.donations.createDonationPeriod.mutate(payload);
-  }
-
-  public updateDonationPeriod(payload: {
-    id: string;
-    name?: string;
-    start_date?: string;
-    end_date?: string | null;
-    limit_amount?: number;
-    is_active?: boolean;
-  }) {
-    return this.api.donations.updateDonationPeriod.mutate(payload);
-  }
-
-  public deleteDonationPeriod(id: string) {
-    return this.api.donations.deleteDonationPeriod.mutate({ id });
-  }
-
-  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
-
-  public getWebhookTokenStatus() {
-    return this.api.donations.getWebhookTokenStatus.query();
-  }
-
-  public regenerateWebhookToken() {
-    return this.api.donations.regenerateWebhookToken.mutate();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
 
 ```typescript
@@ -39580,6 +41142,97 @@ export class GrainTabs {
 }
 ```
 
+## File: apps/frontend/src/app/app.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
+
+export const appRoutes = [
+  // Default redirect to the dashboard inside the app shell
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'new-password',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
+  // the separate apps/companion build — served path-routed on the same domain.
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
+
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
+```
+
 ## File: apps/frontend/src/app/app.ts
 
 ```typescript
@@ -39605,57 +41258,220 @@ export class AppComponent {
 }
 ```
 
-## File: apps/companion/src/app/canvass/canvass-page.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-
-import { CompanionGate } from '../gate/companion-gate';
-
-/** Canvass companion (spec §3) — the full walk-list app lands in Phase C. */
-@Component({
-  selector: 'pc-canvass-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CompanionGate],
-  template: `
-    <pc-companion-gate kind="turf" [token]="token()">
-      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-        <h1 class="text-lg font-semibold">Canvass companion</h1>
-        <p class="text-base-content/70">Coming soon.</p>
-      </div>
-    </pc-companion-gate>
-  `,
-})
-export class CanvassPage {
-  /** Route param — the capability token from /t/:token. */
-  public readonly token = input.required<string>();
-}
-```
-
 ## File: apps/companion/src/app/deliveries/route-page.ts
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+
+import { PcMap } from '@uxcommon/components/map/map';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { DELIVERY_SKIP_REASONS } from '@common';
+import { Icon } from '@icons/icon';
 
 import { CompanionGate } from '../gate/companion-gate';
+import { CompanionSessionService } from '../gate/companion-api';
 
-/** Deliveries companion (spec §4) — the CRM's public route page moves here in Phase D. */
+interface PublicStop {
+  id: string;
+  seq: number;
+  first_name: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  status: 'pending' | 'delivered' | 'skipped';
+  reason: string | null;
+  acted_at: string | null;
+}
+
+interface PublicRouteData {
+  organization_name: string;
+  route_name: string;
+  status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled';
+  start: { lat: number; lng: number };
+  stops_total: number;
+  stops_delivered: number;
+  stops: PublicStop[];
+}
+
+type PageState = 'loading' | 'ready' | 'notfound' | 'session-expired';
+type ViewMode = 'list' | 'map';
+
+/**
+ * Deliveries companion (spec §4.4–4.5), served at /r/:token behind the
+ * companion gate. The capability token scopes the route; the device session
+ * header proves who is driving it. Every action posts with a fresh op_id so a
+ * flaky-network retry applies exactly once, and re-renders from the
+ * authoritative response.
+ */
 @Component({
   selector: 'pc-route-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CompanionGate],
-  template: `
-    <pc-companion-gate kind="route" [token]="token()">
-      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-        <h1 class="text-lg font-semibold">Delivery route</h1>
-        <p class="text-base-content/70">Coming soon.</p>
-      </div>
-    </pc-companion-gate>
-  `,
+  imports: [CompanionGate, PcMap, StatusBadge, Icon, TabBar],
+  templateUrl: './route-page.html',
 })
 export class RoutePage {
+  private readonly session = inject(CompanionSessionService);
+
   /** Route param — the capability token from /r/:token. */
   public readonly token = input.required<string>();
+
+  protected readonly reasons = DELIVERY_SKIP_REASONS;
+
+  protected readonly state = signal<PageState>('loading');
+  protected readonly data = signal<PublicRouteData | null>(null);
+  protected readonly view = signal<ViewMode>('list');
+
+  protected readonly viewTabs: PcTabOption[] = [
+    { id: 'list', label: 'List' },
+    { id: 'map', label: 'Map' },
+  ];
+
+  protected readonly reasonPickerFor = signal<string | null>(null);
+  protected readonly lastActioned = signal<string | null>(null);
+  protected readonly selectedStopId = signal<string | null>(null);
+  protected readonly busy = signal(false);
+
+  protected readonly activeStopId = computed(() => this.data()?.stops.find((s) => s.status === 'pending')?.id ?? null);
+  protected readonly handled = computed(() => this.data()?.stops.filter((s) => s.status !== 'pending').length ?? 0);
+  protected readonly isDone = computed(() => this.data()?.status === 'completed');
+
+  protected readonly markers = computed<PcMapMarker<PublicStop>[]>(() => {
+    const d = this.data();
+    if (!d) return [];
+    const active = this.activeStopId();
+    return d.stops
+      .filter((s) => s.lat != null && s.lng != null)
+      .map((s) => ({
+        position: { lat: s.lat as number, lng: s.lng as number },
+        variant: this.pinVariant(s, active),
+        tooltip: `${s.seq}. ${s.address}`,
+        id: s.id,
+        payload: s,
+      }));
+  });
+
+  protected setView(view: string): void {
+    if (view === 'list' || view === 'map') this.view.set(view);
+  }
+
+  protected statusChip(): { type: 'neutral' | 'warning' | 'success'; label: string } {
+    const s = this.data()?.status;
+    if (s === 'completed') return { type: 'success', label: 'Completed' };
+    if (s === 'in_progress') return { type: 'warning', label: 'In progress' };
+    return { type: 'neutral', label: 'Not started' };
+  }
+
+  protected selectStop(marker: PcMapMarker): void {
+    // pc-map's markerClicked emits PcMapMarker<unknown>; the marker id carries our stop id.
+    this.selectedStopId.set(marker.id ?? null);
+  }
+
+  protected navigate(stop: PublicStop): void {
+    if (stop.lat == null || stop.lng == null) return;
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`, '_blank', 'noopener');
+  }
+
+  protected openFullRoute(): void {
+    const d = this.data();
+    if (!d) return;
+    const located = d.stops.filter((s) => s.lat != null && s.lng != null);
+    if (located.length === 0) return;
+    const origin = `${d.start.lat},${d.start.lng}`;
+    const dest = located[located.length - 1];
+    const waypoints = located
+      .slice(0, -1)
+      .map((s) => `${s.lat},${s.lng}`)
+      .join('|');
+    const params = new URLSearchParams({ api: '1', origin, destination: `${dest?.lat},${dest?.lng}` });
+    if (waypoints) params.set('waypoints', waypoints);
+    window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  protected openReasonPicker(stopId: string): void {
+    this.reasonPickerFor.set(stopId);
+  }
+
+  protected cancelReason(): void {
+    this.reasonPickerFor.set(null);
+  }
+
+  protected async deliver(stopId: string): Promise<void> {
+    await this.post(stopId, 'deliver');
+  }
+
+  protected async skip(stopId: string, reason: string): Promise<void> {
+    await this.post(stopId, 'skip', reason);
+    this.reasonPickerFor.set(null);
+  }
+
+  protected async defer(stopId: string): Promise<void> {
+    await this.post(stopId, 'defer');
+  }
+
+  protected async undo(stopId: string): Promise<void> {
+    await this.post(stopId, 'undo');
+  }
+
+  protected reload(): void {
+    window.location.reload();
+  }
+
+  protected async load(): Promise<void> {
+    const token = this.token();
+    if (!token) {
+      this.state.set('notfound');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/deliveries/r/${encodeURIComponent(token)}`, {
+        headers: { Accept: 'application/json', ...this.session.headers() },
+      });
+      if (!res.ok) {
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
+        return;
+      }
+      this.data.set((await res.json()) as PublicRouteData);
+      this.state.set('ready');
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+
+  private pinVariant(s: PublicStop, activeId: string | null): PcMapVariant {
+    if (s.status === 'delivered') return 'success';
+    if (s.status === 'skipped') return 'warning';
+    if (s.id === activeId) return 'primary';
+    return 'muted';
+  }
+
+  private async post(stopId: string, action: 'deliver' | 'skip' | 'defer' | 'undo', reason?: string): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    try {
+      const res = await fetch(
+        `/api/deliveries/r/${encodeURIComponent(this.token())}/stops/${encodeURIComponent(stopId)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.session.headers() },
+          // A fresh op_id per tap — the server ledger makes retries apply exactly once.
+          body: JSON.stringify({ action, reason: reason ?? null, op_id: crypto.randomUUID() }),
+        },
+      );
+      if (!res.ok) {
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
+        return;
+      }
+      this.data.set((await res.json()) as PublicRouteData);
+      if (action === 'deliver' || action === 'skip') this.lastActioned.set(stopId);
+      else if (action === 'undo') this.lastActioned.set(null);
+    } catch {
+      // Leave state as-is; the volunteer can retry.
+    } finally {
+      this.busy.set(false);
+    }
+  }
 }
 ```
 
@@ -39868,6 +41684,94 @@ export class CampaignsPageComponent implements OnInit {
       this.loaded.set(true);
       end();
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/services/canvassing-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import type {
+  AddTurfType,
+  AssignTurfType,
+  CutTurfsType,
+  FieldReportRangeType,
+  UpdateCompanionSettingsType,
+  UpdateTurfType,
+} from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+import type { RouterOutputs } from '../../../services/api/trpc-types';
+
+export type TurfListItem = RouterOutputs['canvassing']['getTurfs'][number];
+export type FieldSummary = RouterOutputs['canvassing']['getFieldSummary'];
+export type InFieldToday = RouterOutputs['canvassing']['getInFieldToday'];
+export type FieldReport = RouterOutputs['canvassing']['getFieldReport'];
+export type Coverage = RouterOutputs['canvassing']['getCoverage'];
+export type CutPreview = RouterOutputs['canvassing']['previewCut'];
+
+@Service()
+export class CanvassingService extends TRPCService<unknown> {
+  public getTurfs(): Promise<TurfListItem[]> {
+    return this.api.canvassing.getTurfs.query();
+  }
+
+  public getFieldSummary(): Promise<FieldSummary> {
+    return this.api.canvassing.getFieldSummary.query();
+  }
+
+  public getInFieldToday(): Promise<InFieldToday> {
+    return this.api.canvassing.getInFieldToday.query();
+  }
+
+  public getFieldReport(input: FieldReportRangeType): Promise<FieldReport> {
+    return this.api.canvassing.getFieldReport.query(input);
+  }
+
+  public exportFieldReport(input: FieldReportRangeType): Promise<{ filename: string; content: string }> {
+    return this.api.canvassing.exportFieldReport.query(input);
+  }
+
+  public getCoverage(input: FieldReportRangeType): Promise<Coverage> {
+    return this.api.canvassing.getCoverage.query(input);
+  }
+
+  public previewCut(input: CutTurfsType): Promise<CutPreview> {
+    return this.api.canvassing.previewCut.query(input);
+  }
+
+  public cutTurfs(input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
+    return this.api.canvassing.cutTurfs.mutate(input);
+  }
+
+  public assign(input: AssignTurfType): Promise<{ token: string }> {
+    return this.api.canvassing.assign.mutate(input);
+  }
+
+  public getCompanionSettings(): Promise<RouterOutputs['canvassing']['getCompanionSettings']> {
+    return this.api.canvassing.getCompanionSettings.query(undefined);
+  }
+
+  public updateCompanionSettings(input: UpdateCompanionSettingsType): Promise<void> {
+    return this.api.canvassing.updateCompanionSettings.mutate(input).then(() => undefined);
+  }
+
+  public retire(turfId: string): Promise<void> {
+    return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
+  }
+
+  public refreshFromList(turfId: string): Promise<{ added: number; removed: number }> {
+    return this.api.canvassing.refreshFromList.mutate(turfId);
+  }
+
+  public addTurf(input: AddTurfType): Promise<{ id: string }> {
+    return this.api.canvassing.addTurf.mutate(input);
+  }
+
+  public updateTurf(id: string, data: UpdateTurfType): Promise<void> {
+    return this.api.canvassing.updateTurf.mutate({ id, data }).then(() => undefined);
   }
 }
 ```
@@ -40749,166 +42653,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   <span class="loading loading-spinner loading-lg text-primary"></span>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
-
-```html
-<dialog #dlg class="modal">
-  <div class="modal-box max-w-md">
-    <div class="flex items-center justify-between mb-5">
-      <h3 class="text-xl font-bold flex items-center gap-2">
-        <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
-        Record donation
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
-      <!-- Donor -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
-        @if (selectedDonor()) {
-        <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-          <div
-            class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-          >
-            {{ initials(selectedDonor()!) }}
-          </div>
-          <span class="text-sm font-medium flex-1 truncate"
-            >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
-          >
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle"
-            (click)="clearDonor()"
-            aria-label="Change donor"
-          >
-            <pc-icon name="x-mark" [size]="3"></pc-icon>
-          </button>
-        </div>
-        } @else {
-        <div class="relative">
-          <input
-            id="rd-donor"
-            type="text"
-            class="input input-bordered w-full pr-10 text-sm"
-            [class.input-error]="donorInvalid()"
-            placeholder="Search by name or email..."
-            [ngModel]="donorSearch()"
-            [ngModelOptions]="{ standalone: true }"
-            (ngModelChange)="onDonorSearchChange($event)"
-            (blur)="touchedDonor.set(true)"
-            autofocus
-          />
-          <pc-icon
-            name="magnifying-glass"
-            [size]="4"
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-          ></pc-icon>
-        </div>
-        @if (donorResults().length > 0) {
-        <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
-          @for (p of donorResults(); track p.id) {
-          <button
-            type="button"
-            class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
-            (click)="selectDonor(p)"
-          >
-            <div
-              class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-            >
-              {{ initials(p) }}
-            </div>
-            <div class="flex flex-col min-w-0">
-              <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
-              @if (p.email) {
-              <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
-              }
-            </div>
-          </button>
-          }
-        </div>
-        } @if (isSearching() && donorSearch().length > 0) {
-        <span class="text-xs text-base-content/40 italic">Searching...</span>
-        } @if (donorInvalid()) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          Choose who gave this gift — receipts need a name.
-        </p>
-        } }
-      </div>
-
-      <!-- Amount -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
-        <div class="relative">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-          <input
-            id="rd-amount"
-            type="number"
-            min="0.01"
-            step="0.01"
-            inputmode="decimal"
-            class="input input-bordered w-full pl-7 text-sm tabular-nums"
-            [class.input-error]="amountInvalid()"
-            placeholder="50.00"
-            [ngModel]="amount()"
-            [ngModelOptions]="{ standalone: true }"
-            (ngModelChange)="amount.set($event === '' ? null : +$event)"
-            (blur)="touchedAmount.set(true)"
-          />
-        </div>
-        @if (amountInvalid()) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          Enter an amount above zero, like 50.
-        </p>
-        }
-      </div>
-
-      <!-- Method -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
-        <select
-          id="rd-method"
-          class="select select-bordered w-full text-sm"
-          [ngModel]="method()"
-          [ngModelOptions]="{ standalone: true }"
-          (ngModelChange)="method.set($event)"
-        >
-          @for (m of methods; track m) {
-          <option [value]="m">{{ methodLabels[m] }}</option>
-          }
-        </select>
-      </div>
-
-      <p class="text-xs text-base-content/50 flex items-start gap-1.5">
-        <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
-        A receipt goes out automatically — that's set in Workspace settings → Donations.
-      </p>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
-          Cancel
-        </button>
-        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
-          @if (submitting()) {
-          <span class="loading loading-spinner loading-sm"></span>
-          } @else {
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          } Record donation
-        </button>
-      </div>
-    </form>
-  </div>
-
-  <form method="dialog" class="modal-backdrop">
-    <button (click)="close()">close</button>
-  </form>
-</dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.html
@@ -49630,6 +51374,147 @@ export class Dashboard {
 </div>
 ```
 
+## File: apps/companion/src/app/canvass/canvass-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
+
+import { Icon } from '@icons/icon';
+
+import { CompanionGate } from '../gate/companion-gate';
+import { CanvassHousehold } from './canvass-household';
+import { CanvassLanding } from './canvass-landing';
+import { CanvassList } from './canvass-list';
+import { CanvassMap } from './canvass-map';
+import { CanvassMe } from './canvass-me';
+import { CanvassStore } from './canvass-store';
+import { CanvassSurvey } from './canvass-survey';
+
+import type { PcIconNameType } from '@icons/icons.index';
+
+type TabId = 'list' | 'map' | 'me';
+
+/**
+ * Canvass companion shell (spec §3). Sits behind the verify+approve gate;
+ * everything inside is client-side view state in the store — only the token
+ * is routable. The tab bar hides inside the household and survey views to
+ * keep the doorstep flow linear (list → household → survey → back).
+ */
+@Component({
+  selector: 'pc-canvass-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [CanvassStore],
+  imports: [CompanionGate, CanvassHousehold, CanvassLanding, CanvassList, CanvassMap, CanvassMe, CanvassSurvey, Icon],
+  template: `
+    <pc-companion-gate kind="turf" [token]="token()" (ready)="onReady()">
+      @if (store.loadError()) {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <pc-icon name="exclamation-triangle" [size]="8" class="text-warning"></pc-icon>
+          <h1 class="text-lg font-semibold">Couldn't load your turf</h1>
+          <p class="text-base-content/70">{{ store.loadError() }}</p>
+          <button type="button" class="btn btn-primary" (click)="retry()">Try again</button>
+        </div>
+      } @else if (!store.payload()) {
+        <div class="flex min-h-screen items-center justify-center">
+          <span class="loading loading-spinner loading-md opacity-40" aria-label="Loading your turf"></span>
+        </div>
+      } @else {
+        <div class="mx-auto flex min-h-screen w-full max-w-md flex-col" [class.pb-20]="tabsVisible()">
+          @if (!store.online()) {
+            <div
+              class="sticky top-0 z-20 bg-warning px-4 py-2 text-center text-xs font-medium text-warning-content"
+              role="status"
+            >
+              Offline — {{ store.queue().length }} {{ store.queue().length === 1 ? 'result' : 'results' }} queued in
+              this browser
+            </div>
+          }
+          @switch (store.view().kind) {
+            @case ('landing') {
+              <pc-canvass-landing></pc-canvass-landing>
+            }
+            @case ('list') {
+              <pc-canvass-list></pc-canvass-list>
+            }
+            @case ('map') {
+              <pc-canvass-map></pc-canvass-map>
+            }
+            @case ('me') {
+              <pc-canvass-me></pc-canvass-me>
+            }
+            @case ('household') {
+              <pc-canvass-household></pc-canvass-household>
+            }
+            @case ('survey') {
+              <pc-canvass-survey></pc-canvass-survey>
+            }
+          }
+        </div>
+
+        @if (tabsVisible()) {
+          <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-base-300 bg-base-100" aria-label="Sections">
+            <div class="mx-auto grid max-w-md grid-cols-3">
+              @for (tab of tabs; track tab.id) {
+                <button
+                  type="button"
+                  class="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium"
+                  [class.text-primary]="activeTab() === tab.id"
+                  [class.text-base-content]="activeTab() !== tab.id"
+                  [class.opacity-60]="activeTab() !== tab.id"
+                  [attr.aria-current]="activeTab() === tab.id ? 'page' : null"
+                  (click)="openTab(tab.id)"
+                >
+                  <pc-icon [name]="tab.icon" [size]="5"></pc-icon>
+                  {{ tab.label }}
+                </button>
+              }
+            </div>
+          </nav>
+        }
+      }
+    </pc-companion-gate>
+  `,
+})
+export class CanvassPage {
+  /** Route param — the capability token from /t/:token. */
+  public readonly token = input.required<string>();
+
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly tabs: { id: TabId; label: string; icon: PcIconNameType }[] = [
+    { id: 'list', label: 'Turf', icon: 'queue-list' },
+    { id: 'map', label: 'Map', icon: 'map' },
+    { id: 'me', label: 'Me', icon: 'user-circle' },
+  ];
+
+  protected readonly activeTab = computed<TabId | null>(() => {
+    const kind = this.store.view().kind;
+    return kind === 'list' || kind === 'map' || kind === 'me' ? kind : null;
+  });
+  /** Hidden inside household + survey (linear doorstep flow) and on the landing cover. */
+  protected readonly tabsVisible = computed(() => this.activeTab() !== null);
+
+  constructor() {
+    // A dead session (revoked/expired) sends the volunteer back through the gate.
+    effect(() => {
+      if (this.store.sessionExpired()) window.location.reload();
+    });
+  }
+
+  protected onReady(): void {
+    void this.store.load(this.token());
+  }
+
+  protected openTab(tab: TabId): void {
+    this.store.view.set({ kind: tab });
+  }
+
+  protected retry(): void {
+    void this.store.load(this.token());
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
 
 ```html
@@ -50637,6 +52522,370 @@ export class ActivityFeed implements OnInit {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
+
+```typescript
+import { Component, type OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+
+import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
+import {
+  CanvassingService,
+  type Coverage,
+  type FieldReport,
+  type FieldSummary,
+  type InFieldToday,
+  type TurfListItem,
+} from '../services/canvassing-service';
+import { AssignTurfDialog } from './assign-turf-dialog';
+import { CompanionSettingsDialog } from './companion-settings-dialog';
+import { CutTurfsDialog } from './cut-turfs-dialog';
+
+type TurfStatus = TurfListItem['status'];
+type Tab = 'turfs' | 'report';
+type ReportRange = FieldReportRangeType['range'];
+type CoverageStatus = Coverage['doors'][number]['status'];
+type CoverageView = 'map' | 'ward';
+
+/** Door-dot colours on the coverage map: talked → knocked-no-answer → not yet. */
+const COVERAGE_VARIANT: Record<CoverageStatus, PcMapVariant> = {
+  conversation: 'success',
+  attempted: 'warning',
+  not_yet: 'muted',
+};
+
+const COVERAGE_LEGEND: { status: CoverageStatus; label: string; dot: string }[] = [
+  { status: 'conversation', label: 'Conversation', dot: 'bg-success' },
+  { status: 'attempted', label: 'Knocked, no answer', dot: 'bg-warning' },
+  { status: 'not_yet', label: 'Not yet knocked', dot: 'bg-base-300' },
+];
+
+const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_field: 'success',
+  complete: 'primary',
+  retired: 'muted',
+};
+
+const STATUS_LABEL: Record<TurfStatus, string> = {
+  draft: 'Draft — unassigned',
+  assigned: 'Sent to app',
+  in_field: 'In field now',
+  complete: 'Complete',
+  retired: 'Retired',
+};
+
+const STATUS_BADGE: Record<TurfStatus, string> = {
+  draft: 'badge-ghost',
+  assigned: 'badge-info',
+  in_field: 'badge-success',
+  complete: 'badge-primary',
+  retired: 'badge-ghost opacity-60',
+};
+
+const RANGES: { key: ReportRange; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
+  { key: 'campaign', label: 'Campaign' },
+];
+
+@Component({
+  selector: 'pc-canvassing-page',
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog, CompanionSettingsDialog],
+  templateUrl: './canvassing-page.html',
+})
+export class CanvassingPage implements OnInit {
+  private readonly svc = inject(CanvassingService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialog = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly tab = signal<Tab>('turfs');
+
+  protected readonly pageTabs: PcTabOption[] = [
+    { id: 'turfs', label: 'Turfs & assignments' },
+    { id: 'report', label: 'Field report' },
+  ];
+  protected readonly turfs = signal<TurfListItem[]>([]);
+  protected readonly summary = signal<FieldSummary | null>(null);
+  protected readonly today = signal<InFieldToday | null>(null);
+
+  protected readonly reportRange = signal<ReportRange>('week');
+  protected readonly report = signal<FieldReport | null>(null);
+  protected readonly coverage = signal<Coverage | null>(null);
+  protected readonly coverageView = signal<CoverageView>('map');
+
+  protected readonly cutOpen = signal(false);
+  /** Turf currently being assigned in the pick-a-volunteer dialog (null = closed). */
+  protected readonly assignTarget = signal<TurfListItem | null>(null);
+  /** Companion survey settings dialog (issues vocabulary + door script). */
+  protected readonly settingsOpen = signal(false);
+
+  protected readonly ranges = RANGES;
+  protected readonly statusLabel = STATUS_LABEL;
+  protected readonly statusBadge = STATUS_BADGE;
+  protected readonly coverageLegend = COVERAGE_LEGEND;
+
+  ngOnInit(): void {
+    void this.loadTurfs();
+  }
+
+  /** Header sentence: "9 turfs · 3 in the field now · 1,412 of 2,860 doors attempted · 2 waiting for a canvasser". */
+  protected readonly headline = computed<string>(() => {
+    const s = this.summary();
+    if (!s) return '';
+    const parts = [
+      `${s.turfCount} ${s.turfCount === 1 ? 'turf' : 'turfs'}`,
+      `${s.inFieldCount} in the field now`,
+      `${s.doorsAttempted.toLocaleString()} of ${s.doorsTotal.toLocaleString()} doors attempted`,
+      `${s.waitingCount} waiting for a canvasser`,
+    ];
+    return parts.join(' · ');
+  });
+
+  /** Response-mix stacked bar segments for the "in the field today" card. */
+  protected readonly todaySegments = computed(() => {
+    const t = this.today();
+    if (!t) return [];
+    const m = t.responseMix;
+    return [
+      { key: 'supporter', label: 'Supporters', value: m.supporter, cls: 'bg-success' },
+      { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
+      { key: 'non_supporter', label: 'Non-supporters', value: m.non_supporter, cls: 'bg-error' },
+      { key: 'not_voting', label: 'Not voting', value: m.not_voting, cls: 'bg-base-content/30' },
+      { key: 'already_voted', label: 'Already voted', value: m.already_voted, cls: 'bg-info' },
+      { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
+    ].filter((s) => s.value > 0);
+  });
+
+  protected readonly todayTotal = computed<number>(() => this.todaySegments().reduce((n, s) => n + s.value, 0));
+
+  /**
+   * Tinted turf-centroid markers over the ward map (§13.1 turf map strip).
+   * Each turf's stored centroid is pinned and tinted by its live status. (Filled
+   * polygons per turf need the door hull — a follow-up; centroids read honestly.)
+   */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    return this.turfs()
+      .filter((t) => t.status !== 'retired' && t.centroid_lat != null && t.centroid_lng != null)
+      .map((t) => ({
+        position: { lat: Number(t.centroid_lat), lng: Number(t.centroid_lng) },
+        variant: this.variantFor(t.status),
+        tooltip: `${t.name} — ${this.statusLabel[t.status]}`,
+        id: t.id,
+        payload: t.id,
+      }));
+  });
+
+  protected readonly hasMap = computed<boolean>(() => this.mapMarkers().length > 0);
+
+  protected variantFor(status: TurfStatus): PcMapVariant {
+    return STATUS_VARIANT[status];
+  }
+
+  protected progressPct(t: TurfListItem): number {
+    if (t.door_count <= 0) return 0;
+    return Math.min(100, Math.round((t.attempted / t.door_count) * 100));
+  }
+
+  protected async loadTurfs(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [turfs, summary, today] = await Promise.all([
+        this.svc.getTurfs(),
+        this.svc.getFieldSummary(),
+        this.svc.getInFieldToday(),
+      ]);
+      this.turfs.set(turfs);
+      this.summary.set(summary);
+      this.today.set(today);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load canvassing.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async loadReport(): Promise<void> {
+    const end = this._loading.begin();
+    const range = { range: this.reportRange(), from: null, to: null };
+    try {
+      const [report, coverage] = await Promise.all([this.svc.getFieldReport(range), this.svc.getCoverage(range)]);
+      this.report.set(report);
+      this.coverage.set(coverage);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load field report.');
+    } finally {
+      end();
+    }
+  }
+
+  /** Coverage door dots, coloured by whether we talked, knocked, or haven't reached them. */
+  protected readonly coverageMarkers = computed<PcMapMarker[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.doors.map((d) => ({
+      position: { lat: d.lat, lng: d.lng },
+      variant: COVERAGE_VARIANT[d.status],
+    }));
+  });
+
+  /** Dashed turf boundaries (convex hull of each turf's doors). */
+  protected readonly coveragePolygons = computed<PcMapPolygon[]>(() => {
+    const cov = this.coverage();
+    if (!cov) return [];
+    return cov.turfs.map((t) => ({
+      path: t.path,
+      variant: 'neutral' as const,
+      dashed: true,
+      label: t.name,
+      id: t.id,
+    }));
+  });
+
+  protected selectTab(tab: string): void {
+    if (tab !== 'turfs' && tab !== 'report') return;
+    this.tab.set(tab);
+    if (tab === 'report' && !this.report()) void this.loadReport();
+  }
+
+  protected setRange(range: ReportRange): void {
+    this.reportRange.set(range);
+    void this.loadReport();
+  }
+
+  protected openCut(): void {
+    this.cutOpen.set(true);
+  }
+
+  protected onCutDone(created: number): void {
+    this.cutOpen.set(false);
+    if (created > 0) {
+      this.alerts.showSuccess(`Cut ${created} ${created === 1 ? 'turf' : 'turfs'}.`);
+      void this.loadTurfs();
+    }
+  }
+
+  /** Assignment is personal now — open the pick-a-volunteer dialog (plan §5 B1). */
+  protected assign(t: TurfListItem): void {
+    this.assignTarget.set(t);
+  }
+
+  /** An existing link can be re-copied; a missing one needs an assignment first. */
+  protected async copyLink(t: TurfListItem): Promise<void> {
+    if (t.token) {
+      await this.copyCompanionLink(t.token);
+      return;
+    }
+    this.assign(t);
+  }
+
+  protected async onAssigned(token: string): Promise<void> {
+    this.assignTarget.set(null);
+    await this.copyCompanionLink(token);
+    await this.loadTurfs();
+  }
+
+  private async copyCompanionLink(token: string): Promise<void> {
+    const url = `${location.origin}/t/${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');
+    } catch {
+      this.alerts.showSuccess(`Companion link: ${url}`);
+    }
+  }
+
+  protected async refresh(t: TurfListItem): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const res = await this.svc.refreshFromList(t.id);
+      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async retire(t: TurfListItem): Promise<void> {
+    const ok = await this.dialog.confirm({
+      title: 'Retire this turf?',
+      message: `"${t.name}" will stop accepting knocks. Its totals stay in the field report.`,
+      confirmText: 'Retire turf',
+    });
+    if (!ok) return;
+    const end = this._loading.begin();
+    try {
+      await this.svc.retire(t.id);
+      this.alerts.showSuccess('Turf retired.');
+      await this.loadTurfs();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to retire turf.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async exportReport(): Promise<void> {
+    try {
+      const { filename, content } = await this.svc.exportFieldReport({
+        range: this.reportRange(),
+        from: null,
+        to: null,
+      });
+      const blob = new Blob([content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
+    }
+  }
+
+  protected hourLabel(h: number): string {
+    const am = h < 12;
+    const base = h % 12 === 0 ? 12 : h % 12;
+    return `${base}${am ? 'am' : 'pm'}`;
+  }
+
+  protected barPct(value: number, max: number): number {
+    if (max <= 0) return 0;
+    return Math.round((value / max) * 100);
+  }
+
+  protected maxPerDay(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.perDay.map((d) => d.conversations + d.no_answer));
+  }
+
+  protected maxByHour(): number {
+    const r = this.report();
+    if (!r) return 0;
+    return Math.max(1, ...r.byHour.map((h) => h.attempts));
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
 
 ```html
@@ -50976,6 +53225,169 @@ export class DeliveriesRequests implements OnInit {
     } }
   </pc-table>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
+
+```typescript
+import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { CurrencyPipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
+import { DonationsService } from '../../../services/api/donations-service';
+import { RecordDonationDialog } from './record-donation-dialog';
+
+/** Row shapes inferred from the actual tRPC return types (superjson preserves `Date`, so
+ * `created_at` arrives as a real `Date`, not a string) — avoids a hand-rolled interface drifting
+ * out of sync with the repo's select list. */
+type DonationRow = Awaited<ReturnType<DonationsService['listDonations']>>[number];
+type PledgeRow = Awaited<ReturnType<DonationsService['listPledges']>>[number];
+
+/** How many rows of the recent-gifts table show before the "Showing latest N of M" sentence
+ * points the rest of the way. Spec Fig. 15: "Showing the latest 8 of 62". */
+const RECENT_GIFTS_LIMIT = 8;
+
+@Component({
+  selector: 'pc-donations-grid',
+  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
+  templateUrl: './donations-grid.html',
+})
+export class DonationsGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly recordDialog = viewChild.required(RecordDonationDialog);
+
+  /** One-time / Monthly pledges are sibling pages — route-linked pills, same bar on both. */
+  protected readonly donationTabs: PcTabOption[] = [
+    { id: 'one-time', label: 'One-time', route: '/donations', exact: true },
+    { id: 'pledges', label: 'Monthly pledges', route: '/donations/pledges' },
+  ];
+
+  protected readonly donations = signal<DonationRow[]>([]);
+  protected readonly pledges = signal<PledgeRow[]>([]);
+  protected readonly _loading = createLoadingGate();
+  /** Id of the most-recently recorded donation — flashes its row once, per the house
+   * "new rows flash in" pattern (row-saved-flash, datagrid.css). */
+  protected readonly highlightId = signal<string | null>(null);
+
+  private readonly succeeded = computed(() => this.donations().filter((d) => d.status === 'succeeded'));
+
+  private readonly thisMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, 0)));
+  private readonly lastMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, -1)));
+
+  protected readonly thisMonthTotal = computed(
+    () => this.thisMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
+  );
+  private readonly lastMonthTotal = computed(
+    () => this.lastMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
+  );
+  protected readonly thisMonthCount = computed(() => this.thisMonthGifts().length);
+
+  /** "+18% vs April"-style delta. Null when there's no prior-month baseline to compare against. */
+  protected readonly monthOverMonthDelta = computed(() => {
+    const last = this.lastMonthTotal();
+    if (last <= 0) return null;
+    return Math.round(((this.thisMonthTotal() - last) / last) * 100);
+  });
+
+  protected readonly averageGift = computed(() => {
+    const count = this.thisMonthCount();
+    return count > 0 ? this.thisMonthTotal() / count : 0;
+  });
+
+  protected readonly monthlyDonorCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
+
+  protected readonly receiptsSentThisMonth = computed(() => this.thisMonthGifts().filter((d) => d.receipt_sent).length);
+
+  protected readonly headerSentence = computed(() => {
+    const total = this.thisMonthTotal();
+    const count = this.thisMonthCount();
+    const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
+    return count > 0
+      ? `${formattedTotal} raised this month across ${count} ${count === 1 ? 'gift' : 'gifts'}`
+      : 'No gifts recorded yet this month';
+  });
+
+  protected readonly recentGifts = computed(() => this.succeeded().slice(0, RECENT_GIFTS_LIMIT));
+  protected readonly totalGiftCount = computed(() => this.succeeded().length);
+
+  ngOnInit(): void {
+    void this.load();
+  }
+
+  protected refresh(): void {
+    void this.load();
+  }
+
+  protected openRecordDonation(): void {
+    this.recordDialog().open();
+  }
+
+  protected async onDonationRecorded(): Promise<void> {
+    await this.load();
+    const newest = this.donations()[0];
+    if (newest) {
+      this.highlightId.set(newest.id);
+      setTimeout(() => this.highlightId.set(null), 1200);
+    }
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents === null || amountCents === undefined) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(date: Date | string): string {
+    try {
+      return new Date(date).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  /** Safe lookup into the fixed method → label map — `method` is a checked DB text column, not a
+   * TS-narrowed union, so this guards with `in` rather than asserting the type. */
+  protected methodLabel(method: string): string {
+    return method in DONATION_METHOD_LABELS ? DONATION_METHOD_LABELS[method as DonationMethod] : method;
+  }
+
+  private isInMonth(date: Date | string, monthOffset: number): boolean {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return false;
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    return d.getFullYear() === target.getFullYear() && d.getMonth() === target.getMonth();
+  }
+
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [donations, pledges] = await Promise.all([
+        this.donationsSvc.listDonations(),
+        this.donationsSvc.listPledges(),
+      ]);
+      this.donations.set(donations ?? []);
+      this.pledges.set(pledges ?? []);
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load donations. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.ts
@@ -54586,6 +56998,420 @@ export class NewsletterDetailComponent {
     </form>
   </div>
 </dialog>
+```
+
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
+
+```typescript
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
+import { FormsModule } from '@angular/forms';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+
+@Component({
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  templateUrl: './profile-page.html',
+})
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
+
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
+
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
+
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+  });
+
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner — full access',
+      admin: 'Admin — users & workspace settings',
+      user: 'Editor — day-to-day work',
+      viewer: 'Viewer — read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
+
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly initials = computed(() => {
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
+    }
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
+  });
+
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you — all open'
+          : emails.open === 0
+            ? 'assigned to you — all closed'
+            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
+    return [
+      {
+        key: 'emails',
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
+      },
+      {
+        key: 'contacts',
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
+      },
+      {
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
+      },
+    ];
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const user = this.detail();
+    if (!user) return;
+
+    const payload = this.buildPayload();
+
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
+      }
+
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
@@ -61041,169 +63867,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
-
-```typescript
-import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { CurrencyPipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { Table } from '@uxcommon/components/table/table';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
-import { DonationsService } from '../../../services/api/donations-service';
-import { RecordDonationDialog } from './record-donation-dialog';
-
-/** Row shapes inferred from the actual tRPC return types (superjson preserves `Date`, so
- * `created_at` arrives as a real `Date`, not a string) — avoids a hand-rolled interface drifting
- * out of sync with the repo's select list. */
-type DonationRow = Awaited<ReturnType<DonationsService['listDonations']>>[number];
-type PledgeRow = Awaited<ReturnType<DonationsService['listPledges']>>[number];
-
-/** How many rows of the recent-gifts table show before the "Showing latest N of M" sentence
- * points the rest of the way. Spec Fig. 15: "Showing the latest 8 of 62". */
-const RECENT_GIFTS_LIMIT = 8;
-
-@Component({
-  selector: 'pc-donations-grid',
-  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
-  templateUrl: './donations-grid.html',
-})
-export class DonationsGridComponent implements OnInit {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly alertSvc = inject(AlertService);
-
-  private readonly recordDialog = viewChild.required(RecordDonationDialog);
-
-  /** One-time / Monthly pledges are sibling pages — route-linked pills, same bar on both. */
-  protected readonly donationTabs: PcTabOption[] = [
-    { id: 'one-time', label: 'One-time', route: '/donations', exact: true },
-    { id: 'pledges', label: 'Monthly pledges', route: '/donations/pledges' },
-  ];
-
-  protected readonly donations = signal<DonationRow[]>([]);
-  protected readonly pledges = signal<PledgeRow[]>([]);
-  protected readonly _loading = createLoadingGate();
-  /** Id of the most-recently recorded donation — flashes its row once, per the house
-   * "new rows flash in" pattern (row-saved-flash, datagrid.css). */
-  protected readonly highlightId = signal<string | null>(null);
-
-  private readonly succeeded = computed(() => this.donations().filter((d) => d.status === 'succeeded'));
-
-  private readonly thisMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, 0)));
-  private readonly lastMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, -1)));
-
-  protected readonly thisMonthTotal = computed(
-    () => this.thisMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
-  );
-  private readonly lastMonthTotal = computed(
-    () => this.lastMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
-  );
-  protected readonly thisMonthCount = computed(() => this.thisMonthGifts().length);
-
-  /** "+18% vs April"-style delta. Null when there's no prior-month baseline to compare against. */
-  protected readonly monthOverMonthDelta = computed(() => {
-    const last = this.lastMonthTotal();
-    if (last <= 0) return null;
-    return Math.round(((this.thisMonthTotal() - last) / last) * 100);
-  });
-
-  protected readonly averageGift = computed(() => {
-    const count = this.thisMonthCount();
-    return count > 0 ? this.thisMonthTotal() / count : 0;
-  });
-
-  protected readonly monthlyDonorCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
-
-  protected readonly receiptsSentThisMonth = computed(() => this.thisMonthGifts().filter((d) => d.receipt_sent).length);
-
-  protected readonly headerSentence = computed(() => {
-    const total = this.thisMonthTotal();
-    const count = this.thisMonthCount();
-    const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
-    return count > 0
-      ? `${formattedTotal} raised this month across ${count} ${count === 1 ? 'gift' : 'gifts'}`
-      : 'No gifts recorded yet this month';
-  });
-
-  protected readonly recentGifts = computed(() => this.succeeded().slice(0, RECENT_GIFTS_LIMIT));
-  protected readonly totalGiftCount = computed(() => this.succeeded().length);
-
-  ngOnInit(): void {
-    void this.load();
-  }
-
-  protected refresh(): void {
-    void this.load();
-  }
-
-  protected openRecordDonation(): void {
-    this.recordDialog().open();
-  }
-
-  protected async onDonationRecorded(): Promise<void> {
-    await this.load();
-    const newest = this.donations()[0];
-    if (newest) {
-      this.highlightId.set(newest.id);
-      setTimeout(() => this.highlightId.set(null), 1200);
-    }
-  }
-
-  protected formatCurrency(amountCents: number | null | undefined): string {
-    if (amountCents === null || amountCents === undefined) return '$0.00';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
-  }
-
-  protected formatDate(date: Date | string): string {
-    try {
-      return new Date(date).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  }
-
-  /** Safe lookup into the fixed method → label map — `method` is a checked DB text column, not a
-   * TS-narrowed union, so this guards with `in` rather than asserting the type. */
-  protected methodLabel(method: string): string {
-    return method in DONATION_METHOD_LABELS ? DONATION_METHOD_LABELS[method as DonationMethod] : method;
-  }
-
-  private isInMonth(date: Date | string, monthOffset: number): boolean {
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return false;
-    const now = new Date();
-    const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-    return d.getFullYear() === target.getFullYear() && d.getMonth() === target.getMonth();
-  }
-
-  private async load(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [donations, pledges] = await Promise.all([
-        this.donationsSvc.listDonations(),
-        this.donationsSvc.listPledges(),
-      ]);
-      this.donations.set(donations ?? []);
-      this.pledges.set(pledges ?? []);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load donations. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
 
 ```typescript
@@ -61600,12 +64263,26 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
       {
         kind: 'p',
-        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it — text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number — that’s where their verification code goes. No contact on file means the link can’t be opened.',
       },
       { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
       {
         kind: 'p',
-        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
+        text: 'The Companion is a web app — nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file — support level, top issues, follow-up flags, and notes — or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** tags them as a volunteer prospect, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey — both scoped to the campaign the turf was cut for.',
       },
       { kind: 'h2', id: 'report', text: 'The field report' },
       {
@@ -61665,12 +64342,12 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign and share' },
       {
         kind: 'p',
-        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+        text: 'On a route, assign the volunteer first — the link is personal to them — then **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
       },
       { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
       {
         kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is available on any delivered or skipped stop — even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
       },
       {
         kind: 'callout',
@@ -63466,418 +66143,304 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
+## File: apps/frontend/src/app/experiences/profile/profile-page.html
 
-```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
-import {
-  IAuthUserDetail,
-  IUserStatsSnapshot,
-  UpdateAuthUserType,
-  authRoleLabel,
-} from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <!-- Loading State -->
+  @if (error() && !detail()) {
+  <div class="alert alert-error m-4 shadow-sm rounded-xl">
+    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!detail()) {
+  <div
+    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
+  >
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="font-medium text-sm">Loading your profile…</p>
+    </div>
+  </div>
+  } @else {
 
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
+  <div class="space-y-6">
+    <!-- Identity header card -->
+    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <div class="flex items-center gap-5">
+        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
+        <div class="relative shrink-0">
+          <input
+            id="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="sr-only"
+            (change)="onAvatarFileChange($event)"
+          />
+          <label
+            for="avatar-file-input"
+            class="block cursor-pointer"
+            [class.pointer-events-none]="uploadingAvatar()"
+            title="Change profile photo"
+          >
+            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
+            @if (uploadingAvatar()) {
+            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+              <span class="loading loading-spinner loading-sm text-white"></span>
+            </span>
+            } @else {
+            <span
+              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
+              aria-hidden="true"
+            >
+              <pc-icon name="pencil-square" [size]="3"></pc-icon>
+            </span>
+            }
+          </label>
+          @if (avatarUrl() && !uploadingAvatar()) {
+          <button
+            type="button"
+            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
+            (click)="removeAvatar()"
+          >
+            Remove photo
+          </button>
+          }
+        </div>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
+            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
+            @if (detail()?.verified) {
+            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Verified
+            </span>
+            }
+          </div>
+          <p class="mt-0.5 truncate text-sm text-base-content/60">
+            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
+            'mediumDate' }} }
+          </p>
+        </div>
+      </div>
+    </div>
 
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-  });
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
-  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
-
-  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
-  protected readonly roleWithAccess = computed(() => {
-    const role = this.detail()?.role;
-    const descriptions: Record<string, string> = {
-      owner: 'Owner — full access',
-      admin: 'Admin — users & workspace settings',
-      user: 'Editor — day-to-day work',
-      viewer: 'Viewer — read-only',
-    };
-    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
-  });
-
-  // Narrate unsaved identity edits (§2 disclosure).
-  protected readonly dirtyFieldCount = computed(() => {
-    const f = this.form;
-    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
-  protected readonly activityRows = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-    const emails = s.emails_assigned;
-    const emailRest =
-      emails.total === 0
-        ? 'assigned to you'
-        : emails.open === emails.total
-          ? 'assigned to you — all open'
-          : emails.open === 0
-            ? 'assigned to you — all closed'
-            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
-    return [
-      {
-        key: 'emails',
-        icon: 'inbox-stack' as const,
-        link: '/inbox',
-        count: plural(emails.total, 'conversation'),
-        rest: emailRest,
-      },
-      {
-        key: 'contacts',
-        icon: 'user-group' as const,
-        link: '/people',
-        count: plural(s.contacts_added.total, 'contact'),
-        rest: 'added by you',
-      },
-      {
-        key: 'files',
-        icon: 'arrows-up-down-tray' as const,
-        link: null,
-        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
-        rest: 'all time',
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
+    @if (detail()?.previous_email) {
+    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <div>
+          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
+          <div i18n class="text-xs text-warning-content/80">
+            A verification link was sent to your new email. You will not be able to make changes until verified.
+          </div>
+        </div>
+      </div>
+      <button
+        i18n
+        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
+        (click)="cancelEmailChange()"
+      >
+        Undo change
+      </button>
+    </div>
+    } @if (error()) {
+    <div class="alert alert-error shadow-sm rounded-xl">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
     }
 
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- Left column: profile form + notifications -->
+      <div class="space-y-6 lg:col-span-2">
+        <!-- Profile card (explicit save) -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
 
-    const user = this.detail();
-    if (!user) return;
+          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
+            <div class="grid gap-4 md:grid-cols-2">
+              <pc-input
+                label="First name"
+                placeholder="Your first name"
+                [formField]="form.first_name"
+                autocomplete="given-name"
+              ></pc-input>
 
-    const payload = this.buildPayload();
+              <pc-input
+                label="Last name"
+                placeholder="Your last name"
+                [formField]="form.last_name"
+                autocomplete="family-name"
+              ></pc-input>
 
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
+              <div class="md:col-span-2">
+                <pc-input
+                  label="Email address"
+                  type="email"
+                  placeholder="you@example.com"
+                  [formField]="form.email"
+                  autocomplete="email"
+                ></pc-input>
+                <p class="mt-1 text-xs text-base-content/50">
+                  Email is how you sign in — changing it sends a confirmation to the new address first.
+                </p>
+              </div>
+            </div>
+
+            <!-- Dirty state narrated, not implied (§2) -->
+            <div class="flex items-center justify-between gap-3 pt-2">
+              <p class="text-xs text-base-content/50">
+                @if (dirtyFieldCount() > 0) {
+                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
+                </span>
+                } @else {
+                <span>No unsaved changes</span>
+                }
+              </p>
+              <div class="flex items-center gap-2">
+                <button
+                  class="btn btn-outline btn-accent btn-sm"
+                  type="button"
+                  (click)="resetForm()"
+                  [disabled]="saving() || !form().dirty()"
+                >
+                  Reset
+                </button>
+                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
+                <button
+                  class="btn btn-primary btn-sm"
+                  type="submit"
+                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
+                >
+                  @if (saving()) {
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                  } Save changes
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Right column: account facts + activity -->
+      <div class="space-y-6">
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
+          <div class="mt-2">
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Role</span>
+              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">User ID</span>
+              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Member since</span>
+              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
+              <span class="text-base-content/60">Last update</span>
+              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
+            </div>
+          </div>
+          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
+          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
+            Roles are managed in
+            <a routerLink="/users" class="link link-hover text-primary">Users</a>
+            — you can't demote yourself.
+          </p>
+        </div>
+
+        @if (stats()) {
+        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
+          <div class="mt-1">
+            @for (row of activityRows(); track row.key) {
+            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
+              </span>
+              <p class="leading-relaxed">
+                @if (row.link) {
+                <a
+                  [routerLink]="row.link"
+                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
+                  >{{ row.count }}</a
+                >
+                } @else {
+                <span class="font-semibold">{{ row.count }}</span>
+                } {{ row.rest }}
+              </p>
+            </div>
+            }
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+  </div>
   }
 
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
+  <!-- Cropping Modal -->
+  @if (cropImageSrc()) {
+  <dialog class="modal modal-open">
+    <div
+      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
+    >
+      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
+
+      <!-- Drag & Crop Container -->
+      <div
+        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
+        (mousedown)="onCropDragStart($event)"
+        (mousemove)="onCropDragMove($event)"
+        (mouseup)="onCropDragEnd()"
+        (mouseleave)="onCropDragEnd()"
+      >
+        <!-- The user drags this image around inside the container -->
+        <img
+          [src]="cropImageSrc()!"
+          [style.transform]="getCropTransformStyle()"
+          [style.width.px]="displayWidth()"
+          [style.height.px]="displayHeight()"
+          class="absolute top-1/2 left-1/2 max-w-none"
+          draggable="false"
+        />
+      </div>
+
+      <!-- Zoom Slider -->
+      <div class="form-control w-full max-w-xs mt-6">
+        <div class="flex justify-between items-center px-1 mb-1">
+          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
+          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.05"
+          [ngModel]="cropZoom()"
+          (ngModelChange)="cropZoom.set($event)"
+          class="range range-primary range-sm"
+        />
+      </div>
+
+      <!-- Action buttons -->
+      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
+        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+      </div>
+    </div>
+  </dialog>
   }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    // Identity only — notification preferences live in Settings (avatar menu), not here.
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/summary.html
@@ -66514,306 +69077,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <!-- Loading State -->
-  @if (error() && !detail()) {
-  <div class="alert alert-error m-4 shadow-sm rounded-xl">
-    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!detail()) {
-  <div
-    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
-  >
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="font-medium text-sm">Loading your profile…</p>
-    </div>
-  </div>
-  } @else {
-
-  <div class="space-y-6">
-    <!-- Identity header card -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-      <div class="flex items-center gap-5">
-        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
-        <div class="relative shrink-0">
-          <input
-            id="avatar-file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            class="sr-only"
-            (change)="onAvatarFileChange($event)"
-          />
-          <label
-            for="avatar-file-input"
-            class="block cursor-pointer"
-            [class.pointer-events-none]="uploadingAvatar()"
-            title="Change profile photo"
-          >
-            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
-            @if (uploadingAvatar()) {
-            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-              <span class="loading loading-spinner loading-sm text-white"></span>
-            </span>
-            } @else {
-            <span
-              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
-              aria-hidden="true"
-            >
-              <pc-icon name="pencil-square" [size]="3"></pc-icon>
-            </span>
-            }
-          </label>
-          @if (avatarUrl() && !uploadingAvatar()) {
-          <button
-            type="button"
-            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
-            (click)="removeAvatar()"
-          >
-            Remove photo
-          </button>
-          }
-        </div>
-
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
-            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
-            @if (detail()?.verified) {
-            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Verified
-            </span>
-            }
-          </div>
-          <p class="mt-0.5 truncate text-sm text-base-content/60">
-            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
-            'mediumDate' }} }
-          </p>
-        </div>
-      </div>
-    </div>
-
-    @if (detail()?.previous_email) {
-    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
-      <div class="flex items-center gap-3">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <div>
-          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
-          <div i18n class="text-xs text-warning-content/80">
-            A verification link was sent to your new email. You will not be able to make changes until verified.
-          </div>
-        </div>
-      </div>
-      <button
-        i18n
-        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
-        (click)="cancelEmailChange()"
-      >
-        Undo change
-      </button>
-    </div>
-    } @if (error()) {
-    <div class="alert alert-error shadow-sm rounded-xl">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <div class="grid items-start gap-6 lg:grid-cols-3">
-      <!-- Left column: profile form + notifications -->
-      <div class="space-y-6 lg:col-span-2">
-        <!-- Profile card (explicit save) -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
-
-          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
-            <div class="grid gap-4 md:grid-cols-2">
-              <pc-input
-                label="First name"
-                placeholder="Your first name"
-                [formField]="form.first_name"
-                autocomplete="given-name"
-              ></pc-input>
-
-              <pc-input
-                label="Last name"
-                placeholder="Your last name"
-                [formField]="form.last_name"
-                autocomplete="family-name"
-              ></pc-input>
-
-              <div class="md:col-span-2">
-                <pc-input
-                  label="Email address"
-                  type="email"
-                  placeholder="you@example.com"
-                  [formField]="form.email"
-                  autocomplete="email"
-                ></pc-input>
-                <p class="mt-1 text-xs text-base-content/50">
-                  Email is how you sign in — changing it sends a confirmation to the new address first.
-                </p>
-              </div>
-            </div>
-
-            <!-- Dirty state narrated, not implied (§2) -->
-            <div class="flex items-center justify-between gap-3 pt-2">
-              <p class="text-xs text-base-content/50">
-                @if (dirtyFieldCount() > 0) {
-                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
-                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
-                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
-                </span>
-                } @else {
-                <span>No unsaved changes</span>
-                }
-              </p>
-              <div class="flex items-center gap-2">
-                <button
-                  class="btn btn-outline btn-accent btn-sm"
-                  type="button"
-                  (click)="resetForm()"
-                  [disabled]="saving() || !form().dirty()"
-                >
-                  Reset
-                </button>
-                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
-                <button
-                  class="btn btn-primary btn-sm"
-                  type="submit"
-                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
-                >
-                  @if (saving()) {
-                  <span class="loading loading-spinner loading-xs mr-2"></span>
-                  } Save changes
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Right column: account facts + activity -->
-      <div class="space-y-6">
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
-          <div class="mt-2">
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Role</span>
-              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">User ID</span>
-              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Member since</span>
-              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
-              <span class="text-base-content/60">Last update</span>
-              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
-            </div>
-          </div>
-          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
-          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
-            Roles are managed in
-            <a routerLink="/users" class="link link-hover text-primary">Users</a>
-            — you can't demote yourself.
-          </p>
-        </div>
-
-        @if (stats()) {
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
-          <div class="mt-1">
-            @for (row of activityRows(); track row.key) {
-            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
-              </span>
-              <p class="leading-relaxed">
-                @if (row.link) {
-                <a
-                  [routerLink]="row.link"
-                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
-                  >{{ row.count }}</a
-                >
-                } @else {
-                <span class="font-semibold">{{ row.count }}</span>
-                } {{ row.rest }}
-              </p>
-            </div>
-            }
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- Cropping Modal -->
-  @if (cropImageSrc()) {
-  <dialog class="modal modal-open">
-    <div
-      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
-    >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
-
-      <!-- Drag & Crop Container -->
-      <div
-        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
-        (mousedown)="onCropDragStart($event)"
-        (mousemove)="onCropDragMove($event)"
-        (mouseup)="onCropDragEnd()"
-        (mouseleave)="onCropDragEnd()"
-      >
-        <!-- The user drags this image around inside the container -->
-        <img
-          [src]="cropImageSrc()!"
-          [style.transform]="getCropTransformStyle()"
-          [style.width.px]="displayWidth()"
-          [style.height.px]="displayHeight()"
-          class="absolute top-1/2 left-1/2 max-w-none"
-          draggable="false"
-        />
-      </div>
-
-      <!-- Zoom Slider -->
-      <div class="form-control w-full max-w-xs mt-6">
-        <div class="flex justify-between items-center px-1 mb-1">
-          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
-          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="0.05"
-          [ngModel]="cropZoom()"
-          (ngModelChange)="cropZoom.set($event)"
-          class="range range-primary range-sm"
-        />
-      </div>
-
-      <!-- Action buttons -->
-      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
-      </div>
-    </div>
-  </dialog>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/tags/ui/tags-admin.html
 
 ```html
@@ -66932,432 +69195,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 
 <pc-add-tag-dialog (saved)="onTagSaved()" />
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
-
-```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h1 class="sr-only">Canvassing</h1>
-      @if (headline()) {
-      <p class="text-xs text-base-content/70">{{ headline() }}</p>
-      } @else {
-      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
-      }
-    </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
-  </div>
-
-  <!-- Tabs (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
-
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
-            }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
-      }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
-
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table pc-table">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span>{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
-      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
-      the person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
-        }
-      </div>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
-      </button>
-    </div>
-
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
-
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
-          >
-            Street map
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
-          >
-            By ward
-          </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table pc-table">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
-        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
-        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Supporters {{ r.responseMix.supporter }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
-        <span>Not voting {{ r.responseMix.not_voting }}</span>
-        <span>Already voted {{ r.responseMix.already_voted }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
-
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
-          </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
-        </div>
-        }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
-
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table pc-table">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
-
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
-
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
-    </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  } @if (assignTarget(); as target) {
-  <pc-assign-turf-dialog
-    [turfId]="target.id"
-    [turfName]="target.name"
-    (cancelled)="assignTarget.set(null)"
-    (assigned)="onAssigned($event)"
-  />
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
@@ -67483,6 +69320,145 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
+    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      Record donation
+    </button>
+    <button
+      routerLink="/donation-pages/add"
+      class="btn btn-primary btn-sm gap-2"
+      title="Create a public form that charges cards through Stripe and records every gift here"
+    >
+      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+      New donation form
+    </button>
+  </pc-grid-header>
+
+  <!-- Tabs (the standard pill tab bar; route-linked) -->
+  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <pc-table [columns]="5">
+    <ng-container pcTableHead>
+      <th>Donor</th>
+      <th class="text-right">Amount</th>
+      <th>Method</th>
+      <th>Date</th>
+      <th>Receipt</th>
+    </ng-container>
+
+    @for (d of recentGifts(); track d.id) {
+    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
+      <td>
+        <div class="flex flex-col">
+          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline">
+            {{ d.person_first_name }} {{ d.person_last_name }}
+          </a>
+          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+        </div>
+      </td>
+      <td class="text-right font-bold text-base-content tabular-nums">{{ formatCurrency(d.amount) }}</td>
+      <td>
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
+      </td>
+      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+      <td>
+        @if (d.receipt_sent) {
+        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+          <pc-icon name="check-circle" [size]="3"></pc-icon>
+          Receipted
+        </span>
+        } @else {
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
+        }
+      </td>
+    </tr>
+    } @empty {
+    <tr>
+      <td colspan="5" class="text-center py-16 text-base-content/50">
+        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+        <h3 class="font-semibold text-base-content/70">No donations found</h3>
+        <p class="text-xs text-base-content/50 mt-1 mb-3">
+          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
+        </p>
+        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Record donation
+        </button>
+      </td>
+    </tr>
+    } @if (totalGiftCount() > recentGifts().length) {
+    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
+  </pc-table>
+</div>
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
@@ -68787,145 +70763,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   <div class="modal-backdrop bg-black/40 backdrop-blur-xs" (click)="close()"></div>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
-    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      Record donation
-    </button>
-    <button
-      routerLink="/donation-pages/add"
-      class="btn btn-primary btn-sm gap-2"
-      title="Create a public form that charges cards through Stripe and records every gift here"
-    >
-      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-      New donation form
-    </button>
-  </pc-grid-header>
-
-  <!-- Tabs (the standard pill tab bar; route-linked) -->
-  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">This Month</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] mt-1">
-          @if (monthOverMonthDelta() !== null) {
-          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
-            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
-          </span>
-          } @else {
-          <span class="text-base-content/40">No prior month to compare</span>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Average Gift</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Monthly Donors</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ monthlyDonorCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Receipts</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <pc-table [columns]="5">
-    <ng-container pcTableHead>
-      <th>Donor</th>
-      <th class="text-right">Amount</th>
-      <th>Method</th>
-      <th>Date</th>
-      <th>Receipt</th>
-    </ng-container>
-
-    @for (d of recentGifts(); track d.id) {
-    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
-      <td>
-        <div class="flex flex-col">
-          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline">
-            {{ d.person_first_name }} {{ d.person_last_name }}
-          </a>
-          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-        </div>
-      </td>
-      <td class="text-right font-bold text-base-content tabular-nums">{{ formatCurrency(d.amount) }}</td>
-      <td>
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
-      </td>
-      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-      <td>
-        @if (d.receipt_sent) {
-        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-          <pc-icon name="check-circle" [size]="3"></pc-icon>
-          Receipted
-        </span>
-        } @else {
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-        }
-      </td>
-    </tr>
-    } @empty {
-    <tr>
-      <td colspan="5" class="text-center py-16 text-base-content/50">
-        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-        <h3 class="font-semibold text-base-content/70">No donations found</h3>
-        <p class="text-xs text-base-content/50 mt-1 mb-3">
-          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-        </p>
-        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Record donation
-        </button>
-      </td>
-    </tr>
-    } @if (totalGiftCount() > recentGifts().length) {
-    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
-      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
-    </div>
-    }
-  </pc-table>
-</div>
-
-<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
@@ -70504,6 +72341,440 @@ export const SidebarItems: ISidebarItem[] = [
 ];
 ```
 
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+
+```html
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h1 class="sr-only">Canvassing</h1>
+      @if (headline()) {
+      <p class="text-xs text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
+        <pc-icon name="cog" [size]="4" />
+        Survey settings
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+        <pc-icon name="map-pin" [size]="4" />
+        Cut new turfs
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/60">No knocks logged yet today.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table pc-table">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
+      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
+      the person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table pc-table">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
+        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
+        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Supporters {{ r.responseMix.supporter }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
+        <span>Not voting {{ r.responseMix.not_voting }}</span>
+        <span>Already voted {{ r.responseMix.already_voted }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table pc-table">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  } @if (assignTarget(); as target) {
+  <pc-assign-turf-dialog
+    [turfId]="target.id"
+    [turfName]="target.name"
+    (cancelled)="assignTarget.set(null)"
+    (assigned)="onAssigned($event)"
+  />
+  } @if (settingsOpen()) {
+  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/dashboard.routes.ts
 
 ```typescript
@@ -71222,6 +73493,48 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Three settings to nail on day one',
         text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal — volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links — no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link — after that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email and a badge appears on [Volunteer access](/volunteer-access) in the Admin section. Each row shows the volunteer, their contact on file, and a status chip — **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds — they never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later — they’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you — add a contact to their record and have them reopen the link.',
       },
     ],
   },

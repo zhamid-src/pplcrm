@@ -399,8 +399,18 @@ apps/
     src/
       app/
         canvass/
+          canvass-derive.ts
+          canvass-household.ts
+          canvass-landing.ts
+          canvass-list.ts
+          canvass-map.ts
+          canvass-me.ts
           canvass-page.ts
+          canvass-store.ts
+          canvass-survey.ts
+          canvass-ui.ts
         deliveries/
+          route-page.html
           route-page.ts
         gate/
           companion-api.ts
@@ -5644,832 +5654,6 @@ export function previewCut(doors: readonly DoorPoint[], targetDoors: number): Cu
 }
 ```
 
-## File: apps/backend/src/app/modules/canvassing/repositories/turf-households.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export interface DoorRow {
-  household_id: string;
-  street_num: string | null;
-  street1: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  lat: number | null;
-  lng: number | null;
-  walk_order: number | null;
-}
-
-/**
- * One geocoded door with its knock activity inside a window — the raw input to
- * the §13.3 Coverage map. `conversations`/`attempts` are counted over the range;
- * the controller derives the display status (talked / knocked-no-answer / not
- * yet) and the per-turf boundary hull from these rows.
- */
-export interface CoverageDoorRow {
-  household_id: string;
-  turf_id: string;
-  turf_name: string;
-  ward: string | null;
-  lat: number;
-  lng: number;
-  conversations: number;
-  attempts: number;
-}
-
-const CONVERSATION = 'conversation';
-
-/** The doors (households) that belong to a turf. */
-export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
-  constructor() {
-    super('turf_households');
-  }
-
-  public async getHouseholdIds(
-    input: { tenant_id: string; turf_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    const rows = await this.getSelect(trx)
-      .select('household_id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .execute();
-    return rows.map((r) => String(r.household_id));
-  }
-
-  /**
-   * `household_ids` arrive in the cutting engine's snake-sweep order, which IS
-   * the suggested walk order — each door's position is stored as `walk_order`
-   * (appended after any existing doors on refresh).
-   */
-  public async addDoors(
-    input: { tenant_id: string; turf_id: string; household_ids: string[]; user_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    if (input.household_ids.length === 0) return;
-    const maxRow = await this.getSelect(trx)
-      .select((eb) => eb.fn.max('walk_order').as('max_order'))
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .executeTakeFirst();
-    const offset = Number(maxRow?.max_order ?? 0);
-    const rows = input.household_ids.map(
-      (hid, i) =>
-        ({
-          tenant_id: input.tenant_id,
-          turf_id: input.turf_id,
-          household_id: hid,
-          walk_order: offset + i + 1,
-          createdby_id: input.user_id,
-          updatedby_id: input.user_id,
-        }) as OperationDataType<'turf_households', 'insert'>,
-    );
-    await this.getInsert(trx)
-      .values(rows)
-      .onConflict((oc) => oc.doNothing())
-      .execute();
-  }
-
-  public async removeDoors(
-    input: { tenant_id: string; turf_id: string; household_ids: string[] },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    if (input.household_ids.length === 0) return;
-    await this.getDelete(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .where('household_id', 'in', input.household_ids)
-      .execute();
-  }
-
-  /** Door list with address + geocode for the Companion and the turf map. */
-  public async getDoors(input: { tenant_id: string; turf_id: string }, trx?: Transaction<Models>): Promise<DoorRow[]> {
-    const rows = await this.getSelect(trx)
-      .innerJoin('households', 'households.id', 'turf_households.household_id')
-      .where('turf_households.tenant_id', '=', input.tenant_id)
-      .where('turf_households.turf_id', '=', input.turf_id)
-      .select([
-        'households.id as household_id',
-        'households.street_num',
-        'households.street1',
-        'households.city',
-        'households.state',
-        'households.zip',
-        'households.lat',
-        'households.lng',
-        'turf_households.walk_order',
-      ])
-      .orderBy(sql`turf_households.walk_order NULLS LAST`)
-      .orderBy('households.id')
-      .execute();
-    return rows.map((r) => ({
-      household_id: String(r.household_id),
-      street_num: r.street_num ?? null,
-      street1: r.street1 ?? null,
-      city: r.city ?? null,
-      state: r.state ?? null,
-      zip: r.zip ?? null,
-      lat: r.lat ?? null,
-      lng: r.lng ?? null,
-      walk_order: r.walk_order == null ? null : Number(r.walk_order),
-    }));
-  }
-
-  /**
-   * Every geocoded door that belongs to a turf, with its knock counts inside the
-   * window — one row per door. Doors without coordinates can't be mapped, so
-   * they're excluded here (the report's numeric tiles still count them). Knocks
-   * are left-joined within the range so an un-knocked door still returns a row
-   * (its counts are zero → "not yet knocked" once the controller derives status).
-   */
-  public async getCoverageRows(
-    input: { tenant_id: string; from: Date; to: Date },
-    trx?: Transaction<Models>,
-  ): Promise<CoverageDoorRow[]> {
-    const rows = await this.getSelect(trx)
-      .innerJoin('households as h', 'h.id', 'turf_households.household_id')
-      .innerJoin('turfs as t', 't.id', 'turf_households.turf_id')
-      .leftJoin('turf_knocks as k', (join) =>
-        join
-          .onRef('k.turf_id', '=', 'turf_households.turf_id')
-          .onRef('k.household_id', '=', 'turf_households.household_id')
-          .on('k.tenant_id', '=', input.tenant_id)
-          .on('k.knocked_at', '>=', input.from)
-          .on('k.knocked_at', '<', input.to),
-      )
-      .where('turf_households.tenant_id', '=', input.tenant_id)
-      .where('h.lat', 'is not', null)
-      .where('h.lng', 'is not', null)
-      .groupBy(['turf_households.household_id', 't.id', 't.name', 'h.ward', 'h.lat', 'h.lng'])
-      .select([
-        'turf_households.household_id as household_id',
-        't.id as turf_id',
-        't.name as turf_name',
-        'h.ward as ward',
-        'h.lat as lat',
-        'h.lng as lng',
-        sql<number>`COUNT(k.id) FILTER (WHERE k.outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(k.id)`.as('attempts'),
-      ])
-      .execute();
-
-    return rows.map((r) => ({
-      household_id: String(r.household_id),
-      turf_id: String(r.turf_id),
-      turf_name: String(r.turf_name),
-      ward: r.ward ? String(r.ward) : null,
-      lat: Number(r.lat),
-      lng: Number(r.lng),
-      conversations: Number(r.conversations ?? 0),
-      attempts: Number(r.attempts ?? 0),
-    }));
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/canvassing/repositories/turf-knocks.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export interface TurfProgress {
-  attempted: number;
-  conversations: number;
-  last_knock_at: Date | null;
-}
-
-export interface ResponseMix {
-  supporter: number;
-  undecided: number;
-  non_supporter: number;
-  not_voting: number;
-  already_voted: number;
-  no_answer: number;
-}
-
-export interface FieldReport {
-  doors: number;
-  conversations: number;
-  contactRatePct: number;
-  supportIds: number;
-  responseMix: ResponseMix;
-  perDay: { day: string; conversations: number; no_answer: number }[];
-  byHour: { hour: number; conversations: number; attempts: number }[];
-  byTeam: { team_id: string | null; team_name: string; doors: number; conversations: number; supportIds: number }[];
-  topCanvassers: { name: string; doors: number }[];
-}
-
-const CONVERSATION = 'conversation';
-
-export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
-  constructor() {
-    super('turf_knocks');
-  }
-
-  /**
-   * Insert a knock, idempotent on the (tenant_id, turf_id, client_knock_id)
-   * partial unique index — so an offline Companion re-sending a queued knock
-   * never double-counts. Returns the new id, or null if it already existed.
-   */
-  public async insertIdempotent(
-    row: OperationDataType<'turf_knocks', 'insert'>,
-    trx?: Transaction<Models>,
-  ): Promise<string | null> {
-    const inserted = await this.getInsert(trx)
-      .values(row)
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'turf_id', 'client_knock_id']).where('client_knock_id', 'is not', null).doNothing(),
-      )
-      .returning('id')
-      .executeTakeFirst();
-    return inserted?.id != null ? String(inserted.id) : null;
-  }
-
-  /** Derived progress for every turf in the tenant, keyed by turf_id. */
-  public async getProgressByTenant(tenant_id: string, trx?: Transaction<Models>): Promise<Map<string, TurfProgress>> {
-    const rows = await this.getSelect(trx)
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('turf_id')
-      .select([
-        'turf_id',
-        sql<number>`COUNT(DISTINCT household_id)`.as('attempted'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<string>`MAX(knocked_at)`.as('last_knock_at'),
-      ])
-      .execute();
-
-    const map = new Map<string, TurfProgress>();
-    for (const r of rows) {
-      map.set(String(r.turf_id), {
-        attempted: Number(r.attempted ?? 0),
-        conversations: Number(r.conversations ?? 0),
-        last_knock_at: r.last_knock_at ? new Date(String(r.last_knock_at)) : null,
-      });
-    }
-    return map;
-  }
-
-  /** Doors knocked + conversations + response mix within a window (default: today). */
-  public async getWindowSummary(
-    input: { tenant_id: string; from: Date; to: Date },
-    trx?: Transaction<Models>,
-  ): Promise<{ doors: number; conversations: number; responseMix: ResponseMix }> {
-    const row = await this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('knocked_at', '>=', input.from)
-      .where('knocked_at', '<', input.to)
-      .select(() => [
-        sql<number>`COUNT(DISTINCT household_id)`.as('doors'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
-      ])
-      .executeTakeFirst();
-
-    return {
-      doors: Number(row?.doors ?? 0),
-      conversations: Number(row?.conversations ?? 0),
-      responseMix: {
-        supporter: Number(row?.supporter ?? 0),
-        undecided: Number(row?.undecided ?? 0),
-        non_supporter: Number(row?.non_supporter ?? 0),
-        not_voting: Number(row?.not_voting ?? 0),
-        already_voted: Number(row?.already_voted ?? 0),
-        no_answer: Number(row?.no_answer ?? 0),
-      },
-    };
-  }
-
-  /**
-   * The latest knock per (household, person) in a turf — the raw material the
-   * Companion payload derives door/person state from. `person_id` null rows are
-   * door-level (outcomes + the anonymous household survey). Only survey fields
-   * that are safe to echo back are selected — never notes or contact info
-   * (payload minimization, spec §2).
-   */
-  public async getCompanionState(
-    input: { tenant_id: string; turf_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<
-    {
-      household_id: string;
-      person_id: string | null;
-      outcome: string;
-      response: string | null;
-      issues: string[];
-      wants_volunteer: boolean;
-      wants_yard_sign: boolean;
-      set_dnc: boolean;
-      subscribe: boolean;
-    }[]
-  > {
-    const rows = await this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .distinctOn(['household_id', 'person_id'])
-      .orderBy('household_id')
-      .orderBy('person_id')
-      .orderBy('knocked_at', 'desc')
-      .select([
-        'household_id',
-        'person_id',
-        'outcome',
-        'response',
-        'issues',
-        'wants_volunteer',
-        'wants_yard_sign',
-        'set_dnc',
-        'subscribe',
-      ])
-      .execute();
-    return rows.map((r) => ({
-      household_id: String(r.household_id),
-      person_id: r.person_id == null ? null : String(r.person_id),
-      outcome: String(r.outcome),
-      response: r.response == null ? null : String(r.response),
-      issues: Array.isArray(r.issues) ? r.issues.map(String) : [],
-      wants_volunteer: Boolean(r.wants_volunteer),
-      wants_yard_sign: Boolean(r.wants_yard_sign),
-      set_dnc: Boolean(r.set_dnc),
-      subscribe: Boolean(r.subscribe),
-    }));
-  }
-
-  /** Last outcome per household in a turf, for door-list / map colouring. */
-  public async getLastOutcomeByHousehold(
-    input: { tenant_id: string; turf_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<Map<string, string>> {
-    const rows = await this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .groupBy('household_id')
-      .select(['household_id', sql<string>`(ARRAY_AGG(outcome ORDER BY knocked_at DESC))[1]`.as('last_outcome')])
-      .execute();
-    const map = new Map<string, string>();
-    for (const r of rows) map.set(String(r.household_id), String(r.last_outcome));
-    return map;
-  }
-
-  /** Full field-report aggregation over a window, joined to teams via assignments. */
-  public async getFieldReport(
-    input: { tenant_id: string; from: Date; to: Date },
-    trx?: Transaction<Models>,
-  ): Promise<FieldReport> {
-    const tenant_id = input.tenant_id;
-    const base = this.getSelect(trx)
-      .where('turf_knocks.tenant_id', '=', tenant_id)
-      .where('turf_knocks.knocked_at', '>=', input.from)
-      .where('turf_knocks.knocked_at', '<', input.to);
-
-    const totals = await base
-      .select(() => [
-        sql<number>`COUNT(*)`.as('attempts'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
-      ])
-      .executeTakeFirst();
-
-    const perDayRows = await base
-      .groupBy(sql`DATE(knocked_at)`)
-      .orderBy(sql`DATE(knocked_at)`)
-      .select(() => [
-        sql<string>`DATE(knocked_at)::text`.as('day'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
-      ])
-      .execute();
-
-    const byHourRows = await base
-      .groupBy(sql`EXTRACT(HOUR FROM knocked_at)`)
-      .orderBy(sql`EXTRACT(HOUR FROM knocked_at)`)
-      .select(() => [
-        sql<number>`EXTRACT(HOUR FROM knocked_at)::int`.as('hour'),
-        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*)`.as('attempts'),
-      ])
-      .execute();
-
-    const byTeamRows = await this.getSelect(trx)
-      .leftJoin('turf_assignments as ta', (join) =>
-        join.onRef('ta.turf_id', '=', 'turf_knocks.turf_id').on('ta.tenant_id', '=', tenant_id),
-      )
-      .leftJoin('teams', 'teams.id', 'ta.team_id')
-      .where('turf_knocks.tenant_id', '=', tenant_id)
-      .where('turf_knocks.knocked_at', '>=', input.from)
-      .where('turf_knocks.knocked_at', '<', input.to)
-      .groupBy(['ta.team_id', 'teams.name'])
-      .select([
-        'ta.team_id as team_id',
-        'teams.name as team_name',
-        sql<number>`COUNT(*)`.as('doors'),
-        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response = 'supporter')`.as('support_ids'),
-      ])
-      .execute();
-
-    const topRows = await base
-      .where('canvasser_name', 'is not', null)
-      .groupBy('canvasser_name')
-      .orderBy(sql`COUNT(*)`, 'desc')
-      .limit(10)
-      .select(['canvasser_name as name', sql<number>`COUNT(*)`.as('doors')])
-      .execute();
-
-    const attempts = Number(totals?.attempts ?? 0);
-    const conversations = Number(totals?.conversations ?? 0);
-    const supporters = Number(totals?.supporter ?? 0);
-
-    return {
-      doors: attempts,
-      conversations,
-      contactRatePct: attempts > 0 ? Math.round((conversations / attempts) * 100) : 0,
-      supportIds: supporters,
-      responseMix: {
-        supporter: supporters,
-        undecided: Number(totals?.undecided ?? 0),
-        non_supporter: Number(totals?.non_supporter ?? 0),
-        not_voting: Number(totals?.not_voting ?? 0),
-        already_voted: Number(totals?.already_voted ?? 0),
-        no_answer: attempts - conversations,
-      },
-      perDay: perDayRows.map((r) => ({
-        day: String(r.day),
-        conversations: Number(r.conversations ?? 0),
-        no_answer: Number(r.no_answer ?? 0),
-      })),
-      byHour: byHourRows.map((r) => ({
-        hour: Number(r.hour ?? 0),
-        conversations: Number(r.conversations ?? 0),
-        attempts: Number(r.attempts ?? 0),
-      })),
-      byTeam: byTeamRows.map((r) => ({
-        team_id: r.team_id == null ? null : String(r.team_id),
-        team_name: r.team_name ? String(r.team_name) : 'Unassigned',
-        doors: Number(r.doors ?? 0),
-        conversations: Number(r.conversations ?? 0),
-        supportIds: Number(r.support_ids ?? 0),
-      })),
-      topCanvassers: topRows.map((r) => ({ name: String(r.name), doors: Number(r.doors ?? 0) })),
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/canvassing/repositories/turfs.repo.ts
-
-```typescript
-import type { Kysely, Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { DoorPoint } from '../lib/cutting-engine';
-
-export interface TurfRow {
-  id: string;
-  name: string;
-  status: string;
-  list_id: string | null;
-  list_name: string | null;
-  ward: string | null;
-  target_doors: number | null;
-  centroid_lat: number | null;
-  centroid_lng: number | null;
-  updated_at: Date | null;
-  door_count: number;
-  team_id: string | null;
-  team_name: string | null;
-  token: string | null;
-}
-
-export class TurfsRepo extends BaseRepository<'turfs'> {
-  constructor() {
-    super('turfs');
-  }
-
-  /**
-   * All turfs with universe-list name and current (single active) assignment.
-   * Door counts are merged from a separate grouped query to keep this row-per-turf.
-   */
-  public async getTurfs(tenant_id: string, trx?: Transaction<Models>): Promise<TurfRow[]> {
-    const rows = await this.getSelect(trx)
-      .leftJoin('lists', 'lists.id', 'turfs.list_id')
-      .leftJoin('turf_assignments as ta', (join) =>
-        join.onRef('ta.turf_id', '=', 'turfs.id').on('ta.tenant_id', '=', tenant_id).on('ta.status', '=', 'active'),
-      )
-      .leftJoin('teams', 'teams.id', 'ta.team_id')
-      .where('turfs.tenant_id', '=', tenant_id)
-      .orderBy('turfs.id')
-      .select([
-        'turfs.id as id',
-        'turfs.name as name',
-        'turfs.status as status',
-        'turfs.list_id as list_id',
-        'lists.name as list_name',
-        'turfs.ward as ward',
-        'turfs.target_doors as target_doors',
-        'turfs.centroid_lat as centroid_lat',
-        'turfs.centroid_lng as centroid_lng',
-        'turfs.updated_at as updated_at',
-        'ta.team_id as team_id',
-        'teams.name as team_name',
-        'ta.token as token',
-      ])
-      .execute();
-
-    const counts = await this.doorCounts(tenant_id, trx);
-
-    return rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name),
-      status: String(r.status),
-      list_id: r.list_id == null ? null : String(r.list_id),
-      list_name: r.list_name ? String(r.list_name) : null,
-      ward: r.ward ? String(r.ward) : null,
-      target_doors: r.target_doors == null ? null : Number(r.target_doors),
-      centroid_lat: r.centroid_lat == null ? null : Number(r.centroid_lat),
-      centroid_lng: r.centroid_lng == null ? null : Number(r.centroid_lng),
-      updated_at: r.updated_at ? new Date(String(r.updated_at)) : null,
-      door_count: counts.get(String(r.id)) ?? 0,
-      team_id: r.team_id == null ? null : String(r.team_id),
-      team_name: r.team_name ? String(r.team_name) : null,
-      token: r.token ? String(r.token) : null,
-    }));
-  }
-
-  /** Typed single-turf lookup (getOneById returns a loosely-typed row). */
-  public async getTurfCore(
-    input: { tenant_id: string; id: string },
-    trx?: Transaction<Models>,
-  ): Promise<{
-    id: string;
-    name: string;
-    status: string;
-    list_id: string | null;
-    ward: string | null;
-    campaign_id: string | null;
-  } | null> {
-    const row = await this.getSelect(trx)
-      .select(['id', 'name', 'status', 'list_id', 'ward', 'campaign_id'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .executeTakeFirst();
-    if (!row) return null;
-    return {
-      id: String(row.id),
-      name: String(row.name),
-      status: String(row.status),
-      list_id: row.list_id == null ? null : String(row.list_id),
-      ward: row.ward == null ? null : String(row.ward),
-      campaign_id: row.campaign_id == null ? null : String(row.campaign_id),
-    };
-  }
-
-  private conn(trx?: Transaction<Models>): Kysely<Models> | Transaction<Models> {
-    return trx ?? this.db;
-  }
-
-  private async doorCounts(tenant_id: string, trx?: Transaction<Models>): Promise<Map<string, number>> {
-    const rows = await this.conn(trx)
-      .selectFrom('turf_households')
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('turf_id')
-      .select(({ fn }) => ['turf_id', fn.count('household_id').as('doors')])
-      .execute();
-    const map = new Map<string, number>();
-    for (const r of rows) map.set(String(r.turf_id), Number(r.doors ?? 0));
-    return map;
-  }
-
-  /** Geocoded doors for a set of households, feeding the cutting engine. */
-  public async getHouseholdsGeo(
-    input: { tenant_id: string; household_ids: string[] },
-    trx?: Transaction<Models>,
-  ): Promise<DoorPoint[]> {
-    if (input.household_ids.length === 0) return [];
-    const rows = await this.conn(trx)
-      .selectFrom('households')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', 'in', input.household_ids)
-      .select(['id', 'lat', 'lng', 'ward'])
-      .execute();
-    return rows.map((r) => ({
-      household_id: String(r.id),
-      lat: r.lat ?? null,
-      lng: r.lng ?? null,
-      ward: r.ward ?? null,
-    }));
-  }
-
-  /** Distinct households for a set of persons (universe = a people smart list). */
-  public async getHouseholdIdsForPersons(
-    input: { tenant_id: string; person_ids: string[] },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (input.person_ids.length === 0) return [];
-    const rows = await this.conn(trx)
-      .selectFrom('persons')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', 'in', input.person_ids)
-      .where('household_id', 'is not', null)
-      .select('household_id')
-      .distinct()
-      .execute();
-    return rows.map((r) => String(r.household_id));
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/canvassing/routes/canvass-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
-
-import { CompanionResultsObj, LogKnockObj } from '../../../../../../../libs/common/src';
-import { CanvassingController } from '../controller';
-
-/**
- * Public Canvass Companion API (§13.4 / COMPANION-APPS-PLAN.md §5 B3) — the
- * volunteer-facing surface behind the companion access layer.
- *
- * Two credentials on every data request: the assignment TOKEN (in the path)
- * scopes WHAT may be touched — one turf, its doors, nothing else — and the
- * X-Companion-Session header proves WHO is touching it (a verified, admin-
- * approved device; see modules/companion-access). The token resolves the
- * tenant, exactly like the tokenised-access model of the public form pages;
- * every read/write is then scoped to the resolved tenant + turf inside the
- * controller.
- */
-
-const controller = new CanvassingController();
-
-// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 120;
-const hits = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = hits.get(ip);
-  if (!entry || entry.resetAt < now) {
-    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_MAX;
-}
-
-/** Narrow an unknown thrown value to an HTTP status without leaking internals. */
-function statusOf(err: unknown): number {
-  if (err && typeof err === 'object' && 'statusCode' in err) {
-    const code = (err as { statusCode?: unknown }).statusCode;
-    if (typeof code === 'number') return code;
-  }
-  return 500;
-}
-
-function messageOf(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
-}
-
-function sessionTokenOf(req: FastifyRequest): string | null {
-  const header = req.headers['x-companion-session'];
-  if (typeof header === 'string' && header.trim()) return header.trim();
-  return null;
-}
-
-const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  // The full spec-§3 turf payload for a verified companion device.
-  fastify.get('/t/:token', async (req: FastifyRequest, reply: FastifyReply) => {
-    const { token } = req.params as { token: string };
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    try {
-      const turf = await controller.getCompanionTurf(String(token), sessionTokenOf(req));
-      return reply.status(200).send(turf);
-    } catch (err: unknown) {
-      fastify.log.error(err);
-      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to load this turf.') });
-    }
-  });
-
-  // Batched, idempotent results sync — the offline queue drains through here.
-  fastify.post('/t/:token/results', async (req: FastifyRequest, reply: FastifyReply) => {
-    const { token } = req.params as { token: string };
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    const parsed = CompanionResultsObj.safeParse(req.body);
-    if (!parsed.success) return reply.status(400).send({ error: 'Invalid results payload.' });
-    try {
-      const result = await controller.postCompanionResults(String(token), sessionTokenOf(req), parsed.data.ops);
-      return reply.status(200).send(result);
-    } catch (err: unknown) {
-      fastify.log.error(err);
-      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record these results.') });
-    }
-  });
-
-  // Legacy single-knock endpoint (pre-companion-app). Still validated and
-  // idempotent; the new app syncs through /t/:token/results.
-  fastify.post('/knock', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    const parsed = LogKnockObj.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'Invalid knock payload.' });
-    }
-    try {
-      const result = await controller.logKnock(parsed.data);
-      return reply.status(200).send(result);
-    } catch (err: unknown) {
-      fastify.log.error(err);
-      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record this knock.') });
-    }
-  });
-
-  done();
-};
-
-export default canvassPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/canvassing/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-
-import {
-  AddTurfObj,
-  AssignTurfObj,
-  CutTurfsObj,
-  FieldReportRangeObj,
-  UpdateCompanionSettingsObj,
-  UpdateTurfObj,
-  idSchema,
-} from '../../../../../../libs/common/src';
-
-import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
-import { CanvassingController } from './controller';
-
-const controller = new CanvassingController();
-
-export const CanvassingRouter = router({
-  // Turfs & assignments page.
-  getTurfs: authProcedure.query(({ ctx }) => controller.getTurfs(ctx.auth)),
-  getFieldSummary: authProcedure.query(({ ctx }) => controller.getFieldSummary(ctx.auth)),
-  getInFieldToday: authProcedure.query(({ ctx }) => controller.getInFieldToday(ctx.auth)),
-
-  // Cut new turfs.
-  previewCut: authProcedure.input(CutTurfsObj).query(({ ctx, input }) => controller.previewCut(ctx.auth, input)),
-  cutTurfs: authProcedure.input(CutTurfsObj).mutation(({ ctx, input }) => controller.cutTurfs(ctx.auth, input)),
-  refreshFromList: authProcedure
-    .input(idSchema)
-    .mutation(({ ctx, input }) => controller.refreshFromList(ctx.auth, input)),
-
-  // Turf CRUD + lifecycle.
-  addTurf: authProcedure.input(AddTurfObj).mutation(({ ctx, input }) => controller.addTurf(ctx.auth, input)),
-  updateTurf: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTurfObj }))
-    .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
-  assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
-  retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
-
-  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
-  getCompanionSettings: authProcedure
-    .input(z.object({ campaign_id: idSchema.optional() }).optional())
-    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
-  updateCompanionSettings: adminOrOwnerProcedure
-    .input(UpdateCompanionSettingsObj)
-    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
-
-  // Field report.
-  getFieldReport: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.getFieldReport(ctx.auth, input)),
-  exportFieldReport: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.exportFieldReportCsv(ctx.auth, input)),
-  getCoverage: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
-});
-```
-
 ## File: apps/backend/src/app/modules/dashboard/controller.ts
 
 ```typescript
@@ -7729,6 +6913,10 @@ function rateLimited(ip: string): boolean {
 // Uniform "not active" body — never distinguish expired vs revoked vs nonexistent (spec §6/§7).
 const NOT_ACTIVE = { error: "This route link isn't active. Ask your organizer for a new one." };
 
+// Client-generated idempotency key (crypto.randomUUID() is 36 chars).
+const OP_ID_MIN = 8;
+const OP_ID_MAX = 100;
+
 function isValidAction(value: unknown): value is 'deliver' | 'skip' | 'defer' | 'undo' {
   return value === 'deliver' || value === 'skip' || value === 'defer' || value === 'undo';
 }
@@ -7737,18 +6925,53 @@ function isValidReason(value: unknown): value is (typeof DELIVERY_SKIP_REASONS)[
   return typeof value === 'string' && (DELIVERY_SKIP_REASONS as readonly string[]).includes(value);
 }
 
+/** The verified device session accompanying the capability token (companion access layer). */
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
+/** Narrow an unknown thrown value to an HTTP status without leaking internals. */
+function statusOf(err: unknown): number {
+  if (err && typeof err === 'object') {
+    const rec = err as { status?: unknown; statusCode?: unknown };
+    if (typeof rec.status === 'number') return rec.status;
+    if (typeof rec.statusCode === 'number') return rec.statusCode;
+  }
+  return 500;
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+/**
+ * 401 (verify this device) and 403 (waiting for approval) must reach the
+ * companion gate so it can render the right screen; everything else stays a
+ * uniform 404 so dead/unknown tokens are indistinguishable.
+ */
+function sendPublicError(reply: FastifyReply, err: unknown, log: (err: unknown, msg: string) => void, msg: string) {
+  const status = statusOf(err);
+  if (status === 401 || status === 403) {
+    return reply.status(status).send({ error: messageOf(err, msg) });
+  }
+  log(err, msg);
+  return reply.status(404).send(NOT_ACTIVE);
+}
+
 const deliveriesPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   // GET the volunteer-safe route payload (first name + address only).
   fastify.get('/r/:token', async (req: FastifyRequest, reply: FastifyReply) => {
     const { token } = req.params as { token: string };
     if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
     try {
-      const payload = await controller.getPublicRoute(String(token));
+      const payload = await controller.getPublicRoute(String(token), sessionTokenOf(req));
       if (!payload) return reply.status(404).send(NOT_ACTIVE);
       return reply.status(200).send(payload);
     } catch (err) {
-      fastify.log.error(err, 'Failed to load public delivery route');
-      return reply.status(404).send(NOT_ACTIVE);
+      return sendPublicError(reply, err, (e, m) => fastify.log.error(e, m), 'Failed to load public delivery route');
     }
   });
 
@@ -7759,13 +6982,30 @@ const deliveriesPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (!isValidAction(body['action'])) return reply.status(400).send({ error: 'Unknown action.' });
     const reason = isValidReason(body['reason']) ? body['reason'] : null;
+    // Optional idempotency key — reject malformed values instead of silently applying twice.
+    const rawOpId = body['op_id'];
+    if (rawOpId != null && (typeof rawOpId !== 'string' || rawOpId.length < OP_ID_MIN || rawOpId.length > OP_ID_MAX)) {
+      return reply.status(400).send({ error: 'Invalid op_id.' });
+    }
+    const opId = typeof rawOpId === 'string' ? rawOpId : null;
     try {
-      const payload = await controller.publicStopAction(String(token), String(stopId), body['action'], reason);
+      const payload = await controller.publicStopAction(
+        String(token),
+        String(stopId),
+        body['action'],
+        reason,
+        sessionTokenOf(req),
+        opId,
+      );
       if (!payload) return reply.status(404).send(NOT_ACTIVE);
       return reply.status(200).send(payload);
     } catch (err) {
-      fastify.log.error(err, 'Failed to apply public delivery stop action');
-      return reply.status(404).send(NOT_ACTIVE);
+      return sendPublicError(
+        reply,
+        err,
+        (e, m) => fastify.log.error(e, m),
+        'Failed to apply public delivery stop action',
+      );
     }
   });
 
@@ -7854,6 +7094,111 @@ export const DeliveriesRouter = router({
     .input(RouteIdObj)
     .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
 });
+```
+
+## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
+
+```typescript
+import type { Selectable } from 'kysely';
+
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class DonationsRepo extends BaseRepository<'donations'> {
+  constructor() {
+    super('donations');
+  }
+
+  /**
+   * Get the cumulative sum of successful donations for a person in a given year.
+   * Amounts are represented in cents.
+   */
+  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .where('status', '=', 'succeeded')
+      .where('created_at', '>=', startOfYear)
+      .where('created_at', '<=', endOfYear)
+      .executeTakeFirst();
+
+    return Number(result?.total || 0);
+  }
+
+  /**
+   * Get the cumulative sum of successful donations for a person within an explicit date range.
+   * Used when a donation_period has been configured.
+   */
+  public async getPersonCumulativeDonationsForPeriod(
+    tenantId: string,
+    personId: string,
+    startDate: Date,
+    endDate: Date | null,
+  ): Promise<number> {
+    let query = this.getSelect()
+      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .where('status', '=', 'succeeded')
+      .where('created_at', '>=', startDate);
+
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query = query.where('created_at', '<=', endOfDay);
+    }
+
+    const result = await query.executeTakeFirst();
+    return Number(result?.total || 0);
+  }
+
+  /**
+   * Retrieve the list of donations for a given person, ordered by date descending.
+   */
+  public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
+  /**
+   * Retrieve all donations for a tenant, joined with live donor details, ordered by date descending.
+   * Uses a LEFT JOIN so donations whose contact was later deleted (person_id = NULL) are still returned.
+   * The snapshot columns (first_name / last_name / email) recorded on the donation row serve as the
+   * fallback when the linked person has since been deleted.
+   */
+  public async getTenantDonationsList(tenantId: string) {
+    return this.db
+      .selectFrom('donations')
+      .leftJoin('persons', 'persons.id', 'donations.person_id')
+      .select([
+        'donations.id',
+        'donations.tenant_id',
+        'donations.person_id',
+        'donations.amount',
+        'donations.status',
+        'donations.stripe_session_id',
+        'donations.method',
+        'donations.receipt_sent',
+        'donations.state',
+        'donations.country',
+        'donations.created_at',
+        this.db.fn.coalesce('persons.first_name', 'donations.first_name').as('person_first_name'),
+        this.db.fn.coalesce('persons.last_name', 'donations.last_name').as('person_last_name'),
+        this.db.fn.coalesce('persons.email', 'donations.email').as('person_email'),
+      ])
+      .where('donations.tenant_id', '=', tenantId)
+      .orderBy('donations.created_at', 'desc')
+      .execute();
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/donations/repositories/periods.repo.ts
@@ -17568,6 +16913,199 @@ export default defineConfig(() => ({
     },
   },
 }));
+```
+
+## File: apps/companion/src/app/deliveries/route-page.html
+
+```html
+<pc-companion-gate kind="route" [token]="token()" (ready)="load()">
+  <div class="min-h-screen bg-base-200">
+    @switch (state()) { @case ('loading') {
+    <div class="flex min-h-screen items-center justify-center">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+    </div>
+    } @case ('notfound') {
+    <div class="flex min-h-screen items-center justify-center px-6">
+      <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+        <h1 class="mb-2 text-lg font-semibold">This route link isn't active</h1>
+        <p class="text-sm text-base-content/60">Ask your organizer for a new one.</p>
+      </div>
+    </div>
+    } @case ('session-expired') {
+    <div class="flex min-h-screen items-center justify-center px-6">
+      <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+        <h1 class="mb-2 text-lg font-semibold">Let's confirm it's you again</h1>
+        <p class="text-sm text-base-content/60">Your device verification has lapsed. Reload to verify and continue.</p>
+        <button type="button" class="btn btn-primary mt-4 min-h-11" (click)="reload()">Reload this page</button>
+      </div>
+    </div>
+    } @case ('ready') { @if (data(); as d) {
+    <div class="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-3 py-4">
+      <!-- Header -->
+      <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
+            {{ d.organization_name }}
+          </p>
+          <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
+        </div>
+        <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>
+        <p class="mt-2 text-sm tabular-nums text-base-content/70">
+          @if (isDone()) { {{ d.stops_total }} of {{ d.stops_total }} handled } @else { {{ d.stops_delivered }} of {{
+          d.stops_total }} delivered }
+        </p>
+        <progress
+          class="progress mt-1 w-full"
+          [class.progress-success]="isDone()"
+          [class.progress-primary]="!isDone()"
+          [value]="handled()"
+          [max]="d.stops_total || 1"
+        ></progress>
+
+        <div class="mt-3 flex items-center gap-2">
+          <pc-tab-bar [tabs]="viewTabs" [activeTab]="view()" (activeTabChange)="setView($event)" />
+          <button type="button" class="btn btn-ghost btn-sm ml-auto" (click)="openFullRoute()">
+            <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
+          </button>
+        </div>
+      </div>
+
+      @if (isDone()) {
+      <div class="rounded-2xl border border-success/30 bg-success/[0.08] p-5 text-center">
+        <p class="text-base font-semibold text-base-content">All {{ d.stops_total }} stops handled — thank you!</p>
+        <p class="mt-1 text-sm text-base-content/70">Your organizer already has the results.</p>
+      </div>
+      }
+
+      <!-- Map view -->
+      @if (view() === 'map') {
+      <pc-map
+        class="block h-72 overflow-hidden rounded-2xl border border-base-300"
+        [markers]="markers()"
+        (markerClicked)="selectStop($event)"
+      ></pc-map>
+      }
+
+      <!-- Stop list -->
+      @if (view() === 'list') {
+      <div class="flex flex-col gap-2.5">
+        @for (stop of d.stops; track stop.id) {
+        <div
+          class="rounded-2xl border p-4"
+          [class.border-base-300]="stop.status === 'pending'"
+          [class.bg-base-100]="stop.status === 'pending'"
+          [class.border-success]="stop.status === 'delivered'"
+          [class.bg-success]="stop.status === 'delivered'"
+          [class.bg-opacity-[0.06]]="stop.status !== 'pending'"
+          [class.border-warning]="stop.status === 'skipped'"
+          [class.bg-warning]="stop.status === 'skipped'"
+        >
+          <div class="flex items-start gap-3">
+            <span
+              class="flex size-7 shrink-0 items-center justify-center rounded-full bg-base-200 text-sm font-semibold tabular-nums"
+              >{{ stop.seq }}</span
+            >
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold text-base-content">{{ stop.first_name }}</p>
+              <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+              @if (stop.status === 'skipped' && stop.reason) {
+              <span class="mt-1 inline-block"><pc-status-badge type="warning">{{ stop.reason }}</pc-status-badge></span>
+              }
+            </div>
+            @if (stop.status === 'delivered') {
+            <pc-status-badge type="success">Delivered</pc-status-badge>
+            }
+          </div>
+
+          <!-- Actions for the active (first pending) stop -->
+          @if (stop.status === 'pending' && stop.id === activeStopId()) { @if (reasonPickerFor() === stop.id) {
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            @for (reason of reasons; track reason) {
+            <button type="button" class="btn btn-outline btn-warning min-h-11 text-sm" (click)="skip(stop.id, reason)">
+              {{ reason }}
+            </button>
+            }
+            <button type="button" class="btn btn-ghost col-span-2 min-h-11 text-sm" (click)="cancelReason()">
+              Never mind — keep it pending
+            </button>
+          </div>
+          <p class="mt-2 text-xs text-base-content/50">
+            A skipped house goes back to your organizer's list automatically.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col gap-2">
+            <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+              Mark delivered
+            </button>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="btn btn-ghost min-h-11 text-sm"
+                [disabled]="busy()"
+                (click)="openReasonPicker(stop.id)"
+              >
+                Couldn't deliver
+              </button>
+              <button type="button" class="btn btn-ghost min-h-11 text-sm" [disabled]="busy()" (click)="defer(stop.id)">
+                Skip for now
+              </button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">
+              <pc-icon name="map-pin" [size]="4"></pc-icon> Navigate
+            </button>
+          </div>
+          } }
+
+          <!-- Undo on every finished row — a wrong tap is fixable even after a reload
+               or from a completed route (undoing reopens it). -->
+          @if (stop.status !== 'pending') {
+          <div class="mt-2 flex items-center gap-2">
+            <button type="button" class="btn btn-ghost btn-sm min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
+              <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
+            </button>
+            @if (stop.id === lastActioned()) {
+            <span class="text-xs text-base-content/50">
+              @if (stop.status === 'delivered') { Delivered just now } @else { Skipped just now }
+            </span>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+      }
+
+      <!-- Selected pin card (map view) -->
+      @if (view() === 'map' && selectedStopId(); as sid) { @for (stop of d.stops; track stop.id) { @if (stop.id === sid)
+      {
+      <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+        <p class="font-semibold">{{ stop.seq }}. {{ stop.first_name }}</p>
+        <p class="text-sm text-base-content/70">{{ stop.address }}</p>
+        @if (stop.status === 'pending') {
+        <div class="mt-3 flex flex-col gap-2">
+          <button type="button" class="btn btn-primary min-h-11" [disabled]="busy()" (click)="deliver(stop.id)">
+            Mark delivered
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="navigate(stop)">Navigate</button>
+        </div>
+        } @else {
+        <div class="mt-2 flex items-center gap-2">
+          <pc-status-badge [type]="stop.status === 'delivered' ? 'success' : 'warning'"
+            >{{ stop.status }}</pc-status-badge
+          >
+          <button type="button" class="btn btn-ghost btn-sm min-h-11" [disabled]="busy()" (click)="undo(stop.id)">
+            <pc-icon name="arrow-uturn-left" [size]="4"></pc-icon> Undo
+          </button>
+        </div>
+        }
+      </div>
+      } } }
+
+      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+    </div>
+    } } }
+  </div>
+</pc-companion-gate>
 ```
 
 ## File: apps/frontend-e2e/playwright.config.ts
@@ -32554,127 +32092,6 @@ export class CampaignPersonFactsRepo extends BaseRepository<'campaign_person_fac
 }
 ```
 
-## File: apps/backend/src/app/modules/campaigns/repositories/campaign-subscriptions.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-/**
- * Per-campaign email consent (§15). One row per (campaign, person); no row means
- * "never asked" (not sendable). Address health (bounces/spam) lives in
- * email_suppressions; the person-level DNC flag lives on persons — sendability
- * is the AND of all three, computed where recipients are selected.
- */
-export class CampaignSubscriptionsRepo extends BaseRepository<'campaign_subscriptions'> {
-  constructor() {
-    super('campaign_subscriptions');
-  }
-
-  public async setStatus(
-    input: {
-      tenant_id: string;
-      campaign_id: string;
-      person_id: string;
-      email: string;
-      status: 'subscribed' | 'pending' | 'unsubscribed';
-      consent_source: 'form' | 'import' | 'manual' | 'copied' | 'canvass';
-      user_id: string;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const now = new Date();
-    const statusFields = {
-      status: input.status,
-      email: input.email,
-      consent_at: input.status === 'subscribed' ? now : null,
-      unsubscribed_at: input.status === 'unsubscribed' ? now : null,
-    };
-    const row = {
-      tenant_id: input.tenant_id,
-      campaign_id: input.campaign_id,
-      person_id: input.person_id,
-      createdby_id: input.user_id,
-      updatedby_id: input.user_id,
-      consent_source: input.consent_source,
-      ...statusFields,
-    } as OperationDataType<'campaign_subscriptions', 'insert'>;
-
-    return this.getInsert(trx)
-      .values(row)
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'campaign_id', 'person_id']).doUpdateSet({
-          ...statusFields,
-          consent_source: input.consent_source,
-          updatedby_id: input.user_id,
-          updated_at: now,
-        }),
-      )
-      .returningAll()
-      .executeTakeFirst();
-  }
-
-  /** Confirm a double opt-in: every pending row for this person becomes subscribed. */
-  public async confirmPending(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const now = new Date();
-    return this.getUpdate(trx)
-      .set({ status: 'subscribed', consent_at: now, updated_at: now })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('person_id', '=', input.person_id)
-      .where('status', '=', 'pending')
-      .execute();
-  }
-
-  /** SendGrid unsubscribe: scoped to the campaign whose newsletter carried the link. */
-  public async unsubscribeByEmail(
-    input: { tenant_id: string; campaign_id: string; email: string },
-    trx?: Transaction<Models>,
-  ) {
-    const now = new Date();
-    return this.getUpdate(trx)
-      .set({ status: 'unsubscribed', unsubscribed_at: now, updated_at: now })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id)
-      .where('email', '=', input.email)
-      .where('status', '!=', 'unsubscribed')
-      .execute();
-  }
-
-  /** One person's consent rows across campaigns, with campaign labels (person page panel). */
-  public async getForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .innerJoin('campaigns', 'campaigns.id', 'campaign_subscriptions.campaign_id')
-      .where('campaign_subscriptions.tenant_id', '=', input.tenant_id)
-      .where('campaign_subscriptions.person_id', '=', input.person_id)
-      .select([
-        'campaign_subscriptions.campaign_id',
-        'campaign_subscriptions.email',
-        'campaign_subscriptions.status',
-        'campaign_subscriptions.consent_source',
-        'campaign_subscriptions.consent_at',
-        'campaign_subscriptions.unsubscribed_at',
-        'campaigns.name as campaign_name',
-        'campaigns.kind as campaign_kind',
-        'campaigns.status as campaign_status',
-      ])
-      .orderBy('campaigns.created_at', 'desc')
-      .execute();
-  }
-
-  /** Active suppressions for one email address (any reason). */
-  public async getSuppressions(input: { tenant_id: string; email: string }, trx?: Transaction<Models>) {
-    return (trx ?? this.db)
-      .selectFrom('email_suppressions')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('email', '=', input.email)
-      .select(['reason', 'occurred_at'])
-      .execute();
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/campaigns/repositories/campaigns.repo.ts
 
 ```typescript
@@ -33154,1514 +32571,832 @@ export const CampaignsRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/canvassing/repositories/turf-assignments.repo.ts
+## File: apps/backend/src/app/modules/canvassing/repositories/turf-households.repo.ts
 
 ```typescript
-import { randomBytes } from 'node:crypto';
-
 import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-export interface ResolvedAssignment {
-  id: string;
-  tenant_id: string;
+export interface DoorRow {
+  household_id: string;
+  street_num: string | null;
+  street1: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  lat: number | null;
+  lng: number | null;
+  walk_order: number | null;
+}
+
+/**
+ * One geocoded door with its knock activity inside a window — the raw input to
+ * the §13.3 Coverage map. `conversations`/`attempts` are counted over the range;
+ * the controller derives the display status (talked / knocked-no-answer / not
+ * yet) and the per-turf boundary hull from these rows.
+ */
+export interface CoverageDoorRow {
+  household_id: string;
   turf_id: string;
-  team_id: string | null;
-  status: string;
-  /** Real CRM account that deployed this Companion — the responsible actor for
-   *  synced knocks (§22.7: honest attribution, never a fabricated user). */
-  created_by: string;
-  /** The person this link belongs to — the companion access layer verifies against them. */
-  volunteer_person_id: string | null;
-  /** Optional hard expiry for the capability link. */
-  expires_at: Date | null;
+  turf_name: string;
+  ward: string | null;
+  lat: number;
+  lng: number;
+  conversations: number;
+  attempts: number;
 }
 
-/** A high-entropy, URL-safe Companion token (the bearer credential). */
-export function generateTurfToken(): string {
-  return randomBytes(24).toString('base64url');
-}
+const CONVERSATION = 'conversation';
 
-export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
+/** The doors (households) that belong to a turf. */
+export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
   constructor() {
-    super('turf_assignments');
+    super('turf_households');
   }
 
-  public async getActiveByTurf(
+  public async getHouseholdIds(
     input: { tenant_id: string; turf_id: string },
     trx?: Transaction<Models>,
-  ): Promise<ResolvedAssignment | null> {
-    const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
+  ): Promise<string[]> {
+    const rows = await this.getSelect(trx)
+      .select('household_id')
       .where('tenant_id', '=', input.tenant_id)
       .where('turf_id', '=', input.turf_id)
-      .where('status', '=', 'active')
-      .orderBy('id', 'desc')
-      .executeTakeFirst();
-    return row ? this.toResolved(row) : null;
-  }
-
-  public async create(
-    input: {
-      tenant_id: string;
-      turf_id: string;
-      team_id: string | null;
-      token: string;
-      user_id: string;
-      volunteer_person_id: string;
-      expires_at: Date | null;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<string> {
-    const row = {
-      tenant_id: input.tenant_id,
-      turf_id: input.turf_id,
-      team_id: input.team_id,
-      token: input.token,
-      status: 'active',
-      volunteer_person_id: input.volunteer_person_id,
-      expires_at: input.expires_at,
-      createdby_id: input.user_id,
-      updatedby_id: input.user_id,
-    } as OperationDataType<'turf_assignments', 'insert'>;
-    const created = await this.getInsert(trx).values(row).returning('id').executeTakeFirst();
-    return String(created?.id ?? '');
-  }
-
-  public async revokeForTurf(
-    input: { tenant_id: string; turf_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({ status: 'revoked', updatedby_id: input.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .where('status', '=', 'active')
       .execute();
+    return rows.map((r) => String(r.household_id));
   }
 
   /**
-   * Resolve a Companion token to its assignment. This is the ONLY intentionally
-   * un-tenant-scoped query in the module: the token itself is the bearer
-   * credential and is what identifies the tenant (exactly like a session token —
-   * cf. the `sessions` entry in the no-unscoped-db-query ignoreTables). Every
-   * downstream read/write is then scoped by the resolved `tenant_id`.
+   * `household_ids` arrive in the cutting engine's snake-sweep order, which IS
+   * the suggested walk order — each door's position is stored as `walk_order`
+   * (appended after any existing doors on refresh).
    */
-  public async resolveByToken(token: string, trx?: Transaction<Models>): Promise<ResolvedAssignment | null> {
-    // NOTE: intentionally NOT tenant-scoped — the token IS the credential and is
-    // what resolves the tenant (see the method doc above). Every downstream query
-    // is scoped by the resolved tenant_id.
-    const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
-      .where('token', '=', token)
-      .where('status', '=', 'active')
+  public async addDoors(
+    input: { tenant_id: string; turf_id: string; household_ids: string[]; user_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    if (input.household_ids.length === 0) return;
+    const maxRow = await this.getSelect(trx)
+      .select((eb) => eb.fn.max('walk_order').as('max_order'))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
       .executeTakeFirst();
-    return row ? this.toResolved(row) : null;
+    const offset = Number(maxRow?.max_order ?? 0);
+    const rows = input.household_ids.map(
+      (hid, i) =>
+        ({
+          tenant_id: input.tenant_id,
+          turf_id: input.turf_id,
+          household_id: hid,
+          walk_order: offset + i + 1,
+          createdby_id: input.user_id,
+          updatedby_id: input.user_id,
+        }) as OperationDataType<'turf_households', 'insert'>,
+    );
+    await this.getInsert(trx)
+      .values(rows)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
   }
 
-  private toResolved(row: {
-    id: unknown;
-    tenant_id: unknown;
-    turf_id: unknown;
-    team_id: unknown;
-    status: unknown;
-    createdby_id: unknown;
-    volunteer_person_id?: unknown;
-    expires_at?: unknown;
-  }): ResolvedAssignment {
+  public async removeDoors(
+    input: { tenant_id: string; turf_id: string; household_ids: string[] },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    if (input.household_ids.length === 0) return;
+    await this.getDelete(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .where('household_id', 'in', input.household_ids)
+      .execute();
+  }
+
+  /** Door list with address + geocode for the Companion and the turf map. */
+  public async getDoors(input: { tenant_id: string; turf_id: string }, trx?: Transaction<Models>): Promise<DoorRow[]> {
+    const rows = await this.getSelect(trx)
+      .innerJoin('households', 'households.id', 'turf_households.household_id')
+      .where('turf_households.tenant_id', '=', input.tenant_id)
+      .where('turf_households.turf_id', '=', input.turf_id)
+      .select([
+        'households.id as household_id',
+        'households.street_num',
+        'households.street1',
+        'households.city',
+        'households.state',
+        'households.zip',
+        'households.lat',
+        'households.lng',
+        'turf_households.walk_order',
+      ])
+      .orderBy(sql`turf_households.walk_order NULLS LAST`)
+      .orderBy('households.id')
+      .execute();
+    return rows.map((r) => ({
+      household_id: String(r.household_id),
+      street_num: r.street_num ?? null,
+      street1: r.street1 ?? null,
+      city: r.city ?? null,
+      state: r.state ?? null,
+      zip: r.zip ?? null,
+      lat: r.lat ?? null,
+      lng: r.lng ?? null,
+      walk_order: r.walk_order == null ? null : Number(r.walk_order),
+    }));
+  }
+
+  /**
+   * Every geocoded door that belongs to a turf, with its knock counts inside the
+   * window — one row per door. Doors without coordinates can't be mapped, so
+   * they're excluded here (the report's numeric tiles still count them). Knocks
+   * are left-joined within the range so an un-knocked door still returns a row
+   * (its counts are zero → "not yet knocked" once the controller derives status).
+   */
+  public async getCoverageRows(
+    input: { tenant_id: string; from: Date; to: Date },
+    trx?: Transaction<Models>,
+  ): Promise<CoverageDoorRow[]> {
+    const rows = await this.getSelect(trx)
+      .innerJoin('households as h', 'h.id', 'turf_households.household_id')
+      .innerJoin('turfs as t', 't.id', 'turf_households.turf_id')
+      .leftJoin('turf_knocks as k', (join) =>
+        join
+          .onRef('k.turf_id', '=', 'turf_households.turf_id')
+          .onRef('k.household_id', '=', 'turf_households.household_id')
+          .on('k.tenant_id', '=', input.tenant_id)
+          .on('k.knocked_at', '>=', input.from)
+          .on('k.knocked_at', '<', input.to),
+      )
+      .where('turf_households.tenant_id', '=', input.tenant_id)
+      .where('h.lat', 'is not', null)
+      .where('h.lng', 'is not', null)
+      .groupBy(['turf_households.household_id', 't.id', 't.name', 'h.ward', 'h.lat', 'h.lng'])
+      .select([
+        'turf_households.household_id as household_id',
+        't.id as turf_id',
+        't.name as turf_name',
+        'h.ward as ward',
+        'h.lat as lat',
+        'h.lng as lng',
+        sql<number>`COUNT(k.id) FILTER (WHERE k.outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(k.id)`.as('attempts'),
+      ])
+      .execute();
+
+    return rows.map((r) => ({
+      household_id: String(r.household_id),
+      turf_id: String(r.turf_id),
+      turf_name: String(r.turf_name),
+      ward: r.ward ? String(r.ward) : null,
+      lat: Number(r.lat),
+      lng: Number(r.lng),
+      conversations: Number(r.conversations ?? 0),
+      attempts: Number(r.attempts ?? 0),
+    }));
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/canvassing/repositories/turf-knocks.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export interface TurfProgress {
+  attempted: number;
+  conversations: number;
+  last_knock_at: Date | null;
+}
+
+export interface ResponseMix {
+  supporter: number;
+  undecided: number;
+  non_supporter: number;
+  not_voting: number;
+  already_voted: number;
+  no_answer: number;
+}
+
+export interface FieldReport {
+  doors: number;
+  conversations: number;
+  contactRatePct: number;
+  supportIds: number;
+  responseMix: ResponseMix;
+  perDay: { day: string; conversations: number; no_answer: number }[];
+  byHour: { hour: number; conversations: number; attempts: number }[];
+  byTeam: { team_id: string | null; team_name: string; doors: number; conversations: number; supportIds: number }[];
+  topCanvassers: { name: string; doors: number }[];
+}
+
+const CONVERSATION = 'conversation';
+
+export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
+  constructor() {
+    super('turf_knocks');
+  }
+
+  /**
+   * Insert a knock, idempotent on the (tenant_id, turf_id, client_knock_id)
+   * partial unique index — so an offline Companion re-sending a queued knock
+   * never double-counts. Returns the new id, or null if it already existed.
+   */
+  public async insertIdempotent(
+    row: OperationDataType<'turf_knocks', 'insert'>,
+    trx?: Transaction<Models>,
+  ): Promise<string | null> {
+    const inserted = await this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'turf_id', 'client_knock_id']).where('client_knock_id', 'is not', null).doNothing(),
+      )
+      .returning('id')
+      .executeTakeFirst();
+    return inserted?.id != null ? String(inserted.id) : null;
+  }
+
+  /** Derived progress for every turf in the tenant, keyed by turf_id. */
+  public async getProgressByTenant(tenant_id: string, trx?: Transaction<Models>): Promise<Map<string, TurfProgress>> {
+    const rows = await this.getSelect(trx)
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('turf_id')
+      .select([
+        'turf_id',
+        sql<number>`COUNT(DISTINCT household_id)`.as('attempted'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
+        sql<string>`MAX(knocked_at)`.as('last_knock_at'),
+      ])
+      .execute();
+
+    const map = new Map<string, TurfProgress>();
+    for (const r of rows) {
+      map.set(String(r.turf_id), {
+        attempted: Number(r.attempted ?? 0),
+        conversations: Number(r.conversations ?? 0),
+        last_knock_at: r.last_knock_at ? new Date(String(r.last_knock_at)) : null,
+      });
+    }
+    return map;
+  }
+
+  /** Doors knocked + conversations + response mix within a window (default: today). */
+  public async getWindowSummary(
+    input: { tenant_id: string; from: Date; to: Date },
+    trx?: Transaction<Models>,
+  ): Promise<{ doors: number; conversations: number; responseMix: ResponseMix }> {
+    const row = await this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('knocked_at', '>=', input.from)
+      .where('knocked_at', '<', input.to)
+      .select(() => [
+        sql<number>`COUNT(DISTINCT household_id)`.as('doors'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
+      ])
+      .executeTakeFirst();
+
     return {
-      id: String(row.id),
-      tenant_id: String(row.tenant_id),
-      turf_id: String(row.turf_id),
-      team_id: row.team_id == null ? null : String(row.team_id),
-      status: String(row.status),
-      created_by: String(row.createdby_id),
-      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
-      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
+      doors: Number(row?.doors ?? 0),
+      conversations: Number(row?.conversations ?? 0),
+      responseMix: {
+        supporter: Number(row?.supporter ?? 0),
+        undecided: Number(row?.undecided ?? 0),
+        non_supporter: Number(row?.non_supporter ?? 0),
+        not_voting: Number(row?.not_voting ?? 0),
+        already_voted: Number(row?.already_voted ?? 0),
+        no_answer: Number(row?.no_answer ?? 0),
+      },
+    };
+  }
+
+  /**
+   * The latest knock per (household, person) in a turf — the raw material the
+   * Companion payload derives door/person state from. `person_id` null rows are
+   * door-level (outcomes + the anonymous household survey). Only survey fields
+   * that are safe to echo back are selected — never notes or contact info
+   * (payload minimization, spec §2).
+   */
+  public async getCompanionState(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<
+    {
+      household_id: string;
+      person_id: string | null;
+      outcome: string;
+      response: string | null;
+      issues: string[];
+      wants_volunteer: boolean;
+      wants_yard_sign: boolean;
+      set_dnc: boolean;
+      subscribe: boolean;
+    }[]
+  > {
+    const rows = await this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .distinctOn(['household_id', 'person_id'])
+      .orderBy('household_id')
+      .orderBy('person_id')
+      .orderBy('knocked_at', 'desc')
+      .select([
+        'household_id',
+        'person_id',
+        'outcome',
+        'response',
+        'issues',
+        'wants_volunteer',
+        'wants_yard_sign',
+        'set_dnc',
+        'subscribe',
+      ])
+      .execute();
+    return rows.map((r) => ({
+      household_id: String(r.household_id),
+      person_id: r.person_id == null ? null : String(r.person_id),
+      outcome: String(r.outcome),
+      response: r.response == null ? null : String(r.response),
+      issues: Array.isArray(r.issues) ? r.issues.map(String) : [],
+      wants_volunteer: Boolean(r.wants_volunteer),
+      wants_yard_sign: Boolean(r.wants_yard_sign),
+      set_dnc: Boolean(r.set_dnc),
+      subscribe: Boolean(r.subscribe),
+    }));
+  }
+
+  /** Last outcome per household in a turf, for door-list / map colouring. */
+  public async getLastOutcomeByHousehold(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<Map<string, string>> {
+    const rows = await this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .groupBy('household_id')
+      .select(['household_id', sql<string>`(ARRAY_AGG(outcome ORDER BY knocked_at DESC))[1]`.as('last_outcome')])
+      .execute();
+    const map = new Map<string, string>();
+    for (const r of rows) map.set(String(r.household_id), String(r.last_outcome));
+    return map;
+  }
+
+  /** Full field-report aggregation over a window, joined to teams via assignments. */
+  public async getFieldReport(
+    input: { tenant_id: string; from: Date; to: Date },
+    trx?: Transaction<Models>,
+  ): Promise<FieldReport> {
+    const tenant_id = input.tenant_id;
+    const base = this.getSelect(trx)
+      .where('turf_knocks.tenant_id', '=', tenant_id)
+      .where('turf_knocks.knocked_at', '>=', input.from)
+      .where('turf_knocks.knocked_at', '<', input.to);
+
+    const totals = await base
+      .select(() => [
+        sql<number>`COUNT(*)`.as('attempts'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
+      ])
+      .executeTakeFirst();
+
+    const perDayRows = await base
+      .groupBy(sql`DATE(knocked_at)`)
+      .orderBy(sql`DATE(knocked_at)`)
+      .select(() => [
+        sql<string>`DATE(knocked_at)::text`.as('day'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
+      ])
+      .execute();
+
+    const byHourRows = await base
+      .groupBy(sql`EXTRACT(HOUR FROM knocked_at)`)
+      .orderBy(sql`EXTRACT(HOUR FROM knocked_at)`)
+      .select(() => [
+        sql<number>`EXTRACT(HOUR FROM knocked_at)::int`.as('hour'),
+        sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(*)`.as('attempts'),
+      ])
+      .execute();
+
+    const byTeamRows = await this.getSelect(trx)
+      .leftJoin('turf_assignments as ta', (join) =>
+        join.onRef('ta.turf_id', '=', 'turf_knocks.turf_id').on('ta.tenant_id', '=', tenant_id),
+      )
+      .leftJoin('teams', 'teams.id', 'ta.team_id')
+      .where('turf_knocks.tenant_id', '=', tenant_id)
+      .where('turf_knocks.knocked_at', '>=', input.from)
+      .where('turf_knocks.knocked_at', '<', input.to)
+      .groupBy(['ta.team_id', 'teams.name'])
+      .select([
+        'ta.team_id as team_id',
+        'teams.name as team_name',
+        sql<number>`COUNT(*)`.as('doors'),
+        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.outcome = ${CONVERSATION})`.as('conversations'),
+        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response = 'supporter')`.as('support_ids'),
+      ])
+      .execute();
+
+    const topRows = await base
+      .where('canvasser_name', 'is not', null)
+      .groupBy('canvasser_name')
+      .orderBy(sql`COUNT(*)`, 'desc')
+      .limit(10)
+      .select(['canvasser_name as name', sql<number>`COUNT(*)`.as('doors')])
+      .execute();
+
+    const attempts = Number(totals?.attempts ?? 0);
+    const conversations = Number(totals?.conversations ?? 0);
+    const supporters = Number(totals?.supporter ?? 0);
+
+    return {
+      doors: attempts,
+      conversations,
+      contactRatePct: attempts > 0 ? Math.round((conversations / attempts) * 100) : 0,
+      supportIds: supporters,
+      responseMix: {
+        supporter: supporters,
+        undecided: Number(totals?.undecided ?? 0),
+        non_supporter: Number(totals?.non_supporter ?? 0),
+        not_voting: Number(totals?.not_voting ?? 0),
+        already_voted: Number(totals?.already_voted ?? 0),
+        no_answer: attempts - conversations,
+      },
+      perDay: perDayRows.map((r) => ({
+        day: String(r.day),
+        conversations: Number(r.conversations ?? 0),
+        no_answer: Number(r.no_answer ?? 0),
+      })),
+      byHour: byHourRows.map((r) => ({
+        hour: Number(r.hour ?? 0),
+        conversations: Number(r.conversations ?? 0),
+        attempts: Number(r.attempts ?? 0),
+      })),
+      byTeam: byTeamRows.map((r) => ({
+        team_id: r.team_id == null ? null : String(r.team_id),
+        team_name: r.team_name ? String(r.team_name) : 'Unassigned',
+        doors: Number(r.doors ?? 0),
+        conversations: Number(r.conversations ?? 0),
+        supportIds: Number(r.support_ids ?? 0),
+      })),
+      topCanvassers: topRows.map((r) => ({ name: String(r.name), doors: Number(r.doors ?? 0) })),
     };
   }
 }
 ```
 
-## File: apps/backend/src/app/modules/canvassing/controller.ts
+## File: apps/backend/src/app/modules/canvassing/repositories/turfs.repo.ts
 
 ```typescript
-import type {
-  AddTurfType,
-  AssignTurfType,
-  CompanionHousehold,
-  CompanionOpAck,
-  CompanionOpType,
-  CompanionPerson,
-  CompanionSurveyPrefill,
-  CompanionSurveyType,
-  CompanionTurfPayload,
-  CutTurfsType,
-  FieldReportRangeType,
-  IAuthKeyPayload,
-  KnockResponse,
-  LogKnockType,
-  SupportLevel,
-  UpdateCompanionSettingsType,
-  UpdateTurfType,
-  VotingStatus,
-} from '../../../../../../libs/common/src';
+import type { Kysely, Transaction } from 'kysely';
 
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
-import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { CompanionAccessController } from '../companion-access/controller';
-import { ListsController } from '../lists/controller';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import {
-  cutTurfs as clusterTurfs,
-  previewCut as previewCutPlan,
-  type CutPreview,
-  type DoorPoint,
-} from './lib/cutting-engine';
-import { TurfHouseholdsRepo, type CoverageDoorRow } from './repositories/turf-households.repo';
-import { TurfAssignmentsRepo, generateTurfToken } from './repositories/turf-assignments.repo';
-import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositories/turf-knocks.repo';
-import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { DoorPoint } from '../lib/cutting-engine';
 
-/** What a voter said at the door → the campaign support scale (§15). */
-const KNOCK_RESPONSE_TO_SUPPORT: Partial<Record<KnockResponse, SupportLevel>> = {
-  supporter: 'strong',
-  undecided: 'undecided',
-  non_supporter: 'against',
-};
-
-/**
- * "Not voting" / "Already voted" are turnout facts, not stances — they feed
- * voting_status. Door canvassing overwhelmingly happens during the advance-poll
- * window, so "already voted" is recorded as voted_advance.
- */
-const KNOCK_RESPONSE_TO_VOTING: Partial<Record<KnockResponse, VotingStatus>> = {
-  not_voting: 'not_voting',
-  already_voted: 'voted_advance',
-};
-
-/** Derived display status — computed from stored lifecycle + knock activity. */
-export type TurfDisplayStatus = 'draft' | 'assigned' | 'in_field' | 'complete' | 'retired';
-
-export interface TurfListItem {
+export interface TurfRow {
   id: string;
   name: string;
-  status: TurfDisplayStatus;
+  status: string;
   list_id: string | null;
   list_name: string | null;
   ward: string | null;
+  target_doors: number | null;
   centroid_lat: number | null;
   centroid_lng: number | null;
+  updated_at: Date | null;
   door_count: number;
-  attempted: number;
-  conversations: number;
   team_id: string | null;
   team_name: string | null;
   token: string | null;
-  last_activity_at: string | null;
 }
 
-export interface FieldSummary {
-  turfCount: number;
-  inFieldCount: number;
-  doorsAttempted: number;
-  doorsTotal: number;
-  waitingCount: number;
-}
-
-export interface InFieldToday {
-  doorsKnocked: number;
-  conversations: number;
-  responseMix: ResponseMix;
-}
-
-/** How a door reads on the §13.3 Coverage map, derived from its window knocks. */
-export type CoverageStatus = 'conversation' | 'attempted' | 'not_yet';
-
-interface LatLng {
-  lat: number;
-  lng: number;
-}
-
-export interface CoverageDoor extends LatLng {
-  status: CoverageStatus;
-}
-
-/** A turf boundary drawn as the convex hull of its doors (dashed on the map). */
-export interface CoverageTurf {
-  id: string;
-  name: string;
-  ward: string | null;
-  path: LatLng[];
-}
-
-export interface CoverageWard {
-  ward: string;
-  doors: number;
-  conversation: number;
-  attempted: number;
-  not_yet: number;
-}
-
-export interface Coverage {
-  doors: CoverageDoor[];
-  turfs: CoverageTurf[];
-  byWard: CoverageWard[];
-}
-
-const UNASSIGNED_WARD = 'Unassigned';
-const MIN_HULL_POINTS = 3;
-
-// A turf is "in the field" if a knock landed within this window.
-const IN_FIELD_WINDOW_MS = 6 * 60 * 60 * 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const COMPANION_SOURCE = 'companion';
-
-export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
-  private readonly turfHouseholds = new TurfHouseholdsRepo();
-  private readonly assignments = new TurfAssignmentsRepo();
-  private readonly knocks = new TurfKnocksRepo();
-  private readonly lists = new ListsController();
-  private readonly campaignsRepo = new CampaignsRepo();
-  private readonly factsRepo = new CampaignPersonFactsRepo();
-  private readonly subscriptionsRepo = new CampaignSubscriptionsRepo();
-  private readonly companionAccess = new CompanionAccessController();
-
+export class TurfsRepo extends BaseRepository<'turfs'> {
   constructor() {
-    super(new TurfsRepo());
-  }
-
-  private turfsRepo(): TurfsRepo {
-    return this.getRepo();
-  }
-
-  // ------------------------------------------------------------- reads ------
-
-  public async getTurfs(auth: IAuthKeyPayload): Promise<TurfListItem[]> {
-    const [rows, progress] = await Promise.all([
-      this.turfsRepo().getTurfs(auth.tenant_id),
-      this.knocks.getProgressByTenant(auth.tenant_id),
-    ]);
-    return rows.map((r) => {
-      const p = progress.get(r.id);
-      const attempted = p?.attempted ?? 0;
-      const lastAt = p?.last_knock_at ?? null;
-      return {
-        id: r.id,
-        name: r.name,
-        status: this.displayStatus(r, attempted, lastAt),
-        list_id: r.list_id,
-        list_name: r.list_name,
-        ward: r.ward,
-        centroid_lat: r.centroid_lat,
-        centroid_lng: r.centroid_lng,
-        door_count: r.door_count,
-        attempted,
-        conversations: p?.conversations ?? 0,
-        team_id: r.team_id,
-        team_name: r.team_name,
-        token: r.token,
-        last_activity_at: lastAt ? lastAt.toISOString() : null,
-      };
-    });
-  }
-
-  public async getFieldSummary(auth: IAuthKeyPayload): Promise<FieldSummary> {
-    const turfs = await this.getTurfs(auth);
-    let inFieldCount = 0;
-    let waitingCount = 0;
-    let doorsAttempted = 0;
-    let doorsTotal = 0;
-    for (const t of turfs) {
-      doorsAttempted += t.attempted;
-      doorsTotal += t.door_count;
-      if (t.status === 'in_field') inFieldCount++;
-      // "Waiting for a canvasser": cut but not being worked and never touched.
-      if ((t.status === 'draft' || t.status === 'assigned') && t.attempted === 0) waitingCount++;
-    }
-    return { turfCount: turfs.length, inFieldCount, doorsAttempted, doorsTotal, waitingCount };
-  }
-
-  public async getInFieldToday(auth: IAuthKeyPayload): Promise<InFieldToday> {
-    const { from, to } = this.dayWindow(new Date());
-    const summary = await this.knocks.getWindowSummary({ tenant_id: auth.tenant_id, from, to });
-    return { doorsKnocked: summary.doors, conversations: summary.conversations, responseMix: summary.responseMix };
-  }
-
-  public async getFieldReport(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<FieldReport> {
-    const { from, to } = this.rangeToDates(input);
-    return this.knocks.getFieldReport({ tenant_id: auth.tenant_id, from, to });
+    super('turfs');
   }
 
   /**
-   * §13.3 Coverage — every geocoded door in a turf, coloured by whether it was
-   * talked to, knocked with no answer, or not yet reached in the window, plus a
-   * dashed boundary hull per turf and a by-ward roll-up. Unlike the report tiles
-   * this returns doors even when nothing has been knocked (a freshly-cut universe
-   * reads as an all-grey map), so the caller shows it independently of `doors`.
+   * All turfs with universe-list name and current (single active) assignment.
+   * Door counts are merged from a separate grouped query to keep this row-per-turf.
    */
-  public async getCoverage(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<Coverage> {
-    const { from, to } = this.rangeToDates(input);
-    const rows = await this.turfHouseholds.getCoverageRows({ tenant_id: auth.tenant_id, from, to });
+  public async getTurfs(tenant_id: string, trx?: Transaction<Models>): Promise<TurfRow[]> {
+    const rows = await this.getSelect(trx)
+      .leftJoin('lists', 'lists.id', 'turfs.list_id')
+      .leftJoin('turf_assignments as ta', (join) =>
+        join.onRef('ta.turf_id', '=', 'turfs.id').on('ta.tenant_id', '=', tenant_id).on('ta.status', '=', 'active'),
+      )
+      .leftJoin('teams', 'teams.id', 'ta.team_id')
+      .where('turfs.tenant_id', '=', tenant_id)
+      .orderBy('turfs.id')
+      .select([
+        'turfs.id as id',
+        'turfs.name as name',
+        'turfs.status as status',
+        'turfs.list_id as list_id',
+        'lists.name as list_name',
+        'turfs.ward as ward',
+        'turfs.target_doors as target_doors',
+        'turfs.centroid_lat as centroid_lat',
+        'turfs.centroid_lng as centroid_lng',
+        'turfs.updated_at as updated_at',
+        'ta.team_id as team_id',
+        'teams.name as team_name',
+        'ta.token as token',
+      ])
+      .execute();
 
-    const doors: CoverageDoor[] = [];
-    const turfPoints = new Map<string, { name: string; ward: string | null; pts: LatLng[] }>();
-    const wards = new Map<string, CoverageWard>();
+    const counts = await this.doorCounts(tenant_id, trx);
 
-    for (const r of rows) {
-      const status = this.coverageStatus(r);
-      const point: LatLng = { lat: r.lat, lng: r.lng };
-      doors.push({ ...point, status });
-
-      let turf = turfPoints.get(r.turf_id);
-      if (!turf) {
-        turf = { name: r.turf_name, ward: r.ward, pts: [] };
-        turfPoints.set(r.turf_id, turf);
-      }
-      turf.pts.push(point);
-
-      const wardKey = r.ward ?? UNASSIGNED_WARD;
-      let ward = wards.get(wardKey);
-      if (!ward) {
-        ward = { ward: wardKey, doors: 0, conversation: 0, attempted: 0, not_yet: 0 };
-        wards.set(wardKey, ward);
-      }
-      ward.doors += 1;
-      ward[status] += 1;
-    }
-
-    const turfs: CoverageTurf[] = [];
-    for (const [id, turf] of turfPoints) {
-      const path = convexHull(turf.pts);
-      if (path.length >= MIN_HULL_POINTS) {
-        turfs.push({ id, name: turf.name, ward: turf.ward, path });
-      }
-    }
-
-    const byWard = [...wards.values()].sort((a, b) => b.doors - a.doors);
-    return { doors, turfs, byWard };
+    return rows.map((r) => ({
+      id: String(r.id),
+      name: String(r.name),
+      status: String(r.status),
+      list_id: r.list_id == null ? null : String(r.list_id),
+      list_name: r.list_name ? String(r.list_name) : null,
+      ward: r.ward ? String(r.ward) : null,
+      target_doors: r.target_doors == null ? null : Number(r.target_doors),
+      centroid_lat: r.centroid_lat == null ? null : Number(r.centroid_lat),
+      centroid_lng: r.centroid_lng == null ? null : Number(r.centroid_lng),
+      updated_at: r.updated_at ? new Date(String(r.updated_at)) : null,
+      door_count: counts.get(String(r.id)) ?? 0,
+      team_id: r.team_id == null ? null : String(r.team_id),
+      team_name: r.team_name ? String(r.team_name) : null,
+      token: r.token ? String(r.token) : null,
+    }));
   }
 
-  private coverageStatus(r: CoverageDoorRow): CoverageStatus {
-    if (r.conversations > 0) return 'conversation';
-    if (r.attempts > 0) return 'attempted';
-    return 'not_yet';
-  }
-
-  /** "Report exported — doors, conversations and responses by team and by day (CSV)." */
-  public async exportFieldReportCsv(
-    auth: IAuthKeyPayload,
-    input: FieldReportRangeType,
-  ): Promise<{ filename: string; content: string }> {
-    const report = await this.getFieldReport(auth, input);
-    const esc = (v: string | number): string => {
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines: string[] = [];
-    lines.push('Section,Key,Doors,Conversations,Support IDs');
-    lines.push(['Totals', 'all', report.doors, report.conversations, report.supportIds].map(esc).join(','));
-    for (const t of report.byTeam) {
-      lines.push(['By team', t.team_name, t.doors, t.conversations, t.supportIds].map(esc).join(','));
-    }
-    for (const d of report.perDay) {
-      lines.push(['By day', d.day, d.conversations + d.no_answer, d.conversations, ''].map(esc).join(','));
-    }
-    return { filename: `canvass-field-report-${input.range}.csv`, content: lines.join('\n') };
-  }
-
-  // ---------------------------------------------------------- cut turfs -----
-
-  public async previewCut(auth: IAuthKeyPayload, input: CutTurfsType): Promise<CutPreview> {
-    const doors = await this.resolveUniverseDoors(auth, input.list_id);
-    return previewCutPlan(doors, input.doors_per_turf);
-  }
-
-  public async cutTurfs(auth: IAuthKeyPayload, input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
-    const doors = await this.resolveUniverseDoors(auth, input.list_id);
-    const plan = clusterTurfs(doors, input.doors_per_turf);
-    if (plan.turfs.length === 0) {
-      throw new BadRequestError('No geocoded doors in that list yet — turfs are cut from located households.');
-    }
-
-    const repo = this.turfsRepo();
-    // Continue turf numbering from the current count.
-    const existing = await repo.getTurfs(auth.tenant_id);
-    let n = existing.length;
-
-    // Turfs are cut FOR a campaign (§15); defaults to the office context.
-    const campaignId = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id });
-
-    await repo.transaction().execute(async (trx) => {
-      for (const cluster of plan.turfs) {
-        n += 1;
-        const row = {
-          tenant_id: auth.tenant_id,
-          campaign_id: campaignId,
-          name: `Turf ${n}`,
-          status: 'draft',
-          list_id: input.list_id,
-          target_doors: input.doors_per_turf,
-          centroid_lat: cluster.centroid_lat,
-          centroid_lng: cluster.centroid_lng,
-          ward: cluster.ward,
-          notes: null,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        } as OperationDataType<'turfs', 'insert'>;
-        const created = await repo.add({ row }, trx);
-        const turfId = created?.id != null ? String(created.id) : '';
-        if (!turfId) throw new NotFoundError('Failed to create turf');
-        await this.turfHouseholds.addDoors(
-          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: cluster.households, user_id: auth.user_id },
-          trx,
-        );
-      }
-    });
-
-    return { created: plan.turfs.length, unplaced: plan.unplaced.length };
-  }
-
-  /** Re-sync a turf's doors with its smart list WITHOUT losing knock history. */
-  public async refreshFromList(auth: IAuthKeyPayload, turfId: string): Promise<{ added: number; removed: number }> {
-    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: turfId });
-    if (!turf) throw new NotFoundError('Turf not found');
-    const listId = turf.list_id;
-    if (!listId) throw new BadRequestError('This turf is not linked to a list, so it cannot be refreshed.');
-
-    const members = new Set(await this.resolveUniverseHouseholdIds(auth, listId));
-    const current = await this.turfHouseholds.getHouseholdIds({ tenant_id: auth.tenant_id, turf_id: turfId });
-    const currentSet = new Set(current);
-
-    // Drop doors no longer in the list; their knock rows persist (history kept).
-    const removed = current.filter((h) => !members.has(h));
-    // Add new list members that live in this turf's ward and aren't in ANY turf yet.
-    const wardMembers = await this.wardMembersNotInAnyTurf(auth, turf.ward, members);
-    const added = wardMembers.filter((h) => !currentSet.has(h));
-
-    await this.turfsRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await this.turfHouseholds.removeDoors(
-          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: removed },
-          trx,
-        );
-        await this.turfHouseholds.addDoors(
-          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: added, user_id: auth.user_id },
-          trx,
-        );
-      });
-
-    return { added: added.length, removed: removed.length };
-  }
-
-  // -------------------------------------------------------- assignment ------
-
-  public async assignTurf(auth: IAuthKeyPayload, input: AssignTurfType): Promise<{ token: string }> {
-    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
-    if (!turf) throw new NotFoundError('Turf not found');
-    const teamId = input.team_id != null ? String(input.team_id) : null;
-    const volunteerPersonId = String(input.volunteer_person_id);
-
-    // The link is personal: the companion access layer verifies the holder
-    // against this person's contacts, so they must exist (and ideally have an
-    // email or mobile on file — the gate explains it if they don't).
-    const person = await this.knocks.db
-      .selectFrom('persons')
-      .select(['id'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', volunteerPersonId)
+  /** Typed single-turf lookup (getOneById returns a loosely-typed row). */
+  public async getTurfCore(
+    input: { tenant_id: string; id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{
+    id: string;
+    name: string;
+    status: string;
+    list_id: string | null;
+    ward: string | null;
+    campaign_id: string | null;
+  } | null> {
+    const row = await this.getSelect(trx)
+      .select(['id', 'name', 'status', 'list_id', 'ward', 'campaign_id'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
       .executeTakeFirst();
-    if (!person) throw new BadRequestError('Pick the volunteer this link belongs to.');
-
-    const token = generateTurfToken();
-    const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
-
-    await this.turfsRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await this.assignments.revokeForTurf(
-          { tenant_id: auth.tenant_id, turf_id: input.turf_id, user_id: auth.user_id },
-          trx,
-        );
-        await this.assignments.create(
-          {
-            tenant_id: auth.tenant_id,
-            turf_id: input.turf_id,
-            team_id: teamId,
-            token,
-            user_id: auth.user_id,
-            volunteer_person_id: volunteerPersonId,
-            expires_at: expiresAt,
-          },
-          trx,
-        );
-        await this.turfsRepo().update(
-          {
-            tenant_id: auth.tenant_id,
-            id: input.turf_id,
-            row: { status: 'active', updatedby_id: auth.user_id, updated_at: new Date() },
-          },
-          trx,
-        );
-      });
-
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'assign',
-      entity: 'turf',
-      entity_id: input.turf_id,
-      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
-    });
-
-    return { token };
-  }
-
-  /**
-   * Link expiry = the campaign's end date when one exists (spec §2: "end of the
-   * canvass window"), otherwise no hard expiry (revocation still applies).
-   */
-  private async assignmentExpiry(tenant_id: string, campaign_id: string): Promise<Date | null> {
-    if (!campaign_id) return null;
-    const campaign = await this.knocks.db
-      .selectFrom('campaigns')
-      .select(['enddate'])
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', campaign_id)
-      .executeTakeFirst();
-    if (!campaign?.enddate) return null;
-    const end = new Date(`${campaign.enddate}T23:59:59`);
-    return Number.isNaN(end.getTime()) || end <= new Date() ? null : end;
-  }
-
-  public async retireTurf(auth: IAuthKeyPayload, turfId: string): Promise<void> {
-    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: turfId });
-    if (!turf) throw new NotFoundError('Turf not found');
-    await this.turfsRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await this.assignments.revokeForTurf(
-          { tenant_id: auth.tenant_id, turf_id: turfId, user_id: auth.user_id },
-          trx,
-        );
-        await this.turfsRepo().update(
-          {
-            tenant_id: auth.tenant_id,
-            id: turfId,
-            row: { status: 'retired', updatedby_id: auth.user_id, updated_at: new Date() },
-          },
-          trx,
-        );
-      });
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'update',
-      entity: 'turf',
-      entity_id: turfId,
-      metadata: { retired: true },
-    });
-  }
-
-  public async addTurf(auth: IAuthKeyPayload, input: AddTurfType): Promise<{ id: string }> {
-    const row = {
-      tenant_id: auth.tenant_id,
-      // The context this turf is knocked for (§15); defaults to the office.
-      campaign_id: await this.campaignsRepo.resolveForWrite({
-        tenant_id: auth.tenant_id,
-        campaign_id: input.campaign_id,
-      }),
-      name: input.name,
-      status: 'draft',
-      list_id: input.list_id != null ? String(input.list_id) : null,
-      notes: input.notes ?? null,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'turfs', 'insert'>;
-    const created = await this.turfsRepo().add({ row });
-    return { id: created?.id != null ? String(created.id) : '' };
-  }
-
-  public async updateTurf(auth: IAuthKeyPayload, id: string, input: UpdateTurfType): Promise<void> {
-    const row = {
-      ...(input.name != null ? { name: input.name } : {}),
-      ...(input.status != null ? { status: input.status } : {}),
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    } as OperationDataType<'turfs', 'update'>;
-    await this.turfsRepo().update({ tenant_id: auth.tenant_id, id, row });
-  }
-
-  // -------------------------------------------------- Companion (public) ----
-
-  /**
-   * Resolve a Companion token + verified device session to the full spec-§3
-   * turf payload. Payload minimization is deliberate: names, walk data, and
-   * prior door RESULTS only — never emails, phones, donation history, or notes.
-   */
-  public async getCompanionTurf(token: string, sessionToken: string | null): Promise<CompanionTurfPayload> {
-    const assignment = await this.resolveActiveAssignment(token);
-    await this.companionAccess.requireSession(sessionToken, {
-      tenant_id: assignment.tenant_id,
-      volunteer_person_id: assignment.volunteer_person_id,
-    });
-    const tenant_id = assignment.tenant_id;
-    const turf_id = assignment.turf_id;
-
-    const turf = await this.turfsRepo().getTurfCore({ tenant_id, id: turf_id });
-    if (!turf) throw new NotFoundError('Turf not found');
-
-    const [doorRows, state, campaign, canvasserName] = await Promise.all([
-      this.turfHouseholds.getDoors({ tenant_id, turf_id }),
-      this.knocks.getCompanionState({ tenant_id, turf_id }),
-      this.companionCampaign(tenant_id, String(turf.campaign_id ?? '')),
-      this.personFirstLast(tenant_id, String(assignment.volunteer_person_id)),
-    ]);
-
-    const householdIds = doorRows.map((d) => d.household_id);
-    const people = await this.peopleByHousehold(tenant_id, householdIds);
-
-    // Index the latest knock per (household, person).
-    const doorState = new Map<string, (typeof state)[number]>();
-    const personState = new Map<string, (typeof state)[number]>();
-    for (const s of state) {
-      if (s.person_id == null) doorState.set(s.household_id, s);
-      else personState.set(`${s.household_id}:${s.person_id}`, s);
-    }
-
-    const households: CompanionHousehold[] = doorRows.map((d, i) => {
-      const residents = people.get(d.household_id) ?? [];
-      const ds = doorState.get(d.household_id);
-      const doorOutcome =
-        ds && (ds.outcome === 'no_answer' || ds.outcome === 'inaccessible' || ds.outcome === 'refused')
-          ? ds.outcome
-          : null;
-      const hhSurvey = ds && ds.outcome === 'conversation' ? this.toPrefill(ds) : null;
-      return {
-        id: d.household_id,
-        walk_order: d.walk_order ?? i + 1,
-        address: this.formatAddress(d),
-        lat: d.lat,
-        lng: d.lng,
-        dnc: residents.length > 0 && residents.every((p) => p.dnc),
-        door_outcome: doorOutcome,
-        hh_survey: hhSurvey,
-        people: residents.map((p): CompanionPerson => {
-          const ps = personState.get(`${d.household_id}:${p.id}`);
-          const result =
-            ps == null
-              ? null
-              : ps.outcome === 'conversation'
-                ? 'canvassed'
-                : ps.outcome === 'not_home' || ps.outcome === 'moved' || ps.outcome === 'refused'
-                  ? ps.outcome
-                  : null;
-          return {
-            id: p.id,
-            name: p.name,
-            dnc: p.dnc,
-            result,
-            survey: ps && ps.outcome === 'conversation' ? this.toPrefill(ps) : null,
-          };
-        }),
-      };
-    });
-
+    if (!row) return null;
     return {
-      campaign_name: campaign.name,
-      turf_name: String(turf.name),
-      canvasser_name: canvasserName,
-      script: campaign.script,
-      issues: campaign.issues,
-      expires_at: assignment.expires_at ? assignment.expires_at.toISOString() : null,
-      households,
+      id: String(row.id),
+      name: String(row.name),
+      status: String(row.status),
+      list_id: row.list_id == null ? null : String(row.list_id),
+      ward: row.ward == null ? null : String(row.ward),
+      campaign_id: row.campaign_id == null ? null : String(row.campaign_id),
     };
   }
 
-  /**
-   * Apply a batch of Companion ops (spec §5). Each op is idempotent via the
-   * companion_ops ledger — a retried op acks `duplicate` and re-applies
-   * nothing — and each op commits in its own transaction so one bad op never
-   * blocks the rest of an offline queue from draining.
-   */
-  public async postCompanionResults(
-    token: string,
-    sessionToken: string | null,
-    ops: CompanionOpType[],
-  ): Promise<{ acks: CompanionOpAck[] }> {
-    const assignment = await this.resolveActiveAssignment(token);
-    await this.companionAccess.requireSession(sessionToken, {
-      tenant_id: assignment.tenant_id,
-      volunteer_person_id: assignment.volunteer_person_id,
-    });
-    const tenant_id = assignment.tenant_id;
-    const turf_id = assignment.turf_id;
-
-    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
-    const canvasserName = await this.personFirstLast(tenant_id, String(assignment.volunteer_person_id));
-
-    const acks: CompanionOpAck[] = [];
-    for (const op of ops) {
-      try {
-        const ack = await this.knocks.transaction().execute(async (trx) => {
-          // Idempotency ledger: a conflict means this op already applied.
-          const claimed = await trx
-            .insertInto('companion_ops')
-            .values({ tenant_id, op_id: op.op_id, scope: 'canvass' })
-            .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
-            .returning('op_id')
-            .executeTakeFirst();
-          if (!claimed) return { op_id: op.op_id, status: 'duplicate' } as CompanionOpAck;
-
-          if (!doorIds.has(String(op.payload.household_id))) {
-            throw new BadRequestError('That household is not part of this turf.');
-          }
-          return this.applyCompanionOp(trx, {
-            op,
-            tenant_id,
-            turf_id,
-            actor: assignment.created_by,
-            canvasser_name: canvasserName,
-          });
-        });
-        acks.push(ack);
-      } catch (err: unknown) {
-        acks.push({
-          op_id: op.op_id,
-          status: 'rejected',
-          error: err instanceof Error ? err.message : 'Could not record this result.',
-        });
-      }
-    }
-    return { acks };
+  private conn(trx?: Transaction<Models>): Kysely<Models> | Transaction<Models> {
+    return trx ?? this.db;
   }
 
-  /** Apply one Companion op inside its transaction; returns the ack. */
-  private async applyCompanionOp(
-    trx: Transaction<Models>,
-    input: {
-      op: CompanionOpType;
-      tenant_id: string;
-      turf_id: string;
-      actor: string;
-      canvasser_name: string;
-    },
-  ): Promise<CompanionOpAck> {
-    const { op, tenant_id, turf_id, actor, canvasser_name } = input;
-    const householdId = String(op.payload.household_id);
-    const knockedAt = this.clampRecordedAt(op.recorded_at);
-    const via = `via Canvass Companion (${canvasser_name})`;
-
-    const insertKnock = async (fields: {
-      person_id: string | null;
-      outcome: string;
-      response?: string | null;
-      notes?: string | null;
-      issues?: string[];
-      wants_volunteer?: boolean;
-      wants_yard_sign?: boolean;
-      set_dnc?: boolean;
-      contact_phone?: string | null;
-      contact_email?: string | null;
-      subscribe?: boolean;
-    }): Promise<void> => {
-      const row = {
-        tenant_id,
-        turf_id,
-        household_id: householdId,
-        person_id: fields.person_id,
-        outcome: fields.outcome,
-        response: fields.response ?? null,
-        notes: fields.notes ?? null,
-        source: COMPANION_SOURCE,
-        canvasser_name,
-        client_knock_id: op.op_id,
-        knocked_at: knockedAt,
-        issues: fields.issues ?? [],
-        wants_volunteer: fields.wants_volunteer ?? false,
-        wants_yard_sign: fields.wants_yard_sign ?? false,
-        set_dnc: fields.set_dnc ?? false,
-        contact_phone: fields.contact_phone ?? null,
-        contact_email: fields.contact_email ?? null,
-        subscribe: fields.subscribe ?? false,
-        createdby_id: actor,
-        updatedby_id: actor,
-      } as OperationDataType<'turf_knocks', 'insert'>;
-      await this.knocks.insertIdempotent(row, trx);
-    };
-
-    const logActivity = async (entity: 'household' | 'person', entity_id: string, extra: Record<string, unknown>) => {
-      await this.userActivity.log(
-        {
-          tenant_id,
-          user_id: actor,
-          activity: 'update',
-          entity,
-          entity_id,
-          metadata: { source: COMPANION_SOURCE, via, turf_id, ...extra },
-          performed_by: actor,
-        },
-        trx,
-      );
-    };
-
-    switch (op.type) {
-      case 'survey': {
-        const p = op.payload;
-        const personId = p.person_id != null ? String(p.person_id) : null;
-        if (personId) await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
-        await insertKnock({
-          person_id: personId,
-          outcome: 'conversation',
-          response: p.support ?? null,
-          notes: p.notes ?? null,
-          issues: p.issues,
-          wants_volunteer: p.wants_volunteer,
-          wants_yard_sign: p.wants_yard_sign,
-          set_dnc: p.set_dnc,
-          contact_phone: p.contact_phone ?? null,
-          contact_email: p.contact_email ?? null,
-          subscribe: p.subscribe,
-        });
-        await this.applySurveySideEffects(trx, { tenant_id, turf_id, household_id: householdId, actor, survey: p });
-        await logActivity('household', householdId, { outcome: 'conversation', response: p.support ?? null });
-        if (personId) await logActivity('person', personId, { outcome: 'conversation', response: p.support ?? null });
-        return { op_id: op.op_id, status: 'applied' };
-      }
-      case 'person_result': {
-        const personId = String(op.payload.person_id);
-        await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
-        await insertKnock({ person_id: personId, outcome: op.payload.result });
-        await logActivity('person', personId, { outcome: op.payload.result });
-        return { op_id: op.op_id, status: 'applied' };
-      }
-      case 'door_outcome': {
-        await insertKnock({ person_id: null, outcome: op.payload.outcome });
-        await logActivity('household', householdId, { outcome: op.payload.outcome });
-        return { op_id: op.op_id, status: 'applied' };
-      }
-      case 'clear_outcome': {
-        await insertKnock({ person_id: null, outcome: 'cleared' });
-        await logActivity('household', householdId, { outcome: 'cleared' });
-        return { op_id: op.op_id, status: 'applied' };
-      }
-      case 'person_create': {
-        const name = op.payload.name.trim();
-        const lastSpace = name.lastIndexOf(' ');
-        const first = lastSpace > 0 ? name.slice(0, lastSpace) : name;
-        const last = lastSpace > 0 ? name.slice(lastSpace + 1) : null;
-        const created = await trx
-          .insertInto('persons')
-          .values({
-            tenant_id,
-            household_id: householdId,
-            first_name: first,
-            last_name: last,
-            createdby_id: actor,
-            updatedby_id: actor,
-          } as OperationDataType<'persons', 'insert'>)
-          .returning('id')
-          .executeTakeFirst();
-        const personId = String(created?.id ?? '');
-        if (!personId) throw new BadRequestError('Could not add this person.');
-        await this.attachTagInTrx(trx, tenant_id, personId, 'Added at door', actor);
-        await logActivity('person', personId, { created_at_door: true });
-        return { op_id: op.op_id, status: 'applied', person_id: personId };
-      }
-      default: {
-        const _exhaustive: never = op;
-        return _exhaustive;
-      }
-    }
-  }
-
-  /** The follow-up writes a survey triggers (spec §3.5) — all in the op's transaction. */
-  private async applySurveySideEffects(
-    trx: Transaction<Models>,
-    input: {
-      tenant_id: string;
-      turf_id: string;
-      household_id: string;
-      actor: string;
-      survey: CompanionSurveyType;
-    },
-  ): Promise<void> {
-    const { tenant_id, turf_id, household_id, actor, survey } = input;
-    const personId = survey.person_id != null ? String(survey.person_id) : null;
-    const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
-
-    // Support / turnout facts (person-level only, and only with a stance).
-    if (personId && survey.support && campaignId) {
-      const support = KNOCK_RESPONSE_TO_SUPPORT[survey.support];
-      const voting = KNOCK_RESPONSE_TO_VOTING[survey.support];
-      await this.factsRepo.upsertFact(
-        {
-          tenant_id,
-          campaign_id: campaignId,
-          person_id: personId,
-          user_id: actor,
-          ...(support ? { support_level: support } : {}),
-          ...(voting ? { voting_status: voting } : {}),
-          source: 'canvass',
-        },
-        trx,
-      );
-    }
-
-    // "Wants a yard sign" → a Deliveries intake request (spec §3.6/§4), unless
-    // the household already has an open one (same guard as staff addRequest).
-    if (survey.wants_yard_sign && campaignId) {
-      const open = await trx
-        .selectFrom('delivery_requests')
-        .select(['id'])
-        .where('tenant_id', '=', tenant_id)
-        .where('household_id', '=', household_id)
-        .where('status', 'in', ['new', 'approved'])
-        .executeTakeFirst();
-      if (!open) {
-        await trx
-          .insertInto('delivery_requests')
-          .values({
-            tenant_id,
-            campaign_id: campaignId,
-            household_id,
-            person_id: personId,
-            web_form_id: null,
-            source: 'canvass',
-            status: 'new',
-            notes: null,
-            createdby_id: actor,
-            updatedby_id: actor,
-          } as OperationDataType<'delivery_requests', 'insert'>)
-          .execute();
-      }
-    }
-
-    if (personId) {
-      // "Do not contact" — the global compliance flag (§15).
-      if (survey.set_dnc) {
-        await trx
-          .updateTable('persons')
-          .set({ do_not_contact: true, updatedby_id: actor, updated_at: new Date() })
-          .where('tenant_id', '=', tenant_id)
-          .where('id', '=', personId)
-          .execute();
-      }
-
-      // Contact capture: fill blanks only — a doorstep answer never overwrites
-      // what the CRM already knows (the knock row keeps the captured value).
-      if (survey.contact_phone || survey.contact_email) {
-        const person = await trx
-          .selectFrom('persons')
-          .select(['mobile', 'email'])
-          .where('tenant_id', '=', tenant_id)
-          .where('id', '=', personId)
-          .executeTakeFirst();
-        const updates: Record<string, unknown> = {};
-        if (survey.contact_phone && !person?.mobile) updates['mobile'] = survey.contact_phone;
-        if (survey.contact_email && !person?.email) updates['email'] = survey.contact_email;
-        if (Object.keys(updates).length > 0) {
-          await trx
-            .updateTable('persons')
-            .set({ ...updates, updatedby_id: actor, updated_at: new Date() })
-            .where('tenant_id', '=', tenant_id)
-            .where('id', '=', personId)
-            .execute();
-        }
-      }
-
-      // "Subscribe to updates" — consent captured at the door.
-      if (survey.subscribe && campaignId) {
-        const person = await trx
-          .selectFrom('persons')
-          .select(['email'])
-          .where('tenant_id', '=', tenant_id)
-          .where('id', '=', personId)
-          .executeTakeFirst();
-        const email = survey.contact_email ?? person?.email ?? null;
-        if (email) {
-          await this.subscriptionsRepo.setStatus(
-            {
-              tenant_id,
-              campaign_id: campaignId,
-              person_id: personId,
-              email,
-              status: 'subscribed',
-              consent_source: 'canvass',
-              user_id: actor,
-            },
-            trx,
-          );
-        }
-      }
-
-      // "Wants to volunteer" → flag for the field organizer.
-      if (survey.wants_volunteer) {
-        await this.attachTagInTrx(trx, tenant_id, personId, 'Volunteer prospect', actor);
-      }
-    }
-  }
-
-  /** Resolve + expiry-check an assignment token (uniform dead-link semantics). */
-  private async resolveActiveAssignment(token: string) {
-    const assignment = await this.assignments.resolveByToken(token);
-    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
-    if (assignment.expires_at && assignment.expires_at < new Date()) {
-      throw new NotFoundError('This canvassing link is invalid or has been retired.');
-    }
-    return assignment;
-  }
-
-  /** A person op must target a resident of that door — a token can't reach further. */
-  private async assertPersonInHousehold(
-    trx: Transaction<Models>,
-    tenant_id: string,
-    person_id: string,
-    household_id: string,
-  ): Promise<void> {
-    const person = await trx
-      .selectFrom('persons')
-      .select(['id'])
+  private async doorCounts(tenant_id: string, trx?: Transaction<Models>): Promise<Map<string, number>> {
+    const rows = await this.conn(trx)
+      .selectFrom('turf_households')
       .where('tenant_id', '=', tenant_id)
-      .where('id', '=', person_id)
-      .where('household_id', '=', household_id)
-      .executeTakeFirst();
-    if (!person) throw new BadRequestError('That person is not at this door.');
-  }
-
-  /**
-   * Attach a tag by name inside the op's transaction (find-or-create + map).
-   * PersonsService.attachTag exists but manages its own connections/workflow
-   * triggers outside a transaction — this is the minimal transactional core.
-   */
-  private async attachTagInTrx(
-    trx: Transaction<Models>,
-    tenant_id: string,
-    person_id: string,
-    name: string,
-    actor: string,
-  ): Promise<void> {
-    await trx
-      .insertInto('tags')
-      .values({
-        tenant_id,
-        name,
-        color: '#818789',
-        type: 'tag',
-        createdby_id: actor,
-        updatedby_id: actor,
-      } as OperationDataType<'tags', 'insert'>)
-      .onConflict((oc) => oc.doNothing())
+      .groupBy('turf_id')
+      .select(({ fn }) => ['turf_id', fn.count('household_id').as('doors')])
       .execute();
-    const tag = await trx
-      .selectFrom('tags')
-      .select(['id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('name', '=', name)
-      .executeTakeFirst();
-    if (!tag) return;
-    await trx
-      .insertInto('map_peoples_tags')
-      .values({
-        tenant_id,
-        person_id,
-        tag_id: String(tag.id),
-        createdby_id: actor,
-        updatedby_id: actor,
-      } as OperationDataType<'map_peoples_tags', 'insert'>)
-      .onConflict((oc) => oc.doNothing())
-      .execute();
-  }
-
-  /** On-device timestamps keep their true door time, but never land in the future. */
-  private clampRecordedAt(recordedAt: string | null | undefined): Date {
-    const now = new Date();
-    if (!recordedAt) return now;
-    const parsed = new Date(recordedAt);
-    if (Number.isNaN(parsed.getTime()) || parsed > now) return now;
-    return parsed;
-  }
-
-  /** Campaign display name + companion survey vocabulary for a turf's campaign. */
-  private async companionCampaign(
-    tenant_id: string,
-    campaign_id: string,
-  ): Promise<{ name: string; issues: string[]; script: string }> {
-    if (campaign_id) {
-      const row = await this.knocks.db
-        .selectFrom('campaigns')
-        .select(['name', 'canvass_issues', 'canvass_script'])
-        .where('tenant_id', '=', tenant_id)
-        .where('id', '=', campaign_id)
-        .executeTakeFirst();
-      if (row) {
-        return {
-          name: String(row.name),
-          issues: Array.isArray(row.canvass_issues) ? row.canvass_issues.map(String) : [],
-          script: row.canvass_script ?? '',
-        };
-      }
-    }
-    return { name: '', issues: [], script: '' };
-  }
-
-  private async personFirstLast(tenant_id: string, person_id: string): Promise<string> {
-    const row = await this.knocks.db
-      .selectFrom('persons')
-      .select(['first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', person_id)
-      .executeTakeFirst();
-    return [row?.first_name, row?.last_name].filter(Boolean).join(' ') || 'Volunteer';
-  }
-
-  /** Residents per household — names + DNC only (payload minimization, spec §2). */
-  private async peopleByHousehold(
-    tenant_id: string,
-    household_ids: string[],
-  ): Promise<Map<string, { id: string; name: string; dnc: boolean }[]>> {
-    const map = new Map<string, { id: string; name: string; dnc: boolean }[]>();
-    if (household_ids.length === 0) return map;
-    const rows = await this.knocks.db
-      .selectFrom('persons')
-      .select(['id', 'household_id', 'first_name', 'last_name', 'do_not_contact'])
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'in', household_ids)
-      .orderBy('id')
-      .execute();
-    for (const r of rows) {
-      const hid = String(r.household_id);
-      const list = map.get(hid) ?? [];
-      list.push({
-        id: String(r.id),
-        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unnamed resident',
-        dnc: Boolean(r.do_not_contact),
-      });
-      map.set(hid, list);
-    }
+    const map = new Map<string, number>();
+    for (const r of rows) map.set(String(r.turf_id), Number(r.doors ?? 0));
     return map;
   }
 
-  private toPrefill(s: {
-    response: string | null;
-    issues: string[];
-    wants_volunteer: boolean;
-    wants_yard_sign: boolean;
-    set_dnc: boolean;
-    subscribe: boolean;
-  }): CompanionSurveyPrefill {
-    return {
-      support: (s.response ?? null) as CompanionSurveyPrefill['support'],
-      issues: s.issues,
-      wants_volunteer: s.wants_volunteer,
-      wants_yard_sign: s.wants_yard_sign,
-      set_dnc: s.set_dnc,
-      subscribe: s.subscribe,
-    };
-  }
-
-  // ------------------------------------------- Companion settings (staff) ----
-
-  /** The survey vocabulary the Companion shows, from the write campaign. */
-  public async getCompanionSettings(
-    auth: IAuthKeyPayload,
-    campaign_id?: string,
-  ): Promise<{ campaign_id: string; campaign_name: string; issues: string[]; script: string }> {
-    const resolved = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id, campaign_id });
-    const campaign = await this.companionCampaign(auth.tenant_id, String(resolved));
-    return {
-      campaign_id: String(resolved),
-      campaign_name: campaign.name,
-      issues: campaign.issues,
-      script: campaign.script,
-    };
-  }
-
-  public async updateCompanionSettings(auth: IAuthKeyPayload, input: UpdateCompanionSettingsType): Promise<void> {
-    const resolved = await this.campaignsRepo.resolveForWrite({
-      tenant_id: auth.tenant_id,
-      campaign_id: input.campaign_id,
-    });
-    await this.knocks.db
-      .updateTable('campaigns')
-      .set({
-        canvass_issues: input.issues,
-        canvass_script: input.script ?? null,
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', String(resolved))
+  /** Geocoded doors for a set of households, feeding the cutting engine. */
+  public async getHouseholdsGeo(
+    input: { tenant_id: string; household_ids: string[] },
+    trx?: Transaction<Models>,
+  ): Promise<DoorPoint[]> {
+    if (input.household_ids.length === 0) return [];
+    const rows = await this.conn(trx)
+      .selectFrom('households')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', 'in', input.household_ids)
+      .select(['id', 'lat', 'lng', 'ward'])
       .execute();
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'update',
-      entity: 'campaign',
-      entity_id: String(resolved),
-      metadata: { action: 'companion_settings', issues: input.issues.length },
-    });
+    return rows.map((r) => ({
+      household_id: String(r.id),
+      lat: r.lat ?? null,
+      lng: r.lng ?? null,
+      ward: r.ward ?? null,
+    }));
   }
 
-  /**
-   * Log a knock from a Companion. Idempotent on `client_knock_id` so an offline
-   * volunteer's queued re-send never double-counts. Every knock syncs live to
-   * the household + person Activity log with honest "via Canvass Companion"
-   * attribution under the real account that deployed the link (§22.7).
-   */
-  public async logKnock(input: LogKnockType): Promise<{ recorded: boolean }> {
-    const assignment = await this.assignments.resolveByToken(input.token);
-    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
-    const tenant_id = assignment.tenant_id;
-    const turf_id = assignment.turf_id;
-
-    // The door must belong to this turf — a token cannot log against other doors.
-    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
-    if (!doorIds.has(String(input.household_id))) {
-      throw new BadRequestError('That household is not part of this turf.');
-    }
-
-    const actor = assignment.created_by;
-    const knockedAt = input.knocked_at ? new Date(input.knocked_at) : new Date();
-
-    const row = {
-      tenant_id,
-      turf_id,
-      household_id: String(input.household_id),
-      person_id: input.person_id != null ? String(input.person_id) : null,
-      outcome: input.outcome,
-      response: input.response ?? null,
-      notes: input.notes ?? null,
-      source: COMPANION_SOURCE,
-      canvasser_name: input.canvasser_name ?? null,
-      client_knock_id: input.client_knock_id,
-      knocked_at: knockedAt,
-      createdby_id: actor,
-      updatedby_id: actor,
-    } as OperationDataType<'turf_knocks', 'insert'>;
-
-    const newId = await this.knocks.insertIdempotent(row);
-    if (!newId) return { recorded: false }; // already synced (offline re-send)
-
-    const via = input.canvasser_name ? `via Canvass Companion (${input.canvasser_name})` : 'via Canvass Companion';
-    const metadata = {
-      source: COMPANION_SOURCE,
-      via,
-      turf_id,
-      outcome: input.outcome,
-      response: input.response ?? null,
-      canvasser_name: input.canvasser_name ?? null,
-    };
-    // Sync to the household activity, and to the person's if one answered.
-    await this.userActivity.log({
-      tenant_id,
-      user_id: actor,
-      activity: 'update',
-      entity: 'household',
-      entity_id: String(input.household_id),
-      metadata,
-      performed_by: actor,
-    });
-    if (input.person_id != null) {
-      await this.userActivity.log({
-        tenant_id,
-        user_id: actor,
-        activity: 'update',
-        entity: 'person',
-        entity_id: String(input.person_id),
-        metadata,
-        performed_by: actor,
-      });
-
-      // A conversation with a stance feeds the support level (or turnout fact)
-      // of the campaign the TURF was cut for (§15) — a writ-period knock updates
-      // the election campaign's read on the voter, never the office's.
-      if (input.response) {
-        const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
-        const support = KNOCK_RESPONSE_TO_SUPPORT[input.response];
-        const voting = KNOCK_RESPONSE_TO_VOTING[input.response];
-        if (campaignId && (support || voting)) {
-          await this.factsRepo.upsertFact({
-            tenant_id,
-            campaign_id: campaignId,
-            person_id: String(input.person_id),
-            user_id: actor,
-            ...(support ? { support_level: support } : {}),
-            ...(voting ? { voting_status: voting } : {}),
-            source: 'canvass',
-          });
-        }
-      }
-    }
-
-    return { recorded: true };
-  }
-
-  /** The campaign a knock's support reading belongs to: the turf's own context. */
-  private async resolveKnockCampaignId(tenant_id: string, turf_id: string): Promise<string | null> {
-    const turf = await this.knocks.db
-      .selectFrom('turfs')
-      .select(['campaign_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', turf_id)
-      .executeTakeFirst();
-    if (turf?.campaign_id) return String(turf.campaign_id);
-    const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id });
-    const office = campaigns.find((c) => c.kind === 'office');
-    return office ? String(office.id) : null;
-  }
-
-  // ----------------------------------------------------------- helpers ------
-
-  private displayStatus(row: TurfRow, attempted: number, lastAt: Date | null): TurfDisplayStatus {
-    switch (row.status) {
-      case 'retired':
-        return 'retired';
-      case 'draft':
-        return 'draft';
-      case 'active': {
-        if (row.door_count > 0 && attempted >= row.door_count) return 'complete';
-        if (lastAt && Date.now() - lastAt.getTime() <= IN_FIELD_WINDOW_MS) return 'in_field';
-        return 'assigned';
-      }
-      default: {
-        // Any unexpected stored status is treated as assigned rather than thrown,
-        // so a future lifecycle value never breaks the whole list.
-        return 'assigned';
-      }
-    }
-  }
-
-  private async resolveUniverseDoors(auth: IAuthKeyPayload, listId: string): Promise<DoorPoint[]> {
-    const householdIds = await this.resolveUniverseHouseholdIds(auth, listId);
-    return this.turfsRepo().getHouseholdsGeo({ tenant_id: auth.tenant_id, household_ids: householdIds });
-  }
-
-  /** Reuse Lists' getCurrentMembers (Wave 1C) — never re-derive membership. */
-  private async resolveUniverseHouseholdIds(auth: IAuthKeyPayload, listId: string): Promise<string[]> {
-    const members = await this.lists.getCurrentMembers(auth, listId);
-    if (members.object === 'households') return members.ids;
-    // A people list → map to their distinct households.
-    return this.turfsRepo().getHouseholdIdsForPersons({ tenant_id: auth.tenant_id, person_ids: members.ids });
-  }
-
-  private async wardMembersNotInAnyTurf(
-    auth: IAuthKeyPayload,
-    ward: string | null,
-    members: Set<string>,
+  /** Distinct households for a set of persons (universe = a people smart list). */
+  public async getHouseholdIdsForPersons(
+    input: { tenant_id: string; person_ids: string[] },
+    trx?: Transaction<Models>,
   ): Promise<string[]> {
-    if (members.size === 0) return [];
-    const geo = await this.turfsRepo().getHouseholdsGeo({
-      tenant_id: auth.tenant_id,
-      household_ids: [...members],
-    });
-    const inWard = geo.filter((d) => (d.ward ?? null) === ward).map((d) => d.household_id);
-    // Exclude households already assigned to any turf.
-    const assigned = await this.householdsInAnyTurf(auth, inWard);
-    return inWard.filter((h) => !assigned.has(h));
-  }
-
-  private async householdsInAnyTurf(auth: IAuthKeyPayload, householdIds: string[]): Promise<Set<string>> {
-    if (householdIds.length === 0) return new Set();
-    const rows = await this.turfsRepo()
-      .db.selectFrom('turf_households')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('household_id', 'in', householdIds)
+    if (input.person_ids.length === 0) return [];
+    const rows = await this.conn(trx)
+      .selectFrom('persons')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', 'in', input.person_ids)
+      .where('household_id', 'is not', null)
       .select('household_id')
       .distinct()
       .execute();
-    return new Set(rows.map((r) => String(r.household_id)));
-  }
-
-  private formatAddress(d: {
-    street_num: string | null;
-    street1: string | null;
-    city: string | null;
-    state: string | null;
-    zip: string | null;
-  }): string {
-    const line = [d.street_num, d.street1].filter(Boolean).join(' ');
-    const tail = [d.city, d.state, d.zip].filter(Boolean).join(', ');
-    return [line, tail].filter(Boolean).join(', ') || 'Address unavailable';
-  }
-
-  private dayWindow(now: Date): { from: Date; to: Date } {
-    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const to = new Date(from.getTime() + MS_PER_DAY);
-    return { from, to };
-  }
-
-  private rangeToDates(input: FieldReportRangeType): { from: Date; to: Date } {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    switch (input.range) {
-      case 'today':
-        return { from: startOfToday, to: new Date(startOfToday.getTime() + MS_PER_DAY) };
-      case 'yesterday':
-        return { from: new Date(startOfToday.getTime() - MS_PER_DAY), to: startOfToday };
-      case 'week':
-        return {
-          from: new Date(startOfToday.getTime() - 6 * MS_PER_DAY),
-          to: new Date(startOfToday.getTime() + MS_PER_DAY),
-        };
-      case 'month':
-        return {
-          from: new Date(now.getFullYear(), now.getMonth(), 1),
-          to: new Date(startOfToday.getTime() + MS_PER_DAY),
-        };
-      case 'campaign':
-        return { from: new Date(0), to: new Date(startOfToday.getTime() + MS_PER_DAY) };
-      case 'custom': {
-        const from = input.from ? new Date(input.from) : new Date(0);
-        const to = input.to ? new Date(input.to) : new Date(startOfToday.getTime() + MS_PER_DAY);
-        return { from, to };
-      }
-      default: {
-        const _exhaustive: never = input.range;
-        return { from: _exhaustive, to: now };
-      }
-    }
+    return rows.map((r) => String(r.household_id));
   }
 }
+```
+
+## File: apps/backend/src/app/modules/canvassing/routes/canvass-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
+
+import { CompanionResultsObj, LogKnockObj } from '../../../../../../../libs/common/src';
+import { CanvassingController } from '../controller';
 
 /**
- * Convex hull (Andrew's monotone chain) of a set of lat/lng points — the honest
- * outer boundary of a turf's doors, used for the dashed coverage outline. Runs in
- * O(n log n); returns the input unchanged when there are fewer than three points.
+ * Public Canvass Companion API (§13.4 / COMPANION-APPS-PLAN.md §5 B3) — the
+ * volunteer-facing surface behind the companion access layer.
+ *
+ * Two credentials on every data request: the assignment TOKEN (in the path)
+ * scopes WHAT may be touched — one turf, its doors, nothing else — and the
+ * X-Companion-Session header proves WHO is touching it (a verified, admin-
+ * approved device; see modules/companion-access). The token resolves the
+ * tenant, exactly like the tokenised-access model of the public form pages;
+ * every read/write is then scoped to the resolved tenant + turf inside the
+ * controller.
  */
-function convexHull(points: LatLng[]): LatLng[] {
-  if (points.length < MIN_HULL_POINTS) return points;
-  const pts = [...points].sort((a, b) => a.lng - b.lng || a.lat - b.lat);
-  const cross = (o: LatLng, a: LatLng, b: LatLng): number =>
-    (a.lng - o.lng) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lng - o.lng);
 
-  // One monotone-chain half; the caller feeds the points forwards then reversed.
-  const half = (seq: LatLng[]): LatLng[] => {
-    const acc: LatLng[] = [];
-    for (const p of seq) {
-      let a = acc[acc.length - 2];
-      let b = acc[acc.length - 1];
-      while (a && b && cross(a, b, p) <= 0) {
-        acc.pop();
-        a = acc[acc.length - 2];
-        b = acc[acc.length - 1];
-      }
-      acc.push(p);
-    }
-    acc.pop(); // drop the shared endpoint
-    return acc;
-  };
+const controller = new CanvassingController();
 
-  return half(pts).concat(half([...pts].reverse()));
+// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 120;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_MAX;
 }
+
+/** Narrow an unknown thrown value to an HTTP status without leaking internals. */
+function statusOf(err: unknown): number {
+  if (err && typeof err === 'object') {
+    const candidate =
+      (err as { status?: unknown; statusCode?: unknown }).status ??
+      (err as { status?: unknown; statusCode?: unknown }).statusCode;
+    if (typeof candidate === 'number') return candidate;
+  }
+  return 500;
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
+const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // The full spec-§3 turf payload for a verified companion device.
+  fastify.get('/t/:token', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    try {
+      const turf = await controller.getCompanionTurf(String(token), sessionTokenOf(req));
+      return reply.status(200).send(turf);
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to load this turf.') });
+    }
+  });
+
+  // Batched, idempotent results sync — the offline queue drains through here.
+  fastify.post('/t/:token/results', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionResultsObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid results payload.' });
+    try {
+      const result = await controller.postCompanionResults(String(token), sessionTokenOf(req), parsed.data.ops);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record these results.') });
+    }
+  });
+
+  // Legacy single-knock endpoint (pre-companion-app). Still validated and
+  // idempotent; the new app syncs through /t/:token/results.
+  fastify.post('/knock', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = LogKnockObj.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid knock payload.' });
+    }
+    try {
+      const result = await controller.logKnock(parsed.data);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record this knock.') });
+    }
+  });
+
+  done();
+};
+
+export default canvassPublicRoute;
+```
+
+## File: apps/backend/src/app/modules/canvassing/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+
+import {
+  AddTurfObj,
+  AssignTurfObj,
+  CutTurfsObj,
+  FieldReportRangeObj,
+  UpdateCompanionSettingsObj,
+  UpdateTurfObj,
+  idSchema,
+} from '../../../../../../libs/common/src';
+
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
+import { CanvassingController } from './controller';
+
+const controller = new CanvassingController();
+
+export const CanvassingRouter = router({
+  // Turfs & assignments page.
+  getTurfs: authProcedure.query(({ ctx }) => controller.getTurfs(ctx.auth)),
+  getFieldSummary: authProcedure.query(({ ctx }) => controller.getFieldSummary(ctx.auth)),
+  getInFieldToday: authProcedure.query(({ ctx }) => controller.getInFieldToday(ctx.auth)),
+
+  // Cut new turfs.
+  previewCut: authProcedure.input(CutTurfsObj).query(({ ctx, input }) => controller.previewCut(ctx.auth, input)),
+  cutTurfs: authProcedure.input(CutTurfsObj).mutation(({ ctx, input }) => controller.cutTurfs(ctx.auth, input)),
+  refreshFromList: authProcedure
+    .input(idSchema)
+    .mutation(({ ctx, input }) => controller.refreshFromList(ctx.auth, input)),
+
+  // Turf CRUD + lifecycle.
+  addTurf: authProcedure.input(AddTurfObj).mutation(({ ctx, input }) => controller.addTurf(ctx.auth, input)),
+  updateTurf: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTurfObj }))
+    .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
+  assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
+  retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
+
+  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
+  getCompanionSettings: authProcedure
+    .input(z.object({ campaign_id: idSchema.optional() }).optional())
+    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
+  updateCompanionSettings: adminOrOwnerProcedure
+    .input(UpdateCompanionSettingsObj)
+    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
+
+  // Field report.
+  getFieldReport: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.getFieldReport(ctx.auth, input)),
+  exportFieldReport: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.exportFieldReportCsv(ctx.auth, input)),
+  getCoverage: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
+});
 ```
 
 ## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
@@ -35499,9 +34234,11 @@ function rateLimited(ip: string): boolean {
 }
 
 function statusOf(err: unknown): number {
-  if (err && typeof err === 'object' && 'statusCode' in err) {
-    const code = (err as { statusCode?: unknown }).statusCode;
-    if (typeof code === 'number') return code;
+  if (err && typeof err === 'object') {
+    const candidate =
+      (err as { status?: unknown; statusCode?: unknown }).status ??
+      (err as { status?: unknown; statusCode?: unknown }).statusCode;
+    if (typeof candidate === 'number') return candidate;
   }
   return 500;
 }
@@ -38475,109 +37212,978 @@ export const DemoRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
+## File: apps/backend/src/app/modules/donations/controller.ts
 
 ```typescript
+import crypto from 'crypto';
+import Stripe from 'stripe';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { DonationsRepo } from './repositories/donations.repo';
+import { DonationPeriodsRepo } from './repositories/periods.repo';
+import { DonationPledgesRepo } from './repositories/pledges.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { hashToken } from '../../lib/token-hash';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
 import type { Selectable } from 'kysely';
+import { logger } from '../../logger';
 
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
+// The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
+// shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
+// API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
+const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
 
-export class DonationsRepo extends BaseRepository<'donations'> {
+export class DonationsController extends BaseController<'donations', DonationsRepo> {
+  private settingsRepo = new SettingsRepo();
+  private periodsRepo = new DonationPeriodsRepo();
+  private pledgesRepo = new DonationPledgesRepo();
+  private campaignsRepo = new CampaignsRepo();
+
   constructor() {
-    super('donations');
+    super(new DonationsRepo());
   }
 
-  /**
-   * Get the cumulative sum of successful donations for a person in a given year.
-   * Amounts are represented in cents.
-   */
-  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
-    const startOfYear = new Date(year, 0, 1);
-    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+  /** Whether a webhook token has been generated for this tenant. The token itself is never
+   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
+  public async getWebhookTokenStatus(tenantId: string): Promise<{ configured: boolean }> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key: WEBHOOK_TOKEN_KEY });
+    return { configured: !!row?.value };
+  }
 
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+  /** Generate a new webhook token, persist ONLY its hash, and return the plaintext once so the
+   * caller can show the user the webhook URL to paste into Stripe. Any previous token is invalidated. */
+  public async regenerateWebhookToken(tenantId: string, userId: string): Promise<{ token: string }> {
+    const token = 'wt_' + crypto.randomBytes(24).toString('hex');
+    // upsertMany JSON.stringifies the value, so the stored column becomes JSON.stringify(hash) —
+    // exactly what the webhook route below looks up by.
+    await this.settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [{ key: WEBHOOK_TOKEN_KEY, value: hashToken(token) }],
+    });
+    return { token };
+  }
+
+  public async getPersonDonationsList(tenantId: string, personId: string) {
+    return this.getRepo().getPersonDonationsList(tenantId, personId);
+  }
+
+  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
+    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
+  }
+
+  public async getTenantDonationsList(tenantId: string) {
+    return this.getRepo().getTenantDonationsList(tenantId);
+  }
+
+  // ── Donation Periods ────────────────────────────────────────────────────────
+
+  public async getDonationPeriods(tenantId: string) {
+    return this.periodsRepo.getAllForTenant(tenantId);
+  }
+
+  public async createDonationPeriod(
+    tenantId: string,
+    userId: string,
+    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number; campaign_id?: string },
+  ) {
+    // Contribution-limit windows are per campaign (§15).
+    const campaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: payload.campaign_id,
+    });
+    return this.periodsRepo.db
+      .insertInto('donation_periods')
+      .values({
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: payload.name,
+        start_date: payload.start_date,
+        end_date: payload.end_date ? (payload.end_date as any) : null,
+        limit_amount: payload.limit_amount,
+        is_active: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async updateDonationPeriod(
+    tenantId: string,
+    userId: string,
+    id: string,
+    payload: {
+      name?: string;
+      start_date?: string;
+      end_date?: string | null;
+      limit_amount?: number;
+      is_active?: boolean;
+    },
+  ) {
+    const set: any = { updatedby_id: userId, updated_at: new Date() };
+    if (payload.name !== undefined) set.name = payload.name;
+    if (payload.start_date !== undefined) set.start_date = payload.start_date;
+    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
+    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
+    if (payload.is_active !== undefined) set.is_active = payload.is_active;
+
+    return this.periodsRepo.db
+      .updateTable('donation_periods')
+      .set(set)
+      .where('id', '=', id)
       .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .where('status', '=', 'succeeded')
-      .where('created_at', '>=', startOfYear)
-      .where('created_at', '<=', endOfYear)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async deleteDonationPeriod(tenantId: string, id: string) {
+    await this.periodsRepo.db
+      .deleteFrom('donation_periods')
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  // ── Pledges ─────────────────────────────────────────────────────────────────
+
+  public async getTenantPledgesList(tenantId: string) {
+    return this.pledgesRepo.getAllForTenant(tenantId);
+  }
+
+  public async getPersonPledges(tenantId: string, personId: string) {
+    return this.pledgesRepo.getForPerson(tenantId, personId);
+  }
+
+  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
+    const pledge = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
-    return Number(result?.total || 0);
-  }
-
-  /**
-   * Get the cumulative sum of successful donations for a person within an explicit date range.
-   * Used when a donation_period has been configured.
-   */
-  public async getPersonCumulativeDonationsForPeriod(
-    tenantId: string,
-    personId: string,
-    startDate: Date,
-    endDate: Date | null,
-  ): Promise<number> {
-    let query = this.getSelect()
-      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
-      .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .where('status', '=', 'succeeded')
-      .where('created_at', '>=', startDate);
-
-    if (endDate) {
-      const endOfDay = new Date(endDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      query = query.where('created_at', '<=', endOfDay);
+    if (!pledge) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
     }
 
-    const result = await query.executeTakeFirst();
-    return Number(result?.total || 0);
+    // Cancel in Stripe if there's a real subscription
+    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
+      const tenantStripeKey =
+        (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+      if (tenantStripeKey) {
+        const stripe = new Stripe(tenantStripeKey);
+        try {
+          await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
+        } catch (err) {
+          logger.error({ err }, 'Stripe subscription cancel failed');
+        }
+      }
+    }
+
+    return this.pledgesRepo.db
+      .updateTable('donation_pledges')
+      .set({
+        status: 'cancelled',
+        cancelled_at: new Date(),
+        updatedby_id: userId,
+        updated_at: new Date(),
+      })
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private async getSettingVal(tenantId: string, key: string): Promise<any> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
+    return row?.value;
+  }
+
+  public calculateTaxCredit(
+    amountCents: number,
+    cumulativeBeforeCents: number,
+    tiers: Array<{ limit: number; rate: number }>,
+  ): number {
+    if (!tiers || tiers.length === 0) return 0;
+
+    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
+    let creditCents = 0;
+    let remainingAmount = amountCents;
+    let currentCumulative = cumulativeBeforeCents;
+
+    for (const tier of sortedTiers) {
+      const tierLimitCents = tier.limit * 100;
+
+      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
+        const availableInTier = tierLimitCents - currentCumulative;
+        const amountInTier = Math.min(remainingAmount, availableInTier);
+
+        creditCents += amountInTier * tier.rate;
+        remainingAmount -= amountInTier;
+        currentCumulative += amountInTier;
+      }
+    }
+
+    return Math.round(creditCents);
   }
 
   /**
-   * Retrieve the list of donations for a given person, ordered by date descending.
+   * Resolve the active limit window for the tenant.
+   * Returns { limitCents, cumulative } using the donation_period if one is active,
+   * or falling back to the legacy calendar-year setting.
    */
-  public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
-    return this.getSelect()
+  private async resolveLimitWindow(
+    tenantId: string,
+    personId: string,
+  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
+
+    if (activePeriod) {
+      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
+        tenantId,
+        personId,
+        new Date(activePeriod.start_date),
+        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
+      );
+      return {
+        limitCents: Number(activePeriod.limit_amount),
+        cumulative,
+        periodName: activePeriod.name,
+      };
+    }
+
+    // Fallback: calendar year + legacy settings
+    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
+    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
+    const currentYear = new Date().getFullYear();
+    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
+    return { limitCents: limitSetting * 100, cumulative, periodName: null };
+  }
+
+  /**
+   * Perform eligibility checks based on limit and residency restrictions.
+   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
+   * the total commitment against the period limit.
+   */
+  public async checkEligibility(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    options?: { isRecurring?: boolean; remainingMonths?: number },
+  ) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+
+    // For recurring: check total commitment (monthly × remaining months) against limit
+    const effectiveAmount =
+      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
+
+    if (cumulative + effectiveAmount > limitCents) {
+      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
+      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
+      const limitLabel = limitCents / 100;
+      return {
+        eligible: false,
+        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
+      };
+    }
+
+    // Residency check
+    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
+    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
+    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
+
+    if (restrictResidency) {
+      const country = (address.country || '').trim().toUpperCase();
+      const state = (address.state || '').trim().toUpperCase();
+
+      if (allowedCountries) {
+        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
+        if (!country || !countriesList.includes(country)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
+          };
+        }
+      }
+
+      if (allowedRegions) {
+        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
+        if (!state || !regionsList.includes(state)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
+          };
+        }
+      }
+    }
+
+    return { eligible: true };
+  }
+
+  /**
+   * Get donation stats for a person relative to the active limit window.
+   */
+  public async getDonationStats(tenantId: string, personId: string) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+    return {
+      cumulativeAmount: cumulative / 100,
+      limitAmount: limitCents / 100,
+      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
+      periodName,
+    };
+  }
+
+  // ── One-time Checkout ────────────────────────────────────────────────────────
+
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ) {
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
+    if (!eligibility.eligible) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+    }
+
+    const tenantStripeKey =
+      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+
+    if (isMock) {
+      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
+      let redirectBase = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+
+      if (customUrls?.successUrl) {
+        const separator = redirectBase.includes('?') ? '&' : '?';
+        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
+      }
+
+      return { url: redirectBase };
+    }
+
+    const stripe = new Stripe(tenantStripeKey);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cad',
+            product_data: { name: 'Campaign Donation' },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      metadata: {
+        tenantId: auth.tenant_id,
+        personId,
+        amount: String(amountCents),
+        residencyProvince: address.state || '',
+        residencyCountry: address.country || '',
+        createdBy: auth.user_id,
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  // ── Recurring Subscription Checkout ─────────────────────────────────────────
+
+  /**
+   * Calculate remaining months in the active donation period from today.
+   * Returns null if the period is open-ended.
+   */
+  private getRemainingMonths(endDate: Date | null): number | null {
+    if (!endDate) return null;
+    const now = new Date();
+    const diffMs = endDate.getTime() - now.getTime();
+    if (diffMs <= 0) return 0;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
+  }
+
+  public async createRecurringCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    monthlyAmountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ) {
+    // Determine remaining months for limit enforcement
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
+    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
+
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
+      isRecurring: true,
+      remainingMonths: remainingMonths ?? 12,
+    });
+    if (!eligibility.eligible) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+    }
+
+    const tenantStripeKey =
+      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+
+    if (isMock) {
+      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
+      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
+
+      let successUrl = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
+
+      if (customUrls?.successUrl) {
+        const sep = successUrl.includes('?') ? '&' : '?';
+        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
+      }
+
+      return { url: successUrl, mock: true };
+    }
+
+    const stripe = new Stripe(tenantStripeKey);
+
+    // Create a one-off price for this amount (monthly)
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cad',
+            product_data: { name: 'Monthly Campaign Donation' },
+            unit_amount: monthlyAmountCents,
+            recurring: { interval: 'month' },
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      subscription_data: {
+        metadata: {
+          tenantId: auth.tenant_id,
+          personId,
+          monthlyAmount: String(monthlyAmountCents),
+          residencyProvince: address.state || '',
+          residencyCountry: address.country || '',
+          createdBy: auth.user_id,
+        },
+      },
+      metadata: {
+        tenantId: auth.tenant_id,
+        personId,
+        monthlyAmount: String(monthlyAmountCents),
+        residencyProvince: address.state || '',
+        residencyCountry: address.country || '',
+        createdBy: auth.user_id,
+        isRecurring: 'true',
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  // ── Confirm Flows ────────────────────────────────────────────────────────────
+
+  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
       .selectAll()
       .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .orderBy('created_at', 'desc')
-      .execute();
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
+
+    if (existing) {
+      return { success: true, donation: existing };
+    }
+
+    if (sessionId.startsWith('cs_mock_')) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
+      });
+    }
+
+    const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    if (!tenantStripeKey) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stripe is not configured for this tenant.' });
+    }
+    const stripe = new Stripe(tenantStripeKey);
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== 'paid') {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
+    }
+
+    const personId = String(session.metadata?.['personId']);
+    const amountCents = Number(session.metadata?.['amount']);
+    const province = String(session.metadata?.['residencyProvince'] || '');
+    const country = String(session.metadata?.['residencyCountry'] || '');
+
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
+  }
+
+  public async confirmMockDonation(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string,
+    province: string,
+    country: string,
+  ) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
+
+    if (existing) {
+      return { success: true, donation: existing };
+    }
+
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
   }
 
   /**
-   * Retrieve all donations for a tenant, joined with live donor details, ordered by date descending.
-   * Uses a LEFT JOIN so donations whose contact was later deleted (person_id = NULL) are still returned.
-   * The snapshot columns (first_name / last_name / email) recorded on the donation row serve as the
-   * fallback when the linked person has since been deleted.
+   * Confirm a mock recurring pledge from the frontend (no real Stripe).
    */
-  public async getTenantDonationsList(tenantId: string) {
-    return this.db
-      .selectFrom('donations')
-      .leftJoin('persons', 'persons.id', 'donations.person_id')
-      .select([
-        'donations.id',
-        'donations.tenant_id',
-        'donations.person_id',
-        'donations.amount',
-        'donations.status',
-        'donations.stripe_session_id',
-        'donations.method',
-        'donations.receipt_sent',
-        'donations.state',
-        'donations.country',
-        'donations.created_at',
-        this.db.fn.coalesce('persons.first_name', 'donations.first_name').as('person_first_name'),
-        this.db.fn.coalesce('persons.last_name', 'donations.last_name').as('person_last_name'),
-        this.db.fn.coalesce('persons.email', 'donations.email').as('person_email'),
-      ])
-      .where('donations.tenant_id', '=', tenantId)
-      .orderBy('donations.created_at', 'desc')
-      .execute();
+  public async confirmMockPledge(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    mockSubId: string,
+    province: string,
+    country: string,
+  ) {
+    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
+  }
+
+  // ── Internal Write Helpers ───────────────────────────────────────────────────
+
+  public async recordNewPledge(
+    tenantId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    stripeSubscriptionId: string,
+    stripeCustomerId: string | null,
+    province: string,
+    country: string,
+    userId: string,
+    campaignId?: string,
+  ): Promise<Selectable<Models['donation_pledges']>> {
+    const existing = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('stripe_subscription_id', '=', stripeSubscriptionId)
+      .executeTakeFirst();
+
+    if (existing) return existing;
+
+    // Which fund the pledge belongs to (§15); Stripe-path pledges without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+    });
+
+    const person = await this.pledgesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
+      const inserted = (await trx
+        .insertInto('donation_pledges')
+        .values({
+          tenant_id: tenantId,
+          campaign_id: resolvedCampaignId,
+          person_id: personId,
+          stripe_subscription_id: stripeSubscriptionId,
+          stripe_customer_id: stripeCustomerId,
+          monthly_amount: monthlyAmountCents,
+          status: 'active',
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
+          state: province || null,
+          country: country || null,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
+
+      // "Donor" is derived from donations/pledges data (§15) — no tag to maintain.
+
+      await trx
+        .insertInto('user_activity')
+        .values({
+          tenant_id: tenantId,
+          user_id: userId,
+          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
+          entity: 'persons',
+          entity_id: personId,
+          quantity: 1,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+
+      return inserted;
+    });
+
+    return pledge;
+  }
+
+  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
+   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
+   * wiring with the Stripe path so offline and online gifts show up identically on the person's
+   * Donations tab and Activity log. */
+  public async recordManualDonation(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer',
+    campaignId?: string,
+  ): Promise<Selectable<Models['donations']>> {
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['id'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!person) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift — receipts need a name.' });
+    }
+
+    return this.recordSuccessfulDonation(
+      auth.tenant_id,
+      personId,
+      amountCents,
+      null,
+      '',
+      '',
+      auth.user_id,
+      undefined,
+      method,
+      campaignId,
+    );
+  }
+
+  public async recordSuccessfulDonation(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string | null,
+    province: string,
+    country: string,
+    userId: string,
+    pledgeId?: string,
+    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
+    campaignId?: string,
+  ): Promise<Selectable<Models['donations']>> {
+    // Which fund the gift belongs to (§15); Stripe-path gifts without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+    });
+
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    const record = await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const inserted = (await trx
+          .insertInto('donations')
+          .values({
+            tenant_id: tenantId,
+            campaign_id: resolvedCampaignId,
+            person_id: personId,
+            first_name: person?.first_name ?? null,
+            last_name: person?.last_name ?? null,
+            email: person?.email ?? null,
+            amount: amountCents,
+            status: 'succeeded',
+            stripe_session_id: sessionId,
+            state: province || null,
+            country: country || null,
+            pledge_id: pledgeId ? pledgeId : null,
+            method,
+            receipt_sent: true,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
+
+        // "Donor" is derived from donations data (§15) — no tag to maintain.
+
+        try {
+          await trx
+            .insertInto('user_activity')
+            .values({
+              tenant_id: tenantId,
+              user_id: userId,
+              activity: `Collected a donation of $${amountCents / 100}`,
+              entity: 'persons',
+              entity_id: personId,
+              quantity: 1,
+              createdby_id: userId,
+              updatedby_id: userId,
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to write audit activity log for donation');
+        }
+
+        return inserted;
+      });
+
+    try {
+      const workflowsController = new WorkflowsController();
+      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
+    } catch (workflowErr) {
+      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_received');
+    }
+
+    return record;
   }
 }
+```
+
+## File: apps/backend/src/app/modules/donations/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { DonationsController } from './controller';
+
+const controller = new DonationsController();
+
+export const DonationsRouter = router({
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
+
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
+   * not run through the public Stripe checkout. */
+  recordDonation: authProcedure
+    .input(RecordDonationObj)
+    .mutation(({ ctx, input }) =>
+      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
+    ),
+
+  getPersonDonationHistory: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
+
+  getDonationStats: authProcedure
+    .input(z.string())
+    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
+
+  checkEligibility: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+        isRecurring: z.boolean().optional(),
+        remainingMonths: z.number().optional(),
+      }),
+    )
+    .query(({ ctx, input }) =>
+      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
+        isRecurring: input.isRecurring,
+        remainingMonths: input.remainingMonths,
+      }),
+    ),
+
+  createCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
+
+  confirmDonation: authProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
+
+  confirmMockDonation: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        sessionId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockDonation(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.amountCents,
+        input.sessionId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  createRecurringCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
+    ),
+
+  confirmMockPledge: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        mockSubId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockPledge(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.monthlyAmountCents,
+        input.mockSubId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
+
+  getPersonPledges: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
+
+  cancelPledge: authProcedure
+    .input(z.object({ pledgeId: z.string() }))
+    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
+
+  createDonationPeriod: authProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        start_date: z.string(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive(),
+        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
+        campaign_id: z.string().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
+
+  updateDonationPeriod: authProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive().optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { id, ...payload } = input;
+      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
+    }),
+
+  deleteDonationPeriod: authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
+
+  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
+
+  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
+
+  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
+    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
+  ),
+});
 ```
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-drafts.repo.ts
@@ -50230,6 +49836,1973 @@ export const env = {
 };
 ```
 
+## File: apps/companion/src/app/canvass/canvass-derive.ts
+
+```typescript
+import type {
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionOpType,
+  CompanionPerson,
+  CompanionSurveyPrefill,
+  KnockResponse,
+} from '@common';
+
+/**
+ * Pure derivations over the Companion turf payload (spec §3 "derived, never
+ * stored"). No Angular here — every door status, progress number, and Me-tab
+ * stat is recomputed from the households array (server payload + the local
+ * optimistic ops replayed on top by `applyLocalOps`), so the UI can never
+ * disagree with the data it was derived from.
+ */
+
+// ---------------------------------------------------------------------------
+// Door status
+// ---------------------------------------------------------------------------
+
+export type DoorStatus = 'dnc' | `outcome:${CompanionDoorOutcome}` | 'canvassed' | 'in_progress' | 'not_visited';
+
+/**
+ * The one derivation the whole walk list hangs off. Precedence: DNC beats
+ * everything (skip the door — it still counts), then an explicit door outcome,
+ * then survey completion.
+ */
+export function doorStatus(h: CompanionHousehold): DoorStatus {
+  if (h.dnc) return 'dnc';
+  if (h.door_outcome != null) return `outcome:${h.door_outcome}`;
+  const resulted = h.people.filter((p) => p.result != null).length;
+  if (h.hh_survey != null || (h.people.length > 0 && resulted === h.people.length)) return 'canvassed';
+  if (resulted > 0) return 'in_progress';
+  return 'not_visited';
+}
+
+/** Sentence-case chip label for a derived door status. */
+export function doorStatusLabel(status: DoorStatus): string {
+  switch (status) {
+    case 'dnc':
+      return 'Do not contact';
+    case 'outcome:no_answer':
+      return 'No answer';
+    case 'outcome:inaccessible':
+      return 'Inaccessible';
+    case 'outcome:refused':
+      return 'Refused';
+    case 'canvassed':
+      return 'Canvassed';
+    case 'in_progress':
+      return 'In progress';
+    case 'not_visited':
+      return 'Not visited';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * A door counts toward progress once it is resolved: canvassed, marked with a
+ * door outcome, or DNC ("DNC doors still count toward your turf" — spec §3.4).
+ * In-progress doors are not yet attempted.
+ */
+export function isAttempted(h: CompanionHousehold): boolean {
+  const status = doorStatus(h);
+  return status !== 'not_visited' && status !== 'in_progress';
+}
+
+/** The next open door: lowest walk_order not yet attempted. */
+export function nextDoor(households: readonly CompanionHousehold[]): CompanionHousehold | null {
+  let next: CompanionHousehold | null = null;
+  for (const h of households) {
+    if (isAttempted(h)) continue;
+    if (next == null || h.walk_order < next.walk_order) next = h;
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Conversations + consensus
+// ---------------------------------------------------------------------------
+
+/** Completed surveys: people surveyed ('canvassed') plus household-level surveys. */
+export function conversations(households: readonly CompanionHousehold[]): number {
+  let count = 0;
+  for (const h of households) {
+    if (h.hh_survey != null) count += 1;
+    count += h.people.filter((p) => p.result === 'canvassed').length;
+  }
+  return count;
+}
+
+/**
+ * The door's surveyed stance. Every survey at the door (each surveyed person
+ * plus the anonymous household survey) casts a voice; all agree → that level,
+ * any disagreement → 'mixed', no stance recorded → null.
+ */
+export function supportConsensus(h: CompanionHousehold): KnockResponse | 'mixed' | null {
+  const voices: KnockResponse[] = [];
+  for (const p of h.people) {
+    if (p.survey?.support != null) voices.push(p.survey.support);
+  }
+  if (h.hh_survey?.support != null) voices.push(h.hh_survey.support);
+  const first = voices[0];
+  if (first === undefined) return null;
+  return voices.every((v) => v === first) ? first : 'mixed';
+}
+
+// ---------------------------------------------------------------------------
+// Me-tab stats
+// ---------------------------------------------------------------------------
+
+export interface IssueCount {
+  issue: string;
+  count: number;
+}
+
+export interface MeStats {
+  doors_attempted: number;
+  doors_total: number;
+  conversations: number;
+  /** Surveys (person or household) recorded with support = 'supporter'. */
+  supporters: number;
+  /** Doors with at least one conversation ÷ doors attempted, as a 0–100 integer. */
+  contact_rate: number;
+  /** Issues ranked by mentions across all surveys; count desc, then A–Z. */
+  top_issues: IssueCount[];
+}
+
+export function meStats(households: readonly CompanionHousehold[]): MeStats {
+  let attempted = 0;
+  let supporters = 0;
+  let doorsWithConversation = 0;
+  const issueCounts = new Map<string, number>();
+
+  const tally = (survey: CompanionSurveyPrefill | null): void => {
+    if (survey == null) return;
+    if (survey.support === 'supporter') supporters += 1;
+    for (const issue of survey.issues) issueCounts.set(issue, (issueCounts.get(issue) ?? 0) + 1);
+  };
+
+  for (const h of households) {
+    if (isAttempted(h)) attempted += 1;
+    const talked = h.hh_survey != null || h.people.some((p) => p.result === 'canvassed');
+    if (talked) doorsWithConversation += 1;
+    tally(h.hh_survey);
+    for (const p of h.people) tally(p.survey);
+  }
+
+  const top_issues = [...issueCounts.entries()]
+    .map(([issue, count]): IssueCount => ({ issue, count }))
+    .sort((a, b) => b.count - a.count || a.issue.localeCompare(b.issue));
+
+  return {
+    doors_attempted: attempted,
+    doors_total: households.length,
+    conversations: conversations(households),
+    supporters,
+    contact_rate: attempted > 0 ? Math.round((doorsWithConversation / attempted) * 100) : 0,
+    top_issues,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Local optimistic overlay — replay queued/acked ops over the server payload
+// ---------------------------------------------------------------------------
+
+/**
+ * One locally-recorded op. `temp_person_id` exists only for `person_create`:
+ * the placeholder id the UI shows until the server ack supplies the real one.
+ */
+export interface LocalOp {
+  op: CompanionOpType;
+  temp_person_id?: string;
+}
+
+/** Client-side placeholder ids for people added at the door, pre-ack. */
+export function isTempPersonId(id: string): boolean {
+  return id.startsWith('tmp-');
+}
+
+/** The person id an op targets, if the op type carries one. */
+export function opPersonId(op: CompanionOpType): string | null {
+  switch (op.type) {
+    case 'survey':
+      return op.payload.person_id == null ? null : String(op.payload.person_id);
+    case 'person_result':
+      return String(op.payload.person_id);
+    case 'door_outcome':
+    case 'clear_outcome':
+    case 'person_create':
+      return null;
+    default: {
+      const _exhaustive: never = op;
+      return _exhaustive;
+    }
+  }
+}
+
+function toPrefill(payload: Extract<CompanionOpType, { type: 'survey' }>['payload']): CompanionSurveyPrefill {
+  return {
+    support: payload.support ?? null,
+    issues: [...payload.issues],
+    wants_volunteer: payload.wants_volunteer,
+    wants_yard_sign: payload.wants_yard_sign,
+    set_dnc: payload.set_dnc,
+    subscribe: payload.subscribe,
+  };
+}
+
+/**
+ * Replay local ops (queued + already-acked-this-session) over the server
+ * households, newest last so the latest action wins — the same "latest knock
+ * wins" rule the backend derives from. Pure and non-mutating.
+ */
+export function applyLocalOps(
+  households: readonly CompanionHousehold[],
+  ops: readonly LocalOp[],
+): CompanionHousehold[] {
+  const byId = new Map<string, CompanionHousehold>(
+    households.map((h) => [h.id, { ...h, people: h.people.map((p): CompanionPerson => ({ ...p })) }]),
+  );
+
+  for (const entry of ops) {
+    const op = entry.op;
+    const h = byId.get(String(op.payload.household_id));
+    if (!h) continue;
+    switch (op.type) {
+      case 'survey': {
+        const prefill = toPrefill(op.payload);
+        if (op.payload.person_id == null) {
+          h.hh_survey = prefill;
+        } else {
+          const person = h.people.find((p) => p.id === String(op.payload.person_id));
+          if (person) {
+            person.result = 'canvassed';
+            person.survey = prefill;
+          }
+        }
+        break;
+      }
+      case 'person_result': {
+        const person = h.people.find((p) => p.id === String(op.payload.person_id));
+        if (person) {
+          person.result = op.payload.result;
+          person.survey = null;
+        }
+        break;
+      }
+      case 'door_outcome':
+        h.door_outcome = op.payload.outcome;
+        break;
+      case 'clear_outcome':
+        h.door_outcome = null;
+        break;
+      case 'person_create': {
+        const id = entry.temp_person_id ?? `tmp-${op.op_id}`;
+        if (!h.people.some((p) => p.id === id)) {
+          h.people.push({ id, name: op.payload.name, dnc: false, result: null, survey: null });
+        }
+        break;
+      }
+      default: {
+        const _exhaustive: never = op;
+        void _exhaustive;
+      }
+    }
+  }
+
+  return households.map((h) => byId.get(h.id) ?? h);
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-household.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionDoorOutcome, CompanionHousehold, CompanionPerson } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { doorStatus, doorStatusLabel } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+import { initialsOf, personResultLabel, statusBadgeClass } from './canvass-ui';
+
+/**
+ * Household detail (spec §3.4): the doorstep screen. Person cards open the
+ * survey; the dashed "This household" card covers the no-name conversation;
+ * the bottom 3-up records door-level outcomes (tap the active one again to
+ * clear it). A DNC door blocks recording but still counts toward the turf.
+ */
+@Component({
+  selector: 'pc-canvass-household',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    @if (household(); as h) {
+      <div class="flex flex-1 flex-col gap-4 p-4">
+        <header class="flex items-start gap-2">
+          <button type="button" class="btn btn-ghost btn-circle" aria-label="Back to the walk list" (click)="back()">
+            <pc-icon name="chevron-left" [size]="5"></pc-icon>
+          </button>
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h1 class="text-lg font-bold">{{ h.address }}</h1>
+              <span [class]="chipClass(h)">{{ chipLabel(h) }}</span>
+            </div>
+            <p class="text-xs text-base-content/70">
+              Walk order {{ h.walk_order }} · {{ h.people.length }} {{ h.people.length === 1 ? 'person' : 'people' }} on
+              file
+            </p>
+          </div>
+        </header>
+
+        @if (h.dnc) {
+          <div
+            class="flex items-center gap-3 rounded-lg border border-error/30 bg-error/10 p-3 text-error"
+            role="alert"
+          >
+            <pc-icon name="shield-exclamation" [size]="5"></pc-icon>
+            <p class="text-sm font-medium">Skip this door — it still counts toward your turf.</p>
+          </div>
+        }
+
+        <!-- The anonymous household-level conversation. -->
+        <button
+          type="button"
+          class="w-full rounded-lg border p-4 text-left"
+          [class.border-dashed]="!h.hh_survey"
+          [class.border-primary]="!h.hh_survey"
+          [class.border-base-300]="!!h.hh_survey"
+          [class.bg-base-100]="!!h.hh_survey"
+          [class.opacity-50]="h.dnc"
+          [disabled]="h.dnc"
+          (click)="openSurvey(null)"
+        >
+          <span class="font-medium" [class.text-primary]="!h.hh_survey">This household</span>
+          @if (!h.hh_survey) {
+            <span class="mt-1 block text-xs text-base-content/70">No name? Log the conversation for the door.</span>
+          } @else {
+            <span class="mt-2 flex flex-wrap items-center gap-1.5">
+              <span class="badge badge-success">{{ hhSurveyLabel(h) }}</span>
+              @for (issue of h.hh_survey.issues; track issue) {
+                <span class="badge badge-ghost">{{ issue }}</span>
+              }
+              @for (chip of surveyChips(h.hh_survey); track chip.label) {
+                <span [class]="chip.cls">{{ chip.label }}</span>
+              }
+            </span>
+          }
+        </button>
+
+        <!-- People on file. -->
+        <div class="flex flex-col gap-2">
+          @for (p of h.people; track p.id) {
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 text-left"
+              [class.opacity-50]="h.dnc || p.dnc"
+              [disabled]="h.dnc || p.dnc"
+              (click)="openSurvey(p.id)"
+            >
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold text-base-content/80"
+              >
+                {{ initials(p.name) }}
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-medium">{{ p.name }}</span>
+                <span class="mt-1 flex flex-wrap items-center gap-1.5">
+                  @if (p.dnc) {
+                    <span class="badge badge-error">Do not contact</span>
+                  } @else if (p.result; as result) {
+                    <span [class]="resultChipClass(result)">{{ resultLabel(p) }}</span>
+                  } @else {
+                    <span class="text-xs font-medium text-primary">Tap to survey</span>
+                  }
+                  @if (p.survey; as survey) {
+                    @for (issue of survey.issues; track issue) {
+                      <span class="badge badge-ghost">{{ issue }}</span>
+                    }
+                    @for (chip of surveyChips(survey); track chip.label) {
+                      <span [class]="chip.cls">{{ chip.label }}</span>
+                    }
+                  }
+                </span>
+              </span>
+            </button>
+          }
+        </div>
+
+        @if (!h.dnc) {
+          <!-- Add someone met at the door — inline, no modal. -->
+          @if (!adding()) {
+            <button type="button" class="btn btn-outline btn-secondary w-full border-dashed" (click)="adding.set(true)">
+              + Add someone at this door
+            </button>
+          } @else {
+            <form class="flex gap-2" (submit)="addPerson($event)">
+              <input
+                class="input input-bordered min-h-11 flex-1"
+                type="text"
+                placeholder="Their name"
+                aria-label="Name of the person at this door"
+                [value]="newName()"
+                (input)="onNameInput($event)"
+              />
+              <button type="submit" class="btn btn-primary" [disabled]="!newName().trim()">
+                {{ newName().trim() ? 'Add' : 'Enter a name' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-circle" aria-label="Cancel adding" (click)="cancelAdd()">
+                <pc-icon name="x-mark" [size]="5"></pc-icon>
+              </button>
+            </form>
+          }
+
+          <!-- Door-level outcomes. -->
+          <div class="mt-auto flex flex-col gap-2 pt-2">
+            <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+              No answer at the door?
+            </p>
+            <div class="grid grid-cols-3 gap-2">
+              @for (option of outcomeOptions; track option.outcome) {
+                <button
+                  type="button"
+                  class="btn"
+                  [class.btn-warning]="h.door_outcome === option.outcome"
+                  [class.btn-outline]="h.door_outcome !== option.outcome"
+                  [class.btn-secondary]="h.door_outcome !== option.outcome"
+                  [attr.aria-pressed]="h.door_outcome === option.outcome"
+                  (click)="mark(option.outcome)"
+                >
+                  {{ option.label }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+        <p class="text-base-content/70">This door isn't in your turf anymore.</p>
+        <button type="button" class="btn btn-primary" (click)="back()">Back to the walk list</button>
+      </div>
+    }
+  `,
+})
+export class CanvassHousehold {
+  private readonly alerts = inject(AlertService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly adding = signal(false);
+  protected readonly newName = signal('');
+
+  protected readonly outcomeOptions: { outcome: CompanionDoorOutcome; label: string; toast: string }[] = [
+    { outcome: 'no_answer', label: 'Nobody home', toast: 'Marked "Not home"' },
+    { outcome: 'inaccessible', label: 'Inaccessible', toast: 'Marked "Inaccessible"' },
+    { outcome: 'refused', label: 'Refused', toast: 'Marked "Refused"' },
+  ];
+
+  protected readonly household = computed<CompanionHousehold | null>(() => {
+    const view = this.store.view();
+    return view.kind === 'household' ? this.store.householdById(view.household_id) : null;
+  });
+
+  protected addPerson(event: Event): void {
+    event.preventDefault();
+    const h = this.household();
+    const name = this.newName().trim();
+    if (!h || !name) return;
+    this.store.addPerson(h.id, name);
+    this.alerts.showSuccess('Added — will be created in PeopleCRM');
+    this.cancelAdd();
+  }
+
+  protected back(): void {
+    this.store.view.set({ kind: 'list' });
+  }
+
+  protected cancelAdd(): void {
+    this.adding.set(false);
+    this.newName.set('');
+  }
+
+  protected chipClass(h: CompanionHousehold): string {
+    return statusBadgeClass(doorStatus(h));
+  }
+
+  protected chipLabel(h: CompanionHousehold): string {
+    return doorStatusLabel(doorStatus(h));
+  }
+
+  protected hhSurveyLabel(h: CompanionHousehold): string {
+    return personResultLabel('canvassed', h.hh_survey?.support ?? null);
+  }
+
+  protected initials(name: string): string {
+    return initialsOf(name);
+  }
+
+  protected mark(outcome: CompanionDoorOutcome): void {
+    const h = this.household();
+    if (!h) return;
+    const result = this.store.doorOutcome(h.id, outcome);
+    if (result === 'set') {
+      const option = this.outcomeOptions.find((o) => o.outcome === outcome);
+      this.alerts.showSuccess(option?.toast ?? 'Marked');
+      this.back();
+    } else {
+      this.alerts.showSuccess('Cleared — door is back on your list');
+    }
+  }
+
+  protected onNameInput(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) this.newName.set(target.value);
+  }
+
+  protected openSurvey(personId: string | null): void {
+    const h = this.household();
+    if (!h || h.dnc) return;
+    this.store.view.set({ kind: 'survey', household_id: h.id, person_id: personId });
+  }
+
+  protected resultChipClass(result: CompanionPerson['result']): string {
+    if (result === 'canvassed') return 'badge badge-success';
+    if (result === 'refused') return 'badge badge-error';
+    return 'badge badge-warning';
+  }
+
+  protected resultLabel(p: CompanionPerson): string {
+    return p.result == null ? '' : personResultLabel(p.result, p.survey?.support ?? null);
+  }
+
+  /** Follow-up toggle chips shown on a surveyed card. */
+  protected surveyChips(survey: {
+    wants_volunteer: boolean;
+    wants_yard_sign: boolean;
+    set_dnc: boolean;
+    subscribe: boolean;
+  }): { label: string; cls: string }[] {
+    const chips: { label: string; cls: string }[] = [];
+    if (survey.wants_volunteer) chips.push({ label: 'Wants to volunteer', cls: 'badge badge-info badge-outline' });
+    if (survey.wants_yard_sign) chips.push({ label: 'Yard sign', cls: 'badge badge-info badge-outline' });
+    if (survey.subscribe) chips.push({ label: 'Subscribed', cls: 'badge badge-info badge-outline' });
+    if (survey.set_dnc) chips.push({ label: 'Do not contact', cls: 'badge badge-error' });
+    return chips;
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-landing.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+
+import { CanvassStore } from './canvass-store';
+import { firstNameOf } from './canvass-ui';
+
+/**
+ * Landing view (spec §3.3): who am I walking as, what am I assigned, and one
+ * primary action. The escape hatch below the fold covers the forwarded-link
+ * case the access layer can't ("this is Sam's link, not mine").
+ */
+@Component({
+  selector: 'pc-canvass-landing',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (store.payload(); as payload) {
+      <div class="flex flex-1 flex-col justify-center gap-6 p-6">
+        <header class="flex flex-col gap-2 text-center">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+            {{ payload.campaign_name }} · {{ payload.turf_name }}
+          </p>
+          <h1 class="text-2xl font-bold">You're assigned {{ payload.turf_name }}</h1>
+          <p class="text-base-content/70">
+            {{ store.stats().doors_total }} {{ store.stats().doors_total === 1 ? 'door' : 'doors' }} ·
+            {{ peopleCount() }} {{ peopleCount() === 1 ? 'person' : 'people' }}
+          </p>
+        </header>
+
+        <div class="rounded-lg border border-base-300 bg-base-200/50 p-4 text-center">
+          <p class="font-medium">Walking as {{ payload.canvasser_name }}</p>
+          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to PeopleCRM.</p>
+        </div>
+
+        <button type="button" class="btn btn-primary w-full" (click)="start()">Start walking</button>
+
+        <p class="text-center text-xs text-base-content/60">
+          Not {{ firstName() }}? Ask your organizer to send you your own link.
+        </p>
+      </div>
+    }
+  `,
+})
+export class CanvassLanding {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly peopleCount = computed(() => this.store.households().reduce((sum, h) => sum + h.people.length, 0));
+
+  protected firstName(): string {
+    return firstNameOf(this.store.payload()?.canvasser_name ?? '');
+  }
+
+  protected start(): void {
+    this.store.view.set({ kind: 'list' });
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-list.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionHousehold } from '@common';
+
+import { conversations, doorStatus, doorStatusLabel, isAttempted } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+import { firstNameOf, statusBadgeClass } from './canvass-ui';
+
+type ListFilter = 'all' | 'remaining' | 'visited';
+
+/**
+ * The walk list (spec §3.3): progress first ("6 of 14 doors attempted"), then
+ * doors in walk order. The next open door — lowest walk order not attempted —
+ * gets the primary ring and a filled number bubble.
+ */
+@Component({
+  selector: 'pc-canvass-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.turf_name }}</h1>
+      </header>
+
+      <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="font-medium">{{ attempted() }} of {{ total() }} doors attempted</p>
+        <progress
+          class="progress progress-primary mt-2 w-full"
+          [value]="attempted()"
+          [max]="total()"
+          aria-label="Turf progress"
+        ></progress>
+        <p class="mt-1 text-xs text-base-content/70">
+          {{ conversationCount() }} {{ conversationCount() === 1 ? 'conversation' : 'conversations' }}
+        </p>
+      </div>
+
+      <div class="flex gap-2" role="group" aria-label="Filter doors">
+        @for (option of filterOptions; track option.id) {
+          <button
+            type="button"
+            class="btn flex-1"
+            [class.btn-primary]="filter() === option.id"
+            [class.btn-outline]="filter() !== option.id"
+            [class.btn-secondary]="filter() !== option.id"
+            [attr.aria-pressed]="filter() === option.id"
+            (click)="filter.set(option.id)"
+          >
+            {{ option.label }} ({{ countFor(option.id) }})
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        @for (h of filtered(); track h.id) {
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 text-left"
+            [class.ring-2]="h.id === store.nextDoorId()"
+            [class.ring-primary]="h.id === store.nextDoorId()"
+            (click)="open(h.id)"
+          >
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
+              [class.bg-primary]="h.id === store.nextDoorId()"
+              [class.text-primary-content]="h.id === store.nextDoorId()"
+              [class.border-primary]="h.id === store.nextDoorId()"
+              [class.border-base-300]="h.id !== store.nextDoorId()"
+              [class.text-base-content]="h.id !== store.nextDoorId()"
+            >
+              {{ h.walk_order }}
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-medium">{{ h.address }}</span>
+              @if (residentNames(h)) {
+                <span class="block truncate text-xs text-base-content/70">{{ residentNames(h) }}</span>
+              }
+            </span>
+            <span [class]="chipClass(h)">{{ chipLabel(h) }}</span>
+          </button>
+        } @empty {
+          <div class="flex flex-col items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-6 text-center">
+            <p class="text-base-content/70">{{ emptyMessage() }}</p>
+            @if (filter() !== 'all') {
+              <button type="button" class="btn btn-outline btn-secondary" (click)="filter.set('all')">
+                Show all doors
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  `,
+})
+export class CanvassList {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly filter = signal<ListFilter>('all');
+  protected readonly filterOptions: { id: ListFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'remaining', label: 'Remaining' },
+    { id: 'visited', label: 'Visited' },
+  ];
+
+  protected readonly attempted = computed(() => this.store.stats().doors_attempted);
+  protected readonly total = computed(() => this.store.stats().doors_total);
+  protected readonly conversationCount = computed(() => conversations(this.store.households()));
+
+  protected readonly filtered = computed<CompanionHousehold[]>(() => {
+    const households = [...this.store.households()].sort((a, b) => a.walk_order - b.walk_order);
+    const filter = this.filter();
+    switch (filter) {
+      case 'remaining':
+        return households.filter((h) => !isAttempted(h));
+      case 'visited':
+        return households.filter((h) => isAttempted(h));
+      case 'all':
+        return households;
+      default: {
+        const _exhaustive: never = filter;
+        return _exhaustive;
+      }
+    }
+  });
+
+  protected chipClass(h: CompanionHousehold): string {
+    return statusBadgeClass(doorStatus(h));
+  }
+
+  protected chipLabel(h: CompanionHousehold): string {
+    return doorStatusLabel(doorStatus(h));
+  }
+
+  protected countFor(filter: ListFilter): number {
+    const households = this.store.households();
+    if (filter === 'remaining') return households.filter((h) => !isAttempted(h)).length;
+    if (filter === 'visited') return households.filter((h) => isAttempted(h)).length;
+    return households.length;
+  }
+
+  protected emptyMessage(): string {
+    const filter = this.filter();
+    switch (filter) {
+      case 'remaining':
+        return 'Every door is attempted — nice work.';
+      case 'visited':
+        return 'No doors visited yet — start with door 1.';
+      case 'all':
+        return 'There are no doors in this turf yet.';
+      default: {
+        const _exhaustive: never = filter;
+        return _exhaustive;
+      }
+    }
+  }
+
+  protected open(householdId: string): void {
+    this.store.view.set({ kind: 'household', household_id: householdId });
+  }
+
+  protected residentNames(h: CompanionHousehold): string {
+    return h.people.map((p) => firstNameOf(p.name)).join(', ');
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-map.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+
+import type { CompanionHousehold } from '@common';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+
+import { doorStatus, supportConsensus } from './canvass-derive';
+import { CanvassStore } from './canvass-store';
+
+/**
+ * Map view (spec §3.3): every geocoded door as a pin colored by its derived
+ * state. `<pc-map>` degrades to an honest placeholder without a Maps key, so
+ * this view is safe everywhere. Pins carry "walk order · address" tooltips
+ * (the pc-map pin primitive has no in-pin number labels).
+ */
+@Component({
+  selector: 'pc-canvass-map',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [PcMap],
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.turf_name }} on the map</h1>
+      </header>
+
+      <div class="h-[55vh] overflow-hidden rounded-lg border border-base-300">
+        <pc-map [markers]="markers()" ariaLabel="Turf map" (markerClicked)="openMarker($event)"></pc-map>
+      </div>
+
+      @if (unmappedCount() > 0) {
+        <p class="text-xs text-base-content/60">{{ unmappedMessage() }}</p>
+      }
+
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg border border-base-300 bg-base-100 p-3">
+        @for (item of legend; track item.label) {
+          <div class="flex items-center gap-2 text-xs text-base-content/80">
+            <span class="h-3 w-3 shrink-0 rounded-full" [class]="item.dotClass"></span>
+            {{ item.label }}
+          </div>
+        }
+      </div>
+    </div>
+  `,
+})
+export class CanvassMap {
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly legend: { label: string; dotClass: string }[] = [
+    { label: 'Next door', dotClass: 'bg-primary' },
+    { label: 'Not visited or no answer', dotClass: 'bg-base-content/40' },
+    { label: 'Supporter', dotClass: 'bg-success' },
+    { label: 'Undecided or mixed', dotClass: 'bg-warning' },
+    { label: 'Refused or do not contact', dotClass: 'bg-error' },
+    { label: 'Canvassed — other', dotClass: 'bg-neutral' },
+  ];
+
+  protected readonly markers = computed<PcMapMarker[]>(() =>
+    this.store
+      .households()
+      .filter((h) => h.lat != null && h.lng != null)
+      .map(
+        (h): PcMapMarker => ({
+          // lat/lng narrowed by the filter above; ?? 0 keeps the types honest.
+          position: { lat: h.lat ?? 0, lng: h.lng ?? 0 },
+          id: h.id,
+          tooltip: `${h.walk_order} · ${h.address}`,
+          variant: this.variantFor(h),
+        }),
+      ),
+  );
+
+  protected readonly unmappedCount = computed(
+    () => this.store.households().filter((h) => h.lat == null || h.lng == null).length,
+  );
+
+  protected unmappedMessage(): string {
+    const count = this.unmappedCount();
+    return count === 1
+      ? `1 door isn't on the map yet — find it in the Turf list.`
+      : `${count} doors aren't on the map yet — find them in the Turf list.`;
+  }
+
+  protected openMarker(marker: PcMapMarker): void {
+    if (marker.id != null) this.store.view.set({ kind: 'household', household_id: marker.id });
+  }
+
+  private variantFor(h: CompanionHousehold): PcMapVariant {
+    if (h.id === this.store.nextDoorId()) return 'primary';
+    if (h.dnc) return 'error';
+    const status = doorStatus(h);
+    switch (status) {
+      case 'outcome:refused':
+        return 'error';
+      case 'outcome:no_answer':
+      case 'outcome:inaccessible':
+      case 'in_progress':
+      case 'not_visited':
+        return 'muted';
+      case 'canvassed': {
+        const consensus = supportConsensus(h);
+        if (consensus === 'supporter') return 'success';
+        if (consensus === 'undecided' || consensus === 'mixed') return 'warning';
+        if (consensus === 'non_supporter') return 'error';
+        return 'neutral';
+      }
+      case 'dnc':
+        return 'error';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-me.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+
+import { CanvassStore } from './canvass-store';
+
+const CLOCK_TICK_MS = 30_000;
+
+/**
+ * Me tab (spec §3.6): identity + provenance, today's derived stats, top
+ * issues heard, and the sync card (queue, work-offline, sync now). "End shift
+ * on this device" wipes every local trace behind the project confirm dialog.
+ */
+@Component({
+  selector: 'pc-canvass-me',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.canvasser_name }}</h1>
+      </header>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-xs text-base-content/70">
+          Signed in through your assignment link — your organizer can revoke it. No voter data stays in this browser
+          after your shift.
+        </p>
+        <button type="button" class="btn btn-outline btn-error w-full" (click)="endShift()">
+          End shift on this device
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Doors attempted</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().doors_attempted }} of {{ stats().doors_total }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Conversations</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().conversations }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Supporters ID'd</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().supporters }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Contact rate</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().contact_rate }}%</p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Top issues heard</p>
+        @if (stats().top_issues.length > 0) {
+          <ul class="mt-2 flex flex-col gap-1.5">
+            @for (item of topIssues(); track item.issue) {
+              <li class="flex items-center justify-between text-sm">
+                <span>{{ item.issue }}</span>
+                <span class="tabular-nums text-base-content/70">{{ item.count }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-2 text-xs text-base-content/60">
+            No issues recorded yet — they appear as you log conversations.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Sync</p>
+          <span [class]="syncChip().cls">{{ syncChip().label }}</span>
+        </div>
+        <p class="text-xs text-base-content/70">{{ lastSyncedLabel() }}</p>
+
+        @if (store.queue().length > 0) {
+          <div>
+            <p class="text-xs font-medium text-base-content/80">Waiting to sync</p>
+            <ul class="mt-1 flex flex-col gap-1">
+              @for (entry of store.queue(); track entry.op.op_id) {
+                <li class="truncate text-xs text-base-content/70">{{ entry.label }}</li>
+              }
+            </ul>
+          </div>
+        }
+
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Work offline
+            <span class="block text-xs text-base-content/60">Hold results on this phone until you sync</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="store.workOffline()"
+            (change)="onWorkOffline($event)"
+          />
+        </label>
+
+        <button
+          type="button"
+          class="btn btn-outline btn-secondary w-full"
+          [disabled]="store.queue().length === 0"
+          (click)="syncNow()"
+        >
+          {{ store.queue().length > 0 ? 'Sync now' : 'All synced' }}
+        </button>
+      </div>
+    </div>
+  `,
+})
+export class CanvassMe {
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly stats = computed(() => this.store.stats());
+  protected readonly topIssues = computed(() => this.stats().top_issues.slice(0, 5));
+
+  /** Ticks so "Last synced N min ago" stays honest while the tab sits open. */
+  private readonly now = signal(Date.now());
+
+  protected readonly lastSyncedLabel = computed(() => {
+    const at = this.store.lastSyncedAt();
+    if (at == null) return 'Not synced yet this visit';
+    const minutes = Math.floor((this.now() - at.getTime()) / 60_000);
+    if (minutes < 1) return 'Last synced just now';
+    if (minutes < 60) return `Last synced ${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return `Last synced ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  });
+
+  protected readonly syncChip = computed<{ label: string; cls: string }>(() => {
+    const status = this.store.syncStatus();
+    switch (status) {
+      case 'syncing':
+        return { label: 'Syncing…', cls: 'badge badge-info' };
+      case 'offline':
+        return { label: 'Offline', cls: 'badge badge-warning' };
+      case 'error':
+        return { label: 'Sync issue', cls: 'badge badge-error' };
+      case 'idle':
+        return this.store.queue().length > 0
+          ? { label: 'Waiting to sync', cls: 'badge badge-warning' }
+          : { label: 'Up to date', cls: 'badge badge-success' };
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  });
+
+  constructor() {
+    const timer = setInterval(() => this.now.set(Date.now()), CLOCK_TICK_MS);
+    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+  }
+
+  protected async endShift(): Promise<void> {
+    const queued = this.store.queue().length;
+    const confirmed = await this.dialogs.confirm({
+      title: 'End shift on this device?',
+      message:
+        queued > 0
+          ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
+          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+      variant: 'danger',
+      confirmText: 'End shift',
+      cancelText: 'Keep walking',
+    });
+    if (!confirmed) return;
+    this.store.endShift();
+    this.alerts.showSuccess('Shift ended — reopen your link anytime');
+  }
+
+  protected onWorkOffline(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) this.store.setWorkOffline(target.checked);
+  }
+
+  protected syncNow(): void {
+    void this.store.flush(true);
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-store.ts
+
+```typescript
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+
+import type {
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionOpAck,
+  CompanionOpType,
+  CompanionPersonResult,
+  CompanionTurfPayload,
+  KnockResponse,
+} from '@common';
+import { CompanionOpObj } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { CompanionSessionService } from '../gate/companion-api';
+import { applyLocalOps, isTempPersonId, meStats, nextDoor, opPersonId, type LocalOp } from './canvass-derive';
+
+/**
+ * The canvass companion's signals store (COMPANION-APPS-PLAN.md §6). Provided
+ * by the page component (NOT root) so its state lives and dies with /t/:token.
+ *
+ * The invariant: the server payload is never mutated. Every action becomes an
+ * op in `localOps`, and the visible households are a computed replay of those
+ * ops over the payload (`applyLocalOps`) — "derived, never stored". The queue
+ * (ops not yet acked) persists to localStorage so an offline shift survives a
+ * reload, and drains in order through one idempotent POST.
+ */
+
+export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'error';
+
+/** Client-side view state — nothing beyond the token is routable (spec §5). */
+export type CanvassView =
+  | { kind: 'landing' }
+  | { kind: 'list' }
+  | { kind: 'map' }
+  | { kind: 'me' }
+  | { kind: 'household'; household_id: string }
+  | { kind: 'survey'; household_id: string; person_id: string | null };
+
+/** A locally recorded op plus its human queue label ("Alice Door · 218 Alder St"). */
+export interface QueuedOp extends LocalOp {
+  label: string;
+}
+
+/** Everything the survey view collects; maps 1:1 onto the survey op payload. */
+export interface SurveyDraft {
+  support: KnockResponse | null;
+  issues: string[];
+  wants_volunteer: boolean;
+  wants_yard_sign: boolean;
+  set_dnc: boolean;
+  contact_phone: string | null;
+  contact_email: string | null;
+  subscribe: boolean;
+  notes: string | null;
+}
+
+interface LastAction {
+  op_id: string;
+  type: CompanionOpType['type'];
+  household_id: string;
+}
+
+const QUEUE_KEY_PREFIX = 'pc-canvass-queue:';
+
+function isQueuedOp(value: unknown): value is QueuedOp {
+  if (value == null || typeof value !== 'object') return false;
+  const candidate = value as { label?: unknown; op?: unknown; temp_person_id?: unknown };
+  if (typeof candidate.label !== 'string') return false;
+  if (candidate.temp_person_id !== undefined && typeof candidate.temp_person_id !== 'string') return false;
+  return CompanionOpObj.safeParse(candidate.op).success;
+}
+
+@Injectable()
+export class CanvassStore {
+  private readonly alerts = inject(AlertService);
+  private readonly session = inject(CompanionSessionService);
+
+  /** The server turf payload — never mutated after load. */
+  public readonly payload = signal<CompanionTurfPayload | null>(null);
+  /** Ops not yet acked by the server; persisted to localStorage. */
+  public readonly queue = signal<QueuedOp[]>([]);
+  public readonly syncStatus = signal<SyncStatus>('idle');
+  public readonly lastSyncedAt = signal<Date | null>(null);
+  /** Volunteer chose to hold the queue; flush waits for toggle-off or "Sync now". */
+  public readonly workOffline = signal(false);
+  /** Browser connectivity, tracked via the window online/offline events. */
+  public readonly online = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
+  /** 401/403 from a data call — the page sends the user back through the gate. */
+  public readonly sessionExpired = signal(false);
+  public readonly loadError = signal<string | null>(null);
+  public readonly view = signal<CanvassView>({ kind: 'landing' });
+
+  /** All ops recorded this session (queued + acked) — the optimistic overlay source. */
+  private readonly localOps = signal<QueuedOp[]>([]);
+  private readonly lastAction = signal<LastAction | null>(null);
+
+  /** Server payload with the local overlay replayed on top — the one source the views read. */
+  public readonly households = computed<CompanionHousehold[]>(() => {
+    const payload = this.payload();
+    return payload ? applyLocalOps(payload.households, this.localOps()) : [];
+  });
+  public readonly stats = computed(() => meStats(this.households()));
+  public readonly nextDoorId = computed(() => nextDoor(this.households())?.id ?? null);
+  /** Undo is offered for door outcomes (inverse op) or while the op is still queued. */
+  public readonly canUndo = computed<boolean>(() => {
+    const action = this.lastAction();
+    if (!action) return false;
+    if (action.type === 'door_outcome') return true;
+    return this.queue().some((entry) => entry.op.op_id === action.op_id);
+  });
+
+  private flushing = false;
+  private token = '';
+
+  constructor() {
+    const onOnline = (): void => {
+      this.online.set(true);
+      void this.flush();
+    };
+    const onOffline = (): void => {
+      this.online.set(false);
+      if (this.queue().length > 0) this.syncStatus.set('offline');
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    inject(DestroyRef).onDestroy(() => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    });
+  }
+
+  // ------------------------------------------------------------------ load --
+
+  public async load(token: string): Promise<void> {
+    this.token = token;
+    this.restoreQueue();
+    this.loadError.set(null);
+    try {
+      const res = await fetch(`/api/canvass/t/${encodeURIComponent(token)}`, { headers: this.session.headers() });
+      if (res.status === 401 || res.status === 403) {
+        this.expireSession();
+        return;
+      }
+      if (!res.ok) {
+        this.loadError.set('Could not load your turf — check your connection and try again.');
+        return;
+      }
+      this.payload.set((await res.json()) as CompanionTurfPayload);
+      void this.flush();
+    } catch {
+      this.loadError.set('Could not load your turf — check your connection and try again.');
+      if (this.queue().length > 0) this.syncStatus.set('offline');
+    }
+  }
+
+  public householdById(id: string): CompanionHousehold | null {
+    return this.households().find((h) => h.id === id) ?? null;
+  }
+
+  // --------------------------------------------------------------- actions --
+
+  /** Save a survey for a person (or the door itself when personId is null). */
+  public submitSurvey(householdId: string, personId: string | null, draft: SurveyDraft): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'survey',
+      payload: {
+        household_id: householdId,
+        person_id: personId,
+        support: draft.support,
+        issues: draft.issues,
+        wants_volunteer: draft.wants_volunteer,
+        wants_yard_sign: draft.wants_yard_sign,
+        set_dnc: draft.set_dnc,
+        contact_phone: draft.contact_phone,
+        contact_email: draft.contact_email,
+        subscribe: draft.subscribe,
+        notes: draft.notes,
+      },
+    };
+    this.record(op, `${this.personLabel(householdId, personId)} · ${this.addressOf(householdId)}`);
+  }
+
+  /** One-tap no-conversation code for a person. */
+  public personResult(
+    householdId: string,
+    personId: string,
+    result: Exclude<CompanionPersonResult, 'canvassed'>,
+  ): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'person_result',
+      payload: { household_id: householdId, person_id: personId, result },
+    };
+    this.record(op, `${this.personLabel(householdId, personId)} · ${this.addressOf(householdId)}`);
+  }
+
+  /**
+   * Set a door-level outcome; tapping the active outcome again clears it
+   * (enqueues the append-only clear_outcome inverse). Returns which happened.
+   */
+  public doorOutcome(householdId: string, outcome: CompanionDoorOutcome): 'set' | 'cleared' {
+    const current = this.householdById(householdId)?.door_outcome ?? null;
+    const address = this.addressOf(householdId);
+    if (current === outcome) {
+      const op: CompanionOpType = { ...this.baseOp(), type: 'clear_outcome', payload: { household_id: householdId } };
+      this.record(op, `Cleared outcome · ${address}`);
+      return 'cleared';
+    }
+    const labels: Record<CompanionDoorOutcome, string> = {
+      no_answer: 'Nobody home',
+      inaccessible: 'Inaccessible',
+      refused: 'Refused',
+    };
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'door_outcome',
+      payload: { household_id: householdId, outcome },
+    };
+    this.record(op, `${labels[outcome]} · ${address}`);
+    return 'set';
+  }
+
+  /** "+ Add someone at this door" — shows a temp person until the ack swaps in the real id. */
+  public addPerson(householdId: string, name: string): void {
+    const op: CompanionOpType = {
+      ...this.baseOp(),
+      type: 'person_create',
+      payload: { household_id: householdId, name },
+    };
+    this.record(op, `Added ${name} · ${this.addressOf(householdId)}`, `tmp-${op.op_id}`);
+  }
+
+  /**
+   * Undo the last action. A queued op is simply removed (the replay overlay
+   * reverts with it). A door outcome that already synced gets the inverse
+   * clear_outcome op. A synced survey/person result cannot be undone — the
+   * server keeps knock history append-only.
+   */
+  public undo(): boolean {
+    const action = this.lastAction();
+    if (!action) return false;
+    const queued = this.queue().some((entry) => entry.op.op_id === action.op_id);
+    this.lastAction.set(null);
+    if (queued) {
+      this.queue.update((q) => q.filter((entry) => entry.op.op_id !== action.op_id));
+      this.localOps.update((l) => l.filter((entry) => entry.op.op_id !== action.op_id));
+      this.persistQueue();
+      return true;
+    }
+    if (action.type === 'door_outcome') {
+      const op: CompanionOpType = {
+        ...this.baseOp(),
+        type: 'clear_outcome',
+        payload: { household_id: action.household_id },
+      };
+      this.record(op, `Cleared outcome · ${this.addressOf(action.household_id)}`);
+      return true;
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------------ sync --
+
+  /** Drain the queue in order. Manual = the "Sync now" button (overrides work-offline). */
+  public async flush(manual = false): Promise<void> {
+    if (this.flushing) return;
+    if (this.workOffline() && !manual) return;
+    if (this.queue().length === 0) {
+      this.syncStatus.set('idle');
+      return;
+    }
+    if (!this.online()) {
+      this.syncStatus.set('offline');
+      return;
+    }
+    this.flushing = true;
+    this.syncStatus.set('syncing');
+    try {
+      while (this.queue().length > 0) {
+        // Hold back ops that reference a temp person id — their person_create
+        // (earlier in the queue) must ack first so the real id can swap in.
+        const batch = this.sendableBatch();
+        if (batch.length === 0) {
+          this.syncStatus.set('error');
+          return;
+        }
+        const res = await fetch(`/api/canvass/t/${encodeURIComponent(this.token)}/results`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...this.session.headers() },
+          body: JSON.stringify({ ops: batch.map((entry) => entry.op) }),
+        });
+        if (res.status === 401 || res.status === 403) {
+          this.expireSession();
+          return;
+        }
+        if (!res.ok) {
+          this.syncStatus.set('error');
+          return;
+        }
+        const { acks } = (await res.json()) as { acks: CompanionOpAck[] };
+        this.applyAcks(batch, acks);
+      }
+      this.syncStatus.set('idle');
+      this.lastSyncedAt.set(new Date());
+    } catch {
+      this.syncStatus.set('offline');
+    } finally {
+      this.flushing = false;
+      this.persistQueue();
+    }
+  }
+
+  public setWorkOffline(on: boolean): void {
+    this.workOffline.set(on);
+    if (!on) void this.flush();
+  }
+
+  /** "End shift on this device" — wipe local traces, back to the landing view. */
+  public endShift(): void {
+    try {
+      localStorage.removeItem(this.storageKey());
+    } catch {
+      // Storage unavailable — the in-memory clear below still applies.
+    }
+    this.queue.set([]);
+    this.localOps.set([]);
+    this.lastAction.set(null);
+    this.workOffline.set(false);
+    this.syncStatus.set('idle');
+    this.view.set({ kind: 'landing' });
+  }
+
+  // --------------------------------------------------------------- private --
+
+  private addressOf(householdId: string): string {
+    return this.householdById(householdId)?.address ?? 'this door';
+  }
+
+  private applyAcks(batch: QueuedOp[], acks: CompanionOpAck[]): void {
+    for (const ack of acks) {
+      const entry = batch.find((e) => e.op.op_id === ack.op_id);
+      if (!entry) continue;
+      this.queue.update((q) => q.filter((e) => e.op.op_id !== ack.op_id));
+      if (ack.status === 'rejected') {
+        // Drop the op and revert its optimistic overlay (the replay recomputes).
+        this.localOps.update((l) => l.filter((e) => e.op.op_id !== ack.op_id));
+        if (entry.temp_person_id != null) this.dropOpsReferencing(entry.temp_person_id);
+        if (this.lastAction()?.op_id === ack.op_id) this.lastAction.set(null);
+        this.alerts.showError(`Couldn't sync "${entry.label}" — ${ack.error ?? 'it was rejected'}`);
+      } else if (entry.op.type === 'person_create' && entry.temp_person_id != null && ack.person_id != null) {
+        this.swapTempId(entry.temp_person_id, ack.person_id);
+      }
+    }
+    this.persistQueue();
+  }
+
+  private baseOp(): { op_id: string; recorded_at: string } {
+    return { op_id: crypto.randomUUID(), recorded_at: new Date().toISOString() };
+  }
+
+  /** A rejected person_create orphans any queued ops aimed at its temp person. */
+  private dropOpsReferencing(tempId: string): void {
+    const keep = (entry: QueuedOp): boolean => opPersonId(entry.op) !== tempId;
+    this.queue.update((q) => q.filter(keep));
+    this.localOps.update((l) => l.filter(keep));
+  }
+
+  private expireSession(): void {
+    this.session.clearSession();
+    this.sessionExpired.set(true);
+  }
+
+  private personLabel(householdId: string, personId: string | null): string {
+    if (personId == null) return 'This household';
+    const person = this.householdById(householdId)?.people.find((p) => p.id === personId);
+    return person?.name ?? 'Someone';
+  }
+
+  private persistQueue(): void {
+    try {
+      localStorage.setItem(this.storageKey(), JSON.stringify(this.queue()));
+    } catch {
+      // Storage full/blocked — the queue still lives in memory for this visit.
+    }
+  }
+
+  private record(op: CompanionOpType, label: string, tempPersonId?: string): void {
+    const entry: QueuedOp = tempPersonId == null ? { op, label } : { op, label, temp_person_id: tempPersonId };
+    this.lastAction.set({ op_id: op.op_id, type: op.type, household_id: String(op.payload.household_id) });
+    this.localOps.update((l) => [...l, entry]);
+    this.queue.update((q) => [...q, entry]);
+    this.persistQueue();
+    void this.flush();
+  }
+
+  private restoreQueue(): void {
+    try {
+      const raw = localStorage.getItem(this.storageKey());
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const entries = parsed.filter(isQueuedOp);
+      this.localOps.set(entries);
+      this.queue.set(entries);
+    } catch {
+      // Corrupt/blocked storage — start with an empty queue rather than crash.
+    }
+  }
+
+  private sendableBatch(): QueuedOp[] {
+    const out: QueuedOp[] = [];
+    for (const entry of this.queue()) {
+      const personId = opPersonId(entry.op);
+      if (personId != null && isTempPersonId(personId)) break;
+      out.push(entry);
+    }
+    return out;
+  }
+
+  private storageKey(): string {
+    return `${QUEUE_KEY_PREFIX}${this.token}`;
+  }
+
+  /** The server created the person — swap the temp id everywhere it appears. */
+  private swapTempId(tempId: string, realId: string): void {
+    const swap = (entries: QueuedOp[]): QueuedOp[] =>
+      entries.map((entry) => {
+        let next = entry;
+        if (entry.temp_person_id === tempId) next = { ...next, temp_person_id: realId };
+        const op = next.op;
+        if (op.type === 'survey' && op.payload.person_id != null && String(op.payload.person_id) === tempId) {
+          next = { ...next, op: { ...op, payload: { ...op.payload, person_id: realId } } };
+        } else if (op.type === 'person_result' && String(op.payload.person_id) === tempId) {
+          next = { ...next, op: { ...op, payload: { ...op.payload, person_id: realId } } };
+        }
+        return next;
+      });
+    this.localOps.update(swap);
+    this.queue.update(swap);
+    // Keep an open survey view pointed at the person after their id changes.
+    const view = this.view();
+    if (view.kind === 'survey' && view.person_id === tempId) {
+      this.view.set({ ...view, person_id: realId });
+    }
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-survey.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionPerson, KnockResponse } from '@common';
+import { KNOCK_RESPONSES, KNOCK_RESPONSE_LABELS } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { CanvassStore } from './canvass-store';
+
+const EMAIL_SHAPE = /^\S+@\S+\.\S+$/;
+
+/**
+ * The survey (spec §3.5) for one person — or the anonymous household-level
+ * conversation when the view carries no person. No-conversation codes come
+ * first (one tap and out); support level is the one required field, except
+ * that a DNC-only save is allowed. Pre-fills from the previous survey when
+ * re-opened.
+ */
+@Component({
+  selector: 'pc-canvass-survey',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    <div class="flex flex-1 flex-col gap-4 p-4">
+      <header class="flex items-start gap-2">
+        <button type="button" class="btn btn-ghost btn-circle" aria-label="Back to the household" (click)="back()">
+          <pc-icon name="chevron-left" [size]="5"></pc-icon>
+        </button>
+        <div class="min-w-0 flex-1">
+          <h1 class="text-lg font-bold">{{ title() }}</h1>
+          <p class="text-xs text-base-content/70">{{ address() }}</p>
+        </div>
+      </header>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">No conversation?</p>
+          <div class="grid grid-cols-3 gap-2">
+            @for (option of noConversationOptions; track option.result) {
+              <button type="button" class="btn btn-outline btn-secondary" (click)="recordNoConversation(option.result)">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      @if (script(); as script) {
+        <div class="collapse-arrow collapse border border-base-300 bg-base-200/50">
+          <input type="checkbox" aria-label="Show or hide the door script" />
+          <div class="collapse-title font-medium">Door script</div>
+          <div class="collapse-content text-base-content/80">
+            <p class="whitespace-pre-wrap">{{ script }}</p>
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2" role="radiogroup" aria-label="Support level">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Support level</p>
+        @for (response of responses; track response) {
+          <button
+            type="button"
+            role="radio"
+            class="btn justify-start"
+            [class.btn-primary]="support() === response"
+            [class.btn-outline]="support() !== response"
+            [class.btn-secondary]="support() !== response"
+            [attr.aria-checked]="support() === response"
+            (click)="pickSupport(response)"
+          >
+            {{ responseLabels[response] }}
+          </button>
+        }
+      </div>
+
+      @if (issueOptions().length > 0) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Issues they raised</p>
+          <div class="flex flex-wrap gap-2">
+            @for (issue of issueOptions(); track issue) {
+              <button
+                type="button"
+                class="btn rounded-full"
+                [class.btn-primary]="issues().includes(issue)"
+                [class.btn-outline]="!issues().includes(issue)"
+                [class.btn-secondary]="!issues().includes(issue)"
+                [attr.aria-pressed]="issues().includes(issue)"
+                (click)="toggleIssue(issue)"
+              >
+                {{ issue }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-1 rounded-lg border border-base-300 bg-base-100 p-3">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Follow-ups</p>
+        @if (isPerson()) {
+          <label class="flex min-h-11 items-center justify-between gap-3">
+            <span>Wants to volunteer</span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="wantsVolunteer()"
+              (change)="onToggle('volunteer', $event)"
+            />
+          </label>
+        }
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Wants a yard sign
+            <span class="block text-xs text-base-content/60">Adds them to the sign delivery list</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="wantsYardSign()"
+            (change)="onToggle('yard_sign', $event)"
+          />
+        </label>
+        <label class="flex min-h-11 items-center justify-between gap-3 text-error">
+          <span>Do not contact</span>
+          <input type="checkbox" class="toggle toggle-error" [checked]="setDnc()" (change)="onToggle('dnc', $event)" />
+        </label>
+      </div>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2 rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Contact info</p>
+          <input
+            type="tel"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Phone"
+            aria-label="Phone"
+            [value]="phone()"
+            (input)="onText('phone', $event)"
+          />
+          <input
+            type="email"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Email"
+            aria-label="Email"
+            [value]="email()"
+            (input)="onText('email', $event)"
+          />
+          @if (email().trim() && !emailValid()) {
+            <p class="text-xs text-error" role="alert">That email doesn't look complete.</p>
+          }
+          <label class="flex min-h-11 items-center justify-between gap-3" [class.opacity-60]="!canSubscribe()">
+            <span>
+              Subscribe to updates
+              @if (!canSubscribe()) {
+                <span class="block text-xs text-base-content/60">Add a phone or email to subscribe</span>
+              }
+            </span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="subscribe() && canSubscribe()"
+              [disabled]="!canSubscribe()"
+              (change)="onToggle('subscribe', $event)"
+            />
+          </label>
+        </div>
+      }
+
+      <textarea
+        class="textarea textarea-bordered min-h-24 w-full"
+        placeholder="Anything the organizer should know?"
+        aria-label="Notes for the organizer"
+        [value]="notes()"
+        (input)="onText('notes', $event)"
+      ></textarea>
+
+      <button type="button" class="btn btn-primary w-full" [disabled]="saveBlocker() !== null" (click)="save()">
+        {{ saveBlocker() ?? 'Save & sync' }}
+      </button>
+    </div>
+  `,
+})
+export class CanvassSurvey {
+  private readonly alerts = inject(AlertService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly responses: readonly KnockResponse[] = KNOCK_RESPONSES;
+  protected readonly responseLabels = KNOCK_RESPONSE_LABELS;
+  protected readonly noConversationOptions: { result: 'not_home' | 'moved' | 'refused'; label: string }[] = [
+    { result: 'not_home', label: 'Not home' },
+    { result: 'moved', label: 'Moved' },
+    { result: 'refused', label: 'Refused' },
+  ];
+
+  // Draft state — seeded once from the existing survey prefill (if any).
+  protected readonly support = signal<KnockResponse | null>(null);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly wantsVolunteer = signal(false);
+  protected readonly wantsYardSign = signal(false);
+  protected readonly setDnc = signal(false);
+  protected readonly phone = signal('');
+  protected readonly email = signal('');
+  protected readonly subscribe = signal(false);
+  protected readonly notes = signal('');
+
+  protected readonly householdId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.household_id : null;
+  });
+  protected readonly personId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.person_id : null;
+  });
+  protected readonly isPerson = computed(() => this.personId() != null);
+  protected readonly person = computed<CompanionPerson | null>(() => {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return null;
+    return this.store.householdById(householdId)?.people.find((p) => p.id === personId) ?? null;
+  });
+
+  protected readonly address = computed(() => {
+    const householdId = this.householdId();
+    return householdId != null ? (this.store.householdById(householdId)?.address ?? '') : '';
+  });
+  protected readonly title = computed(() => this.person()?.name ?? 'This household');
+  protected readonly script = computed(() => this.store.payload()?.script?.trim() ?? '');
+  protected readonly issueOptions = computed(() => this.store.payload()?.issues ?? []);
+
+  protected readonly emailValid = computed(() => {
+    const email = this.email().trim();
+    return email === '' || EMAIL_SHAPE.test(email);
+  });
+  protected readonly canSubscribe = computed(() => this.phone().trim() !== '' || this.email().trim() !== '');
+
+  /** Why the save is blocked — or null when it can go. Explained-disabled (§3). */
+  protected readonly saveBlocker = computed<string | null>(() => {
+    if (!this.emailValid()) return 'Fix the email to save';
+    if (this.support() == null && !this.setDnc()) return 'Pick a support level to save';
+    return null;
+  });
+
+  constructor() {
+    // Pre-fill from the earlier survey when re-opening (notes and contact info
+    // are deliberately never echoed back — payload minimization, spec §2).
+    const view = this.store.view();
+    if (view.kind !== 'survey') return;
+    const household = this.store.householdById(view.household_id);
+    const prefill =
+      view.person_id == null ? household?.hh_survey : household?.people.find((p) => p.id === view.person_id)?.survey;
+    if (!prefill) return;
+    this.support.set(prefill.support);
+    this.issues.set([...prefill.issues]);
+    this.wantsVolunteer.set(prefill.wants_volunteer);
+    this.wantsYardSign.set(prefill.wants_yard_sign);
+    this.setDnc.set(prefill.set_dnc);
+    this.subscribe.set(prefill.subscribe);
+  }
+
+  protected back(): void {
+    const householdId = this.householdId();
+    if (householdId != null) this.store.view.set({ kind: 'household', household_id: householdId });
+    else this.store.view.set({ kind: 'list' });
+  }
+
+  protected onText(field: 'phone' | 'email' | 'notes', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+    if (field === 'phone') this.phone.set(target.value);
+    else if (field === 'email') this.email.set(target.value);
+    else this.notes.set(target.value);
+  }
+
+  protected onToggle(field: 'volunteer' | 'yard_sign' | 'dnc' | 'subscribe', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const checked = target.checked;
+    switch (field) {
+      case 'volunteer':
+        this.wantsVolunteer.set(checked);
+        break;
+      case 'yard_sign':
+        this.wantsYardSign.set(checked);
+        break;
+      case 'dnc':
+        this.setDnc.set(checked);
+        break;
+      case 'subscribe':
+        this.subscribe.set(checked);
+        break;
+      default: {
+        const _exhaustive: never = field;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Tap the selected level again to unpick it (a DNC-only save stays possible). */
+  protected pickSupport(response: KnockResponse): void {
+    this.support.set(this.support() === response ? null : response);
+  }
+
+  protected recordNoConversation(result: 'not_home' | 'moved' | 'refused'): void {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return;
+    this.store.personResult(householdId, personId, result);
+    const option = this.noConversationOptions.find((o) => o.result === result);
+    this.alerts.showSuccess(`Marked "${option?.label ?? result}"`);
+    this.back();
+  }
+
+  protected save(): void {
+    const householdId = this.householdId();
+    if (householdId == null || this.saveBlocker() != null) return;
+    const isPerson = this.isPerson();
+    this.store.submitSurvey(householdId, this.personId(), {
+      support: this.support(),
+      issues: this.issues(),
+      wants_volunteer: isPerson ? this.wantsVolunteer() : false,
+      wants_yard_sign: this.wantsYardSign(),
+      set_dnc: this.setDnc(),
+      contact_phone: isPerson && this.phone().trim() ? this.phone().trim() : null,
+      contact_email: isPerson && this.email().trim() ? this.email().trim() : null,
+      subscribe: isPerson && this.canSubscribe() ? this.subscribe() : false,
+      notes: this.notes().trim() ? this.notes().trim() : null,
+    });
+    const syncing = this.store.online() && !this.store.workOffline();
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.back();
+  }
+
+  protected toggleIssue(issue: string): void {
+    this.issues.update((current) =>
+      current.includes(issue) ? current.filter((i) => i !== issue) : [...current, issue],
+    );
+  }
+}
+```
+
+## File: apps/companion/src/app/canvass/canvass-ui.ts
+
+```typescript
+import type { CompanionPersonResult, KnockResponse } from '@common';
+import { KNOCK_RESPONSE_LABELS } from '@common';
+
+import type { DoorStatus } from './canvass-derive';
+
+/** Small presentational helpers shared by the canvass views. No state. */
+
+/** DaisyUI badge classes for a derived door status — color only where it means something (§5). */
+export function statusBadgeClass(status: DoorStatus): string {
+  switch (status) {
+    case 'canvassed':
+      return 'badge badge-success';
+    case 'dnc':
+    case 'outcome:refused':
+      return 'badge badge-error';
+    case 'outcome:no_answer':
+    case 'outcome:inaccessible':
+      return 'badge badge-warning';
+    case 'in_progress':
+      return 'badge badge-info badge-outline';
+    case 'not_visited':
+      return 'badge badge-ghost';
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+export function firstNameOf(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
+}
+
+export function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.charAt(0) ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? '') : '';
+  return `${first}${last}`.toUpperCase() || '?';
+}
+
+/** Label for a door's surveyed stance, including the disagreement case. */
+export function consensusLabel(consensus: KnockResponse | 'mixed' | null): string | null {
+  if (consensus == null) return null;
+  return consensus === 'mixed' ? 'Mixed support' : KNOCK_RESPONSE_LABELS[consensus];
+}
+
+/** Chip label for a person's recorded result. */
+export function personResultLabel(result: CompanionPersonResult, support: KnockResponse | null): string {
+  switch (result) {
+    case 'canvassed':
+      return support != null ? KNOCK_RESPONSE_LABELS[support] : 'Surveyed';
+    case 'not_home':
+      return 'Not home';
+    case 'moved':
+      return 'Moved';
+    case 'refused':
+      return 'Refused';
+    default: {
+      const _exhaustive: never = result;
+      return _exhaustive;
+    }
+  }
+}
+```
+
 ## File: apps/companion/src/app/gate/companion-api.ts
 
 ```typescript
@@ -52093,6 +53666,1637 @@ export const AuthRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/modules/campaigns/repositories/campaign-subscriptions.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+/**
+ * Per-campaign email consent (§15). One row per (campaign, person); no row means
+ * "never asked" (not sendable). Address health (bounces/spam) lives in
+ * email_suppressions; the person-level DNC flag lives on persons — sendability
+ * is the AND of all three, computed where recipients are selected.
+ */
+export class CampaignSubscriptionsRepo extends BaseRepository<'campaign_subscriptions'> {
+  constructor() {
+    super('campaign_subscriptions');
+  }
+
+  public async setStatus(
+    input: {
+      tenant_id: string;
+      campaign_id: string;
+      person_id: string;
+      email: string;
+      status: 'subscribed' | 'pending' | 'unsubscribed';
+      consent_source: 'form' | 'import' | 'manual' | 'copied' | 'canvass';
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const now = new Date();
+    const statusFields = {
+      status: input.status,
+      email: input.email,
+      consent_at: input.status === 'subscribed' ? now : null,
+      unsubscribed_at: input.status === 'unsubscribed' ? now : null,
+    };
+    const row = {
+      tenant_id: input.tenant_id,
+      campaign_id: input.campaign_id,
+      person_id: input.person_id,
+      createdby_id: input.user_id,
+      updatedby_id: input.user_id,
+      consent_source: input.consent_source,
+      ...statusFields,
+    } as OperationDataType<'campaign_subscriptions', 'insert'>;
+
+    return this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'campaign_id', 'person_id']).doUpdateSet({
+          ...statusFields,
+          consent_source: input.consent_source,
+          updatedby_id: input.user_id,
+          updated_at: now,
+        }),
+      )
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /** Confirm a double opt-in: every pending row for this person becomes subscribed. */
+  public async confirmPending(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const now = new Date();
+    return this.getUpdate(trx)
+      .set({ status: 'subscribed', consent_at: now, updated_at: now })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .where('status', '=', 'pending')
+      .execute();
+  }
+
+  /** SendGrid unsubscribe: scoped to the campaign whose newsletter carried the link. */
+  public async unsubscribeByEmail(
+    input: { tenant_id: string; campaign_id: string; email: string },
+    trx?: Transaction<Models>,
+  ) {
+    const now = new Date();
+    return this.getUpdate(trx)
+      .set({ status: 'unsubscribed', unsubscribed_at: now, updated_at: now })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id)
+      .where('email', '=', input.email)
+      .where('status', '!=', 'unsubscribed')
+      .execute();
+  }
+
+  /** One person's consent rows across campaigns, with campaign labels (person page panel). */
+  public async getForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .innerJoin('campaigns', 'campaigns.id', 'campaign_subscriptions.campaign_id')
+      .where('campaign_subscriptions.tenant_id', '=', input.tenant_id)
+      .where('campaign_subscriptions.person_id', '=', input.person_id)
+      .select([
+        'campaign_subscriptions.campaign_id',
+        'campaign_subscriptions.email',
+        'campaign_subscriptions.status',
+        'campaign_subscriptions.consent_source',
+        'campaign_subscriptions.consent_at',
+        'campaign_subscriptions.unsubscribed_at',
+        'campaigns.name as campaign_name',
+        'campaigns.kind as campaign_kind',
+        'campaigns.status as campaign_status',
+      ])
+      .orderBy('campaigns.created_at', 'desc')
+      .execute();
+  }
+
+  /** Active suppressions for one email address (any reason). */
+  public async getSuppressions(input: { tenant_id: string; email: string }, trx?: Transaction<Models>) {
+    return (trx ?? this.db)
+      .selectFrom('email_suppressions')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('email', '=', input.email)
+      .select(['reason', 'occurred_at'])
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/canvassing/repositories/turf-assignments.repo.ts
+
+```typescript
+import { randomBytes } from 'node:crypto';
+
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export interface ResolvedAssignment {
+  id: string;
+  tenant_id: string;
+  turf_id: string;
+  team_id: string | null;
+  status: string;
+  /** Real CRM account that deployed this Companion — the responsible actor for
+   *  synced knocks (§22.7: honest attribution, never a fabricated user). */
+  created_by: string;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link. */
+  expires_at: Date | null;
+}
+
+/** A high-entropy, URL-safe Companion token (the bearer credential). */
+export function generateTurfToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
+  constructor() {
+    super('turf_assignments');
+  }
+
+  public async getActiveByTurf(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<ResolvedAssignment | null> {
+    const row = await this.getSelect(trx)
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .where('status', '=', 'active')
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
+    return row ? this.toResolved(row) : null;
+  }
+
+  public async create(
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      team_id: string | null;
+      token: string;
+      user_id: string;
+      volunteer_person_id: string;
+      expires_at: Date | null;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<string> {
+    const row = {
+      tenant_id: input.tenant_id,
+      turf_id: input.turf_id,
+      team_id: input.team_id,
+      token: input.token,
+      status: 'active',
+      volunteer_person_id: input.volunteer_person_id,
+      expires_at: input.expires_at,
+      createdby_id: input.user_id,
+      updatedby_id: input.user_id,
+    } as OperationDataType<'turf_assignments', 'insert'>;
+    const created = await this.getInsert(trx).values(row).returning('id').executeTakeFirst();
+    return String(created?.id ?? '');
+  }
+
+  public async revokeForTurf(
+    input: { tenant_id: string; turf_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ status: 'revoked', updatedby_id: input.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .where('status', '=', 'active')
+      .execute();
+  }
+
+  /**
+   * Resolve a Companion token to its assignment. This is the ONLY intentionally
+   * un-tenant-scoped query in the module: the token itself is the bearer
+   * credential and is what identifies the tenant (exactly like a session token —
+   * cf. the `sessions` entry in the no-unscoped-db-query ignoreTables). Every
+   * downstream read/write is then scoped by the resolved `tenant_id`.
+   */
+  public async resolveByToken(token: string, trx?: Transaction<Models>): Promise<ResolvedAssignment | null> {
+    // NOTE: intentionally NOT tenant-scoped — the token IS the credential and is
+    // what resolves the tenant (see the method doc above). Every downstream query
+    // is scoped by the resolved tenant_id.
+    const row = await this.getSelect(trx)
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
+      .where('token', '=', token)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    return row ? this.toResolved(row) : null;
+  }
+
+  private toResolved(row: {
+    id: unknown;
+    tenant_id: unknown;
+    turf_id: unknown;
+    team_id: unknown;
+    status: unknown;
+    createdby_id: unknown;
+    volunteer_person_id?: unknown;
+    expires_at?: unknown;
+  }): ResolvedAssignment {
+    return {
+      id: String(row.id),
+      tenant_id: String(row.tenant_id),
+      turf_id: String(row.turf_id),
+      team_id: row.team_id == null ? null : String(row.team_id),
+      status: String(row.status),
+      created_by: String(row.createdby_id),
+      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
+      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/canvassing/controller.ts
+
+```typescript
+import type {
+  AddTurfType,
+  AssignTurfType,
+  CompanionHousehold,
+  CompanionOpAck,
+  CompanionOpType,
+  CompanionPerson,
+  CompanionSurveyPrefill,
+  CompanionSurveyType,
+  CompanionTurfPayload,
+  CutTurfsType,
+  FieldReportRangeType,
+  IAuthKeyPayload,
+  KnockResponse,
+  LogKnockType,
+  SupportLevel,
+  UpdateCompanionSettingsType,
+  UpdateTurfType,
+  VotingStatus,
+} from '../../../../../../libs/common/src';
+
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
+import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
+import { ListsController } from '../lists/controller';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import {
+  cutTurfs as clusterTurfs,
+  previewCut as previewCutPlan,
+  type CutPreview,
+  type DoorPoint,
+} from './lib/cutting-engine';
+import { TurfHouseholdsRepo, type CoverageDoorRow } from './repositories/turf-households.repo';
+import { TurfAssignmentsRepo, generateTurfToken } from './repositories/turf-assignments.repo';
+import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositories/turf-knocks.repo';
+import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
+
+/** What a voter said at the door → the campaign support scale (§15). */
+const KNOCK_RESPONSE_TO_SUPPORT: Partial<Record<KnockResponse, SupportLevel>> = {
+  supporter: 'strong',
+  undecided: 'undecided',
+  non_supporter: 'against',
+};
+
+/**
+ * "Not voting" / "Already voted" are turnout facts, not stances — they feed
+ * voting_status. Door canvassing overwhelmingly happens during the advance-poll
+ * window, so "already voted" is recorded as voted_advance.
+ */
+const KNOCK_RESPONSE_TO_VOTING: Partial<Record<KnockResponse, VotingStatus>> = {
+  not_voting: 'not_voting',
+  already_voted: 'voted_advance',
+};
+
+/** Derived display status — computed from stored lifecycle + knock activity. */
+export type TurfDisplayStatus = 'draft' | 'assigned' | 'in_field' | 'complete' | 'retired';
+
+export interface TurfListItem {
+  id: string;
+  name: string;
+  status: TurfDisplayStatus;
+  list_id: string | null;
+  list_name: string | null;
+  ward: string | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  door_count: number;
+  attempted: number;
+  conversations: number;
+  team_id: string | null;
+  team_name: string | null;
+  token: string | null;
+  last_activity_at: string | null;
+}
+
+export interface FieldSummary {
+  turfCount: number;
+  inFieldCount: number;
+  doorsAttempted: number;
+  doorsTotal: number;
+  waitingCount: number;
+}
+
+export interface InFieldToday {
+  doorsKnocked: number;
+  conversations: number;
+  responseMix: ResponseMix;
+}
+
+/** How a door reads on the §13.3 Coverage map, derived from its window knocks. */
+export type CoverageStatus = 'conversation' | 'attempted' | 'not_yet';
+
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export interface CoverageDoor extends LatLng {
+  status: CoverageStatus;
+}
+
+/** A turf boundary drawn as the convex hull of its doors (dashed on the map). */
+export interface CoverageTurf {
+  id: string;
+  name: string;
+  ward: string | null;
+  path: LatLng[];
+}
+
+export interface CoverageWard {
+  ward: string;
+  doors: number;
+  conversation: number;
+  attempted: number;
+  not_yet: number;
+}
+
+export interface Coverage {
+  doors: CoverageDoor[];
+  turfs: CoverageTurf[];
+  byWard: CoverageWard[];
+}
+
+const UNASSIGNED_WARD = 'Unassigned';
+const MIN_HULL_POINTS = 3;
+
+// A turf is "in the field" if a knock landed within this window.
+const IN_FIELD_WINDOW_MS = 6 * 60 * 60 * 1000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const COMPANION_SOURCE = 'companion';
+
+export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
+  private readonly turfHouseholds = new TurfHouseholdsRepo();
+  private readonly assignments = new TurfAssignmentsRepo();
+  private readonly knocks = new TurfKnocksRepo();
+  private readonly lists = new ListsController();
+  private readonly campaignsRepo = new CampaignsRepo();
+  private readonly factsRepo = new CampaignPersonFactsRepo();
+  private readonly subscriptionsRepo = new CampaignSubscriptionsRepo();
+  private readonly companionAccess = new CompanionAccessController();
+
+  constructor() {
+    super(new TurfsRepo());
+  }
+
+  private turfsRepo(): TurfsRepo {
+    return this.getRepo();
+  }
+
+  // ------------------------------------------------------------- reads ------
+
+  public async getTurfs(auth: IAuthKeyPayload): Promise<TurfListItem[]> {
+    const [rows, progress] = await Promise.all([
+      this.turfsRepo().getTurfs(auth.tenant_id),
+      this.knocks.getProgressByTenant(auth.tenant_id),
+    ]);
+    return rows.map((r) => {
+      const p = progress.get(r.id);
+      const attempted = p?.attempted ?? 0;
+      const lastAt = p?.last_knock_at ?? null;
+      return {
+        id: r.id,
+        name: r.name,
+        status: this.displayStatus(r, attempted, lastAt),
+        list_id: r.list_id,
+        list_name: r.list_name,
+        ward: r.ward,
+        centroid_lat: r.centroid_lat,
+        centroid_lng: r.centroid_lng,
+        door_count: r.door_count,
+        attempted,
+        conversations: p?.conversations ?? 0,
+        team_id: r.team_id,
+        team_name: r.team_name,
+        token: r.token,
+        last_activity_at: lastAt ? lastAt.toISOString() : null,
+      };
+    });
+  }
+
+  public async getFieldSummary(auth: IAuthKeyPayload): Promise<FieldSummary> {
+    const turfs = await this.getTurfs(auth);
+    let inFieldCount = 0;
+    let waitingCount = 0;
+    let doorsAttempted = 0;
+    let doorsTotal = 0;
+    for (const t of turfs) {
+      doorsAttempted += t.attempted;
+      doorsTotal += t.door_count;
+      if (t.status === 'in_field') inFieldCount++;
+      // "Waiting for a canvasser": cut but not being worked and never touched.
+      if ((t.status === 'draft' || t.status === 'assigned') && t.attempted === 0) waitingCount++;
+    }
+    return { turfCount: turfs.length, inFieldCount, doorsAttempted, doorsTotal, waitingCount };
+  }
+
+  public async getInFieldToday(auth: IAuthKeyPayload): Promise<InFieldToday> {
+    const { from, to } = this.dayWindow(new Date());
+    const summary = await this.knocks.getWindowSummary({ tenant_id: auth.tenant_id, from, to });
+    return { doorsKnocked: summary.doors, conversations: summary.conversations, responseMix: summary.responseMix };
+  }
+
+  public async getFieldReport(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<FieldReport> {
+    const { from, to } = this.rangeToDates(input);
+    return this.knocks.getFieldReport({ tenant_id: auth.tenant_id, from, to });
+  }
+
+  /**
+   * §13.3 Coverage — every geocoded door in a turf, coloured by whether it was
+   * talked to, knocked with no answer, or not yet reached in the window, plus a
+   * dashed boundary hull per turf and a by-ward roll-up. Unlike the report tiles
+   * this returns doors even when nothing has been knocked (a freshly-cut universe
+   * reads as an all-grey map), so the caller shows it independently of `doors`.
+   */
+  public async getCoverage(auth: IAuthKeyPayload, input: FieldReportRangeType): Promise<Coverage> {
+    const { from, to } = this.rangeToDates(input);
+    const rows = await this.turfHouseholds.getCoverageRows({ tenant_id: auth.tenant_id, from, to });
+
+    const doors: CoverageDoor[] = [];
+    const turfPoints = new Map<string, { name: string; ward: string | null; pts: LatLng[] }>();
+    const wards = new Map<string, CoverageWard>();
+
+    for (const r of rows) {
+      const status = this.coverageStatus(r);
+      const point: LatLng = { lat: r.lat, lng: r.lng };
+      doors.push({ ...point, status });
+
+      let turf = turfPoints.get(r.turf_id);
+      if (!turf) {
+        turf = { name: r.turf_name, ward: r.ward, pts: [] };
+        turfPoints.set(r.turf_id, turf);
+      }
+      turf.pts.push(point);
+
+      const wardKey = r.ward ?? UNASSIGNED_WARD;
+      let ward = wards.get(wardKey);
+      if (!ward) {
+        ward = { ward: wardKey, doors: 0, conversation: 0, attempted: 0, not_yet: 0 };
+        wards.set(wardKey, ward);
+      }
+      ward.doors += 1;
+      ward[status] += 1;
+    }
+
+    const turfs: CoverageTurf[] = [];
+    for (const [id, turf] of turfPoints) {
+      const path = convexHull(turf.pts);
+      if (path.length >= MIN_HULL_POINTS) {
+        turfs.push({ id, name: turf.name, ward: turf.ward, path });
+      }
+    }
+
+    const byWard = [...wards.values()].sort((a, b) => b.doors - a.doors);
+    return { doors, turfs, byWard };
+  }
+
+  private coverageStatus(r: CoverageDoorRow): CoverageStatus {
+    if (r.conversations > 0) return 'conversation';
+    if (r.attempts > 0) return 'attempted';
+    return 'not_yet';
+  }
+
+  /** "Report exported — doors, conversations and responses by team and by day (CSV)." */
+  public async exportFieldReportCsv(
+    auth: IAuthKeyPayload,
+    input: FieldReportRangeType,
+  ): Promise<{ filename: string; content: string }> {
+    const report = await this.getFieldReport(auth, input);
+    const esc = (v: string | number): string => {
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines: string[] = [];
+    lines.push('Section,Key,Doors,Conversations,Support IDs');
+    lines.push(['Totals', 'all', report.doors, report.conversations, report.supportIds].map(esc).join(','));
+    for (const t of report.byTeam) {
+      lines.push(['By team', t.team_name, t.doors, t.conversations, t.supportIds].map(esc).join(','));
+    }
+    for (const d of report.perDay) {
+      lines.push(['By day', d.day, d.conversations + d.no_answer, d.conversations, ''].map(esc).join(','));
+    }
+    return { filename: `canvass-field-report-${input.range}.csv`, content: lines.join('\n') };
+  }
+
+  // ---------------------------------------------------------- cut turfs -----
+
+  public async previewCut(auth: IAuthKeyPayload, input: CutTurfsType): Promise<CutPreview> {
+    const doors = await this.resolveUniverseDoors(auth, input.list_id);
+    return previewCutPlan(doors, input.doors_per_turf);
+  }
+
+  public async cutTurfs(auth: IAuthKeyPayload, input: CutTurfsType): Promise<{ created: number; unplaced: number }> {
+    const doors = await this.resolveUniverseDoors(auth, input.list_id);
+    const plan = clusterTurfs(doors, input.doors_per_turf);
+    if (plan.turfs.length === 0) {
+      throw new BadRequestError('No geocoded doors in that list yet — turfs are cut from located households.');
+    }
+
+    const repo = this.turfsRepo();
+    // Continue turf numbering from the current count.
+    const existing = await repo.getTurfs(auth.tenant_id);
+    let n = existing.length;
+
+    // Turfs are cut FOR a campaign (§15); defaults to the office context.
+    const campaignId = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id });
+
+    await repo.transaction().execute(async (trx) => {
+      for (const cluster of plan.turfs) {
+        n += 1;
+        const row = {
+          tenant_id: auth.tenant_id,
+          campaign_id: campaignId,
+          name: `Turf ${n}`,
+          status: 'draft',
+          list_id: input.list_id,
+          target_doors: input.doors_per_turf,
+          centroid_lat: cluster.centroid_lat,
+          centroid_lng: cluster.centroid_lng,
+          ward: cluster.ward,
+          notes: null,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        } as OperationDataType<'turfs', 'insert'>;
+        const created = await repo.add({ row }, trx);
+        const turfId = created?.id != null ? String(created.id) : '';
+        if (!turfId) throw new NotFoundError('Failed to create turf');
+        await this.turfHouseholds.addDoors(
+          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: cluster.households, user_id: auth.user_id },
+          trx,
+        );
+      }
+    });
+
+    return { created: plan.turfs.length, unplaced: plan.unplaced.length };
+  }
+
+  /** Re-sync a turf's doors with its smart list WITHOUT losing knock history. */
+  public async refreshFromList(auth: IAuthKeyPayload, turfId: string): Promise<{ added: number; removed: number }> {
+    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: turfId });
+    if (!turf) throw new NotFoundError('Turf not found');
+    const listId = turf.list_id;
+    if (!listId) throw new BadRequestError('This turf is not linked to a list, so it cannot be refreshed.');
+
+    const members = new Set(await this.resolveUniverseHouseholdIds(auth, listId));
+    const current = await this.turfHouseholds.getHouseholdIds({ tenant_id: auth.tenant_id, turf_id: turfId });
+    const currentSet = new Set(current);
+
+    // Drop doors no longer in the list; their knock rows persist (history kept).
+    const removed = current.filter((h) => !members.has(h));
+    // Add new list members that live in this turf's ward and aren't in ANY turf yet.
+    const wardMembers = await this.wardMembersNotInAnyTurf(auth, turf.ward, members);
+    const added = wardMembers.filter((h) => !currentSet.has(h));
+
+    await this.turfsRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await this.turfHouseholds.removeDoors(
+          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: removed },
+          trx,
+        );
+        await this.turfHouseholds.addDoors(
+          { tenant_id: auth.tenant_id, turf_id: turfId, household_ids: added, user_id: auth.user_id },
+          trx,
+        );
+      });
+
+    return { added: added.length, removed: removed.length };
+  }
+
+  // -------------------------------------------------------- assignment ------
+
+  public async assignTurf(auth: IAuthKeyPayload, input: AssignTurfType): Promise<{ token: string }> {
+    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
+    if (!turf) throw new NotFoundError('Turf not found');
+    const teamId = input.team_id != null ? String(input.team_id) : null;
+    const volunteerPersonId = String(input.volunteer_person_id);
+
+    // The link is personal: the companion access layer verifies the holder
+    // against this person's contacts, so they must exist (and ideally have an
+    // email or mobile on file — the gate explains it if they don't).
+    const person = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', volunteerPersonId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this link belongs to.');
+
+    const token = generateTurfToken();
+    const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
+
+    await this.turfsRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await this.assignments.revokeForTurf(
+          { tenant_id: auth.tenant_id, turf_id: input.turf_id, user_id: auth.user_id },
+          trx,
+        );
+        await this.assignments.create(
+          {
+            tenant_id: auth.tenant_id,
+            turf_id: input.turf_id,
+            team_id: teamId,
+            token,
+            user_id: auth.user_id,
+            volunteer_person_id: volunteerPersonId,
+            expires_at: expiresAt,
+          },
+          trx,
+        );
+        await this.turfsRepo().update(
+          {
+            tenant_id: auth.tenant_id,
+            id: input.turf_id,
+            row: { status: 'active', updatedby_id: auth.user_id, updated_at: new Date() },
+          },
+          trx,
+        );
+      });
+
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'assign',
+      entity: 'turf',
+      entity_id: input.turf_id,
+      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
+    });
+
+    return { token };
+  }
+
+  /**
+   * Link expiry = the campaign's end date when one exists (spec §2: "end of the
+   * canvass window"), otherwise no hard expiry (revocation still applies).
+   */
+  private async assignmentExpiry(tenant_id: string, campaign_id: string): Promise<Date | null> {
+    if (!campaign_id) return null;
+    const campaign = await this.knocks.db
+      .selectFrom('campaigns')
+      .select(['enddate'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', campaign_id)
+      .executeTakeFirst();
+    if (!campaign?.enddate) return null;
+    const end = new Date(`${campaign.enddate}T23:59:59`);
+    return Number.isNaN(end.getTime()) || end <= new Date() ? null : end;
+  }
+
+  public async retireTurf(auth: IAuthKeyPayload, turfId: string): Promise<void> {
+    const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: turfId });
+    if (!turf) throw new NotFoundError('Turf not found');
+    await this.turfsRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await this.assignments.revokeForTurf(
+          { tenant_id: auth.tenant_id, turf_id: turfId, user_id: auth.user_id },
+          trx,
+        );
+        await this.turfsRepo().update(
+          {
+            tenant_id: auth.tenant_id,
+            id: turfId,
+            row: { status: 'retired', updatedby_id: auth.user_id, updated_at: new Date() },
+          },
+          trx,
+        );
+      });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'turf',
+      entity_id: turfId,
+      metadata: { retired: true },
+    });
+  }
+
+  public async addTurf(auth: IAuthKeyPayload, input: AddTurfType): Promise<{ id: string }> {
+    const row = {
+      tenant_id: auth.tenant_id,
+      // The context this turf is knocked for (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: input.campaign_id,
+      }),
+      name: input.name,
+      status: 'draft',
+      list_id: input.list_id != null ? String(input.list_id) : null,
+      notes: input.notes ?? null,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'turfs', 'insert'>;
+    const created = await this.turfsRepo().add({ row });
+    return { id: created?.id != null ? String(created.id) : '' };
+  }
+
+  public async updateTurf(auth: IAuthKeyPayload, id: string, input: UpdateTurfType): Promise<void> {
+    const row = {
+      ...(input.name != null ? { name: input.name } : {}),
+      ...(input.status != null ? { status: input.status } : {}),
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    } as OperationDataType<'turfs', 'update'>;
+    await this.turfsRepo().update({ tenant_id: auth.tenant_id, id, row });
+  }
+
+  // -------------------------------------------------- Companion (public) ----
+
+  /**
+   * Resolve a Companion token + verified device session to the full spec-§3
+   * turf payload. Payload minimization is deliberate: names, walk data, and
+   * prior door RESULTS only — never emails, phones, donation history, or notes.
+   */
+  public async getCompanionTurf(token: string, sessionToken: string | null): Promise<CompanionTurfPayload> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
+    const tenant_id = assignment.tenant_id;
+    const turf_id = assignment.turf_id;
+
+    const turf = await this.turfsRepo().getTurfCore({ tenant_id, id: turf_id });
+    if (!turf) throw new NotFoundError('Turf not found');
+
+    const [doorRows, state, campaign, canvasserName] = await Promise.all([
+      this.turfHouseholds.getDoors({ tenant_id, turf_id }),
+      this.knocks.getCompanionState({ tenant_id, turf_id }),
+      this.companionCampaign(tenant_id, String(turf.campaign_id ?? '')),
+      this.personFirstLast(tenant_id, String(assignment.volunteer_person_id)),
+    ]);
+
+    const householdIds = doorRows.map((d) => d.household_id);
+    const people = await this.peopleByHousehold(tenant_id, householdIds);
+
+    // Index the latest knock per (household, person).
+    const doorState = new Map<string, (typeof state)[number]>();
+    const personState = new Map<string, (typeof state)[number]>();
+    for (const s of state) {
+      if (s.person_id == null) doorState.set(s.household_id, s);
+      else personState.set(`${s.household_id}:${s.person_id}`, s);
+    }
+
+    const households: CompanionHousehold[] = doorRows.map((d, i) => {
+      const residents = people.get(d.household_id) ?? [];
+      const ds = doorState.get(d.household_id);
+      const doorOutcome =
+        ds && (ds.outcome === 'no_answer' || ds.outcome === 'inaccessible' || ds.outcome === 'refused')
+          ? ds.outcome
+          : null;
+      const hhSurvey = ds && ds.outcome === 'conversation' ? this.toPrefill(ds) : null;
+      return {
+        id: d.household_id,
+        walk_order: d.walk_order ?? i + 1,
+        address: this.formatAddress(d),
+        lat: d.lat,
+        lng: d.lng,
+        dnc: residents.length > 0 && residents.every((p) => p.dnc),
+        door_outcome: doorOutcome,
+        hh_survey: hhSurvey,
+        people: residents.map((p): CompanionPerson => {
+          const ps = personState.get(`${d.household_id}:${p.id}`);
+          const result =
+            ps == null
+              ? null
+              : ps.outcome === 'conversation'
+                ? 'canvassed'
+                : ps.outcome === 'not_home' || ps.outcome === 'moved' || ps.outcome === 'refused'
+                  ? ps.outcome
+                  : null;
+          return {
+            id: p.id,
+            name: p.name,
+            dnc: p.dnc,
+            result,
+            survey: ps && ps.outcome === 'conversation' ? this.toPrefill(ps) : null,
+          };
+        }),
+      };
+    });
+
+    return {
+      campaign_name: campaign.name,
+      turf_name: String(turf.name),
+      canvasser_name: canvasserName,
+      script: campaign.script,
+      issues: campaign.issues,
+      expires_at: assignment.expires_at ? assignment.expires_at.toISOString() : null,
+      households,
+    };
+  }
+
+  /**
+   * Apply a batch of Companion ops (spec §5). Each op is idempotent via the
+   * companion_ops ledger — a retried op acks `duplicate` and re-applies
+   * nothing — and each op commits in its own transaction so one bad op never
+   * blocks the rest of an offline queue from draining.
+   */
+  public async postCompanionResults(
+    token: string,
+    sessionToken: string | null,
+    ops: CompanionOpType[],
+  ): Promise<{ acks: CompanionOpAck[] }> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
+    const tenant_id = assignment.tenant_id;
+    const turf_id = assignment.turf_id;
+
+    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
+    const canvasserName = await this.personFirstLast(tenant_id, String(assignment.volunteer_person_id));
+
+    const acks: CompanionOpAck[] = [];
+    for (const op of ops) {
+      try {
+        const ack = await this.knocks.transaction().execute(async (trx) => {
+          // Idempotency ledger: a conflict means this op already applied.
+          const claimed = await trx
+            .insertInto('companion_ops')
+            .values({ tenant_id, op_id: op.op_id, scope: 'canvass' })
+            .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+            .returning('op_id')
+            .executeTakeFirst();
+          if (!claimed) return { op_id: op.op_id, status: 'duplicate' } as CompanionOpAck;
+
+          if (!doorIds.has(String(op.payload.household_id))) {
+            throw new BadRequestError('That household is not part of this turf.');
+          }
+          return this.applyCompanionOp(trx, {
+            op,
+            tenant_id,
+            turf_id,
+            actor: assignment.created_by,
+            canvasser_name: canvasserName,
+          });
+        });
+        acks.push(ack);
+      } catch (err: unknown) {
+        acks.push({
+          op_id: op.op_id,
+          status: 'rejected',
+          error: err instanceof Error ? err.message : 'Could not record this result.',
+        });
+      }
+    }
+    return { acks };
+  }
+
+  /** Apply one Companion op inside its transaction; returns the ack. */
+  private async applyCompanionOp(
+    trx: Transaction<Models>,
+    input: {
+      op: CompanionOpType;
+      tenant_id: string;
+      turf_id: string;
+      actor: string;
+      canvasser_name: string;
+    },
+  ): Promise<CompanionOpAck> {
+    const { op, tenant_id, turf_id, actor, canvasser_name } = input;
+    const householdId = String(op.payload.household_id);
+    const knockedAt = this.clampRecordedAt(op.recorded_at);
+    const via = `via Canvass Companion (${canvasser_name})`;
+
+    const insertKnock = async (fields: {
+      person_id: string | null;
+      outcome: string;
+      response?: string | null;
+      notes?: string | null;
+      issues?: string[];
+      wants_volunteer?: boolean;
+      wants_yard_sign?: boolean;
+      set_dnc?: boolean;
+      contact_phone?: string | null;
+      contact_email?: string | null;
+      subscribe?: boolean;
+    }): Promise<void> => {
+      const row = {
+        tenant_id,
+        turf_id,
+        household_id: householdId,
+        person_id: fields.person_id,
+        outcome: fields.outcome,
+        response: fields.response ?? null,
+        notes: fields.notes ?? null,
+        source: COMPANION_SOURCE,
+        canvasser_name,
+        client_knock_id: op.op_id,
+        knocked_at: knockedAt,
+        issues: fields.issues ?? [],
+        wants_volunteer: fields.wants_volunteer ?? false,
+        wants_yard_sign: fields.wants_yard_sign ?? false,
+        set_dnc: fields.set_dnc ?? false,
+        contact_phone: fields.contact_phone ?? null,
+        contact_email: fields.contact_email ?? null,
+        subscribe: fields.subscribe ?? false,
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'turf_knocks', 'insert'>;
+      await this.knocks.insertIdempotent(row, trx);
+    };
+
+    const logActivity = async (entity: 'household' | 'person', entity_id: string, extra: Record<string, unknown>) => {
+      await this.userActivity.log(
+        {
+          tenant_id,
+          user_id: actor,
+          activity: 'update',
+          entity,
+          entity_id,
+          metadata: { source: COMPANION_SOURCE, via, turf_id, ...extra },
+          performed_by: actor,
+        },
+        trx,
+      );
+    };
+
+    switch (op.type) {
+      case 'survey': {
+        const p = op.payload;
+        const personId = p.person_id != null ? String(p.person_id) : null;
+        if (personId) await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({
+          person_id: personId,
+          outcome: 'conversation',
+          response: p.support ?? null,
+          notes: p.notes ?? null,
+          issues: p.issues,
+          wants_volunteer: p.wants_volunteer,
+          wants_yard_sign: p.wants_yard_sign,
+          set_dnc: p.set_dnc,
+          contact_phone: p.contact_phone ?? null,
+          contact_email: p.contact_email ?? null,
+          subscribe: p.subscribe,
+        });
+        await this.applySurveySideEffects(trx, { tenant_id, turf_id, household_id: householdId, actor, survey: p });
+        await logActivity('household', householdId, { outcome: 'conversation', response: p.support ?? null });
+        if (personId) await logActivity('person', personId, { outcome: 'conversation', response: p.support ?? null });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_result': {
+        const personId = String(op.payload.person_id);
+        await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({ person_id: personId, outcome: op.payload.result });
+        await logActivity('person', personId, { outcome: op.payload.result });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'door_outcome': {
+        await insertKnock({ person_id: null, outcome: op.payload.outcome });
+        await logActivity('household', householdId, { outcome: op.payload.outcome });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'clear_outcome': {
+        await insertKnock({ person_id: null, outcome: 'cleared' });
+        await logActivity('household', householdId, { outcome: 'cleared' });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_create': {
+        const name = op.payload.name.trim();
+        const lastSpace = name.lastIndexOf(' ');
+        const first = lastSpace > 0 ? name.slice(0, lastSpace) : name;
+        const last = lastSpace > 0 ? name.slice(lastSpace + 1) : null;
+        const created = await trx
+          .insertInto('persons')
+          .values({
+            tenant_id,
+            household_id: householdId,
+            first_name: first,
+            last_name: last,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'persons', 'insert'>)
+          .returning('id')
+          .executeTakeFirst();
+        const personId = String(created?.id ?? '');
+        if (!personId) throw new BadRequestError('Could not add this person.');
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Added at door', actor);
+        await logActivity('person', personId, { created_at_door: true });
+        return { op_id: op.op_id, status: 'applied', person_id: personId };
+      }
+      default: {
+        const _exhaustive: never = op;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /** The follow-up writes a survey triggers (spec §3.5) — all in the op's transaction. */
+  private async applySurveySideEffects(
+    trx: Transaction<Models>,
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      household_id: string;
+      actor: string;
+      survey: CompanionSurveyType;
+    },
+  ): Promise<void> {
+    const { tenant_id, turf_id, household_id, actor, survey } = input;
+    const personId = survey.person_id != null ? String(survey.person_id) : null;
+    const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
+
+    // Support / turnout facts (person-level only, and only with a stance).
+    if (personId && survey.support && campaignId) {
+      const support = KNOCK_RESPONSE_TO_SUPPORT[survey.support];
+      const voting = KNOCK_RESPONSE_TO_VOTING[survey.support];
+      await this.factsRepo.upsertFact(
+        {
+          tenant_id,
+          campaign_id: campaignId,
+          person_id: personId,
+          user_id: actor,
+          ...(support ? { support_level: support } : {}),
+          ...(voting ? { voting_status: voting } : {}),
+          source: 'canvass',
+        },
+        trx,
+      );
+    }
+
+    // "Wants a yard sign" → a Deliveries intake request (spec §3.6/§4), unless
+    // the household already has an open one (same guard as staff addRequest).
+    if (survey.wants_yard_sign && campaignId) {
+      const open = await trx
+        .selectFrom('delivery_requests')
+        .select(['id'])
+        .where('tenant_id', '=', tenant_id)
+        .where('household_id', '=', household_id)
+        .where('status', 'in', ['new', 'approved'])
+        .executeTakeFirst();
+      if (!open) {
+        await trx
+          .insertInto('delivery_requests')
+          .values({
+            tenant_id,
+            campaign_id: campaignId,
+            household_id,
+            person_id: personId,
+            web_form_id: null,
+            source: 'canvass',
+            status: 'new',
+            notes: null,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'delivery_requests', 'insert'>)
+          .execute();
+      }
+    }
+
+    if (personId) {
+      // "Do not contact" — the global compliance flag (§15).
+      if (survey.set_dnc) {
+        await trx
+          .updateTable('persons')
+          .set({ do_not_contact: true, updatedby_id: actor, updated_at: new Date() })
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .execute();
+      }
+
+      // Contact capture: fill blanks only — a doorstep answer never overwrites
+      // what the CRM already knows (the knock row keeps the captured value).
+      if (survey.contact_phone || survey.contact_email) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['mobile', 'email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const updates: Record<string, unknown> = {};
+        if (survey.contact_phone && !person?.mobile) updates['mobile'] = survey.contact_phone;
+        if (survey.contact_email && !person?.email) updates['email'] = survey.contact_email;
+        if (Object.keys(updates).length > 0) {
+          await trx
+            .updateTable('persons')
+            .set({ ...updates, updatedby_id: actor, updated_at: new Date() })
+            .where('tenant_id', '=', tenant_id)
+            .where('id', '=', personId)
+            .execute();
+        }
+      }
+
+      // "Subscribe to updates" — consent captured at the door.
+      if (survey.subscribe && campaignId) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const email = survey.contact_email ?? person?.email ?? null;
+        if (email) {
+          await this.subscriptionsRepo.setStatus(
+            {
+              tenant_id,
+              campaign_id: campaignId,
+              person_id: personId,
+              email,
+              status: 'subscribed',
+              consent_source: 'canvass',
+              user_id: actor,
+            },
+            trx,
+          );
+        }
+      }
+
+      // "Wants to volunteer" → flag for the field organizer.
+      if (survey.wants_volunteer) {
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Volunteer prospect', actor);
+      }
+    }
+  }
+
+  /** Resolve + expiry-check an assignment token (uniform dead-link semantics). */
+  private async resolveActiveAssignment(token: string) {
+    const assignment = await this.assignments.resolveByToken(token);
+    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    if (assignment.expires_at && assignment.expires_at < new Date()) {
+      throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    }
+    return assignment;
+  }
+
+  /** A person op must target a resident of that door — a token can't reach further. */
+  private async assertPersonInHousehold(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    household_id: string,
+  ): Promise<void> {
+    const person = await trx
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .where('household_id', '=', household_id)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('That person is not at this door.');
+  }
+
+  /**
+   * Attach a tag by name inside the op's transaction (find-or-create + map).
+   * PersonsService.attachTag exists but manages its own connections/workflow
+   * triggers outside a transaction — this is the minimal transactional core.
+   */
+  private async attachTagInTrx(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    name: string,
+    actor: string,
+  ): Promise<void> {
+    await trx
+      .insertInto('tags')
+      .values({
+        tenant_id,
+        name,
+        color: '#818789',
+        type: 'tag',
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    const tag = await trx
+      .selectFrom('tags')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('name', '=', name)
+      .executeTakeFirst();
+    if (!tag) return;
+    await trx
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id,
+        person_id,
+        tag_id: String(tag.id),
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'map_peoples_tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** On-device timestamps keep their true door time, but never land in the future. */
+  private clampRecordedAt(recordedAt: string | null | undefined): Date {
+    const now = new Date();
+    if (!recordedAt) return now;
+    const parsed = new Date(recordedAt);
+    if (Number.isNaN(parsed.getTime()) || parsed > now) return now;
+    return parsed;
+  }
+
+  /** Campaign display name + companion survey vocabulary for a turf's campaign. */
+  private async companionCampaign(
+    tenant_id: string,
+    campaign_id: string,
+  ): Promise<{ name: string; issues: string[]; script: string }> {
+    if (campaign_id) {
+      const row = await this.knocks.db
+        .selectFrom('campaigns')
+        .select(['name', 'canvass_issues', 'canvass_script'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', '=', campaign_id)
+        .executeTakeFirst();
+      if (row) {
+        return {
+          name: String(row.name),
+          issues: Array.isArray(row.canvass_issues) ? row.canvass_issues.map(String) : [],
+          script: row.canvass_script ?? '',
+        };
+      }
+    }
+    return { name: '', issues: [], script: '' };
+  }
+
+  private async personFirstLast(tenant_id: string, person_id: string): Promise<string> {
+    const row = await this.knocks.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    return [row?.first_name, row?.last_name].filter(Boolean).join(' ') || 'Volunteer';
+  }
+
+  /** Residents per household — names + DNC only (payload minimization, spec §2). */
+  private async peopleByHousehold(
+    tenant_id: string,
+    household_ids: string[],
+  ): Promise<Map<string, { id: string; name: string; dnc: boolean }[]>> {
+    const map = new Map<string, { id: string; name: string; dnc: boolean }[]>();
+    if (household_ids.length === 0) return map;
+    const rows = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id', 'household_id', 'first_name', 'last_name', 'do_not_contact'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', household_ids)
+      .orderBy('id')
+      .execute();
+    for (const r of rows) {
+      const hid = String(r.household_id);
+      const list = map.get(hid) ?? [];
+      list.push({
+        id: String(r.id),
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unnamed resident',
+        dnc: Boolean(r.do_not_contact),
+      });
+      map.set(hid, list);
+    }
+    return map;
+  }
+
+  private toPrefill(s: {
+    response: string | null;
+    issues: string[];
+    wants_volunteer: boolean;
+    wants_yard_sign: boolean;
+    set_dnc: boolean;
+    subscribe: boolean;
+  }): CompanionSurveyPrefill {
+    return {
+      support: (s.response ?? null) as CompanionSurveyPrefill['support'],
+      issues: s.issues,
+      wants_volunteer: s.wants_volunteer,
+      wants_yard_sign: s.wants_yard_sign,
+      set_dnc: s.set_dnc,
+      subscribe: s.subscribe,
+    };
+  }
+
+  // ------------------------------------------- Companion settings (staff) ----
+
+  /** The survey vocabulary the Companion shows, from the write campaign. */
+  public async getCompanionSettings(
+    auth: IAuthKeyPayload,
+    campaign_id?: string,
+  ): Promise<{ campaign_id: string; campaign_name: string; issues: string[]; script: string }> {
+    const resolved = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id, campaign_id });
+    const campaign = await this.companionCampaign(auth.tenant_id, String(resolved));
+    return {
+      campaign_id: String(resolved),
+      campaign_name: campaign.name,
+      issues: campaign.issues,
+      script: campaign.script,
+    };
+  }
+
+  public async updateCompanionSettings(auth: IAuthKeyPayload, input: UpdateCompanionSettingsType): Promise<void> {
+    const resolved = await this.campaignsRepo.resolveForWrite({
+      tenant_id: auth.tenant_id,
+      campaign_id: input.campaign_id,
+    });
+    await this.knocks.db
+      .updateTable('campaigns')
+      .set({
+        canvass_issues: input.issues,
+        canvass_script: input.script ?? null,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(resolved))
+      .execute();
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'campaign',
+      entity_id: String(resolved),
+      metadata: { action: 'companion_settings', issues: input.issues.length },
+    });
+  }
+
+  /**
+   * Log a knock from a Companion. Idempotent on `client_knock_id` so an offline
+   * volunteer's queued re-send never double-counts. Every knock syncs live to
+   * the household + person Activity log with honest "via Canvass Companion"
+   * attribution under the real account that deployed the link (§22.7).
+   */
+  public async logKnock(input: LogKnockType): Promise<{ recorded: boolean }> {
+    const assignment = await this.assignments.resolveByToken(input.token);
+    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    const tenant_id = assignment.tenant_id;
+    const turf_id = assignment.turf_id;
+
+    // The door must belong to this turf — a token cannot log against other doors.
+    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
+    if (!doorIds.has(String(input.household_id))) {
+      throw new BadRequestError('That household is not part of this turf.');
+    }
+
+    const actor = assignment.created_by;
+    const knockedAt = input.knocked_at ? new Date(input.knocked_at) : new Date();
+
+    const row = {
+      tenant_id,
+      turf_id,
+      household_id: String(input.household_id),
+      person_id: input.person_id != null ? String(input.person_id) : null,
+      outcome: input.outcome,
+      response: input.response ?? null,
+      notes: input.notes ?? null,
+      source: COMPANION_SOURCE,
+      canvasser_name: input.canvasser_name ?? null,
+      client_knock_id: input.client_knock_id,
+      knocked_at: knockedAt,
+      createdby_id: actor,
+      updatedby_id: actor,
+    } as OperationDataType<'turf_knocks', 'insert'>;
+
+    const newId = await this.knocks.insertIdempotent(row);
+    if (!newId) return { recorded: false }; // already synced (offline re-send)
+
+    const via = input.canvasser_name ? `via Canvass Companion (${input.canvasser_name})` : 'via Canvass Companion';
+    const metadata = {
+      source: COMPANION_SOURCE,
+      via,
+      turf_id,
+      outcome: input.outcome,
+      response: input.response ?? null,
+      canvasser_name: input.canvasser_name ?? null,
+    };
+    // Sync to the household activity, and to the person's if one answered.
+    await this.userActivity.log({
+      tenant_id,
+      user_id: actor,
+      activity: 'update',
+      entity: 'household',
+      entity_id: String(input.household_id),
+      metadata,
+      performed_by: actor,
+    });
+    if (input.person_id != null) {
+      await this.userActivity.log({
+        tenant_id,
+        user_id: actor,
+        activity: 'update',
+        entity: 'person',
+        entity_id: String(input.person_id),
+        metadata,
+        performed_by: actor,
+      });
+
+      // A conversation with a stance feeds the support level (or turnout fact)
+      // of the campaign the TURF was cut for (§15) — a writ-period knock updates
+      // the election campaign's read on the voter, never the office's.
+      if (input.response) {
+        const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
+        const support = KNOCK_RESPONSE_TO_SUPPORT[input.response];
+        const voting = KNOCK_RESPONSE_TO_VOTING[input.response];
+        if (campaignId && (support || voting)) {
+          await this.factsRepo.upsertFact({
+            tenant_id,
+            campaign_id: campaignId,
+            person_id: String(input.person_id),
+            user_id: actor,
+            ...(support ? { support_level: support } : {}),
+            ...(voting ? { voting_status: voting } : {}),
+            source: 'canvass',
+          });
+        }
+      }
+    }
+
+    return { recorded: true };
+  }
+
+  /** The campaign a knock's support reading belongs to: the turf's own context. */
+  private async resolveKnockCampaignId(tenant_id: string, turf_id: string): Promise<string | null> {
+    const turf = await this.knocks.db
+      .selectFrom('turfs')
+      .select(['campaign_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', turf_id)
+      .executeTakeFirst();
+    if (turf?.campaign_id) return String(turf.campaign_id);
+    const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id });
+    const office = campaigns.find((c) => c.kind === 'office');
+    return office ? String(office.id) : null;
+  }
+
+  // ----------------------------------------------------------- helpers ------
+
+  private displayStatus(row: TurfRow, attempted: number, lastAt: Date | null): TurfDisplayStatus {
+    switch (row.status) {
+      case 'retired':
+        return 'retired';
+      case 'draft':
+        return 'draft';
+      case 'active': {
+        if (row.door_count > 0 && attempted >= row.door_count) return 'complete';
+        if (lastAt && Date.now() - lastAt.getTime() <= IN_FIELD_WINDOW_MS) return 'in_field';
+        return 'assigned';
+      }
+      default: {
+        // Any unexpected stored status is treated as assigned rather than thrown,
+        // so a future lifecycle value never breaks the whole list.
+        return 'assigned';
+      }
+    }
+  }
+
+  private async resolveUniverseDoors(auth: IAuthKeyPayload, listId: string): Promise<DoorPoint[]> {
+    const householdIds = await this.resolveUniverseHouseholdIds(auth, listId);
+    return this.turfsRepo().getHouseholdsGeo({ tenant_id: auth.tenant_id, household_ids: householdIds });
+  }
+
+  /** Reuse Lists' getCurrentMembers (Wave 1C) — never re-derive membership. */
+  private async resolveUniverseHouseholdIds(auth: IAuthKeyPayload, listId: string): Promise<string[]> {
+    const members = await this.lists.getCurrentMembers(auth, listId);
+    if (members.object === 'households') return members.ids;
+    // A people list → map to their distinct households.
+    return this.turfsRepo().getHouseholdIdsForPersons({ tenant_id: auth.tenant_id, person_ids: members.ids });
+  }
+
+  private async wardMembersNotInAnyTurf(
+    auth: IAuthKeyPayload,
+    ward: string | null,
+    members: Set<string>,
+  ): Promise<string[]> {
+    if (members.size === 0) return [];
+    const geo = await this.turfsRepo().getHouseholdsGeo({
+      tenant_id: auth.tenant_id,
+      household_ids: [...members],
+    });
+    const inWard = geo.filter((d) => (d.ward ?? null) === ward).map((d) => d.household_id);
+    // Exclude households already assigned to any turf.
+    const assigned = await this.householdsInAnyTurf(auth, inWard);
+    return inWard.filter((h) => !assigned.has(h));
+  }
+
+  private async householdsInAnyTurf(auth: IAuthKeyPayload, householdIds: string[]): Promise<Set<string>> {
+    if (householdIds.length === 0) return new Set();
+    const rows = await this.turfsRepo()
+      .db.selectFrom('turf_households')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', 'in', householdIds)
+      .select('household_id')
+      .distinct()
+      .execute();
+    return new Set(rows.map((r) => String(r.household_id)));
+  }
+
+  private formatAddress(d: {
+    street_num: string | null;
+    street1: string | null;
+    city: string | null;
+    state: string | null;
+    zip: string | null;
+  }): string {
+    const line = [d.street_num, d.street1].filter(Boolean).join(' ');
+    const tail = [d.city, d.state, d.zip].filter(Boolean).join(', ');
+    return [line, tail].filter(Boolean).join(', ') || 'Address unavailable';
+  }
+
+  private dayWindow(now: Date): { from: Date; to: Date } {
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const to = new Date(from.getTime() + MS_PER_DAY);
+    return { from, to };
+  }
+
+  private rangeToDates(input: FieldReportRangeType): { from: Date; to: Date } {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    switch (input.range) {
+      case 'today':
+        return { from: startOfToday, to: new Date(startOfToday.getTime() + MS_PER_DAY) };
+      case 'yesterday':
+        return { from: new Date(startOfToday.getTime() - MS_PER_DAY), to: startOfToday };
+      case 'week':
+        return {
+          from: new Date(startOfToday.getTime() - 6 * MS_PER_DAY),
+          to: new Date(startOfToday.getTime() + MS_PER_DAY),
+        };
+      case 'month':
+        return {
+          from: new Date(now.getFullYear(), now.getMonth(), 1),
+          to: new Date(startOfToday.getTime() + MS_PER_DAY),
+        };
+      case 'campaign':
+        return { from: new Date(0), to: new Date(startOfToday.getTime() + MS_PER_DAY) };
+      case 'custom': {
+        const from = input.from ? new Date(input.from) : new Date(0);
+        const to = input.to ? new Date(input.to) : new Date(startOfToday.getTime() + MS_PER_DAY);
+        return { from, to };
+      }
+      default: {
+        const _exhaustive: never = input.range;
+        return { from: _exhaustive, to: now };
+      }
+    }
+  }
+}
+
+/**
+ * Convex hull (Andrew's monotone chain) of a set of lat/lng points — the honest
+ * outer boundary of a turf's doors, used for the dashed coverage outline. Runs in
+ * O(n log n); returns the input unchanged when there are fewer than three points.
+ */
+function convexHull(points: LatLng[]): LatLng[] {
+  if (points.length < MIN_HULL_POINTS) return points;
+  const pts = [...points].sort((a, b) => a.lng - b.lng || a.lat - b.lat);
+  const cross = (o: LatLng, a: LatLng, b: LatLng): number =>
+    (a.lng - o.lng) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lng - o.lng);
+
+  // One monotone-chain half; the caller feeds the points forwards then reversed.
+  const half = (seq: LatLng[]): LatLng[] => {
+    const acc: LatLng[] = [];
+    for (const p of seq) {
+      let a = acc[acc.length - 2];
+      let b = acc[acc.length - 1];
+      while (a && b && cross(a, b, p) <= 0) {
+        acc.pop();
+        a = acc[acc.length - 2];
+        b = acc[acc.length - 1];
+      }
+      acc.push(p);
+    }
+    acc.pop(); // drop the shared endpoint
+    return acc;
+  };
+
+  return half(pts).concat(half([...pts].reverse()));
+}
+```
+
 ## File: apps/backend/src/app/modules/companies/controller.ts
 
 ```typescript
@@ -53013,6 +56217,7 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { logger } from '../../logger';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
 import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
 import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
 import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
@@ -53050,6 +56255,7 @@ function deriveRouteName(firstAddress: string, date: Date): string {
 export class DeliveriesController {
   private readonly requestsRepo = new DeliveryRequestsRepo();
   private readonly campaignsRepo = new CampaignsRepo();
+  private readonly companionAccess = new CompanionAccessController();
   private readonly routesRepo = new DeliveryRoutesRepo();
   private readonly stopsRepo = new DeliveryRouteStopsRepo();
   private readonly userActivity = new UserActivityRepo();
@@ -53541,6 +56747,11 @@ export class DeliveriesController {
   public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
     const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
     if (!route) throw new NotFoundError('Route not found');
+    // The companion access layer verifies the volunteer BEHIND the link, so a
+    // link with nobody behind it can never pass the gate — refuse to mint one.
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first — the link is personal.');
+    }
     const active =
       route.share_token_hash != null &&
       route.share_token_expires_at != null &&
@@ -53585,10 +56796,15 @@ export class DeliveriesController {
     return createHash('sha256').update(rawToken).digest('hex');
   }
 
-  /** Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload. */
-  public async getPublicRoute(rawToken: string) {
+  /**
+   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
+   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
+   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
+   */
+  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
     if (!this.isTokenUsable(route)) return null;
+    await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
     const orgName = await this.publicOrgName(tenantId);
@@ -53600,9 +56816,12 @@ export class DeliveriesController {
     stopId: string,
     action: 'deliver' | 'skip' | 'defer' | 'undo',
     reason: string | null,
+    sessionToken: string | null,
+    opId: string | null,
   ) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
     if (!this.isTokenUsable(route)) return null;
+    await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const routeId = String(route.id);
     const actor: IAuthKeyPayload = {
@@ -53611,6 +56830,20 @@ export class DeliveriesController {
       session_id: 'volunteer-link',
     };
     await this.routesRepo.transaction().execute(async (trx) => {
+      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
+      // inside the SAME transaction as the action, so claim + apply commit or
+      // roll back together. A replayed opId conflicts, applies nothing, and
+      // falls through to return the current authoritative payload — this is
+      // what makes a retried "defer" move the stop once, not twice.
+      if (opId) {
+        const claimed = await trx
+          .insertInto('companion_ops')
+          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
+          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+          .returning('op_id')
+          .executeTakeFirst();
+        if (!claimed) return;
+      }
       const stop = await trx
         .selectFrom('delivery_route_stops')
         .selectAll()
@@ -53632,6 +56865,24 @@ export class DeliveriesController {
     const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
     const orgName = await this.publicOrgName(tenantId);
     return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
+  }
+
+  /**
+   * The volunteer-identity gate on every public data request. Throws
+   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
+   * or ForbiddenError (403 — verified but not yet admin-approved); the route
+   * handler passes those two statuses through so the companion gate can render
+   * its verify/pending states, and keeps the uniform 404 for dead tokens.
+   */
+  private async requireCompanionSession(
+    route: { tenant_id: string } & Record<string, unknown>,
+    sessionToken: string | null,
+  ): Promise<void> {
+    const volunteerId = route['volunteer_person_id'];
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
+    });
   }
 
   // ---- Shared transition helpers ------------------------------------------
@@ -53966,7 +57217,7 @@ export class DeliveriesController {
     const delivered = stops.filter((s) => s.status === 'delivered').length;
     // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
     return {
-      campaign_name: orgName,
+      organization_name: orgName,
       route_name: String(route['name'] ?? 'Delivery route'),
       status: String(route['status'] ?? 'assigned'),
       start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
@@ -54051,980 +57302,6 @@ function safeParse(raw: string): unknown {
     return {};
   }
 }
-```
-
-## File: apps/backend/src/app/modules/donations/controller.ts
-
-```typescript
-import crypto from 'crypto';
-import Stripe from 'stripe';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { DonationsRepo } from './repositories/donations.repo';
-import { DonationPeriodsRepo } from './repositories/periods.repo';
-import { DonationPledgesRepo } from './repositories/pledges.repo';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { hashToken } from '../../lib/token-hash';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import type { Selectable } from 'kysely';
-import { logger } from '../../logger';
-
-// The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
-// shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
-// API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
-const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
-
-export class DonationsController extends BaseController<'donations', DonationsRepo> {
-  private settingsRepo = new SettingsRepo();
-  private periodsRepo = new DonationPeriodsRepo();
-  private pledgesRepo = new DonationPledgesRepo();
-  private campaignsRepo = new CampaignsRepo();
-
-  constructor() {
-    super(new DonationsRepo());
-  }
-
-  /** Whether a webhook token has been generated for this tenant. The token itself is never
-   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
-  public async getWebhookTokenStatus(tenantId: string): Promise<{ configured: boolean }> {
-    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key: WEBHOOK_TOKEN_KEY });
-    return { configured: !!row?.value };
-  }
-
-  /** Generate a new webhook token, persist ONLY its hash, and return the plaintext once so the
-   * caller can show the user the webhook URL to paste into Stripe. Any previous token is invalidated. */
-  public async regenerateWebhookToken(tenantId: string, userId: string): Promise<{ token: string }> {
-    const token = 'wt_' + crypto.randomBytes(24).toString('hex');
-    // upsertMany JSON.stringifies the value, so the stored column becomes JSON.stringify(hash) —
-    // exactly what the webhook route below looks up by.
-    await this.settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: userId,
-      entries: [{ key: WEBHOOK_TOKEN_KEY, value: hashToken(token) }],
-    });
-    return { token };
-  }
-
-  public async getPersonDonationsList(tenantId: string, personId: string) {
-    return this.getRepo().getPersonDonationsList(tenantId, personId);
-  }
-
-  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
-    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
-  }
-
-  public async getTenantDonationsList(tenantId: string) {
-    return this.getRepo().getTenantDonationsList(tenantId);
-  }
-
-  // ── Donation Periods ────────────────────────────────────────────────────────
-
-  public async getDonationPeriods(tenantId: string) {
-    return this.periodsRepo.getAllForTenant(tenantId);
-  }
-
-  public async createDonationPeriod(
-    tenantId: string,
-    userId: string,
-    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number; campaign_id?: string },
-  ) {
-    // Contribution-limit windows are per campaign (§15).
-    const campaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: payload.campaign_id,
-    });
-    return this.periodsRepo.db
-      .insertInto('donation_periods')
-      .values({
-        tenant_id: tenantId,
-        campaign_id: campaignId,
-        name: payload.name,
-        start_date: payload.start_date,
-        end_date: payload.end_date ? (payload.end_date as any) : null,
-        limit_amount: payload.limit_amount,
-        is_active: true,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async updateDonationPeriod(
-    tenantId: string,
-    userId: string,
-    id: string,
-    payload: {
-      name?: string;
-      start_date?: string;
-      end_date?: string | null;
-      limit_amount?: number;
-      is_active?: boolean;
-    },
-  ) {
-    const set: any = { updatedby_id: userId, updated_at: new Date() };
-    if (payload.name !== undefined) set.name = payload.name;
-    if (payload.start_date !== undefined) set.start_date = payload.start_date;
-    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
-    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
-    if (payload.is_active !== undefined) set.is_active = payload.is_active;
-
-    return this.periodsRepo.db
-      .updateTable('donation_periods')
-      .set(set)
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenantId)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async deleteDonationPeriod(tenantId: string, id: string) {
-    await this.periodsRepo.db
-      .deleteFrom('donation_periods')
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  // ── Pledges ─────────────────────────────────────────────────────────────────
-
-  public async getTenantPledgesList(tenantId: string) {
-    return this.pledgesRepo.getAllForTenant(tenantId);
-  }
-
-  public async getPersonPledges(tenantId: string, personId: string) {
-    return this.pledgesRepo.getForPerson(tenantId, personId);
-  }
-
-  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
-    const pledge = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('id', '=', pledgeId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!pledge) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
-    }
-
-    // Cancel in Stripe if there's a real subscription
-    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
-      const tenantStripeKey =
-        (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-      if (tenantStripeKey) {
-        const stripe = new Stripe(tenantStripeKey);
-        try {
-          await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
-        } catch (err) {
-          logger.error({ err }, 'Stripe subscription cancel failed');
-        }
-      }
-    }
-
-    return this.pledgesRepo.db
-      .updateTable('donation_pledges')
-      .set({
-        status: 'cancelled',
-        cancelled_at: new Date(),
-        updatedby_id: userId,
-        updated_at: new Date(),
-      })
-      .where('id', '=', pledgeId)
-      .where('tenant_id', '=', tenantId)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  private async getSettingVal(tenantId: string, key: string): Promise<any> {
-    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
-    return row?.value;
-  }
-
-  public calculateTaxCredit(
-    amountCents: number,
-    cumulativeBeforeCents: number,
-    tiers: Array<{ limit: number; rate: number }>,
-  ): number {
-    if (!tiers || tiers.length === 0) return 0;
-
-    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
-    let creditCents = 0;
-    let remainingAmount = amountCents;
-    let currentCumulative = cumulativeBeforeCents;
-
-    for (const tier of sortedTiers) {
-      const tierLimitCents = tier.limit * 100;
-
-      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
-        const availableInTier = tierLimitCents - currentCumulative;
-        const amountInTier = Math.min(remainingAmount, availableInTier);
-
-        creditCents += amountInTier * tier.rate;
-        remainingAmount -= amountInTier;
-        currentCumulative += amountInTier;
-      }
-    }
-
-    return Math.round(creditCents);
-  }
-
-  /**
-   * Resolve the active limit window for the tenant.
-   * Returns { limitCents, cumulative } using the donation_period if one is active,
-   * or falling back to the legacy calendar-year setting.
-   */
-  private async resolveLimitWindow(
-    tenantId: string,
-    personId: string,
-  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
-
-    if (activePeriod) {
-      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
-        tenantId,
-        personId,
-        new Date(activePeriod.start_date),
-        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
-      );
-      return {
-        limitCents: Number(activePeriod.limit_amount),
-        cumulative,
-        periodName: activePeriod.name,
-      };
-    }
-
-    // Fallback: calendar year + legacy settings
-    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
-    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
-    const currentYear = new Date().getFullYear();
-    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
-    return { limitCents: limitSetting * 100, cumulative, periodName: null };
-  }
-
-  /**
-   * Perform eligibility checks based on limit and residency restrictions.
-   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
-   * the total commitment against the period limit.
-   */
-  public async checkEligibility(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    options?: { isRecurring?: boolean; remainingMonths?: number },
-  ) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-
-    // For recurring: check total commitment (monthly × remaining months) against limit
-    const effectiveAmount =
-      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
-
-    if (cumulative + effectiveAmount > limitCents) {
-      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
-      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
-      const limitLabel = limitCents / 100;
-      return {
-        eligible: false,
-        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
-      };
-    }
-
-    // Residency check
-    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
-    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
-    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
-
-    if (restrictResidency) {
-      const country = (address.country || '').trim().toUpperCase();
-      const state = (address.state || '').trim().toUpperCase();
-
-      if (allowedCountries) {
-        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
-        if (!country || !countriesList.includes(country)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
-          };
-        }
-      }
-
-      if (allowedRegions) {
-        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
-        if (!state || !regionsList.includes(state)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
-          };
-        }
-      }
-    }
-
-    return { eligible: true };
-  }
-
-  /**
-   * Get donation stats for a person relative to the active limit window.
-   */
-  public async getDonationStats(tenantId: string, personId: string) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-    return {
-      cumulativeAmount: cumulative / 100,
-      limitAmount: limitCents / 100,
-      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
-      periodName,
-    };
-  }
-
-  // ── One-time Checkout ────────────────────────────────────────────────────────
-
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
-    if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
-    }
-
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      let redirectBase = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
-
-      if (customUrls?.successUrl) {
-        const separator = redirectBase.includes('?') ? '&' : '?';
-        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
-      }
-
-      return { url: redirectBase };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Campaign Donation' },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        amount: String(amountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  // ── Recurring Subscription Checkout ─────────────────────────────────────────
-
-  /**
-   * Calculate remaining months in the active donation period from today.
-   * Returns null if the period is open-ended.
-   */
-  private getRemainingMonths(endDate: Date | null): number | null {
-    if (!endDate) return null;
-    const now = new Date();
-    const diffMs = endDate.getTime() - now.getTime();
-    if (diffMs <= 0) return 0;
-    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
-  }
-
-  public async createRecurringCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    monthlyAmountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
-    // Determine remaining months for limit enforcement
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
-    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
-
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
-      isRecurring: true,
-      remainingMonths: remainingMonths ?? 12,
-    });
-    if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
-    }
-
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
-      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
-
-      let successUrl = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
-
-      if (customUrls?.successUrl) {
-        const sep = successUrl.includes('?') ? '&' : '?';
-        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
-      }
-
-      return { url: successUrl, mock: true };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    // Create a one-off price for this amount (monthly)
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Monthly Campaign Donation' },
-            unit_amount: monthlyAmountCents,
-            recurring: { interval: 'month' },
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      subscription_data: {
-        metadata: {
-          tenantId: auth.tenant_id,
-          personId,
-          monthlyAmount: String(monthlyAmountCents),
-          residencyProvince: address.state || '',
-          residencyCountry: address.country || '',
-          createdBy: auth.user_id,
-        },
-      },
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        monthlyAmount: String(monthlyAmountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-        isRecurring: 'true',
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  // ── Confirm Flows ────────────────────────────────────────────────────────────
-
-  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    if (sessionId.startsWith('cs_mock_')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
-      });
-    }
-
-    const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    if (!tenantStripeKey) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stripe is not configured for this tenant.' });
-    }
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    if (session.payment_status !== 'paid') {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
-    }
-
-    const personId = String(session.metadata?.['personId']);
-    const amountCents = Number(session.metadata?.['amount']);
-    const province = String(session.metadata?.['residencyProvince'] || '');
-    const country = String(session.metadata?.['residencyCountry'] || '');
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  public async confirmMockDonation(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string,
-    province: string,
-    country: string,
-  ) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  /**
-   * Confirm a mock recurring pledge from the frontend (no real Stripe).
-   */
-  public async confirmMockPledge(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    mockSubId: string,
-    province: string,
-    country: string,
-  ) {
-    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
-  }
-
-  // ── Internal Write Helpers ───────────────────────────────────────────────────
-
-  public async recordNewPledge(
-    tenantId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    stripeSubscriptionId: string,
-    stripeCustomerId: string | null,
-    province: string,
-    country: string,
-    userId: string,
-    campaignId?: string,
-  ): Promise<Selectable<Models['donation_pledges']>> {
-    const existing = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('stripe_subscription_id', '=', stripeSubscriptionId)
-      .executeTakeFirst();
-
-    if (existing) return existing;
-
-    // Which fund the pledge belongs to (§15); Stripe-path pledges without an
-    // explicit campaign land in the office context.
-    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-    });
-
-    const person = await this.pledgesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
-      const inserted = (await trx
-        .insertInto('donation_pledges')
-        .values({
-          tenant_id: tenantId,
-          campaign_id: resolvedCampaignId,
-          person_id: personId,
-          stripe_subscription_id: stripeSubscriptionId,
-          stripe_customer_id: stripeCustomerId,
-          monthly_amount: monthlyAmountCents,
-          status: 'active',
-          first_name: person?.first_name ?? null,
-          last_name: person?.last_name ?? null,
-          email: person?.email ?? null,
-          state: province || null,
-          country: country || null,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
-
-      // "Donor" is derived from donations/pledges data (§15) — no tag to maintain.
-
-      await trx
-        .insertInto('user_activity')
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
-          entity: 'persons',
-          entity_id: personId,
-          quantity: 1,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-
-      return inserted;
-    });
-
-    return pledge;
-  }
-
-  /** Record an offline gift (spec §12, Fig. 15 "Record donation" dialog) — cash, check, or bank
-   * transfer collected outside the Stripe checkout flow. Shares the tagging/activity-log/workflow
-   * wiring with the Stripe path so offline and online gifts show up identically on the person's
-   * Donations tab and Activity log. */
-  public async recordManualDonation(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    amountCents: number,
-    method: 'card' | 'check' | 'cash' | 'bank_transfer',
-    campaignId?: string,
-  ): Promise<Selectable<Models['donations']>> {
-    const person = await this.getRepo()
-      .db.selectFrom('persons')
-      .select(['id'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!person) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift — receipts need a name.' });
-    }
-
-    return this.recordSuccessfulDonation(
-      auth.tenant_id,
-      personId,
-      amountCents,
-      null,
-      '',
-      '',
-      auth.user_id,
-      undefined,
-      method,
-      campaignId,
-    );
-  }
-
-  public async recordSuccessfulDonation(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string | null,
-    province: string,
-    country: string,
-    userId: string,
-    pledgeId?: string,
-    method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
-    campaignId?: string,
-  ): Promise<Selectable<Models['donations']>> {
-    // Which fund the gift belongs to (§15); Stripe-path gifts without an
-    // explicit campaign land in the office context.
-    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-    });
-
-    const person = await this.getRepo()
-      .db.selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    const record = await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        const inserted = (await trx
-          .insertInto('donations')
-          .values({
-            tenant_id: tenantId,
-            campaign_id: resolvedCampaignId,
-            person_id: personId,
-            first_name: person?.first_name ?? null,
-            last_name: person?.last_name ?? null,
-            email: person?.email ?? null,
-            amount: amountCents,
-            status: 'succeeded',
-            stripe_session_id: sessionId,
-            state: province || null,
-            country: country || null,
-            pledge_id: pledgeId ? pledgeId : null,
-            method,
-            receipt_sent: true,
-          })
-          .returningAll()
-          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
-
-        // "Donor" is derived from donations data (§15) — no tag to maintain.
-
-        try {
-          await trx
-            .insertInto('user_activity')
-            .values({
-              tenant_id: tenantId,
-              user_id: userId,
-              activity: `Collected a donation of $${amountCents / 100}`,
-              entity: 'persons',
-              entity_id: personId,
-              quantity: 1,
-              createdby_id: userId,
-              updatedby_id: userId,
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to write audit activity log for donation');
-        }
-
-        return inserted;
-      });
-
-    try {
-      const workflowsController = new WorkflowsController();
-      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
-    } catch (workflowErr) {
-      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_received');
-    }
-
-    return record;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/donations/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
-import { DonationsController } from './controller';
-
-const controller = new DonationsController();
-
-export const DonationsRouter = router({
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
-
-  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
-   * not run through the public Stripe checkout. */
-  recordDonation: authProcedure
-    .input(RecordDonationObj)
-    .mutation(({ ctx, input }) =>
-      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
-    ),
-
-  getPersonDonationHistory: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
-
-  getDonationStats: authProcedure
-    .input(z.string())
-    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
-
-  checkEligibility: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-        isRecurring: z.boolean().optional(),
-        remainingMonths: z.number().optional(),
-      }),
-    )
-    .query(({ ctx, input }) =>
-      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
-        isRecurring: input.isRecurring,
-        remainingMonths: input.remainingMonths,
-      }),
-    ),
-
-  createCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
-
-  confirmDonation: authProcedure
-    .input(z.object({ sessionId: z.string() }))
-    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
-
-  confirmMockDonation: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        sessionId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockDonation(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.amountCents,
-        input.sessionId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  createRecurringCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
-    ),
-
-  confirmMockPledge: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        mockSubId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockPledge(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.monthlyAmountCents,
-        input.mockSubId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
-
-  getPersonPledges: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
-
-  cancelPledge: authProcedure
-    .input(z.object({ pledgeId: z.string() }))
-    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
-
-  createDonationPeriod: authProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        start_date: z.string(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive(),
-        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
-        campaign_id: z.string().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
-
-  updateDonationPeriod: authProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        name: z.string().min(1).optional(),
-        start_date: z.string().optional(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive().optional(),
-        is_active: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => {
-      const { id, ...payload } = input;
-      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
-    }),
-
-  deleteDonationPeriod: authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
-
-  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
-
-  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
-
-  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
-    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
-  ),
-});
 ```
 
 ## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
@@ -57316,57 +59593,220 @@ export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
 }));
 ```
 
-## File: apps/companion/src/app/canvass/canvass-page.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-
-import { CompanionGate } from '../gate/companion-gate';
-
-/** Canvass companion (spec §3) — the full walk-list app lands in Phase C. */
-@Component({
-  selector: 'pc-canvass-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CompanionGate],
-  template: `
-    <pc-companion-gate kind="turf" [token]="token()">
-      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-        <h1 class="text-lg font-semibold">Canvass companion</h1>
-        <p class="text-base-content/70">Coming soon.</p>
-      </div>
-    </pc-companion-gate>
-  `,
-})
-export class CanvassPage {
-  /** Route param — the capability token from /t/:token. */
-  public readonly token = input.required<string>();
-}
-```
-
 ## File: apps/companion/src/app/deliveries/route-page.ts
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+
+import { PcMap } from '@uxcommon/components/map/map';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { DELIVERY_SKIP_REASONS } from '@common';
+import { Icon } from '@icons/icon';
 
 import { CompanionGate } from '../gate/companion-gate';
+import { CompanionSessionService } from '../gate/companion-api';
 
-/** Deliveries companion (spec §4) — the CRM's public route page moves here in Phase D. */
+interface PublicStop {
+  id: string;
+  seq: number;
+  first_name: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  status: 'pending' | 'delivered' | 'skipped';
+  reason: string | null;
+  acted_at: string | null;
+}
+
+interface PublicRouteData {
+  organization_name: string;
+  route_name: string;
+  status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled';
+  start: { lat: number; lng: number };
+  stops_total: number;
+  stops_delivered: number;
+  stops: PublicStop[];
+}
+
+type PageState = 'loading' | 'ready' | 'notfound' | 'session-expired';
+type ViewMode = 'list' | 'map';
+
+/**
+ * Deliveries companion (spec §4.4–4.5), served at /r/:token behind the
+ * companion gate. The capability token scopes the route; the device session
+ * header proves who is driving it. Every action posts with a fresh op_id so a
+ * flaky-network retry applies exactly once, and re-renders from the
+ * authoritative response.
+ */
 @Component({
   selector: 'pc-route-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CompanionGate],
-  template: `
-    <pc-companion-gate kind="route" [token]="token()">
-      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-        <h1 class="text-lg font-semibold">Delivery route</h1>
-        <p class="text-base-content/70">Coming soon.</p>
-      </div>
-    </pc-companion-gate>
-  `,
+  imports: [CompanionGate, PcMap, StatusBadge, Icon, TabBar],
+  templateUrl: './route-page.html',
 })
 export class RoutePage {
+  private readonly session = inject(CompanionSessionService);
+
   /** Route param — the capability token from /r/:token. */
   public readonly token = input.required<string>();
+
+  protected readonly reasons = DELIVERY_SKIP_REASONS;
+
+  protected readonly state = signal<PageState>('loading');
+  protected readonly data = signal<PublicRouteData | null>(null);
+  protected readonly view = signal<ViewMode>('list');
+
+  protected readonly viewTabs: PcTabOption[] = [
+    { id: 'list', label: 'List' },
+    { id: 'map', label: 'Map' },
+  ];
+
+  protected readonly reasonPickerFor = signal<string | null>(null);
+  protected readonly lastActioned = signal<string | null>(null);
+  protected readonly selectedStopId = signal<string | null>(null);
+  protected readonly busy = signal(false);
+
+  protected readonly activeStopId = computed(() => this.data()?.stops.find((s) => s.status === 'pending')?.id ?? null);
+  protected readonly handled = computed(() => this.data()?.stops.filter((s) => s.status !== 'pending').length ?? 0);
+  protected readonly isDone = computed(() => this.data()?.status === 'completed');
+
+  protected readonly markers = computed<PcMapMarker<PublicStop>[]>(() => {
+    const d = this.data();
+    if (!d) return [];
+    const active = this.activeStopId();
+    return d.stops
+      .filter((s) => s.lat != null && s.lng != null)
+      .map((s) => ({
+        position: { lat: s.lat as number, lng: s.lng as number },
+        variant: this.pinVariant(s, active),
+        tooltip: `${s.seq}. ${s.address}`,
+        id: s.id,
+        payload: s,
+      }));
+  });
+
+  protected setView(view: string): void {
+    if (view === 'list' || view === 'map') this.view.set(view);
+  }
+
+  protected statusChip(): { type: 'neutral' | 'warning' | 'success'; label: string } {
+    const s = this.data()?.status;
+    if (s === 'completed') return { type: 'success', label: 'Completed' };
+    if (s === 'in_progress') return { type: 'warning', label: 'In progress' };
+    return { type: 'neutral', label: 'Not started' };
+  }
+
+  protected selectStop(marker: PcMapMarker): void {
+    // pc-map's markerClicked emits PcMapMarker<unknown>; the marker id carries our stop id.
+    this.selectedStopId.set(marker.id ?? null);
+  }
+
+  protected navigate(stop: PublicStop): void {
+    if (stop.lat == null || stop.lng == null) return;
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`, '_blank', 'noopener');
+  }
+
+  protected openFullRoute(): void {
+    const d = this.data();
+    if (!d) return;
+    const located = d.stops.filter((s) => s.lat != null && s.lng != null);
+    if (located.length === 0) return;
+    const origin = `${d.start.lat},${d.start.lng}`;
+    const dest = located[located.length - 1];
+    const waypoints = located
+      .slice(0, -1)
+      .map((s) => `${s.lat},${s.lng}`)
+      .join('|');
+    const params = new URLSearchParams({ api: '1', origin, destination: `${dest?.lat},${dest?.lng}` });
+    if (waypoints) params.set('waypoints', waypoints);
+    window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  protected openReasonPicker(stopId: string): void {
+    this.reasonPickerFor.set(stopId);
+  }
+
+  protected cancelReason(): void {
+    this.reasonPickerFor.set(null);
+  }
+
+  protected async deliver(stopId: string): Promise<void> {
+    await this.post(stopId, 'deliver');
+  }
+
+  protected async skip(stopId: string, reason: string): Promise<void> {
+    await this.post(stopId, 'skip', reason);
+    this.reasonPickerFor.set(null);
+  }
+
+  protected async defer(stopId: string): Promise<void> {
+    await this.post(stopId, 'defer');
+  }
+
+  protected async undo(stopId: string): Promise<void> {
+    await this.post(stopId, 'undo');
+  }
+
+  protected reload(): void {
+    window.location.reload();
+  }
+
+  protected async load(): Promise<void> {
+    const token = this.token();
+    if (!token) {
+      this.state.set('notfound');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/deliveries/r/${encodeURIComponent(token)}`, {
+        headers: { Accept: 'application/json', ...this.session.headers() },
+      });
+      if (!res.ok) {
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
+        return;
+      }
+      this.data.set((await res.json()) as PublicRouteData);
+      this.state.set('ready');
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+
+  private pinVariant(s: PublicStop, activeId: string | null): PcMapVariant {
+    if (s.status === 'delivered') return 'success';
+    if (s.status === 'skipped') return 'warning';
+    if (s.id === activeId) return 'primary';
+    return 'muted';
+  }
+
+  private async post(stopId: string, action: 'deliver' | 'skip' | 'defer' | 'undo', reason?: string): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    try {
+      const res = await fetch(
+        `/api/deliveries/r/${encodeURIComponent(this.token())}/stops/${encodeURIComponent(stopId)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.session.headers() },
+          // A fresh op_id per tap — the server ledger makes retries apply exactly once.
+          body: JSON.stringify({ action, reason: reason ?? null, op_id: crypto.randomUUID() }),
+        },
+      );
+      if (!res.ok) {
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
+        return;
+      }
+      this.data.set((await res.json()) as PublicRouteData);
+      if (action === 'deliver' || action === 'skip') this.lastActioned.set(stopId);
+      else if (action === 'undo') this.lastActioned.set(null);
+    } catch {
+      // Leave state as-is; the volunteer can retry.
+    } finally {
+      this.busy.set(false);
+    }
+  }
 }
 ```
 
@@ -59733,6 +62173,147 @@ export { UsersRouter } from './users/trpc.router';
 export { EventsRouter } from './events/trpc.router';
 export { PersonConnectionsRouter } from './person-connections/trpc.router';
 export { CampaignsRouter } from './campaigns/trpc.router';
+```
+
+## File: apps/companion/src/app/canvass/canvass-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
+
+import { Icon } from '@icons/icon';
+
+import { CompanionGate } from '../gate/companion-gate';
+import { CanvassHousehold } from './canvass-household';
+import { CanvassLanding } from './canvass-landing';
+import { CanvassList } from './canvass-list';
+import { CanvassMap } from './canvass-map';
+import { CanvassMe } from './canvass-me';
+import { CanvassStore } from './canvass-store';
+import { CanvassSurvey } from './canvass-survey';
+
+import type { PcIconNameType } from '@icons/icons.index';
+
+type TabId = 'list' | 'map' | 'me';
+
+/**
+ * Canvass companion shell (spec §3). Sits behind the verify+approve gate;
+ * everything inside is client-side view state in the store — only the token
+ * is routable. The tab bar hides inside the household and survey views to
+ * keep the doorstep flow linear (list → household → survey → back).
+ */
+@Component({
+  selector: 'pc-canvass-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [CanvassStore],
+  imports: [CompanionGate, CanvassHousehold, CanvassLanding, CanvassList, CanvassMap, CanvassMe, CanvassSurvey, Icon],
+  template: `
+    <pc-companion-gate kind="turf" [token]="token()" (ready)="onReady()">
+      @if (store.loadError()) {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <pc-icon name="exclamation-triangle" [size]="8" class="text-warning"></pc-icon>
+          <h1 class="text-lg font-semibold">Couldn't load your turf</h1>
+          <p class="text-base-content/70">{{ store.loadError() }}</p>
+          <button type="button" class="btn btn-primary" (click)="retry()">Try again</button>
+        </div>
+      } @else if (!store.payload()) {
+        <div class="flex min-h-screen items-center justify-center">
+          <span class="loading loading-spinner loading-md opacity-40" aria-label="Loading your turf"></span>
+        </div>
+      } @else {
+        <div class="mx-auto flex min-h-screen w-full max-w-md flex-col" [class.pb-20]="tabsVisible()">
+          @if (!store.online()) {
+            <div
+              class="sticky top-0 z-20 bg-warning px-4 py-2 text-center text-xs font-medium text-warning-content"
+              role="status"
+            >
+              Offline — {{ store.queue().length }} {{ store.queue().length === 1 ? 'result' : 'results' }} queued in
+              this browser
+            </div>
+          }
+          @switch (store.view().kind) {
+            @case ('landing') {
+              <pc-canvass-landing></pc-canvass-landing>
+            }
+            @case ('list') {
+              <pc-canvass-list></pc-canvass-list>
+            }
+            @case ('map') {
+              <pc-canvass-map></pc-canvass-map>
+            }
+            @case ('me') {
+              <pc-canvass-me></pc-canvass-me>
+            }
+            @case ('household') {
+              <pc-canvass-household></pc-canvass-household>
+            }
+            @case ('survey') {
+              <pc-canvass-survey></pc-canvass-survey>
+            }
+          }
+        </div>
+
+        @if (tabsVisible()) {
+          <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-base-300 bg-base-100" aria-label="Sections">
+            <div class="mx-auto grid max-w-md grid-cols-3">
+              @for (tab of tabs; track tab.id) {
+                <button
+                  type="button"
+                  class="flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium"
+                  [class.text-primary]="activeTab() === tab.id"
+                  [class.text-base-content]="activeTab() !== tab.id"
+                  [class.opacity-60]="activeTab() !== tab.id"
+                  [attr.aria-current]="activeTab() === tab.id ? 'page' : null"
+                  (click)="openTab(tab.id)"
+                >
+                  <pc-icon [name]="tab.icon" [size]="5"></pc-icon>
+                  {{ tab.label }}
+                </button>
+              }
+            </div>
+          </nav>
+        }
+      }
+    </pc-companion-gate>
+  `,
+})
+export class CanvassPage {
+  /** Route param — the capability token from /t/:token. */
+  public readonly token = input.required<string>();
+
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly tabs: { id: TabId; label: string; icon: PcIconNameType }[] = [
+    { id: 'list', label: 'Turf', icon: 'queue-list' },
+    { id: 'map', label: 'Map', icon: 'map' },
+    { id: 'me', label: 'Me', icon: 'user-circle' },
+  ];
+
+  protected readonly activeTab = computed<TabId | null>(() => {
+    const kind = this.store.view().kind;
+    return kind === 'list' || kind === 'map' || kind === 'me' ? kind : null;
+  });
+  /** Hidden inside household + survey (linear doorstep flow) and on the landing cover. */
+  protected readonly tabsVisible = computed(() => this.activeTab() !== null);
+
+  constructor() {
+    // A dead session (revoked/expired) sends the volunteer back through the gate.
+    effect(() => {
+      if (this.store.sessionExpired()) window.location.reload();
+    });
+  }
+
+  protected onReady(): void {
+    void this.store.load(this.token());
+  }
+
+  protected openTab(tab: TabId): void {
+    this.store.view.set({ kind: tab });
+  }
+
+  protected retry(): void {
+    void this.store.load(this.token());
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/auth/controller.ts

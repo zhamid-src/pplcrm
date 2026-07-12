@@ -36,9 +36,11 @@ function rateLimited(ip: string): boolean {
 
 /** Narrow an unknown thrown value to an HTTP status without leaking internals. */
 function statusOf(err: unknown): number {
-  if (err && typeof err === 'object' && 'statusCode' in err) {
-    const code = (err as { statusCode?: unknown }).statusCode;
-    if (typeof code === 'number') return code;
+  if (err && typeof err === 'object') {
+    const candidate =
+      (err as { status?: unknown; statusCode?: unknown }).status ??
+      (err as { status?: unknown; statusCode?: unknown }).statusCode;
+    if (typeof candidate === 'number') return candidate;
   }
   return 500;
 }
