@@ -88,11 +88,14 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           '**60 people in 24 households** with real Ottawa street addresses — so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
           '**10 companies**, with several people linked to them.',
           '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Canvassing turfs** cut across the wards — one complete, one being knocked right now, one just assigned, and one still a draft — with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries** — sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
           '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in — their accounts exist so assignment and triage look real.',
           '**Tasks** in every state — overdue, due this week, waiting, and done.',
           '**A working inbox** — a handful of emails from demo contacts, some open, some closed, some assigned.',
           '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
           '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+          '**A donations ledger** — recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
         ],
       },
       {
@@ -110,7 +113,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'warning',
         title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
       },
       { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
       {
@@ -129,7 +132,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           {
             title: 'Start fresh',
             detail:
-              'Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
           },
         ],
       },

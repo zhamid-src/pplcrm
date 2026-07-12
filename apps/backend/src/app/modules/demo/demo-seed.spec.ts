@@ -10,6 +10,9 @@ import { DEMO_MANIFEST_SETTINGS_KEY, deleteDemoData, seedDemoData } from './demo
 import type { DemoSeedManifest } from './demo-seed';
 import {
   DEMO_COMPANIES,
+  DEMO_DELIVERY_REQUESTS,
+  DEMO_DELIVERY_ROUTES,
+  DEMO_DONATIONS,
   DEMO_EMAILS,
   DEMO_HOUSEHOLDS,
   DEMO_ISSUES,
@@ -17,8 +20,10 @@ import {
   DEMO_NEWSLETTERS,
   DEMO_PERSONS,
   DEMO_SUBMISSIONS,
+  DEMO_PLEDGES,
   DEMO_TAGS,
   DEMO_TASKS,
+  DEMO_TURFS,
   DEMO_USERS,
   DEMO_VOLUNTEER_EVENTS,
 } from './demo-seed-data';
@@ -121,7 +126,16 @@ describe('demo seeding and exit-demo', () => {
       | 'map_teams_persons'
       | 'emails'
       | 'authusers'
-      | 'profiles',
+      | 'profiles'
+      | 'turfs'
+      | 'turf_households'
+      | 'turf_assignments'
+      | 'turf_knocks'
+      | 'delivery_requests'
+      | 'delivery_routes'
+      | 'delivery_route_stops'
+      | 'donations'
+      | 'donation_pledges',
     tenant_id: string,
   ): Promise<number> => {
     const rows = await ctx.trx.selectFrom(table).select('tenant_id').where('tenant_id', '=', tenant_id).execute();
@@ -149,6 +163,48 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('campaign_person_facts', f.tenant_id)).toBeGreaterThan(20);
     expect(await count('campaign_subscriptions', f.tenant_id)).toBeGreaterThan(10);
     expect(await count('map_peoples_tags', f.tenant_id)).toBeGreaterThan(20);
+
+    // Canvassing (§13): turfs cut over the demo households, tokenised
+    // assignments for the active ones, and knock rows (progress is derived).
+    expect(await count('turfs', f.tenant_id)).toBe(DEMO_TURFS.length);
+    expect(await count('turf_households', f.tenant_id)).toBe(DEMO_TURFS.reduce((n, t) => n + t.households.length, 0));
+    expect(await count('turf_assignments', f.tenant_id)).toBe(DEMO_TURFS.filter((t) => t.assigned).length);
+    expect(await count('turf_knocks', f.tenant_id)).toBe(DEMO_TURFS.reduce((n, t) => n + (t.knocks?.length ?? 0), 0));
+    expect(f.manifest.turfs).toHaveLength(DEMO_TURFS.length);
+
+    // Deliveries (§14): requests across every tab, plus the two seeded routes.
+    expect(await count('delivery_requests', f.tenant_id)).toBe(DEMO_DELIVERY_REQUESTS.length);
+    expect(await count('delivery_routes', f.tenant_id)).toBe(DEMO_DELIVERY_ROUTES.length);
+    expect(await count('delivery_route_stops', f.tenant_id)).toBe(
+      DEMO_DELIVERY_ROUTES.reduce((n, r) => n + r.stops.length, 0),
+    );
+    // "Routed" is derived: a request on a pending stop stays 'approved'.
+    const pendingStops = await trx
+      .selectFrom('delivery_route_stops')
+      .select('request_id')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('status', '=', 'pending')
+      .execute();
+    expect(pendingStops.length).toBeGreaterThan(0);
+    const routedRequests = await trx
+      .selectFrom('delivery_requests')
+      .select('status')
+      .where('tenant_id', '=', f.tenant_id)
+      .where(
+        'id',
+        'in',
+        pendingStops.map((s) => String(s.request_id)),
+      )
+      .execute();
+    expect(routedRequests.every((r) => r.status === 'approved')).toBe(true);
+
+    // Fundraising (§12): a populated Donations ledger + active monthly pledges.
+    // Only 'succeeded' gifts count toward the page stats, so all seeded rows use it.
+    expect(await count('donations', f.tenant_id)).toBe(DEMO_DONATIONS.length);
+    expect(await count('donation_pledges', f.tenant_id)).toBe(DEMO_PLEDGES.length);
+    const succeeded = await trx.selectFrom('donations').select('status').where('tenant_id', '=', f.tenant_id).execute();
+    expect(succeeded.every((d) => d.status === 'succeeded')).toBe(true);
+    expect(f.manifest.donations).toHaveLength(DEMO_DONATIONS.length);
 
     // Every person belongs to a household and has an identity; some live on the placeholder.
     const persons = await trx
@@ -323,6 +379,15 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('emails', f.tenant_id)).toBe(0);
     expect(await count('profiles', f.tenant_id)).toBe(0);
     expect(await count('authusers', f.tenant_id)).toBe(1); // owner only
+    expect(await count('turfs', f.tenant_id)).toBe(0);
+    expect(await count('turf_households', f.tenant_id)).toBe(0);
+    expect(await count('turf_assignments', f.tenant_id)).toBe(0);
+    expect(await count('turf_knocks', f.tenant_id)).toBe(0);
+    expect(await count('delivery_requests', f.tenant_id)).toBe(0);
+    expect(await count('delivery_routes', f.tenant_id)).toBe(0);
+    expect(await count('delivery_route_stops', f.tenant_id)).toBe(0);
+    expect(await count('donations', f.tenant_id)).toBe(0);
+    expect(await count('donation_pledges', f.tenant_id)).toBe(0);
 
     // Kept: starter forms (still drafts), system tags, the user's own rows.
     const forms = await trx.selectFrom('web_forms').select('status').where('tenant_id', '=', f.tenant_id).execute();

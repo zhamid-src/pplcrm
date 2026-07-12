@@ -1,26 +1,34 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { hashPassword } from '../../lib/password-hash';
 import { backfillPersonPublicIds } from '../../lib/person-public-id';
+import { legMinutes, roadKm } from '../../lib/routing/geo';
+import type { LatLng } from '../../lib/routing/geo';
+import { SERVICE_MINUTES_PER_STOP, SHARE_TOKEN_TTL_DAYS } from '../../lib/routing/route-constants';
 import { backfillMissingSlugs } from '../../lib/slug';
 import {
   DEMO_CITY,
   DEMO_COMPANIES,
   DEMO_COUNTRY,
+  DEMO_DELIVERY_REQUESTS,
+  DEMO_DELIVERY_ROUTES,
+  DEMO_DONATIONS,
   DEMO_EMAILS,
   DEMO_HOUSEHOLDS,
   DEMO_ISSUES,
   DEMO_LISTS,
   DEMO_NEWSLETTERS,
   DEMO_PERSONS,
+  DEMO_PLEDGES,
   DEMO_STATE,
   DEMO_SUBMISSIONS,
   DEMO_TAGS,
   DEMO_TASKS,
   DEMO_TEAM,
+  DEMO_TURFS,
   DEMO_USERS,
   DEMO_VOLUNTEER_EVENTS,
 } from './demo-seed-data';
@@ -47,14 +55,29 @@ export const DemoSeedManifestObj = z.object({
   /** Demo teammates (authusers ids). */
   users: z.array(z.string()),
   emails: z.array(z.string()),
+  // Canvassing (§13) and Deliveries (§14) rows. Optional-with-default so a
+  // manifest written before these features (or an empty test manifest) still
+  // parses on exit-demo — a missing key just deletes nothing.
+  turfs: z.array(z.string()).default([]),
+  turf_assignments: z.array(z.string()).default([]),
+  turf_knocks: z.array(z.string()).default([]),
+  delivery_requests: z.array(z.string()).default([]),
+  delivery_routes: z.array(z.string()).default([]),
+  delivery_route_stops: z.array(z.string()).default([]),
+  // Fundraising (§12) sample gifts + monthly pledges. The donation FORMS
+  // survive exit (they are starter forms); these recorded gifts do not.
+  donations: z.array(z.string()).default([]),
+  donation_pledges: z.array(z.string()).default([]),
 });
 export type DemoSeedManifest = z.infer<typeof DemoSeedManifestObj>;
 
 export const DEMO_MANIFEST_SETTINGS_KEY = 'demo_seed_manifest';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
 const daysFromNow = (n: number) => new Date(Date.now() + n * DAY_MS);
+const hoursAgo = (n: number) => new Date(Date.now() - n * HOUR_MS);
 
 interface SeedParams {
   tenant_id: string;
@@ -527,6 +550,248 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
       .execute();
   }
 
+  // ── Canvassing: turfs, doors, tokenised assignments, knocks (§13) ─────────
+  //    Progress is DERIVED from the knocks at read time — we store only the
+  //    lifecycle status and the raw knock rows (never counters). Knock times
+  //    are relative to now so the derived display state is stable.
+  const round1 = (n: number): number => Math.round(n * 10) / 10;
+  const householdGeoByKey = new Map<string, LatLng>(DEMO_HOUSEHOLDS.map((h) => [h.key, { lat: h.lat, lng: h.lng }]));
+
+  const turfIds: string[] = [];
+  const turfAssignmentIds: string[] = [];
+  const turfKnockIds: string[] = [];
+  for (const turf of DEMO_TURFS) {
+    const coords = turf.households.map((k) => householdGeoByKey.get(k)).filter((c): c is LatLng => c != null);
+    const centroid_lat = coords.length > 0 ? coords.reduce((s, c) => s + c.lat, 0) / coords.length : null;
+    const centroid_lng = coords.length > 0 ? coords.reduce((s, c) => s + c.lng, 0) / coords.length : null;
+    const turfRow = await trx
+      .insertInto('turfs')
+      .values({
+        ...audit,
+        campaign_id,
+        name: turf.name,
+        status: turf.status,
+        list_id: null,
+        target_doors: turf.households.length,
+        centroid_lat,
+        centroid_lng,
+        ward: turf.ward,
+        notes: turf.notes ?? null,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const turf_id = String(turfRow.id);
+    turfIds.push(turf_id);
+
+    const doorRows = turf.households.flatMap((k) => {
+      const household_id = householdIdByKey.get(k);
+      return household_id ? [{ ...audit, turf_id, household_id }] : [];
+    });
+    if (doorRows.length > 0) {
+      await trx.insertInto('turf_households').values(doorRows).execute();
+    }
+
+    if (turf.assigned) {
+      // The token is the bearer credential for the account-less Companion, so
+      // it is a real random secret (24 bytes base64url), exactly like the app.
+      const assignment = await trx
+        .insertInto('turf_assignments')
+        .values({
+          ...audit,
+          turf_id,
+          team_id: String(team.id),
+          token: randomBytes(24).toString('base64url'),
+          status: 'active',
+          assigned_at: daysAgo(2),
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      turfAssignmentIds.push(String(assignment.id));
+    }
+
+    const knockRows = (turf.knocks ?? []).flatMap((knock) => {
+      const household_id = householdIdByKey.get(knock.household);
+      if (!household_id) return [];
+      const person_id = knock.person ? (personIdByKey.get(knock.person) ?? null) : null;
+      return [
+        {
+          ...audit,
+          turf_id,
+          household_id,
+          person_id,
+          outcome: knock.outcome,
+          response: knock.response ?? null,
+          notes: knock.notes ?? null,
+          source: 'companion',
+          canvasser_name: knock.canvasser,
+          client_knock_id: `demo-${turf.key}-${knock.household}`,
+          knocked_at: hoursAgo(knock.knockedHoursAgo),
+        },
+      ];
+    });
+    if (knockRows.length > 0) {
+      const insertedKnocks = await trx.insertInto('turf_knocks').values(knockRows).returning('id').execute();
+      turfKnockIds.push(...insertedKnocks.map((r) => String(r.id)));
+    }
+  }
+
+  // ── Deliveries: yard-sign requests, routes, stops (§14) ───────────────────
+  //    "Routed" is derived from an active (pending) stop, so a request stays
+  //    'approved' while it sits on a pending stop and 'delivered' once its stop
+  //    is delivered — the seeded statuses already encode that. Route leg/est
+  //    numbers are computed from the real coordinates with the routing engine's
+  //    own geo helpers, never hand-faked.
+  const requestRows = await trx
+    .insertInto('delivery_requests')
+    .values(
+      DEMO_DELIVERY_REQUESTS.map((r) => ({
+        ...audit,
+        campaign_id,
+        household_id: householdIdByKey.get(r.household) as string,
+        person_id: r.person ? (personIdByKey.get(r.person) ?? null) : null,
+        web_form_id: null,
+        source: r.source ?? 'manual',
+        status: r.status,
+        notes: r.notes ?? null,
+        skip_reason: r.skipReason ?? null,
+        created_at: daysAgo(r.createdDaysAgo),
+      })),
+    )
+    .returning('id')
+    .execute();
+  const deliveryRequestIdByKey = new Map(DEMO_DELIVERY_REQUESTS.map((r, i) => [r.key, String(requestRows[i]?.id)]));
+  const deliveryRequestIds = requestRows.map((r) => String(r.id));
+
+  const deliveryRouteIds: string[] = [];
+  const deliveryStopIds: string[] = [];
+  for (const route of DEMO_DELIVERY_ROUTES) {
+    const start: LatLng = { lat: route.startLat, lng: route.startLng };
+    let travelMinutes = 0;
+    let est_km = 0;
+    const legs: number[] = [];
+    let prev = start;
+    for (const stop of route.stops) {
+      const reqDef = DEMO_DELIVERY_REQUESTS.find((r) => r.key === stop.request);
+      const coord = (reqDef ? householdGeoByKey.get(reqDef.household) : undefined) ?? start;
+      legs.push(round1(legMinutes(prev, coord)));
+      travelMinutes += legMinutes(prev, coord);
+      est_km += roadKm(prev, coord);
+      prev = coord;
+    }
+    const routeRow = await trx
+      .insertInto('delivery_routes')
+      .values({
+        ...audit,
+        campaign_id,
+        name: route.name,
+        status: route.status,
+        volunteer_person_id: route.volunteerPerson ? (personIdByKey.get(route.volunteerPerson) ?? null) : null,
+        start_address: route.startAddress,
+        start_lat: route.startLat,
+        start_lng: route.startLng,
+        est_minutes: round1(travelMinutes + SERVICE_MINUTES_PER_STOP * route.stops.length),
+        est_km: round1(est_km),
+        scheduled_for: route.scheduledInDays != null ? daysFromNow(route.scheduledInDays) : null,
+        // Only the sha256 hash is ever stored; the raw token is discarded here
+        // (staff re-share to get a fresh live link).
+        share_token_hash: route.shared
+          ? createHash('sha256').update(randomBytes(24).toString('base64url')).digest('hex')
+          : null,
+        share_token_expires_at: route.shared ? daysFromNow(SHARE_TOKEN_TTL_DAYS) : null,
+        params: JSON.stringify({
+          drivers: 1,
+          service_minutes: SERVICE_MINUTES_PER_STOP,
+          avg_speed_kmh: 30,
+          include_return_leg: false,
+        }),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const route_id = String(routeRow.id);
+    deliveryRouteIds.push(route_id);
+
+    const stopRows = route.stops.flatMap((stop, i) => {
+      const request_id = deliveryRequestIdByKey.get(stop.request);
+      return request_id
+        ? [
+            {
+              ...audit,
+              route_id,
+              request_id,
+              seq: i + 1,
+              leg_minutes: legs[i] ?? 0,
+              status: stop.status,
+              reason: stop.reason ?? null,
+              acted_at: stop.actedHoursAgo != null ? hoursAgo(stop.actedHoursAgo) : null,
+              acted_via: stop.actedVia ?? null,
+            },
+          ]
+        : [];
+    });
+    if (stopRows.length > 0) {
+      const insertedStops = await trx.insertInto('delivery_route_stops').values(stopRows).returning('id').execute();
+      deliveryStopIds.push(...insertedStops.map((r) => String(r.id)));
+    }
+  }
+
+  // ── Fundraising: monthly pledges + recorded gifts (§12) ───────────────────
+  //    The donation "giving page" forms are starter forms (survive exit); these
+  //    recorded gifts populate the Donations page ledger + stats and ARE demo
+  //    data. Only 'succeeded' gifts and 'active' pledges count toward the page
+  //    numbers, so that is what we seed. Amounts are already in cents.
+  const pledgeRows = await trx
+    .insertInto('donation_pledges')
+    .values(
+      DEMO_PLEDGES.map((p) => {
+        const person = personByKey.get(p.person);
+        return {
+          ...audit,
+          campaign_id,
+          person_id: personIdByKey.get(p.person) ?? null,
+          monthly_amount: p.monthlyAmountCents,
+          status: 'active',
+          started_at: daysAgo(p.startedDaysAgo),
+          next_billing_date: daysFromNow(p.nextBillingInDays),
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
+          stripe_subscription_id: null,
+          stripe_customer_id: null,
+        };
+      }),
+    )
+    .returning('id')
+    .execute();
+  const pledgeIdByKey = new Map(DEMO_PLEDGES.map((p, i) => [p.key, String(pledgeRows[i]?.id)]));
+  const donationPledgeIds = pledgeRows.map((r) => String(r.id));
+
+  // donations has no createdby_id/updatedby_id columns — only tenant_id.
+  const donationRows = await trx
+    .insertInto('donations')
+    .values(
+      DEMO_DONATIONS.map((d) => {
+        const person = personByKey.get(d.person);
+        return {
+          tenant_id,
+          campaign_id,
+          person_id: personIdByKey.get(d.person) ?? null,
+          amount: d.amountCents,
+          status: 'succeeded',
+          method: d.method,
+          receipt_sent: d.receiptSent ?? true,
+          pledge_id: d.pledge ? (pledgeIdByKey.get(d.pledge) ?? null) : null,
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
+          stripe_session_id: null,
+          created_at: daysAgo(d.createdDaysAgo),
+        };
+      }),
+    )
+    .returning('id')
+    .execute();
+  const donationIds = donationRows.map((r) => String(r.id));
+
   // ── Manifest + flag (atomic with the data) ────────────────────────────────
   const manifest: DemoSeedManifest = {
     version: 1,
@@ -541,6 +806,14 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
     newsletters: newsletterIds,
     users: [...userIdByKey.values()],
     emails: emailIds,
+    turfs: turfIds,
+    turf_assignments: turfAssignmentIds,
+    turf_knocks: turfKnockIds,
+    delivery_requests: deliveryRequestIds,
+    delivery_routes: deliveryRouteIds,
+    delivery_route_stops: deliveryStopIds,
+    donations: donationIds,
+    donation_pledges: donationPledgeIds,
   };
 
   await trx
@@ -669,6 +942,62 @@ export async function deleteDemoData(params: DeleteParams, trx: Transaction<Mode
       .where('newsletter_id', 'in', m.newsletters)
       .execute();
     await trx.deleteFrom('newsletters').where('tenant_id', '=', tenant_id).where('id', 'in', m.newsletters).execute();
+  }
+
+  // Deliveries (§14) — stops reference both routes and requests, so drop stops
+  // first, then requests and routes. All reference persons/households, so this
+  // must run before those are deleted below.
+  if (m.delivery_routes.length > 0) {
+    await trx
+      .deleteFrom('delivery_route_stops')
+      .where('tenant_id', '=', tenant_id)
+      .where('route_id', 'in', m.delivery_routes)
+      .execute();
+  }
+  if (m.delivery_requests.length > 0) {
+    await trx
+      .deleteFrom('delivery_requests')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.delivery_requests)
+      .execute();
+  }
+  if (m.delivery_routes.length > 0) {
+    await trx
+      .deleteFrom('delivery_routes')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.delivery_routes)
+      .execute();
+  }
+
+  // Canvassing (§13) — knocks/assignments/doors are children of turfs and also
+  // reference persons/households; drop them before persons/households below.
+  if (m.turfs.length > 0) {
+    await trx.deleteFrom('turf_knocks').where('tenant_id', '=', tenant_id).where('turf_id', 'in', m.turfs).execute();
+    await trx
+      .deleteFrom('turf_assignments')
+      .where('tenant_id', '=', tenant_id)
+      .where('turf_id', 'in', m.turfs)
+      .execute();
+    await trx
+      .deleteFrom('turf_households')
+      .where('tenant_id', '=', tenant_id)
+      .where('turf_id', 'in', m.turfs)
+      .execute();
+    await trx.deleteFrom('turfs').where('tenant_id', '=', tenant_id).where('id', 'in', m.turfs).execute();
+  }
+
+  // Fundraising (§12) — gifts reference pledges (ON DELETE SET NULL), so drop
+  // gifts first, then pledges. Both reference persons (SET NULL) but are demo
+  // data, so delete them explicitly before persons below.
+  if (m.donations.length > 0) {
+    await trx.deleteFrom('donations').where('tenant_id', '=', tenant_id).where('id', 'in', m.donations).execute();
+  }
+  if (m.donation_pledges.length > 0) {
+    await trx
+      .deleteFrom('donation_pledges')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.donation_pledges)
+      .execute();
   }
 
   if (m.persons.length > 0) {
