@@ -1,0 +1,96 @@
+{
+  "name": "companion",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "pc",
+  "sourceRoot": "apps/companion/src",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@angular/build:application",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/companion",
+        "index": "apps/companion/src/index.html",
+        "browser": "apps/companion/src/main.ts",
+        "tsConfig": "apps/companion/tsconfig.app.json",
+        "assets": ["apps/companion/src/favicon.ico"],
+        "styles": ["apps/companion/src/styles.css"],
+        "scripts": [],
+        "polyfills": ["@angular/localize/init"]
+      },
+      "configurations": {
+        "production": {
+          "optimization": {
+            "scripts": true,
+            "styles": {
+              "minify": true,
+              "inlineCritical": false
+            },
+            "fonts": {
+              "inline": false
+            }
+          },
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "1.5mb",
+              "maximumError": "2.5mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "2kb",
+              "maximumError": "4kb"
+            }
+          ],
+          "outputHashing": "all",
+          "fileReplacements": [
+            {
+              "replace": "apps/companion/src/environments/environment.ts",
+              "with": "apps/companion/src/environments/environment.prod.ts"
+            }
+          ]
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "companion:build",
+        "port": 4300,
+        "proxyConfig": "apps/companion/proxy.conf.json"
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "companion:build:production"
+        },
+        "development": {
+          "buildTarget": "companion:build:development"
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/companion"],
+      "options": {
+        "cwd": "apps/companion",
+        "command": "vitest run"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/companion/**/*.ts", "apps/companion/**/*.html"]
+      }
+    }
+  }
+}

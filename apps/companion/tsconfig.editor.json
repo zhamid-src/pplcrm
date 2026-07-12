@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "google.maps", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts"]
+}
