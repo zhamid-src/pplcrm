@@ -1,8 +1,9 @@
-import { Directive, DestroyRef, ElementRef, HostListener, inject, input } from '@angular/core';
+import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
 
 @Directive({
   selector: 'button[pcSpinOnClick]',
   exportAs: 'pcSpinOnClick',
+  host: { '(click)': 'onButtonClick()' },
 })
 export class SpinOnClickDirective {
   private readonly el = inject(ElementRef<HTMLButtonElement>);
@@ -16,7 +17,6 @@ export class SpinOnClickDirective {
     this.destroyRef.onDestroy(() => this.clearTimer());
   }
 
-  @HostListener('click')
   protected onButtonClick(): void {
     const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
     if (!icon) return;
