@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { Icon } from '@icons/icon';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 
 import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
 
@@ -9,7 +9,7 @@ import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.serv
  */
 @Component({
   selector: 'pc-keyboard-shortcuts-help',
-  imports: [Icon],
+  imports: [ModalShell],
   templateUrl: './keyboard-shortcuts-help.html',
 })
 export class KeyboardShortcutsHelp {
