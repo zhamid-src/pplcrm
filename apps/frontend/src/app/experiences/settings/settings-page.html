@@ -1,7 +1,7 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
   <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
     <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+      <p class="pc-eyebrow">
         @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
       </p>
       <h1 class="text-xl font-bold tracking-tight">
@@ -50,7 +50,7 @@
         <button
           type="button"
           class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          [class]="navClass(section.config.id)"
           (click)="selectSection(section.config.id)"
         >
           <pc-icon
@@ -69,124 +69,23 @@
           ></span>
           }
         </button>
-        } @if (currentMode === 'settings') {
-        <!-- Passkeys custom section -->
+        }
+        <!-- Custom self-saving sections (config array in settings-page.ts) -->
+        @for (custom of visibleCustomSections; track custom.id) {
         <button
-          id="settings-nav-passkeys"
+          [id]="'settings-nav-' + custom.id"
           type="button"
           class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('passkeys')"
+          [class]="navClass(custom.id)"
+          (click)="selectSection(custom.id)"
         >
           <pc-icon
-            name="lock-closed"
-            [class.text-primary]="isSelected('passkeys')"
-            [class.opacity-70]="!isSelected('passkeys')"
+            [name]="custom.icon"
+            [class.text-primary]="isSelected(custom.id)"
+            [class.opacity-70]="!isSelected(custom.id)"
             [size]="5"
           />
-          Passkeys
-        </button>
-        } @if (currentMode === 'workspace') {
-        <!-- Email Sync custom section -->
-        <button
-          id="settings-nav-email-sync"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('email-sync')"
-        >
-          <pc-icon
-            name="envelope"
-            [class.text-primary]="isSelected('email-sync')"
-            [class.opacity-70]="!isSelected('email-sync')"
-            [size]="5"
-          />
-          Email sync
-        </button>
-
-        <!-- Domains custom section -->
-        <button
-          id="settings-nav-domains"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('domains')"
-        >
-          <pc-icon
-            name="globe-americas"
-            [class.text-primary]="isSelected('domains')"
-            [class.opacity-70]="!isSelected('domains')"
-            [size]="5"
-          />
-          Domain verification
-        </button>
-
-        <!-- Donations custom section -->
-        <button
-          id="settings-nav-donations"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('donations')"
-        >
-          <pc-icon
-            name="currency-dollar"
-            [class.text-primary]="isSelected('donations')"
-            [class.opacity-70]="!isSelected('donations')"
-            [size]="5"
-          />
-          Donations
-        </button>
-
-        <!-- Storage custom section -->
-        <button
-          id="settings-nav-storage"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('storage')"
-        >
-          <pc-icon
-            name="archive-box"
-            [class.text-primary]="isSelected('storage')"
-            [class.opacity-70]="!isSelected('storage')"
-            [size]="5"
-          />
-          Storage
-        </button>
-
-        <!-- Billing custom section -->
-        <button
-          id="settings-nav-billing"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('billing')"
-        >
-          <pc-icon
-            name="credit-card"
-            [class.text-primary]="isSelected('billing')"
-            [class.opacity-70]="!isSelected('billing')"
-            [size]="5"
-          />
-          Billing
-        </button>
-
-        <!-- Account custom section -->
-        <button
-          id="settings-nav-account"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('account')"
-        >
-          <pc-icon
-            name="user-circle"
-            [class.text-primary]="isSelected('account')"
-            [class.opacity-70]="!isSelected('account')"
-            [size]="5"
-          />
-          Account
+          {{ custom.title }}
         </button>
         }
       </nav>
@@ -230,7 +129,7 @@
                 class="btn btn-sm btn-outline btn-secondary shrink-0"
                 (click)="generateWebhookCredentials(section)"
               >
-                Generate Credentials
+                Generate credentials
               </button>
             </div>
           </div>
@@ -377,7 +276,7 @@
                 } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
                 <span class="countdown font-mono text-xs"
                   ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request Verification }
+                >s } @else { Request verification }
               </button>
             </div>
 
@@ -404,11 +303,14 @@
 
             <!-- List of verified emails -->
             <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
+              <h4 class="pc-eyebrow">Verified sender emails</h4>
               @if (verifiedEmailsList().length === 0) {
-              <p class="text-xs text-base-content/50 italic">
-                No verified sender emails yet. Add one above to request verification.
-              </p>
+              <pc-empty-state
+                icon="envelope"
+                [bordered]="false"
+                title="No verified sender emails yet"
+                hint="Add an email above to request verification."
+              />
               } @else {
               <div class="flex flex-wrap gap-2">
                 @for (email of verifiedEmailsList(); track email) {
@@ -446,7 +348,7 @@
               >
                 @if (recomputingFingerprints()) {
                 <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute Fingerprints
+                } Recompute fingerprints
               </button>
             </div>
           </div>
@@ -459,20 +361,20 @@
               </p>
             </div>
 
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
-              <table class="table w-full">
+            <div class="pc-table-shell">
+              <table class="table pc-table w-full">
                 <thead>
                   <tr class="border-b border-base-200">
-                    <th class="text-xs font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                    <th>Notification type</th>
+                    <th class="text-center w-36">Email</th>
+                    <th class="text-center w-36">In-app alerts</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (group of getNotificationGroups(section); track group.emailField.controlName) {
                   <tr class="hover:bg-base-200/20">
                     <td class="align-middle">
-                      <div class="font-semibold text-xs text-base-content">{{ group.label }}</div>
+                      <div class="font-semibold text-base-content">{{ group.label }}</div>
                       @if (group.helper) {
                       <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
                       }
@@ -509,16 +411,15 @@
       </section>
       } }
 
-      <!-- Email Sync custom section -->
-      @if (currentMode === 'workspace' && isSelected('email-sync')) {
+      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
+      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Email sync</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
-          </p>
+          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
         </header>
 
+        @switch (custom.id) { @case ('email-sync') {
         <div class="grid gap-8 lg:grid-cols-2">
           <!-- Microsoft Office 365 Card -->
           <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
@@ -561,85 +462,21 @@
             <pc-google-sync-settings></pc-google-sync-settings>
           </div>
         </div>
-      </section>
-      }
-
-      <!-- Domains custom section -->
-      @if (currentMode === 'workspace' && isSelected('domains')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Domain verification</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
-          </p>
-        </header>
+        } @case ('domains') {
         <pc-domains-settings></pc-domains-settings>
-      </section>
-      }
-
-      <!-- Donations custom section -->
-      @if (currentMode === 'workspace' && isSelected('donations')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Donations</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
-            account.
-          </p>
-        </header>
+        } @case ('donations') {
         <pc-donations-settings></pc-donations-settings>
-      </section>
-      }
-
-      <!-- Storage custom section -->
-      @if (currentMode === 'workspace' && isSelected('storage')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Storage</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
-        </header>
+        } @case ('storage') {
         <pc-storage-settings></pc-storage-settings>
-      </section>
-      }
-
-      <!-- Billing custom section -->
-      @if (currentMode === 'workspace' && isSelected('billing')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Billing</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your subscription plans, view invoice details, and update payment methods.
-          </p>
-        </header>
+        } @case ('billing') {
         <pc-billing-settings></pc-billing-settings>
-      </section>
-      }
-
-      <!-- Passkeys custom section -->
-      @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
-          </p>
-        </header>
+        } @case ('passkeys') {
         <pc-passkey-settings></pc-passkey-settings>
-      </section>
-      }
-
-      <!-- Account custom section -->
-      @if (currentMode === 'workspace' && isSelected('account')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Account</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your organization account — pause billing or permanently delete all data.
-          </p>
-        </header>
+        } @case ('account') {
         <pc-account-settings></pc-account-settings>
+        } }
       </section>
-      }
+      } }
     </main>
   </div>
   } @else {
