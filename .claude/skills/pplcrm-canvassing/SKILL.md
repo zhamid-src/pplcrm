@@ -18,12 +18,12 @@ delivery tables). All follow the house pattern: `bigint` id + `UNIQUE(id)` +
 standard `tenant_isolation` policy, grants to `pplcrm_app`. Multi-statement DDL
 runs through `sql.raw(...)` (parameterless → simple protocol), like the baseline.
 
-| Table              | What it is                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `turfs`            | A turf. `status` = `draft`\|`active`\|`retired` (stored lifecycle only). `list_id`, `target_doors`, `centroid_lat/lng`, `ward`.                         |
-| `turf_households`  | The doors — one row per household (junction, PK includes both).                                                                                         |
-| `turf_assignments` | A turf handed to a `team_id` and/or opened via `token`. `status` = `active`\|`revoked`.                                                                 |
-| `turf_knocks`      | **The source of truth for progress.** One row per door interaction. `outcome`, `response`, `source`, `canvasser_name`, `client_knock_id`, `knocked_at`. |
+| Table              | What it is                                                                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turfs`            | A turf. `status` = `draft`\|`active`\|`retired` (stored lifecycle only). `list_id`, `target_doors`, `centroid_lat/lng`, `ward`.                                                                                                                                         |
+| `turf_households`  | The doors — one row per household (junction, PK includes both).                                                                                                                                                                                                         |
+| `turf_assignments` | A turf handed to a volunteer: `volunteer_person_id` (the person the link belongs to — required by the access layer), optional `expires_at`, `team_id`, `token`. `status` = `active`\|`revoked`.                                                                         |
+| `turf_knocks`      | **The source of truth for progress.** One row per door interaction. `outcome`, `response`, `issues[]`, follow-up flags (`wants_volunteer`/`wants_yard_sign`/`set_dnc`/`subscribe`), `contact_phone/email`, `source`, `canvasser_name`, `client_knock_id`, `knocked_at`. |
 
 The migration is dated **2026-07-11** deliberately: Kysely aborts with "corrupted
 migrations" if a new file sorts alphabetically _before_ an already-applied one, and
@@ -32,10 +32,18 @@ the dev DB has applied `2026-07-10-person-public-id` and
 sort last). If you add another canvassing migration, keep it dated ≥ the newest
 applied file.
 
+`turf_households.walk_order` stores the suggested visit order (set at cut time
+from the engine's snake sweep — a hint, never a lock). `campaigns` carries the
+Companion survey vocabulary: `canvass_issues text[]` + `canvass_script`.
+
 Kysely models live in `libs/common/src/lib/kysely.models.ts` (Turfs,
 TurfHouseholds, TurfAssignments, TurfKnocks). Zod triad + vocabularies in
 `libs/common/src/lib/schemas/canvassing.schema.ts` (`TURF_STATUSES`,
-`KNOCK_OUTCOMES`, `KNOCK_RESPONSES` are `as const` for exhaustive switches).
+`KNOCK_OUTCOMES` — now incl. `moved` + the append-only `cleared` marker — and
+`KNOCK_RESPONSES`, the spec-§3.5 five: `supporter | undecided | non_supporter |
+not_voting | already_voted`, labels in `KNOCK_RESPONSE_LABELS`). The Companion
+API contract (`CompanionTurfPayload`, `CompanionOpObj` union, `CompanionOpAck`)
+lives in the same schema file and is shared with `apps/companion`.
 
 ### Derived state — never stored twice (§22.6)
 
@@ -74,33 +82,48 @@ directly. Then `TurfsRepo.getHouseholdsGeo` fetches lat/lng/ward. **Refresh from
 list** re-runs this, drops doors that left the list (knock rows persist —
 history kept) and adds new in-ward members not yet in any turf.
 
-## Canvass Companion — tokenised, account-less (§13.4)
+## Canvass Companion — tokenised, verified, in apps/companion (§13.4 + COMPANION-APPS-PLAN.md)
 
 Public REST route `modules/canvassing/routes/canvass-public.route.ts`, mounted at
-`/api/canvass` in `routes.ts`. Frontend page:
-`experiences/canvassing/ui/companion-page.ts` at the public `/companion?token=...`
-route (in `app.routes.ts`, not the dashboard shell).
+`/api/canvass` in `routes.ts`. The volunteer UI is the separate mobile app
+`apps/companion` at `/t/:token` (route in `apps/companion/src/app/app.routes.ts`;
+components under `apps/companion/src/app/canvass/`); there is no companion page in
+`apps/frontend` anymore.
 
-**Security model**: the `turf_assignments.token` (24 random bytes, base64url,
-UNIQUE) **is the bearer credential**. `TurfAssignmentsRepo.resolveByToken` is the
-one intentionally un-tenant-scoped query in the module — the token resolves the
-tenant (exactly like a session token; see the `sessions` entry in the
-no-unscoped-db-query ignoreTables). Every downstream read/write is then scoped by
-the resolved `tenant_id` **and** `turf_id`, and a knock is rejected unless its
-household belongs to that turf. Modeled on the public form page's
-tenant-resolution seam, but by token rather than subdomain+slug.
+**Security model — two credentials** (see `pplcrm-companion-access`): the
+`turf_assignments.token` (24 random bytes, base64url, UNIQUE) scopes WHAT — it is
+resolved by `TurfAssignmentsRepo.resolveByToken`, the one intentionally
+un-tenant-scoped query in the module, and everything downstream is scoped by the
+resolved `tenant_id` + `turf_id`. The `X-Companion-Session` header proves WHO —
+`getCompanionTurf`/`postCompanionResults` call
+`CompanionAccessController.requireSession(...)` against the assignment's
+`volunteer_person_id` (verified device + admin-approved volunteer). Expired
+(`expires_at`) or revoked assignments read as a uniform dead link.
 
-- **Idempotent sync**: knocks carry a client-generated `client_knock_id`; the
-  partial unique index `(tenant_id, turf_id, client_knock_id)` + `ON CONFLICT DO
-NOTHING` means an offline re-send never double-counts.
-- **Offline**: the Companion queues knocks in `localStorage` and flushes on the
-  `online` event / next load.
-- **Honest attribution (§22.7)**: a knock writes to the household's (and person's)
-  Activity log with `metadata.via = "via Canvass Companion (name)"`, under the
-  **real CRM account that deployed the link** (`assignment.created_by`) — never a
-  fabricated user. `user_activity.user_id`/`createdby_id` are NOT-NULL FKs to
-  authusers, so a real actor is required; the source + canvasser_name carry the
-  honest label.
+- **API**: `GET /api/canvass/t/:token` → `CompanionTurfPayload` (campaign name,
+  script + issue vocabulary, canvasser identity, walk-ordered households with
+  residents, DNC flags, door outcomes, survey pre-fills — payload-minimized: no
+  emails/phones/notes ever). `POST /api/canvass/t/:token/results` → batched ops
+  (`survey`, `person_result`, `door_outcome`, `clear_outcome`, `person_create`),
+  each claimed in the `companion_ops` ledger (`ON CONFLICT DO NOTHING`) and applied
+  in its own transaction; acks are `applied | duplicate | rejected` per op, and a
+  `person_create` ack returns the real id to swap for the client temp id. The
+  legacy `POST /knock` single-op endpoint remains for compatibility.
+- **Survey side-effects** (all inside the op's transaction,
+  `controller.applySurveySideEffects`): support/turnout →
+  `campaign_person_facts` (supporter→strong, non_supporter→against,
+  not_voting/already_voted→voting_status); `wants_yard_sign` → a `source='canvass'`
+  `delivery_requests` row unless the household already has an open one;
+  `set_dnc` → `persons.do_not_contact`; contact capture fills blanks only;
+  `subscribe` → `campaign_subscriptions` with `consent_source='canvass'`;
+  `wants_volunteer` → 'Volunteer prospect' tag (+ 'Added at door' on person_create).
+- **Offline**: the app queues ops in `localStorage` (`pc-canvass-queue:<token>`),
+  replays them as an optimistic overlay (`canvass-derive.ts applyLocalOps`), and
+  flushes on the `online` event / load — idempotent via `op_id`.
+- **Honest attribution (§22.7)**: activity rows land under the **real CRM account
+  that deployed the link** (`assignment.created_by`) with `metadata.via =
+"via Canvass Companion (<volunteer name>)"` — the name now comes from the
+  assignment's volunteer person server-side, never from client input.
 
 ## Frontend
 
@@ -119,6 +142,12 @@ NOTHING` means an offline re-send never double-counts.
   come from `TurfHouseholdsRepo.getCoverageRows` (`CoverageDoorRow`).
 - `ui/cut-turfs-dialog.ts` — universe select (reuses `ListsService.getAllWithCounts`),
   presets, live preview.
+- `ui/assign-turf-dialog.ts` — assignment is personal: pick the volunteer person
+  (search by name; they need an email/mobile on file for verification), mint the
+  token, copy `/t/:token`. `AssignTurfObj` requires `volunteer_person_id`.
+- `ui/companion-settings-dialog.ts` — "Survey settings" (header button): the
+  campaign-scoped issue chips + door script every Companion shows
+  (`canvassing.getCompanionSettings`/`updateCompanionSettings`, admin-gated write).
 - Sidebar entry: `layout/sidebar/sidebar-items.ts` under FIELD (icon `map-pin`,
   shortcut `v`). Help article: `experiences/help/data/articles/engagement.ts`
   (`id: 'canvassing'`); `/canvassing` is in the help spec's route allow-list.

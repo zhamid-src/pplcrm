@@ -1,0 +1,337 @@
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+
+import type { CompanionPerson, KnockResponse } from '@common';
+import { KNOCK_RESPONSES, KNOCK_RESPONSE_LABELS } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+
+import { CanvassStore } from './canvass-store';
+
+const EMAIL_SHAPE = /^\S+@\S+\.\S+$/;
+
+/**
+ * The survey (spec §3.5) for one person — or the anonymous household-level
+ * conversation when the view carries no person. No-conversation codes come
+ * first (one tap and out); support level is the one required field, except
+ * that a DNC-only save is allowed. Pre-fills from the previous survey when
+ * re-opened.
+ */
+@Component({
+  selector: 'pc-canvass-survey',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    <div class="flex flex-1 flex-col gap-4 p-4">
+      <header class="flex items-start gap-2">
+        <button type="button" class="btn btn-ghost btn-circle" aria-label="Back to the household" (click)="back()">
+          <pc-icon name="chevron-left" [size]="5"></pc-icon>
+        </button>
+        <div class="min-w-0 flex-1">
+          <h1 class="text-lg font-bold">{{ title() }}</h1>
+          <p class="text-xs text-base-content/70">{{ address() }}</p>
+        </div>
+      </header>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">No conversation?</p>
+          <div class="grid grid-cols-3 gap-2">
+            @for (option of noConversationOptions; track option.result) {
+              <button type="button" class="btn btn-outline btn-secondary" (click)="recordNoConversation(option.result)">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      @if (script(); as script) {
+        <div class="collapse-arrow collapse border border-base-300 bg-base-200/50">
+          <input type="checkbox" aria-label="Show or hide the door script" />
+          <div class="collapse-title font-medium">Door script</div>
+          <div class="collapse-content text-base-content/80">
+            <p class="whitespace-pre-wrap">{{ script }}</p>
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2" role="radiogroup" aria-label="Support level">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Support level</p>
+        @for (response of responses; track response) {
+          <button
+            type="button"
+            role="radio"
+            class="btn justify-start"
+            [class.btn-primary]="support() === response"
+            [class.btn-outline]="support() !== response"
+            [class.btn-secondary]="support() !== response"
+            [attr.aria-checked]="support() === response"
+            (click)="pickSupport(response)"
+          >
+            {{ responseLabels[response] }}
+          </button>
+        }
+      </div>
+
+      @if (issueOptions().length > 0) {
+        <div class="flex flex-col gap-2">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Issues they raised</p>
+          <div class="flex flex-wrap gap-2">
+            @for (issue of issueOptions(); track issue) {
+              <button
+                type="button"
+                class="btn rounded-full"
+                [class.btn-primary]="issues().includes(issue)"
+                [class.btn-outline]="!issues().includes(issue)"
+                [class.btn-secondary]="!issues().includes(issue)"
+                [attr.aria-pressed]="issues().includes(issue)"
+                (click)="toggleIssue(issue)"
+              >
+                {{ issue }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-1 rounded-lg border border-base-300 bg-base-100 p-3">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Follow-ups</p>
+        @if (isPerson()) {
+          <label class="flex min-h-11 items-center justify-between gap-3">
+            <span>Wants to volunteer</span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="wantsVolunteer()"
+              (change)="onToggle('volunteer', $event)"
+            />
+          </label>
+        }
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Wants a yard sign
+            <span class="block text-xs text-base-content/60">Adds them to the sign delivery list</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="wantsYardSign()"
+            (change)="onToggle('yard_sign', $event)"
+          />
+        </label>
+        <label class="flex min-h-11 items-center justify-between gap-3 text-error">
+          <span>Do not contact</span>
+          <input type="checkbox" class="toggle toggle-error" [checked]="setDnc()" (change)="onToggle('dnc', $event)" />
+        </label>
+      </div>
+
+      @if (isPerson()) {
+        <div class="flex flex-col gap-2 rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Contact info</p>
+          <input
+            type="tel"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Phone"
+            aria-label="Phone"
+            [value]="phone()"
+            (input)="onText('phone', $event)"
+          />
+          <input
+            type="email"
+            class="input input-bordered min-h-11 w-full"
+            placeholder="Email"
+            aria-label="Email"
+            [value]="email()"
+            (input)="onText('email', $event)"
+          />
+          @if (email().trim() && !emailValid()) {
+            <p class="text-xs text-error" role="alert">That email doesn't look complete.</p>
+          }
+          <label class="flex min-h-11 items-center justify-between gap-3" [class.opacity-60]="!canSubscribe()">
+            <span>
+              Subscribe to updates
+              @if (!canSubscribe()) {
+                <span class="block text-xs text-base-content/60">Add a phone or email to subscribe</span>
+              }
+            </span>
+            <input
+              type="checkbox"
+              class="toggle toggle-primary"
+              [checked]="subscribe() && canSubscribe()"
+              [disabled]="!canSubscribe()"
+              (change)="onToggle('subscribe', $event)"
+            />
+          </label>
+        </div>
+      }
+
+      <textarea
+        class="textarea textarea-bordered min-h-24 w-full"
+        placeholder="Anything the organizer should know?"
+        aria-label="Notes for the organizer"
+        [value]="notes()"
+        (input)="onText('notes', $event)"
+      ></textarea>
+
+      <button type="button" class="btn btn-primary w-full" [disabled]="saveBlocker() !== null" (click)="save()">
+        {{ saveBlocker() ?? 'Save & sync' }}
+      </button>
+    </div>
+  `,
+})
+export class CanvassSurvey {
+  private readonly alerts = inject(AlertService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly responses: readonly KnockResponse[] = KNOCK_RESPONSES;
+  protected readonly responseLabels = KNOCK_RESPONSE_LABELS;
+  protected readonly noConversationOptions: { result: 'not_home' | 'moved' | 'refused'; label: string }[] = [
+    { result: 'not_home', label: 'Not home' },
+    { result: 'moved', label: 'Moved' },
+    { result: 'refused', label: 'Refused' },
+  ];
+
+  // Draft state — seeded once from the existing survey prefill (if any).
+  protected readonly support = signal<KnockResponse | null>(null);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly wantsVolunteer = signal(false);
+  protected readonly wantsYardSign = signal(false);
+  protected readonly setDnc = signal(false);
+  protected readonly phone = signal('');
+  protected readonly email = signal('');
+  protected readonly subscribe = signal(false);
+  protected readonly notes = signal('');
+
+  protected readonly householdId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.household_id : null;
+  });
+  protected readonly personId = computed(() => {
+    const view = this.store.view();
+    return view.kind === 'survey' ? view.person_id : null;
+  });
+  protected readonly isPerson = computed(() => this.personId() != null);
+  protected readonly person = computed<CompanionPerson | null>(() => {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return null;
+    return this.store.householdById(householdId)?.people.find((p) => p.id === personId) ?? null;
+  });
+
+  protected readonly address = computed(() => {
+    const householdId = this.householdId();
+    return householdId != null ? (this.store.householdById(householdId)?.address ?? '') : '';
+  });
+  protected readonly title = computed(() => this.person()?.name ?? 'This household');
+  protected readonly script = computed(() => this.store.payload()?.script?.trim() ?? '');
+  protected readonly issueOptions = computed(() => this.store.payload()?.issues ?? []);
+
+  protected readonly emailValid = computed(() => {
+    const email = this.email().trim();
+    return email === '' || EMAIL_SHAPE.test(email);
+  });
+  protected readonly canSubscribe = computed(() => this.phone().trim() !== '' || this.email().trim() !== '');
+
+  /** Why the save is blocked — or null when it can go. Explained-disabled (§3). */
+  protected readonly saveBlocker = computed<string | null>(() => {
+    if (!this.emailValid()) return 'Fix the email to save';
+    if (this.support() == null && !this.setDnc()) return 'Pick a support level to save';
+    return null;
+  });
+
+  constructor() {
+    // Pre-fill from the earlier survey when re-opening (notes and contact info
+    // are deliberately never echoed back — payload minimization, spec §2).
+    const view = this.store.view();
+    if (view.kind !== 'survey') return;
+    const household = this.store.householdById(view.household_id);
+    const prefill =
+      view.person_id == null ? household?.hh_survey : household?.people.find((p) => p.id === view.person_id)?.survey;
+    if (!prefill) return;
+    this.support.set(prefill.support);
+    this.issues.set([...prefill.issues]);
+    this.wantsVolunteer.set(prefill.wants_volunteer);
+    this.wantsYardSign.set(prefill.wants_yard_sign);
+    this.setDnc.set(prefill.set_dnc);
+    this.subscribe.set(prefill.subscribe);
+  }
+
+  protected back(): void {
+    const householdId = this.householdId();
+    if (householdId != null) this.store.view.set({ kind: 'household', household_id: householdId });
+    else this.store.view.set({ kind: 'list' });
+  }
+
+  protected onText(field: 'phone' | 'email' | 'notes', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+    if (field === 'phone') this.phone.set(target.value);
+    else if (field === 'email') this.email.set(target.value);
+    else this.notes.set(target.value);
+  }
+
+  protected onToggle(field: 'volunteer' | 'yard_sign' | 'dnc' | 'subscribe', event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const checked = target.checked;
+    switch (field) {
+      case 'volunteer':
+        this.wantsVolunteer.set(checked);
+        break;
+      case 'yard_sign':
+        this.wantsYardSign.set(checked);
+        break;
+      case 'dnc':
+        this.setDnc.set(checked);
+        break;
+      case 'subscribe':
+        this.subscribe.set(checked);
+        break;
+      default: {
+        const _exhaustive: never = field;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Tap the selected level again to unpick it (a DNC-only save stays possible). */
+  protected pickSupport(response: KnockResponse): void {
+    this.support.set(this.support() === response ? null : response);
+  }
+
+  protected recordNoConversation(result: 'not_home' | 'moved' | 'refused'): void {
+    const householdId = this.householdId();
+    const personId = this.personId();
+    if (householdId == null || personId == null) return;
+    this.store.personResult(householdId, personId, result);
+    const option = this.noConversationOptions.find((o) => o.result === result);
+    this.alerts.showSuccess(`Marked "${option?.label ?? result}"`);
+    this.back();
+  }
+
+  protected save(): void {
+    const householdId = this.householdId();
+    if (householdId == null || this.saveBlocker() != null) return;
+    const isPerson = this.isPerson();
+    this.store.submitSurvey(householdId, this.personId(), {
+      support: this.support(),
+      issues: this.issues(),
+      wants_volunteer: isPerson ? this.wantsVolunteer() : false,
+      wants_yard_sign: this.wantsYardSign(),
+      set_dnc: this.setDnc(),
+      contact_phone: isPerson && this.phone().trim() ? this.phone().trim() : null,
+      contact_email: isPerson && this.email().trim() ? this.email().trim() : null,
+      subscribe: isPerson && this.canSubscribe() ? this.subscribe() : false,
+      notes: this.notes().trim() ? this.notes().trim() : null,
+    });
+    const syncing = this.store.online() && !this.store.workOffline();
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.back();
+  }
+
+  protected toggleIssue(issue: string): void {
+    this.issues.update((current) =>
+      current.includes(issue) ? current.filter((i) => i !== issue) : [...current, issue],
+    );
+  }
+}

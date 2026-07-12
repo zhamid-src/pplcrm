@@ -156,6 +156,48 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     ],
   },
   {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal — volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links — no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link — after that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email and a badge appears on [Volunteer access](/volunteer-access) in the Admin section. Each row shows the volunteer, their contact on file, and a status chip — **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds — they never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later — they’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you — add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
     id: 'activity-log',
     category: 'admin',
     title: 'The activity log',
