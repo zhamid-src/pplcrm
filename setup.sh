@@ -5,14 +5,14 @@ set -e
 REPO_URL="https://github.com/pplcrm-org/pplcrm.git"
 PROJECT_DIR="pplcrm"
 
-echo "📁 Cloning PeopleCRM repository..."
-if [ -d "$PROJECT_DIR" ]; then
-  echo "⚠️ Directory '$PROJECT_DIR' already exists. Skipping clone."
-else
-  git clone "$REPO_URL"
-fi
+#echo "📁 Cloning PeopleCRM repository..."
+#if [ -d "$PROJECT_DIR" ]; then
+#  echo "⚠️ Directory '$PROJECT_DIR' already exists. Skipping clone."
+#else
+#  git clone "$REPO_URL"
+#fi
 
-cd "$PROJECT_DIR"
+#cd "$PROJECT_DIR"
 
 echo "🔧 Installing dependencies..."
 
@@ -121,19 +121,29 @@ echo "🧪 Provisioning the test database (pplcrm_test)..."
 apps/backend/scripts/setup-test-db.sh
 echo "✅ Test database provisioned (pplcrm_test) — set DB_NAME=pplcrm_test in .env.test"
 
+# Create the local dev env file the backend serve target loads via --env-file.
+# It's gitignored, so a fresh clone won't have it; copy it from the committed
+# template if it's missing (never clobber an existing one).
+if [ ! -f ".env.development" ]; then
+  echo "📝 Creating .env.development from template..."
+  cp .env.development.example .env.development
+  echo "✅ .env.development created (edit SHARED_SECRET / passwords as needed)"
+else
+  echo "✅ .env.development already exists"
+fi
+
 # Install project dependencies
 if [ -f "package.json" ]; then
   echo "📦 Installing npm dependencies..."
-  npm install
+  npm install --legacy-peer-deps
 else
   echo "⚠️ No package.json found in current directory. Please check that the repo cloned correctly."
   exit 1
 fi
-
+Howhow
 echo ""
 echo "🎉 Setup complete!"
 echo ""
 echo "👉 To get started:"
-echo "cd pplcrm"
 echo "nx serve backend"
 echo "nx serve frontend"
