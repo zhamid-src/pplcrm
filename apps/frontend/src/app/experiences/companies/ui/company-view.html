@@ -34,7 +34,7 @@
     <div class="flex flex-col gap-6 lg:col-span-1">
       <!-- Contact card -->
       <pc-card>
-        <h3 class="mb-3 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Contact</h3>
+        <h3 class="pc-eyebrow mb-3 block">Contact</h3>
         <div class="flex w-full flex-col text-sm">
           <pc-detail-item label="Website" [value]="c.website" icon="globe-americas" [copyable]="true"></pc-detail-item>
           <pc-detail-item label="Email" [value]="c.email" icon="envelope" [copyable]="true"></pc-detail-item>
@@ -51,7 +51,7 @@
       <!-- Google enrichment card (§7) -->
       <pc-card>
         <div class="mb-2 flex items-center justify-between">
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Google enrichment</h3>
+          <h3 class="pc-eyebrow block">Google enrichment</h3>
           @if (isEnriched()) {
           <pc-status-badge type="success">Enriched</pc-status-badge>
           } @else {
@@ -77,7 +77,7 @@
 
       <!-- Internal notes card -->
       <pc-card>
-        <h3 class="mb-2 block text-xs font-semibold uppercase tracking-wider text-base-content/50">Internal notes</h3>
+        <h3 class="pc-eyebrow mb-2 block">Internal notes</h3>
         @if (c.notes) {
         <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.notes }}</p>
         } @else {

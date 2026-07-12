@@ -76,7 +76,7 @@
           <!-- Trigger card -->
           <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
             <div class="flex items-center justify-between">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger — when</span>
+              <span class="pc-eyebrow">Trigger — when</span>
               <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
             </div>
             <div class="mt-2 flex items-center gap-2">
@@ -225,9 +225,7 @@
         <aside class="flex w-full shrink-0 flex-col gap-6 lg:w-96">
           <!-- WORKFLOW SETTINGS -->
           <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Workflow settings
-            </h3>
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Workflow settings</h3>
             <div class="mt-3 flex flex-col gap-4">
               <div class="form-control">
                 <label class="label label-text py-1 text-xs font-semibold">Name</label>
@@ -274,9 +272,7 @@
 
           <!-- ONLY ENROLL IF -->
           <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Only enroll if
-            </h3>
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Only enroll if</h3>
             <div class="mt-3">
               <pc-query-builder
                 [group]="conditions()"
@@ -294,9 +290,7 @@
 
           <!-- SEQUENCE OVERVIEW -->
           <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Sequence overview
-            </h3>
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Sequence overview</h3>
             <div class="mt-3 flex flex-col gap-1.5 text-xs text-base-content/70">
               <div class="flex justify-between">
                 <span>Total steps</span><span class="font-mono">{{ steps().length }}</span>
@@ -309,9 +303,7 @@
 
           <!-- RECENT RUNS -->
           <section class="rounded-2xl border border-base-300 bg-base-100 p-5">
-            <h3 class="border-b border-base-200 pb-2 text-xs font-bold uppercase tracking-wider text-base-content/50">
-              Recent runs
-            </h3>
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Recent runs</h3>
             @if (runs().length === 0) {
             <p class="mt-3 text-[10px] text-base-content/50">
               No runs yet — history appears here after the first trigger fires.
@@ -360,7 +352,7 @@
         </div>
         } @else {
         <div class="overflow-x-auto rounded-2xl border border-base-300 bg-base-100">
-          <table class="table table-sm w-full">
+          <table class="table pc-table w-full">
             <thead>
               <tr>
                 <th>Contact</th>

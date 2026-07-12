@@ -8,7 +8,7 @@ import { PcIconNameType } from '@icons/icons.index';
   imports: [Icon],
   template: `
     <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
+      <span class="pc-eyebrow">
         {{ label() }}
       </span>
       <div class="flex items-center gap-2">

@@ -70,7 +70,7 @@
           <!-- Inline Edit Description -->
           <div>
             <div class="flex justify-between items-center mb-2">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
+              <h3 class="pc-eyebrow">Description</h3>
               @if (!isEditingDetails()) {
               <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
                 <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
@@ -104,7 +104,7 @@
       <!-- Subtasks Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
             Subtasks ({{ subtasks().length }})
           </h3>
@@ -161,7 +161,7 @@
       <!-- Comments / Collaboration Panel -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
             Discussion ({{ comments().length }})
           </h3>
@@ -273,7 +273,7 @@
       <!-- Attachments Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
             Attachments ({{ attachments().length }})
           </h3>
@@ -338,7 +338,7 @@
       <!-- Task Status & Detail Settings Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
+          <h3 class="pc-eyebrow">Task Management</h3>
         </div>
 
         <div class="p-6 flex flex-col gap-4">
@@ -470,7 +470,7 @@
       @if (id()) {
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
             Activity History
           </h3>

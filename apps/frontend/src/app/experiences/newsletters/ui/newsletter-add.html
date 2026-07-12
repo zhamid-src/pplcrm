@@ -9,7 +9,7 @@
       <pc-icon name="chevron-left" [size]="3"></pc-icon>
       Newsletters
     </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <p class="pc-eyebrow">Newsletter</p>
     <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
   </header>
 
@@ -67,7 +67,7 @@
       <pc-icon name="chevron-left" [size]="3"></pc-icon>
       Newsletters
     </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <p class="pc-eyebrow">Newsletter</p>
     <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
 
     <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
@@ -181,7 +181,7 @@
         <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
           <div class="flex items-center gap-2 border-b border-base-200 pb-3">
             <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Email details</h3>
+            <h3 class="pc-eyebrow">Email details</h3>
           </div>
 
           <div>
@@ -264,12 +264,12 @@
         <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
           <div class="flex items-center gap-2 border-b border-base-200 pb-3">
             <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Audience</h3>
+            <h3 class="pc-eyebrow">Audience</h3>
           </div>
 
           <!-- Include lists -->
           <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include lists</h4>
+            <h4 class="mb-2 pc-eyebrow">Include lists</h4>
             @if (loadingLists()) {
             <div class="skeleton h-5 w-2/3"></div>
             } @else {
@@ -301,7 +301,7 @@
 
           <!-- Include tags -->
           <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include tags</h4>
+            <h4 class="mb-2 pc-eyebrow">Include tags</h4>
             @if (loadingTags()) {
             <div class="skeleton h-5 w-2/3"></div>
             } @else {
@@ -333,7 +333,7 @@
 
           <!-- Exclude lists -->
           <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude lists</h4>
+            <h4 class="mb-2 pc-eyebrow">Exclude lists</h4>
             @if (!loadingLists()) {
             <div class="flex flex-wrap gap-1.5">
               @for (id of excludeListIds(); track id) {
@@ -363,7 +363,7 @@
 
           <!-- Exclude tags -->
           <div>
-            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude tags</h4>
+            <h4 class="mb-2 pc-eyebrow">Exclude tags</h4>
             @if (!loadingTags()) {
             <div class="flex flex-wrap gap-1.5">
               @for (name of excludeTagsList(); track name) {
@@ -395,9 +395,7 @@
           <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
             <div class="mb-3 flex items-center gap-2">
               <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-              <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/60"
-                >Estimated audience</span
-              >
+              <span class="pc-eyebrow">Estimated audience</span>
             </div>
             @if (hasAudienceSelection()) {
             <dl class="space-y-1.5 text-sm">
@@ -443,11 +441,7 @@
       <div class="grid gap-6 md:grid-cols-2">
         <!-- Review -->
         <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3
-            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
-          >
-            Review
-          </h3>
+          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Review</h3>
           <dl class="divide-y divide-base-200 text-sm">
             <div class="flex items-center justify-between gap-4 py-2.5">
               <dt class="text-base-content/60">Template</dt>
@@ -479,11 +473,7 @@
 
         <!-- Send timing -->
         <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3
-            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
-          >
-            Send timing
-          </h3>
+          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Send timing</h3>
           <div class="space-y-3">
             <label
               class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
@@ -598,7 +588,7 @@
       <pc-icon name="chevron-left" [size]="3"></pc-icon>
       Newsletter types
     </button>
-    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <p class="pc-eyebrow">Newsletter</p>
     <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
   </header>
 

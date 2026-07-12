@@ -15,9 +15,7 @@
     <!-- Header -->
     <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
       <div class="flex items-center justify-between">
-        <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
-          {{ d.campaign_name }}
-        </p>
+        <p class="pc-eyebrow">{{ d.campaign_name }}</p>
         <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
       </div>
       <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>

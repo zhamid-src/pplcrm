@@ -35,7 +35,7 @@
         <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)" class="flex flex-col gap-6">
           <!-- Segmentation (tags & issues) — first section, standalone card -->
           <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Segmentation</h3>
+            <h3 class="block pc-eyebrow">Segmentation</h3>
 
             <div class="flex flex-col gap-1.5">
               <label class="pl-1 text-xs font-semibold text-base-content/70">Household tags</label>
@@ -68,16 +68,14 @@
 
           <!-- Address -->
           <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Address</h3>
+            <h3 class="block pc-eyebrow">Address</h3>
 
             <!-- Current Address Display -->
             @if (!household()?.is_placeholder && addressString()) {
             <div class="flex items-start gap-3 rounded-lg border border-base-300 bg-base-200 p-3">
               <pc-icon name="map-pin" class="mt-0.5 shrink-0 text-primary" [size]="5"></pc-icon>
               <div class="flex flex-col">
-                <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-                  Current address
-                </span>
+                <span class="pc-eyebrow"> Current address </span>
                 <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
               </div>
             </div>
@@ -117,7 +115,7 @@
 
           <!-- Door notes -->
           <pc-card>
-            <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Door notes</h3>
+            <h3 class="block pc-eyebrow">Door notes</h3>
             <pc-textarea
               placeholder="What a canvasser should know at this door…"
               [formField]="form.notes"
@@ -131,7 +129,7 @@
       <div class="flex flex-col gap-6">
         @if (!isNewMode() && household(); as h) {
         <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+          <h3 class="block pc-eyebrow">Overview</h3>
 
           <dl class="flex flex-col gap-3 text-sm">
             <div class="flex items-center justify-between gap-4">
