@@ -9,6 +9,13 @@ import { executeJob } from './job-handlers';
 // Backoff before polling again once the queue drained empty.
 const IDLE_POLL_MS = 30000;
 
+// A 'processing' job whose lock is older than this is treated as abandoned (its worker died) and
+// recovered. While a job runs we refresh its lock every JOB_HEARTBEAT_MS so a legitimately long
+// job (large import/sync/newsletter) is never mistaken for stale and double-run; the heartbeat
+// interval sits well under the threshold so several heartbeats land within one stale window.
+const STALE_JOB_THRESHOLD_MS = 30 * 60 * 1000;
+const JOB_HEARTBEAT_MS = 5 * 60 * 1000;
+
 export class BackgroundJobWorker {
   private readonly importsRepo = new ImportsRepo();
   private readonly db = this.importsRepo.db; // Kysely DB instance
@@ -532,6 +539,22 @@ export class BackgroundJobWorker {
 
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
 
+    // Keep this job's lock fresh while it runs so recoverStaleJobs never reclaims a healthy
+    // long-running job out from under us. Scoped to (this job, still processing, still ours) so it
+    // can't revive a job another worker legitimately took over. Unref'd so it never holds the
+    // process open during shutdown.
+    const heartbeat = setInterval(() => {
+      void this.db
+        .updateTable('background_jobs')
+        .set({ locked_at: new Date(), updated_at: new Date() })
+        .where('id', '=', job.id)
+        .where('status', '=', 'processing')
+        .where('locked_by', '=', workerId)
+        .execute()
+        .catch((err) => logger.error({ err, jobId: job.id }, 'Job heartbeat failed'));
+    }, JOB_HEARTBEAT_MS);
+    if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
     try {
       await executeJob(payload, this.db, job.id);
 
@@ -675,6 +698,8 @@ export class BackgroundJobWorker {
         // If a recurrent cron-like job fails permanently, schedule the next iteration
         await this.rescheduleCronJobOnFailure(payload.type);
       }
+    } finally {
+      clearInterval(heartbeat);
     }
 
     return true;
@@ -696,13 +721,13 @@ export class BackgroundJobWorker {
 
   private async recoverStaleJobs(): Promise<void> {
     try {
-      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
+      const staleTime = new Date(Date.now() - STALE_JOB_THRESHOLD_MS);
 
-      // A job that crashes the worker process (OOM, native fault, an escaping rejection) never
-      // reaches the catch block that enforces max_attempts — it stays 'processing' until it goes
-      // stale. Dead-letter such jobs once they have already been claimed max_attempts times,
-      // instead of requeuing them forever (a poison job would otherwise re-crash the worker every
-      // 30 minutes indefinitely). `attempts` is incremented at claim time, so it reflects real tries.
+      // A job that crashes the worker process (OOM, native fault, an escaping rejection) stops
+      // heartbeating and never reaches the catch that enforces max_attempts, so it goes stale.
+      // Dead-letter such a job once it has been claimed max_attempts times instead of requeuing it
+      // forever — otherwise a poison job re-crashes the worker every stale window indefinitely.
+      // `attempts` is incremented at claim time, so it reflects real tries.
       await this.db
         .updateTable('background_jobs')
         .set({
