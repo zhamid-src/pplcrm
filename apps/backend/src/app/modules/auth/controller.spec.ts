@@ -23,6 +23,24 @@ async function cleanup(db: any, user_id: string, tenant_id: string) {
 
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenant_id).execute();
+  // Demo seed data (signUp): children of persons/households/campaigns, deepest first.
+  await db.deleteFrom('delivery_route_stops').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('delivery_routes').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('delivery_requests').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_knocks').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_assignments').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_households').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turfs').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('donation_pledges').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('donations').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('form_submissions').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('notifications').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('newsletter_events').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('person_newsletter_engagements').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('campaign_person_facts').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('campaign_subscriptions').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('volunteer_shifts').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('map_campaigns_users').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('companies').where('tenant_id', '=', tenant_id).execute();
@@ -73,6 +91,8 @@ async function signUpOwner(controller: AuthController, db: any, verified = true)
     await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
     user = { ...user, verified: true };
   }
+  // signUp seeds demo mode, which blocks invites (demo-guard); these tests exercise post-demo behavior.
+  await db.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', user.tenant_id).execute();
   return user as { id: string; tenant_id: string; email: string; first_name: string; role: string };
 }
 
@@ -129,6 +149,17 @@ describe('AuthController', () => {
     await expect(controller.getUserById(memberAuth, owner.id)).rejects.toThrow(ForbiddenError);
 
     await expect(controller.getUserById(authFor(owner), rand())).rejects.toThrow(NotFoundError);
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
+
+  it('should block inviteUser while the tenant is in demo mode', async () => {
+    const owner = await signUpOwner(controller, db);
+    await db.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', owner.tenant_id).execute();
+
+    await expect(
+      controller.inviteUser(authFor(owner), { email: `demo-invite-${rand()}@example.com`, first_name: 'Blocked' }),
+    ).rejects.toThrow(ForbiddenError);
 
     await cleanup(db, owner.id, owner.tenant_id);
   });
@@ -190,6 +221,22 @@ describe('AuthController', () => {
     expect(sessionsBefore.length).toBeGreaterThan(0);
 
     expect(await controller.signOut(null)).toBeNull();
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
+
+  it('should not reveal whether an email is registered on failed sign-in', async () => {
+    const owner = await signUpOwner(controller, db);
+
+    // A wrong password and a completely unknown email must fail identically (same
+    // UnauthorizedError, never a distinct NotFoundError) so the response can't be used to
+    // enumerate registered accounts.
+    await expect(controller.signIn({ email: owner.email, password: 'WrongPassword123!' })).rejects.toThrow(
+      UnauthorizedError,
+    );
+    await expect(
+      controller.signIn({ email: `unknown-${rand()}@example.com`, password: 'WrongPassword123!' }),
+    ).rejects.toThrow(UnauthorizedError);
 
     await cleanup(db, owner.id, owner.tenant_id);
   });

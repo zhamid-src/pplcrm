@@ -24,7 +24,7 @@ describe('NewsletterAddComponent', () => {
   };
   let mockRouter: { navigate: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn> };
   let mockActivatedRoute: unknown;
-  let mockAuthSvc: { getUser: ReturnType<typeof vi.fn> };
+  let mockAuthSvc: { getUser: ReturnType<typeof vi.fn>; getUserSignal: () => () => unknown };
   let mockConfirmDlg: { confirm: ReturnType<typeof vi.fn> };
   let mockSettingsSvc: { load: ReturnType<typeof vi.fn>; getValue: ReturnType<typeof vi.fn> };
 
@@ -48,7 +48,10 @@ describe('NewsletterAddComponent', () => {
     };
     mockRouter = { navigate: vi.fn(), navigateByUrl: vi.fn() };
     mockActivatedRoute = { snapshot: { paramMap: { get: () => null } } };
-    mockAuthSvc = { getUser: vi.fn().mockReturnValue({ email: 'me@example.com' }) };
+    mockAuthSvc = {
+      getUser: vi.fn().mockReturnValue({ email: 'me@example.com' }),
+      getUserSignal: () => () => ({ email: 'me@example.com', tenant_demo_mode_at: null }),
+    };
     mockConfirmDlg = { confirm: vi.fn().mockResolvedValue(true) };
     mockSettingsSvc = {
       load: vi.fn().mockResolvedValue({}),

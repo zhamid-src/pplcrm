@@ -160,10 +160,17 @@
             >. The footer disclaimer and unsubscribe link are appended automatically from
             <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
           </p>
-          <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="sendTestEmail()">
-            <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-            Send test email
-          </button>
+          <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline btn-secondary"
+              [disabled]="isDemo()"
+              (click)="sendTestEmail()"
+            >
+              <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+              Send test email
+            </button>
+          </span>
         </div>
         <pc-visual-newsletter-editor
           [htmlContent]="regularForm.get('htmlContent')?.value || ''"
@@ -578,12 +585,14 @@
       <pc-icon name="chevron-right" [size]="4"></pc-icon>
     </button>
     } @else {
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="sendRegular()">
-      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
-      <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule') {
-      Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
-      peopleLabel(estimatedAudienceCount()) }} }
-    </button>
+    <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="saving() || isDemo()" (click)="sendRegular()">
+        @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+        <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule')
+        { Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
+        peopleLabel(estimatedAudienceCount()) }} }
+      </button>
+    </span>
     }
   </footer>
 </div>

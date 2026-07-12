@@ -1,15 +1,18 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, effect, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
+import { AuthService } from '../../auth/auth-service';
 import { GettingStartedService } from './services/getting-started.service';
 
 /**
  * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
  * show a success check with their evidence; the next incomplete step is a primary link. Auto-
  * hides once all steps are done; dismissible before then (§3). All state is real (see the
- * service) — nothing is faked.
+ * service) — nothing is faked, which is also why the card stays hidden during demo mode: the
+ * seeded sample data would tick every step. It appears (and fetches fresh counts) once the
+ * tenant exits the demo.
  */
 @Component({
   selector: 'pc-getting-started-card',
@@ -63,15 +66,23 @@ import { GettingStartedService } from './services/getting-started.service';
 export class GettingStartedCard {
   private readonly svc = inject(GettingStartedService);
   private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
 
-  protected readonly visible = this.svc.visible;
+  private readonly user = this.auth.getUserSignal();
+  private readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+
+  protected readonly visible = computed(() => !this.isDemo() && this.svc.visible());
   protected readonly steps = this.svc.steps;
   protected readonly doneCount = this.svc.doneCount;
   protected readonly total = this.svc.total;
   protected readonly nextStep = this.svc.nextStep;
 
   constructor() {
-    void this.svc.refresh();
+    // Refresh only outside demo mode — and again the moment the demo flag clears,
+    // so the steps reflect the emptied workspace, not the seeded counts.
+    effect(() => {
+      if (!this.isDemo()) void this.svc.refresh();
+    });
   }
 
   protected dismiss(): void {

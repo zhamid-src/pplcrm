@@ -14,7 +14,7 @@ import { DemoService } from './services/demo.service';
  * one place to exit demo mode. Demo mode is the pre-plan test drive — the
  * backend refuses to exit until the tenant has an active subscription, and it
  * blocks outward-facing configuration (senders, domains, mailbox sync,
- * newsletter sending) while the flag is set. Exiting deletes the seeded data
+ * newsletter sending, teammate invites) while the flag is set. Exiting deletes the seeded data
  * (the six draft forms, the built-in tags, and anything the user created are
  * kept) and refreshes the session so the shell banner disappears immediately.
  */
@@ -36,9 +36,9 @@ import { DemoService } from './services/demo.service';
             full report. Everything here is safe to open, edit, and delete.
           </p>
           <p class="text-sm text-base-content/60">
-            Sending email and workspace configuration (sender identities, domains, mailbox sync) stay locked during the
-            demo. When you’re ready, choose a plan, then exit demo mode — your six draft forms, the built-in tags, and
-            anything you created yourself will be kept.
+            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
+            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode — your six draft forms,
+            the built-in tags, and anything you created yourself will be kept.
           </p>
 
           <div class="card-actions items-center gap-3">

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
+import { AuthService } from '../../../auth/auth-service';
 import { CampaignContextService } from '../../../services/campaign-context.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { SettingsService } from '../../settings/services/settings-service';
@@ -52,6 +53,11 @@ class MockSettingsService {
   getValue = vi.fn().mockReturnValue(['team@example.org']);
 }
 
+class MockAuthService {
+  user = signal<{ tenant_demo_mode_at: Date | null } | null>({ tenant_demo_mode_at: null });
+  getUserSignal = () => this.user;
+}
+
 describe('NewslettersPage', () => {
   let fixture: ComponentFixture<NewslettersPage>;
   let component: NewslettersPage;
@@ -60,6 +66,7 @@ describe('NewslettersPage', () => {
   let alerts: MockAlertService;
   let context: MockCampaignContextService;
   let settings: MockSettingsService;
+  let auth: MockAuthService;
 
   beforeEach(async () => {
     svc = new MockNewslettersService();
@@ -67,6 +74,7 @@ describe('NewslettersPage', () => {
     alerts = new MockAlertService();
     context = new MockCampaignContextService();
     settings = new MockSettingsService();
+    auth = new MockAuthService();
 
     await TestBed.configureTestingModule({
       imports: [NewslettersPage],
@@ -77,6 +85,7 @@ describe('NewslettersPage', () => {
         { provide: ConfirmDialogService, useValue: dialogs },
         { provide: AlertService, useValue: alerts },
         { provide: SettingsService, useValue: settings },
+        { provide: AuthService, useValue: auth },
       ],
     }).compileComponents();
   });
@@ -190,6 +199,10 @@ describe('NewslettersPage', () => {
 
     component['verifiedSenders'].set([]);
     expect(component['sendBlocker'](draftRow())).toContain('Verify a sender address');
+
+    // Demo mode outranks every other blocker — sending is locked server-side too.
+    auth.user.set({ tenant_demo_mode_at: new Date() });
+    expect(component['sendBlocker'](draftRow())).toContain('locked during the demo');
   });
 
   it('refuses to send a blocked draft even if invoked directly', async () => {
