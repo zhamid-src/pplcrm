@@ -23,6 +23,7 @@ import {
   handleSendEventReminder,
   handleSendFormNotifications,
   handleSendShiftReminder,
+  handleSendSms,
   handleSendSubscriptionConfirmation,
   handleSendTransactionalEmail,
   handleSendWebformNotifications,
@@ -106,6 +107,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'send-transactional-email':
       await handleSendTransactionalEmail(job);
+      break;
+    case 'send-sms':
+      await handleSendSms(job);
       break;
     case 'send-subscription-confirmation':
       await handleSendSubscriptionConfirmation(job);
