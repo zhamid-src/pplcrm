@@ -80,11 +80,19 @@ describe('Alerts Component', () => {
     expect(component['icon'](undefined)).toBe('information-circle');
   });
 
-  it('should color only the icon by tone', () => {
+  it('should color the icon by tone', () => {
     expect(component['toneClass']('success')).toBe('text-success');
     expect(component['toneClass']('warning')).toBe('text-warning');
     expect(component['toneClass']('error')).toBe('text-error');
     expect(component['toneClass']('info')).toBe('text-info');
     expect(component['toneClass'](undefined)).toBe('text-info');
+  });
+
+  it('should color the left accent bar by tone', () => {
+    expect(component['barToneClass']('success')).toBe('bg-success');
+    expect(component['barToneClass']('warning')).toBe('bg-warning');
+    expect(component['barToneClass']('error')).toBe('bg-error');
+    expect(component['barToneClass']('info')).toBe('bg-info');
+    expect(component['barToneClass'](undefined)).toBe('bg-info');
   });
 });
