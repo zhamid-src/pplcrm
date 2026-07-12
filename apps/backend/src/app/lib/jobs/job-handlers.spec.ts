@@ -110,9 +110,22 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => {
-          /* mock: no-op */
-        },
+        // scheduleNextRun now runs its dedup-check + insert inside a transaction; route the
+        // callback to a trx whose dedup lookup finds nothing and whose insert captures run_at.
+        execute: async (cb: any) =>
+          cb({
+            selectFrom: () => ({
+              select: () => ({
+                where: () => ({ where: () => ({ forUpdate: () => ({ executeTakeFirst: async () => undefined }) }) }),
+              }),
+            }),
+            insertInto: () => ({
+              values: (vals: any) => {
+                insertedRunAt = vals.run_at;
+                return { execute: async () => undefined };
+              },
+            }),
+          }),
       }),
       insertInto: () => ({
         values: (vals: any) => {
@@ -151,9 +164,22 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => {
-          /* mock: no-op */
-        },
+        // scheduleNextRun now runs its dedup-check + insert inside a transaction; route the
+        // callback to a trx whose dedup lookup finds nothing and whose insert captures run_at.
+        execute: async (cb: any) =>
+          cb({
+            selectFrom: () => ({
+              select: () => ({
+                where: () => ({ where: () => ({ forUpdate: () => ({ executeTakeFirst: async () => undefined }) }) }),
+              }),
+            }),
+            insertInto: () => ({
+              values: (vals: any) => {
+                insertedRunAt = vals.run_at;
+                return { execute: async () => undefined };
+              },
+            }),
+          }),
       }),
       insertInto: () => ({
         values: (vals: any) => {
