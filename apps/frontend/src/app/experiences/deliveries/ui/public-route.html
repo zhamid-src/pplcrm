@@ -5,7 +5,7 @@
   </div>
   } @case ('notfound') {
   <div class="flex min-h-screen items-center justify-center px-6">
-    <div class="w-full max-w-[400px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+    <div class="w-full max-w-[400px] pc-panel p-8 text-center">
       <h1 class="mb-2 text-lg font-semibold">This route link isn't active</h1>
       <p class="text-sm text-base-content/60">Ask your organizer for a new one.</p>
     </div>
@@ -13,11 +13,9 @@
   } @case ('ready') { @if (data(); as d) {
   <div class="mx-auto flex w-full max-w-[430px] flex-col gap-4 px-3 py-4">
     <!-- Header -->
-    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+    <div class="pc-panel p-4">
       <div class="flex items-center justify-between">
-        <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">
-          {{ d.campaign_name }}
-        </p>
+        <p class="pc-eyebrow">{{ d.campaign_name }}</p>
         <pc-status-badge [type]="statusChip().type">{{ statusChip().label }}</pc-status-badge>
       </div>
       <h1 class="mt-1 text-lg font-bold text-base-content">{{ d.route_name }}</h1>
@@ -140,7 +138,7 @@
 
     <!-- Selected pin card (map view) -->
     @if (view() === 'map' && selectedStopId(); as sid) { @for (stop of d.stops; track stop.id) { @if (stop.id === sid) {
-    <div class="rounded-2xl border border-base-300 bg-base-100 p-4">
+    <div class="pc-panel p-4">
       <p class="font-semibold">{{ stop.seq }}. {{ stop.first_name }}</p>
       <p class="text-sm text-base-content/70">{{ stop.address }}</p>
       @if (stop.status === 'pending') {

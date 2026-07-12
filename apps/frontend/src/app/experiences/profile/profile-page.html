@@ -18,7 +18,7 @@
 
   <div class="space-y-6">
     <!-- Identity header card -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+    <div class="pc-panel p-6">
       <div class="flex items-center gap-5">
         <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
         <div class="relative shrink-0">
@@ -109,7 +109,7 @@
       <!-- Left column: profile form + notifications -->
       <div class="space-y-6 lg:col-span-2">
         <!-- Profile card (explicit save) -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div class="pc-panel p-6">
           <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
           <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
 
@@ -182,8 +182,8 @@
 
       <!-- Right column: account facts + activity -->
       <div class="space-y-6">
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Account</h2>
+        <div class="pc-panel p-6">
+          <h2 class="pc-eyebrow">Account</h2>
           <div class="mt-2">
             <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
               <span class="text-base-content/60">Role</span>
@@ -211,8 +211,8 @@
         </div>
 
         @if (stats()) {
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
-          <h2 class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">Your activity</h2>
+        <div class="pc-panel p-6">
+          <h2 class="pc-eyebrow">Your activity</h2>
           <div class="mt-1">
             @for (row of activityRows(); track row.key) {
             <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
@@ -242,12 +242,15 @@
 
   <!-- Cropping Modal -->
   @if (cropImageSrc()) {
-  <dialog class="modal modal-open">
-    <div
-      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
-    >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
-
+  <pc-modal-shell
+    [open]="true"
+    (closed)="cancelCrop()"
+    title="Crop profile picture"
+    icon="user-circle"
+    [boxClass]="'max-w-md'"
+    [dismissible]="false"
+  >
+    <div class="flex flex-col items-center">
       <!-- Drag & Crop Container -->
       <div
         class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
@@ -283,13 +286,13 @@
           class="range range-primary range-sm"
         />
       </div>
-
-      <!-- Action buttons -->
-      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
-      </div>
     </div>
-  </dialog>
+
+    <!-- Action buttons -->
+    <div pc-modal-footer class="flex gap-2">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+    </div>
+  </pc-modal-shell>
   }
 </div>

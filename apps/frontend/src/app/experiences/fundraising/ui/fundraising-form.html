@@ -219,7 +219,7 @@
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Add donors to Lists</label>
                 @if (!availableLists().length) {
-                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
+                <p class="text-xs text-base-content/50">No lists created yet — donors can still be tagged below.</p>
                 } @else {
                 <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
                   <option value="">Select a list to target</option>
@@ -398,9 +398,7 @@
             <div class="divider my-1"></div>
 
             <div class="rounded-lg bg-base-50 p-4 border border-base-200">
-              <h4
-                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
-              >
+              <h4 class="pc-eyebrow flex items-center gap-1.5 mb-2">
                 <pc-icon name="check-circle" class="text-success"></pc-icon>
                 Spam & BOT Protection Included
               </h4>

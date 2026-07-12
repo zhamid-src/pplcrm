@@ -30,12 +30,10 @@
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="6" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="users" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No users yet — invite your first teammate.</p>
+      <td colspan="6" class="px-6">
+        <pc-empty-state icon="users" [bordered]="false" title="No users yet" hint="Invite your first teammate.">
           <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
-        </div>
+        </pc-empty-state>
       </td>
     </tr>
     } @else { @for (row of rows(); track row.id) {

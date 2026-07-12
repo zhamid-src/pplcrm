@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
 
 export interface TimeAgoOptions {
   thresholdDays?: number;
@@ -19,7 +19,7 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
   private lastOptsJson?: string;
   private lastResult = '';
 
-  constructor(private cdr: ChangeDetectorRef) {}
+  private readonly cdr = inject(ChangeDetectorRef);
 
   public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
     // Stringify options to avoid pure:false memory reference loops

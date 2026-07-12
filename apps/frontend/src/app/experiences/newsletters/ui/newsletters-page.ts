@@ -14,6 +14,7 @@ import { CampaignContextService } from '../../../services/campaign-context.servi
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { SettingsService } from '../../settings/services/settings-service';
 import { NewslettersService } from '../services/newsletters-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 interface NewsletterRow {
   bounce_count: number;
@@ -70,7 +71,7 @@ const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused
 @Component({
   selector: 'pc-newsletters-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
+  imports: [EmptyState, RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
   templateUrl: './newsletters-page.html',
 })
 export class NewslettersPage {

@@ -4,6 +4,7 @@ import type { InteractionType } from '@common';
 import { Icon } from '@icons/icon';
 import type { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { ActivityService } from '@experiences/activity/services/activity.service';
 
@@ -23,7 +24,7 @@ interface InteractionOption {
  */
 @Component({
   selector: 'pc-log-interaction',
-  imports: [Icon],
+  imports: [Icon, ModalShell],
   templateUrl: './log-interaction.html',
 })
 export class LogInteraction {
@@ -61,8 +62,11 @@ export class LogInteraction {
     }
   }
 
+  /**
+   * Syncs state after the shell's dialog has closed (X, ESC, backdrop). While a
+   * save is in flight the shell is non-dismissible, so a close here is final.
+   */
   protected close(): void {
-    if (this.saving()) return;
     this.open.set(false);
     this.selected.set(null);
   }

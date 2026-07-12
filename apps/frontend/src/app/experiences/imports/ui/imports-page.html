@@ -66,7 +66,7 @@
         </td>
         <td>
           @switch (item.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Pending</span>
+          <pc-status-badge type="ghost">Pending</pc-status-badge>
           } @case ('processing') {
           <span class="badge badge-info text-xs gap-1">
             <span class="loading loading-spinner loading-xs"></span>
@@ -90,9 +90,9 @@
             }
           </div>
           } @case ('failed') {
-          <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
             Failed
-          </span>
+          </pc-status-badge>
           } }
         </td>
         <td>
@@ -200,7 +200,7 @@
         </td>
         <td>
           @switch (job.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Queued</span>
+          <pc-status-badge type="ghost">Queued</pc-status-badge>
           } @case ('processing') {
           <span class="badge badge-info text-xs gap-1">
             <span class="loading loading-spinner loading-xs"></span>
@@ -209,13 +209,13 @@
           } @case ('completed') {
           <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
           } @default {
-          <span class="badge badge-error text-xs">Failed</span>
+          <pc-status-badge type="error">Failed</pc-status-badge>
           } }
         </td>
         <td class="text-right">
           <div class="flex justify-end gap-1">
             @if (job.status === 'completed') { @if (isExpired(job)) {
-            <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
+            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
             } @else if (job.downloadable) {
             <button
               type="button"
@@ -227,7 +227,7 @@
             </button>
             } @else {
             <span
-              class="text-xs text-base-content/40 italic mr-2"
+              class="text-xs text-base-content/40 mr-2"
               title="Downloaded directly to your device — not stored on the server"
             >
               Downloaded
@@ -260,89 +260,89 @@
   }
 </div>
 
-<dialog #deleteDialog class="modal">
-  <div class="modal-box bg-base-100 border border-base-300 shadow-2xl">
-    <h3 class="font-bold text-lg text-base-content">Delete import</h3>
-    @if (pendingDelete(); as item) {
-    <p class="text-sm text-base-content/70 mt-2">
-      This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-      records created by this import:
-    </p>
+<pc-modal-shell
+  #deleteDialog
+  title="Delete import"
+  icon="trash"
+  [dismissible]="!deleting()"
+  (closed)="pendingDelete.set(null)"
+>
+  @if (pendingDelete(); as item) {
+  <p class="text-sm text-base-content/70 mt-2">
+    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+    records created by this import:
+  </p>
 
-    <div class="space-y-3 mt-4">
-      @if (item.contactCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deletePeople()"
-          (change)="deletePeople.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-      </label>
-      } @if (item.householdCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteHouseholds()"
-          (change)="deleteHouseholds.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-      </label>
-      } @if (item.companyCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteCompanies()"
-          (change)="deleteCompanies.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-      </label>
-      } @if (item.taskCount > 0) {
-      <label
-        class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-primary checkbox-sm"
-          [checked]="deleteTasks()"
-          (change)="deleteTasks.set($any($event.target).checked)"
-        />
-        <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-      </label>
-      }
-    </div>
+  <div class="space-y-3 mt-4">
+    @if (item.contactCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deletePeople()"
+        (change)="deletePeople.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+    </label>
+    } @if (item.householdCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteHouseholds()"
+        (change)="deleteHouseholds.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+    </label>
+    } @if (item.companyCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteCompanies()"
+        (change)="deleteCompanies.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+    </label>
+    } @if (item.taskCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteTasks()"
+        (change)="deleteTasks.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+    </label>
     }
-
-    <div class="modal-action flex gap-2">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent"
-        (click)="closeDeleteDialog(deleteDialog)"
-        [disabled]="deleting()"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-outline btn-error gap-2"
-        (click)="confirmDelete(deleteDialog)"
-        [disabled]="deleting()"
-      >
-        <pc-icon name="trash" [size]="4"></pc-icon>
-        Delete
-      </button>
-    </div>
   </div>
-  <form method="dialog" class="modal-backdrop" (click)="closeDeleteDialog(deleteDialog)">
-    <button type="submit">close</button>
-  </form>
-</dialog>
+  }
+
+  <div pc-modal-footer class="flex gap-2">
+    <button
+      type="button"
+      class="btn btn-outline btn-accent"
+      (click)="closeDeleteDialog(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="btn btn-outline btn-error gap-2"
+      (click)="confirmDelete(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      Delete
+    </button>
+  </div>
+</pc-modal-shell>

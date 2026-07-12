@@ -12,6 +12,7 @@ import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { createRequestGuard } from '@uxcommon/request-guard';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
@@ -55,6 +56,7 @@ export class CompanyView {
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
+  private readonly _requestGuard = createRequestGuard();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
 
@@ -129,10 +131,12 @@ export class CompanyView {
   }
 
   protected async loadAllData(id: string) {
+    const isCurrent = this._requestGuard.begin();
     const end = this._loading.begin();
     try {
       // 1. Load company details (triggers Google enrichment job on backend)
       const data = await this.companiesSvc.getById(id);
+      if (!isCurrent()) return;
       this.company.set(data);
       // Spec §1: the address bar shows the record slug, never the internal id.
       // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
@@ -142,6 +146,7 @@ export class CompanyView {
 
       // 2. Load employee count via dedicated count endpoint (no row data fetched)
       const count = await this.personsSvc.countByCompanyId(id);
+      if (!isCurrent()) return;
       this.employeeCount.set(count);
     } catch (err) {
       this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));

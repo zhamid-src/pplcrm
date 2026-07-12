@@ -1,4 +1,5 @@
 export * from './loading-gate';
+export * from './request-guard';
 
 // Components
 export * from './components/alerts/alert-service';

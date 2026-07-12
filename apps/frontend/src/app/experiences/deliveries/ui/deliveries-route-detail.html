@@ -3,8 +3,8 @@
   <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
 
   <!-- Header card -->
-  <div class="flex flex-col gap-3 rounded-xl border border-base-300 bg-base-100 p-5">
-    <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Delivery route</p>
+  <div class="flex flex-col gap-3 pc-panel p-5">
+    <p class="pc-eyebrow">Delivery route</p>
     <div class="flex flex-wrap items-center gap-3">
       @if (renaming()) {
       <input
@@ -93,7 +93,7 @@
   </div>
 
   <!-- Stops card -->
-  <div class="flex flex-col gap-2 rounded-xl border border-base-300 bg-base-100 p-5">
+  <div class="flex flex-col gap-2 pc-panel p-5">
     <div class="flex items-center justify-between">
       <p class="text-sm font-semibold">
         <span class="tabular-nums">{{ deliveredCount() }}</span> of

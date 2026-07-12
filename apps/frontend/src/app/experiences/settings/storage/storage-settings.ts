@@ -4,6 +4,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { FilesService } from '../../files/services/files.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 interface LargestFile {
   id: string;
@@ -14,7 +15,7 @@ interface LargestFile {
 
 @Component({
   selector: 'pc-storage-settings',
-  imports: [Icon],
+  imports: [EmptyState, Icon],
   templateUrl: './storage-settings.html',
 })
 export class StorageSettingsComponent implements OnInit {

@@ -85,7 +85,9 @@
           <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (volunteers().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            <p class="p-3 text-sm text-base-content/50">
+              No volunteers assigned yet — pick them from the list on the left.
+            </p>
             } @else {
             <ul class="divide-y divide-base-200">
               @for (volunteer of volunteers(); track volunteer.id) {
@@ -129,7 +131,7 @@
           <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            <p class="p-3 text-sm text-base-content/50">No lists assigned yet — pick them from the list on the left.</p>
             } @else {
             <ul class="divide-y divide-base-200">
               @for (list of assignedLists(); track list.id) {
@@ -163,15 +165,19 @@
 
       <div class="overflow-x-auto rounded border border-base-200">
         @if (teamTasks().length === 0) {
-        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        <pc-empty-state icon="task" [bordered]="false" title="No tasks assigned to this team yet">
+          <a class="btn btn-primary btn-sm gap-1" [routerLink]="['/tasks/add']" [queryParams]="{ team_id: id }">
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+          </a>
+        </pc-empty-state>
         } @else {
-        <table class="table table-zebra w-full text-sm">
+        <table class="table pc-table table-zebra w-full">
           <thead>
             <tr>
               <th>Task</th>
               <th>Priority</th>
               <th>Status</th>
-              <th>Due Date</th>
+              <th>Due date</th>
               <th>Action</th>
             </tr>
           </thead>

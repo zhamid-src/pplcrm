@@ -83,7 +83,7 @@ const COUNTRY_OPTIONS = [
               </a>
             }
 
-            <div class="rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+            <div class="pc-panel p-8">
               <div class="mb-4 flex items-center gap-2">
                 <div
                   class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
@@ -93,7 +93,7 @@ const COUNTRY_OPTIONS = [
                 <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
               </div>
 
-              <p class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+              <p class="pc-eyebrow mb-1">
                 {{ kind === 'volunteer' ? 'Volunteer event' : 'Event' }}
               </p>
               <h1 class="mb-1 text-xl font-semibold text-base-content">{{ event()!.name }}</h1>
@@ -103,9 +103,7 @@ const COUNTRY_OPTIONS = [
 
               <div class="mb-6 flex flex-col gap-2 text-sm text-base-content">
                 <div class="flex items-baseline gap-2">
-                  <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                    >When</span
-                  >
+                  <span class="pc-eyebrow w-24 shrink-0">When</span>
                   <span>
                     {{ event()!.start_time | date: 'EEEE, MMMM d, y' }} ·
                     {{ event()!.start_time | date: 'shortTime' }} – {{ event()!.end_time | date: 'shortTime' }}
@@ -113,25 +111,19 @@ const COUNTRY_OPTIONS = [
                 </div>
                 @if (event()!.location_address) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Where</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Where</span>
                     <span>{{ event()!.location_address }}</span>
                   </div>
                 }
                 @if (event()!.capacity !== null) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Spots</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Spots</span>
                     <span class="tabular-nums">{{ remaining() }} of {{ event()!.capacity }} left</span>
                   </div>
                 }
                 @if (event()!.contact_email || event()!.contact_phone) {
                   <div class="flex items-baseline gap-2">
-                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
-                      >Questions</span
-                    >
+                    <span class="pc-eyebrow w-24 shrink-0">Questions</span>
                     <span>
                       @if (event()!.contact_email) {
                         <a class="link-hover link text-primary" [href]="'mailto:' + event()!.contact_email">{{
@@ -152,9 +144,7 @@ const COUNTRY_OPTIONS = [
                   <h2 class="mb-2 text-sm font-semibold text-base-content">Tickets</h2>
                   <div class="flex flex-col gap-2">
                     @for (ticket of tickets(); track ticket.name) {
-                      <div
-                        class="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-4 py-3"
-                      >
+                      <div class="flex items-center justify-between pc-panel px-4 py-3">
                         <div>
                           <p class="text-sm font-medium text-base-content">{{ ticket.name }}</p>
                           @if (ticket.description) {
@@ -250,9 +240,7 @@ const COUNTRY_OPTIONS = [
           </div>
         }
         @case ('thanks') {
-          <div
-            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
-          >
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
             <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
               ✓
             </div>
@@ -263,9 +251,7 @@ const COUNTRY_OPTIONS = [
           </div>
         }
         @default {
-          <div
-            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
-          >
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
             <h1 class="mb-2 text-xl font-semibold text-base-content">Event not found</h1>
             <p class="text-sm text-base-content/60">This event doesn’t exist or hasn’t been published yet.</p>
           </div>

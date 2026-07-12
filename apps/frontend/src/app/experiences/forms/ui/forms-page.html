@@ -1,7 +1,7 @@
 <!-- Preview panel (shared by browse + edit) ---------------------------------->
 <ng-template #previewPanel let-showEdit="showEdit">
   @if (selected(); as form) {
-  <div class="rounded-2xl border border-base-300 bg-base-100">
+  <div class="pc-panel">
     <!-- Actions row -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
       <div class="join">
@@ -50,7 +50,7 @@
 
     <!-- Public link row -->
     <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="pc-eyebrow">Public link</span>
       <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
       <div class="flex items-center gap-1">
         <button
@@ -202,13 +202,9 @@
             >{{ form.name }}</span
           >
           <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span
-            class="badge badge-xs shrink-0"
-            [class.badge-success]="form.status === 'published'"
-            [class.badge-ghost]="form.status !== 'published'"
-          >
+          <pc-status-badge class="shrink-0" [type]="form.status === 'published' ? 'success' : 'ghost'">
             {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </span>
+          </pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
@@ -235,7 +231,7 @@
         <div class="flex items-center gap-2">
           <span class="truncate text-sm font-medium">{{ form.name }}</span>
           <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
+          <pc-status-badge type="ghost" class="shrink-0">Archived</pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
@@ -312,7 +308,7 @@
     <button
       type="button"
       (click)="selectTemplate(card.type)"
-      class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
       <div
         class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
@@ -331,7 +327,7 @@
     <button
       type="button"
       (click)="openBuilder(card)"
-      class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
       <div
         class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
@@ -354,7 +350,7 @@
     <!-- Chosen template summary -->
     <div class="rounded-2xl border-y border-r border-l-4 border-base-300 border-l-primary bg-base-100 p-4">
       <div class="flex items-center justify-between">
-        <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Template</span>
+        <span class="pc-eyebrow">Template</span>
         <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="backToTemplates()">Change</button>
       </div>
       <div class="mt-2 flex items-center gap-3">
@@ -428,7 +424,7 @@
     <div class="flex flex-col gap-6">
       <!-- FORM -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <h2 class="pc-eyebrow">Form</h2>
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium text-base-content">Form name</span>
           <input
@@ -468,7 +464,7 @@
 
       <!-- AFTER SUBMIT -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <h2 class="pc-eyebrow">After submit</h2>
         <label class="flex items-start gap-3">
           <input
             type="checkbox"
@@ -506,7 +502,7 @@
 
       <!-- FIELDS -->
       <section class="flex flex-col gap-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        <h2 class="pc-eyebrow">Fields</h2>
         @for (field of form.fields; track field.key) {
         <div class="flex items-center gap-2">
           <input
@@ -539,7 +535,7 @@
 
       <!-- AUDIENCE -->
       <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <h2 class="pc-eyebrow">Audience</h2>
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium text-base-content">Add responses to a list</span>
           <select
@@ -594,7 +590,7 @@
 
       <!-- ARCHIVE -->
       <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        <h2 class="pc-eyebrow">Archive</h2>
         @if (canDelete(form)) {
         <p class="text-xs text-base-content/60">
           This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
@@ -632,92 +628,79 @@
 }
 
 <!-- Embed dialog -------------------------------------------------------------->
-<dialog #embedDialog class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
-        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
-        Embed this form
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="join mb-3">
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'iframe'"
-        (click)="embedMode.set('iframe')"
-        type="button"
-      >
-        Embed (iframe)
-      </button>
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'html'"
-        (click)="embedMode.set('html')"
-        type="button"
-      >
-        Raw HTML form
-      </button>
-    </div>
-
-    <p class="mb-2 text-xs text-base-content/60">
-      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
-      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
-    </p>
-
-    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
-{{ embedCode() }}</pre
+<pc-modal-shell #embedDialog title="Embed this form" icon="file-code" [boxClass]="'max-w-2xl'">
+  <div class="join mb-3">
+    <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'iframe'"
+      (click)="embedMode.set('iframe')"
+      type="button"
     >
-
-    <div class="mt-4 flex justify-end">
-      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy code
-      </button>
-    </div>
+      Embed (iframe)
+    </button>
+    <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'html'"
+      (click)="embedMode.set('html')"
+      type="button"
+    >
+      Raw HTML form
+    </button>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+
+  <p class="mb-2 text-xs text-base-content/60">
+    @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the form.
+    } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+  </p>
+
+  <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+  >
+
+  <div pc-modal-footer>
+    <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      Copy code
+    </button>
+  </div>
+</pc-modal-shell>
 
 <!-- Confirmation-email dialog ------------------------------------------------->
-<dialog #confirmEmailDialog class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Subject</span>
-        <input
-          class="input input-bordered w-full"
-          [value]="confirmSubjectDraft()"
-          (input)="confirmSubjectDraft.set($any($event.target).value)"
-        />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Body</span>
-        <textarea
-          class="textarea textarea-bordered min-h-[140px] w-full"
-          [value]="confirmBodyDraft()"
-          (input)="confirmBodyDraft.set($any($event.target).value)"
-        ></textarea>
-      </label>
-      <p class="text-xs text-base-content/50">
-        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
-        greeting.
-      </p>
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
-        <button class="btn btn-primary" type="submit">Save</button>
-      </div>
-    </form>
+<pc-modal-shell
+  #confirmEmailDialog
+  title="Confirmation email"
+  icon="envelope"
+  [boxClass]="'max-w-lg'"
+  [dismissible]="false"
+>
+  <form
+    id="confirm-email-form"
+    (submit)="$event.preventDefault(); saveConfirmEmail()"
+    novalidate
+    class="flex flex-col gap-4"
+  >
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Subject</span>
+      <input
+        class="input input-bordered w-full"
+        [value]="confirmSubjectDraft()"
+        (input)="confirmSubjectDraft.set($any($event.target).value)"
+      />
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Body</span>
+      <textarea
+        class="textarea textarea-bordered min-h-[140px] w-full"
+        [value]="confirmBodyDraft()"
+        (input)="confirmBodyDraft.set($any($event.target).value)"
+      ></textarea>
+    </label>
+    <p class="text-xs text-base-content/50">
+      Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the greeting.
+    </p>
+  </form>
+  <div pc-modal-footer class="flex gap-2">
+    <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
+    <button class="btn btn-primary" type="submit" form="confirm-email-form">Save</button>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+</pc-modal-shell>

@@ -2,6 +2,7 @@ import { Component, type OnInit, computed, inject, output, signal } from '@angul
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 
 import { DOORS_PER_TURF_PRESETS } from '../../../../../../../libs/common/src';
 import { ListsService } from '../../lists/services/lists-service';
@@ -20,6 +21,7 @@ const MIN_PER_HOUR = 60;
 
 @Component({
   selector: 'pc-cut-turfs-dialog',
+  imports: [ModalShell],
   templateUrl: './cut-turfs-dialog.html',
 })
 export class CutTurfsDialog implements OnInit {

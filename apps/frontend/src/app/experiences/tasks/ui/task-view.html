@@ -70,7 +70,7 @@
           <!-- Inline Edit Description -->
           <div>
             <div class="flex justify-between items-center mb-2">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
+              <h3 class="pc-eyebrow">Description</h3>
               @if (!isEditingDetails()) {
               <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
                 <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
@@ -104,7 +104,7 @@
       <!-- Subtasks Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
             Subtasks ({{ subtasks().length }})
           </h3>
@@ -138,9 +138,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">
-            No subtasks defined. Add one below to break this task down.
-          </div>
+          <pc-empty-state
+            icon="clipboard-document-list"
+            [bordered]="false"
+            title="No subtasks yet"
+            hint="Add one below to break this task down."
+          />
           }
 
           <div class="flex gap-2 mt-2">
@@ -161,7 +164,7 @@
       <!-- Comments / Collaboration Panel -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
             Discussion ({{ comments().length }})
           </h3>
@@ -206,9 +209,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">
-            No comments yet. Start the conversation!
-          </div>
+          <pc-empty-state
+            icon="chat-bubble-bottom-center-text"
+            [bordered]="false"
+            title="No comments yet"
+            hint="Start the conversation below — use @ to mention colleagues."
+          />
           }
 
           <!-- Comment Composer with User Mentions -->
@@ -273,7 +279,7 @@
       <!-- Attachments Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
             Attachments ({{ attachments().length }})
           </h3>
@@ -310,7 +316,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
+          <pc-empty-state
+            icon="paper-clip"
+            [bordered]="false"
+            title="No files attached to this task"
+            hint="Attach one below with a name and a URL."
+          />
           }
 
           <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
@@ -338,7 +349,7 @@
       <!-- Task Status & Detail Settings Card -->
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
+          <h3 class="pc-eyebrow">Task Management</h3>
         </div>
 
         <div class="p-6 flex flex-col gap-4">
@@ -393,7 +404,7 @@
             } @else {
             <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
               <calendar-date
-                class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
+                class="cally pc-panel p-1 max-w-full"
                 [value]="dateOnly(t.due_at)"
                 (change)="onDueDateChange($event)"
               >
@@ -470,7 +481,7 @@
       @if (id()) {
       <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
         <div class="p-4 border-b border-base-200 bg-base-50/50">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+          <h3 class="pc-eyebrow flex items-center gap-1.5">
             <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
             Activity History
           </h3>

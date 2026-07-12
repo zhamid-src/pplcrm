@@ -25,7 +25,7 @@ import { DemoService } from './services/demo.service';
     @if (visible()) {
       <div class="animate-drop card border border-info/40 bg-info/5 shadow-sm">
         <div class="card-body gap-3 p-5">
-          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-info">
+          <div class="pc-eyebrow flex items-center gap-2 text-info">
             <pc-icon name="information-circle" [size]="4"></pc-icon>
             Demo mode
           </div>

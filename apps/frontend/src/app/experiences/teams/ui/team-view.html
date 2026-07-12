@@ -98,7 +98,12 @@
         <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
           <div class="flex flex-col gap-3">
             @if (volunteers().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
+            <pc-empty-state
+              icon="user-group"
+              [bordered]="false"
+              title="No volunteers assigned to this team yet"
+              hint="Use Edit team to assign volunteers."
+            />
             } @else {
             <ul class="divide-y divide-base-200">
               @for (volunteer of volunteers(); track volunteer.id) {
@@ -120,7 +125,12 @@
         <pc-tab-panel id="lists" [activeTab]="activeTab()">
           <div class="flex flex-col gap-3">
             @if (!team().lists?.length) {
-            <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
+            <pc-empty-state
+              icon="queue-list"
+              [bordered]="false"
+              title="No target constituent lists assigned yet"
+              hint="Use Edit team to assign the lists this team contacts."
+            />
             } @else {
             <ul class="divide-y divide-base-200">
               @for (list of team().lists; track list.id) {
@@ -142,16 +152,21 @@
         <pc-tab-panel id="tasks" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
             @if (teamTasks().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
+            <pc-empty-state
+              icon="task"
+              [bordered]="false"
+              title="No tasks assigned to this team yet"
+              hint="Use Edit team to add tasks for this team."
+            />
             } @else {
             <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm table-zebra w-full text-xs">
+              <table class="table pc-table table-zebra w-full">
                 <thead>
                   <tr class="bg-base-200 text-base-content/70">
                     <th>Task</th>
                     <th>Priority</th>
                     <th>Status</th>
-                    <th>Due Date</th>
+                    <th>Due date</th>
                   </tr>
                 </thead>
                 <tbody>

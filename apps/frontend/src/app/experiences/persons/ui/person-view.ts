@@ -19,6 +19,7 @@ import { PersonCampaignFacts } from './person-campaign-facts';
 import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { createRequestGuard } from '@uxcommon/request-guard';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -26,6 +27,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { Tags } from '@experiences/tags/ui/tags';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
@@ -50,6 +52,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     Tags,
     PersonCampaignFacts,
     PersonConnections,
+    ModalShell,
   ],
   templateUrl: './person-view.html',
 })
@@ -73,6 +76,7 @@ export class PersonView {
   private readonly connectionsSvc = inject(ConnectionsService);
 
   private readonly _loading = createLoadingGate();
+  private readonly _requestGuard = createRequestGuard();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
 
@@ -273,22 +277,27 @@ export class PersonView {
   }
 
   protected async loadAllData(id: string) {
+    const isCurrent = this._requestGuard.begin();
     const end = this._loading.begin();
     try {
       // 1. Load person details
       const personData = await this.personsSvc.getById(id);
+      if (!isCurrent()) return;
       this.person.set(personData);
       this.showSlugUrl(personData);
 
       // 2. Load tags and issues
       const tagList = await this.personsSvc.getTags(id, 'tag');
+      if (!isCurrent()) return;
       this.tags.set(tagList);
       const issueList = await this.personsSvc.getTags(id, 'issue');
+      if (!isCurrent()) return;
       this.issues.set(issueList);
 
       // 3. Load volunteer history
       try {
         const history = await this.volunteerSvc.getHistoryForPerson(id);
+        if (!isCurrent()) return;
         this.volunteerHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load volunteer details', err);
@@ -298,10 +307,13 @@ export class PersonView {
       try {
         this.showAllDonations.set(false);
         const stats = await this.donationsSvc.getStats(id);
+        if (!isCurrent()) return;
         this.donationStats.set(stats);
         const history = await this.donationsSvc.getHistory(id);
+        if (!isCurrent()) return;
         this.donationHistory.set(history || []);
         const pledges = await this.donationsSvc.getPersonPledges(id);
+        if (!isCurrent()) return;
         this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
       } catch (err) {
         console.error('Failed to load donations history', err);
@@ -310,6 +322,7 @@ export class PersonView {
       // 5. Load event history
       try {
         const history = await this.eventsSvc.getHistoryForPerson(id);
+        if (!isCurrent()) return;
         this.eventHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load event history', err);
@@ -318,6 +331,7 @@ export class PersonView {
       // 6. Load connection count (tab badge — full list loads lazily inside the tab)
       try {
         const count = await this.connectionsSvc.countForPerson(id);
+        if (!isCurrent()) return;
         this.connectionCount.set(count);
       } catch (err) {
         console.error('Failed to load connection count', err);
@@ -363,6 +377,7 @@ export class PersonView {
       // 5. Load interactions (emails + newsletters)
       try {
         const activity = await this.personsSvc.getActivity(id);
+        if (!isCurrent()) return;
         this.activityData.set(activity || { emails: [], newsletters: [] });
       } catch (err) {
         console.error('Failed to load activity log', err);

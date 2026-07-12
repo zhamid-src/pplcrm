@@ -24,7 +24,7 @@ import { FormActions } from '../form-actions/form-actions';
           }
           <div class="min-w-0">
             @if (eyebrow()) {
-              <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
+              <p class="pc-eyebrow">{{ eyebrow() }}</p>
             }
             <div class="flex min-w-0 items-center gap-2">
               <h1 class="truncate text-xl font-bold">{{ title() }}</h1>

@@ -67,7 +67,7 @@
     </button>
     } @else {
     <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="pc-eyebrow">On track</div>
       <div class="mt-1 flex items-baseline gap-2">
         <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
         <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
@@ -82,7 +82,7 @@
       routerLink="/inbox"
       class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
     >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="pc-eyebrow">Waiting for an owner</div>
       <div class="mt-1 flex items-baseline gap-2">
         <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
         <span class="text-sm font-semibold">Unassigned conversations</span>
@@ -95,7 +95,7 @@
     </a>
     } @else {
     <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="pc-eyebrow">Inbox clear</div>
       <div class="mt-1 flex items-baseline gap-2">
         <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
         <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
@@ -110,7 +110,7 @@
       routerLink="/newsletters"
       class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
     >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="pc-eyebrow">Ready to send</div>
       <div class="mt-1 flex items-baseline gap-2">
         <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
         <span class="text-sm font-semibold">Draft newsletter</span>
@@ -125,7 +125,7 @@
       routerLink="/newsletters"
       class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
     >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="pc-eyebrow">Reach your people</div>
       <div class="mt-1 flex items-baseline gap-2">
         <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
         <span class="text-sm font-semibold">Draft newsletters</span>
@@ -159,7 +159,7 @@
   <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
     <div class="rounded-lg border border-line bg-base-100 p-4">
       <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <div class="pc-eyebrow">Open emails</div>
         <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
       @if (isInitialLoading()) {
@@ -172,7 +172,7 @@
 
     <div class="rounded-lg border border-line bg-base-100 p-4">
       <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <div class="pc-eyebrow">Unassigned open</div>
         <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
       @if (isInitialLoading()) {
@@ -185,7 +185,7 @@
 
     <div class="rounded-lg border border-line bg-base-100 p-4">
       <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <div class="pc-eyebrow">Avg first response</div>
         <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
       @if (isInitialLoading()) {
@@ -200,7 +200,7 @@
 
     <div class="rounded-lg border border-line bg-base-100 p-4">
       <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <div class="pc-eyebrow">Avg time to close</div>
         <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
       @if (isInitialLoading()) {
@@ -213,7 +213,7 @@
 
     <div class="rounded-lg border border-line bg-base-100 p-4">
       <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <div class="pc-eyebrow">Contacts growth</div>
         <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
       @if (isInitialLoading()) {
@@ -308,9 +308,7 @@
           [style.left.%]="(p.x / 600) * 100"
           [style.top.%]="(p.y / 200) * 100"
         >
-          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
-            {{ formatDate(p.date) }}
-          </div>
+          <div class="pc-eyebrow">{{ formatDate(p.date) }}</div>
           <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
             <span class="h-2 w-2 rounded-full bg-primary"></span>
             +{{ p.count }} contacts
@@ -319,12 +317,12 @@
         }
       </div>
       } @else {
-      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
-        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
-        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Import your people</a
-        >
+      <div class="flex min-h-[200px] flex-col items-center justify-center">
+        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
+          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Import your people</a
+          >
+        </pc-empty-state>
       </div>
       }
     </div>
@@ -355,12 +353,12 @@
         }
       </ul>
       } @else {
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Plan an event</a
-        >
+      <div class="flex flex-1 flex-col items-center justify-center">
+        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
+          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Plan an event</a
+          >
+        </pc-empty-state>
       </div>
       }
 
@@ -379,7 +377,7 @@
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="table pc-table w-full">
         <thead>
           <tr
             class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
@@ -419,7 +417,14 @@
           </tr>
           } @empty {
           <tr>
-            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+            <td colspan="6">
+              <pc-empty-state
+                icon="user-group"
+                [bordered]="false"
+                title="No representative activity yet"
+                hint="Stats build up as your team works emails and tasks."
+              />
+            </td>
           </tr>
           }
         </tbody>

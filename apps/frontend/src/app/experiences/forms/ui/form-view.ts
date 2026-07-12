@@ -22,10 +22,12 @@ import { AuthService } from '../../../auth/auth-service';
 import { publicPageUrl } from '../../../shared/public-pages';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 @Component({
   selector: 'pc-form-view',
   imports: [
+    StatusBadge,
     DatePipe,
     RouterModule,
     Icon,
