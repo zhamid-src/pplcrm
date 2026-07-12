@@ -121,6 +121,7 @@
     </button>
   </div>
 
+  @if (!verificationPending()) {
   <label class="label text-neutral-100">Enter your password</label>
   <form (submit)="signIn($event)" novalidate>
     <div class="space-y-3">
@@ -161,7 +162,7 @@
       </div>
     </div>
   </form>
-  } @case ('2fa') {
+  } } @case ('2fa') {
   <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
   <form (submit)="verify2FA($event)" novalidate>
     <div class="space-y-3">
