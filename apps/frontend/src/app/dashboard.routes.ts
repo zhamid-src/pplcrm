@@ -400,6 +400,15 @@ export const dashboardRoutes: Routes = [
     ],
   },
   {
+    // Companion access approvals: volunteers who verified their contact and
+    // are waiting for an admin to unlock their turf/route link.
+    path: 'volunteer-access',
+    canActivate: [roleGuard],
+    loadComponent: () =>
+      import('./experiences/volunteer-access/ui/volunteer-access-page').then((m) => m.VolunteerAccessPage),
+    data: { breadcrumb: 'Volunteer access' },
+  },
+  {
     path: 'forms',
     loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
     data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },

@@ -1,0 +1,67 @@
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Volunteer access" [totalSentence]="loaded() ? pendingSentence() : null"></pc-grid-header>
+
+  <p class="max-w-prose text-xs text-base-content/60">
+    Companion links are personal. A volunteer opening their turf or route link first verifies a code sent to their email
+    or phone on file, then needs your approval — once, for all their assignments. Revoke anytime.
+  </p>
+
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>Volunteer</th>
+      <th>Contact</th>
+      <th>Status</th>
+      <th>Verified</th>
+      <th>Approved</th>
+      <th class="w-32"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="identification" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">
+            No volunteers yet — assign a canvassing turf or a delivery route and send the link.
+          </p>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="row.status === 'revoked'">
+      <td class="font-medium">{{ displayName(row) }}</td>
+      <td class="max-w-[240px] truncate text-base-content/70">{{ contactLine(row) }}</td>
+      <td>
+        <pc-status-badge [type]="statusType(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
+      </td>
+      <td class="text-base-content/70">{{ verifiedLine(row) }}</td>
+      <td class="text-base-content/70">
+        @if (row.approved_by_name && row.approved_at) { {{ row.approved_by_name }} } @else { — }
+      </td>
+      <td class="text-right">
+        @switch (row.status) { @case ('verified') {
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
+          Approve
+        </button>
+        } @case ('approved') {
+        <button
+          type="button"
+          class="btn btn-outline btn-error btn-sm"
+          [disabled]="busyId() === row.id"
+          (click)="revoke(row)"
+        >
+          Revoke
+        </button>
+        } @case ('revoked') {
+        <button type="button" class="btn btn-outline btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
+          Approve again
+        </button>
+        } @case ('invited') {
+        <span class="text-xs text-base-content/40">Hasn't verified yet</span>
+        } }
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>

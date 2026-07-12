@@ -374,7 +374,7 @@ export class CompanionAccessController {
       .where('role', 'in', ['admin', 'owner'])
       .where('deactivated_at', 'is', null)
       .execute();
-    const approveUrl = `${env.appUrl}/console/volunteer-access`;
+    const approveUrl = `${env.appUrl}/volunteer-access`;
     for (const admin of admins) {
       await this.mailService.enqueueMail(
         {
