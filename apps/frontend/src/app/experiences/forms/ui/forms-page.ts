@@ -19,6 +19,7 @@ import { FormRenderComponent } from './form-render';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
 import { publicPageUrl } from '../../../shared/public-pages';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 interface TemplateCard {
   type: FormType;
@@ -100,6 +101,7 @@ const BUILDER_CARDS: readonly BuilderCard[] = [
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    StatusBadge,
     Icon,
     FormRenderComponent,
     RouterLink,

@@ -18,7 +18,7 @@
 
   <div class="space-y-6">
     <!-- Identity header card -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+    <div class="pc-panel p-6">
       <div class="flex items-center gap-5">
         <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
         <div class="relative shrink-0">
@@ -109,7 +109,7 @@
       <!-- Left column: profile form + notifications -->
       <div class="space-y-6 lg:col-span-2">
         <!-- Profile card (explicit save) -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div class="pc-panel p-6">
           <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
           <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
 
@@ -182,7 +182,7 @@
 
       <!-- Right column: account facts + activity -->
       <div class="space-y-6">
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div class="pc-panel p-6">
           <h2 class="pc-eyebrow">Account</h2>
           <div class="mt-2">
             <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
@@ -211,7 +211,7 @@
         </div>
 
         @if (stats()) {
-        <div class="rounded-xl border border-base-200 bg-base-100 p-6 shadow-sm">
+        <div class="pc-panel p-6">
           <h2 class="pc-eyebrow">Your activity</h2>
           <div class="mt-1">
             @for (row of activityRows(); track row.key) {

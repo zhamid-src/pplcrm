@@ -23,10 +23,12 @@ import { PersonsService } from '../../persons/services/persons-service';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 @Component({
   selector: 'pc-event-view',
   imports: [
+    StatusBadge,
     EmptyState,
     DatePipe,
     RouterModule,

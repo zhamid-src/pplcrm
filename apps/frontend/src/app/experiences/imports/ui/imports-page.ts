@@ -18,6 +18,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { environment } from '../../../../environments/environment';
 import { ExportsService } from '../../exports/services/exports-service';
 import { ImportsService } from '../services/imports-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 /**
  * Import/export History page (spec §17). Folds the old standalone Exports
@@ -28,7 +29,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent, ModalShell],
+  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent, ModalShell, StatusBadge],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {

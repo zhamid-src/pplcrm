@@ -57,7 +57,7 @@ type PageState = 'loading' | 'open' | 'notfound';
             } @else {
               <div class="flex flex-col gap-4">
                 @for (ev of events(); track ev.slug) {
-                  <div class="rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
+                  <div class="pc-panel p-6">
                     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                       <div class="min-w-0">
                         <h2 class="text-base font-semibold text-base-content">{{ ev.name }}</h2>
@@ -98,9 +98,7 @@ type PageState = 'loading' | 'open' | 'notfound';
           </div>
         }
         @default {
-          <div
-            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
-          >
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
             <h1 class="mb-2 text-xl font-semibold text-base-content">Organization not found</h1>
             <p class="text-sm text-base-content/60">Check the address and try again.</p>
           </div>

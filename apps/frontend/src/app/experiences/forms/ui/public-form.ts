@@ -32,7 +32,7 @@ type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
           <span class="loading loading-spinner loading-lg text-primary"></span>
         }
         @case ('open') {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+          <div class="w-full max-w-[440px] pc-panel p-8">
             <div class="mb-4 flex items-center gap-2">
               <div
                 class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
@@ -129,7 +129,7 @@ type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
           </div>
         }
         @case ('thanks') {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+          <div class="w-full max-w-[440px] pc-panel p-8 text-center">
             <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
               ✓
             </div>
@@ -138,7 +138,7 @@ type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
           </div>
         }
         @default {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+          <div class="w-full max-w-[440px] pc-panel p-8 text-center">
             <h1 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h1>
             <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
           </div>

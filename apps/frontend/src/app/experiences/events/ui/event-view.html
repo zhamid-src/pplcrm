@@ -26,13 +26,13 @@
         <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
         <div class="flex flex-wrap gap-2 mb-4 justify-center">
           @if (event().is_published) {
-          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
+          <pc-status-badge type="success">Published</pc-status-badge>
           } @else {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
+          <pc-status-badge type="warning">Draft</pc-status-badge>
           } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
+          <pc-status-badge type="neutral">Past</pc-status-badge>
           } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          <pc-status-badge type="info">Upcoming</pc-status-badge>
           }
         </div>
 

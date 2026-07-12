@@ -5,6 +5,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 export interface DNSVerificationRecord {
   host: string;
@@ -34,7 +35,7 @@ export interface VerifiedDomain {
 
 @Component({
   selector: 'pc-domains-settings',
-  imports: [EmptyState, FormsModule, Icon],
+  imports: [EmptyState, FormsModule, Icon, StatusBadge],
   templateUrl: './domains-settings.html',
 })
 export class DomainSettingsComponent implements OnInit {

@@ -9,7 +9,7 @@
   </div>
 
   <!-- Setup card -->
-  <div class="flex flex-col gap-4 rounded-xl border border-base-300 bg-base-100 p-5">
+  <div class="flex flex-col gap-4 pc-panel p-5">
     <label class="flex flex-col gap-1.5">
       <span class="text-sm font-medium text-base-content">Start address</span>
       <pc-address-autocomplete
@@ -125,7 +125,7 @@
 
   <!-- Proposal cards -->
   @for (route of p.routes; track route.index) {
-  <div class="flex flex-col gap-2 rounded-xl border border-base-300 bg-base-100 p-4">
+  <div class="flex flex-col gap-2 pc-panel p-4">
     <div class="flex items-baseline justify-between">
       <p class="pc-eyebrow">Route {{ route.index }}</p>
       <p class="text-sm font-medium tabular-nums text-base-content/70">

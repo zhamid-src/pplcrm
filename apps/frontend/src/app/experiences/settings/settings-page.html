@@ -43,7 +43,7 @@
     <!-- Sidebar Navigation -->
     <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
       <nav
-        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
+        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
         aria-label="Settings sections"
       >
         @for (section of visibleSections; track trackSection($index, section)) {
@@ -94,7 +94,7 @@
     <!-- Main Content Area -->
     <main class="flex-1 w-full max-w-4xl">
       @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <section class="space-y-5 pc-panel p-5">
         @if (section.config.id !== 'notifications') {
         <header class="border-b border-base-200 pb-3">
           <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
@@ -413,7 +413,7 @@
 
       <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
       @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <section class="space-y-5 pc-panel p-5">
         <header class="border-b border-base-200 pb-3">
           <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
           <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
