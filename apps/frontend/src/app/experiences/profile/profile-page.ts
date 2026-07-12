@@ -13,13 +13,14 @@ import {
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink, ModalShell],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {

@@ -550,7 +550,7 @@
         <tr>
           <td
             [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
+            class="py-16 text-center text-base-content/40"
           >
             <div class="flex flex-col items-center gap-3">
               <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
@@ -579,7 +579,7 @@
         <tr>
           <td
             [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
+            class="py-16 text-center text-base-content/40"
           >
             <div class="flex flex-col items-center gap-3">
               <span
@@ -696,7 +696,7 @@
                   <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
                 </label>
                 } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                <div class="text-xs text-base-content/50 px-3 py-2">
                   @if (tagSearch()) {
                   <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
                     >No tags match "{{ tagSearch() }}"</ng-container
@@ -925,72 +925,53 @@
 
 <!-- Advanced Filter Builder Modal -->
 @if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+<pc-modal-shell
+  [open]="true"
+  (closed)="showAdvancedFilterBuilder.set(false)"
+  title="Advanced filter builder"
+  i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+  icon="adjustments-horizontal"
+  [boxClass]="'w-11/12 max-w-3xl'"
+>
+  <p
+    class="text-xs text-neutral-400 -mt-4 mb-4"
+    i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
   >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
+    Build complex matching rules with custom operators and conjunction logic.
+  </p>
+
+  <pc-query-builder
+    [group]="advFilterRoot()"
+    [fields]="advancedFilterFields()"
+    [tagSvc]="tagsSvc ?? undefined"
+    [showSummary]="true"
+    (changed)="onAdvancedFilterChanged()"
+  ></pc-query-builder>
+
+  <div pc-modal-footer class="flex w-full justify-between items-center">
+    <button
+      class="btn btn-outline btn-error btn-sm"
+      (click)="clearAdvancedFilter()"
+      i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+    >
+      Clear Filters
+    </button>
+    <div class="flex gap-2">
       <button
-        class="btn btn-ghost btn-circle btn-sm"
+        class="btn btn-outline btn-accent btn-sm"
         (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+        i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
       >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
+        Cancel
       </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
       <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+        class="btn btn-primary btn-sm px-6"
+        (click)="applyAdvancedFilter()"
+        i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
       >
-        Clear Filters
+        Apply
       </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-outline btn-accent btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
     </div>
   </div>
-</div>
+</pc-modal-shell>
 }

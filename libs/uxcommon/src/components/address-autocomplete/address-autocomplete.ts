@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
+import { Component, ElementRef, OnInit, effect, inject, input, output, viewChild } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
 import { AddressType } from '../../../../common/src/lib/kysely.models';
 import { parseAddress } from './googlePlacesAddressMapper';
@@ -54,12 +54,16 @@ export class AddressAutocomplete implements OnInit {
   private isLibraryLoaded = false;
   private isAutocompleteInitialized = false;
 
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
+  private readonly inputEl = viewChild<ElementRef<HTMLInputElement>>('inputEl');
+
+  constructor() {
+    effect(() => {
+      const elRef = this.inputEl();
+      if (elRef) {
+        this.inputElement = elRef.nativeElement;
+        this.tryInitAutocomplete();
+      }
+    });
   }
 
   public ngOnInit() {

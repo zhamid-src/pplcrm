@@ -1,5 +1,5 @@
 <pc-card>
-  <h3 class="mb-1 block text-xs font-semibold uppercase tracking-wider text-base-content/50" i18n>Campaign standing</h3>
+  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
 
   @if (activeCampaign(); as campaign) {
   <p class="mb-3 text-[11px] text-base-content/50">
@@ -46,9 +46,7 @@
   <!-- History across other campaigns -->
   @if (otherFacts().length) {
   <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-base-content/45" i18n>
-      Other campaigns
-    </span>
+    <span class="mb-2 block pc-eyebrow" i18n> Other campaigns </span>
     <ul class="flex flex-col gap-1.5">
       @for (fact of otherFacts(); track fact.campaign_id) {
       <li class="flex items-center justify-between gap-2 text-xs">
@@ -73,9 +71,7 @@
 
   <!-- Email consent for the active context (§15): one derived, honest state -->
   <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-base-content/45" i18n>
-      Email consent
-    </span>
+    <span class="mb-2 block pc-eyebrow" i18n> Email consent </span>
     <div class="flex items-center justify-between gap-2">
       <span
         class="badge badge-sm"

@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsService } from '../../services/emails-service';
@@ -27,6 +28,7 @@ export class EmailClient {
   private readonly composer = viewChild<ComposeEmailComponent>('composer');
 
   private authService = inject(AuthService);
+  private readonly alertSvc = inject(AlertService);
 
   protected readonly store = inject(EmailsStore);
   private readonly stateStore = inject(EmailStateStore);
@@ -150,7 +152,7 @@ export class EmailClient {
         }
       } catch (e) {
         console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
+        this.alertSvc.showError('Failed to save your draft. Please check your connection or copy your work.');
         // Abort the function here.
         // Do not close the composer or navigate to the new email.
         return;

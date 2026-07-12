@@ -17,7 +17,7 @@
   @if (!loaded()) {
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     @for (i of [1, 2, 3]; track i) {
-    <div class="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+    <div class="pc-panel p-5">
       <div class="skeleton mb-3 h-5 w-1/2"></div>
       <div class="skeleton mb-2 h-3 w-full"></div>
       <div class="skeleton h-3 w-2/3"></div>
@@ -26,26 +26,26 @@
   </div>
   } @else if (teams().length === 0) {
   <!-- Empty state: icon + cause + one action (§3) -->
-  <div
-    class="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center"
+  <pc-empty-state
+    class="mx-auto mt-10 block max-w-md"
+    icon="add-group"
+    title="No teams yet"
+    i18n-title
+    hint="Teams let you hand a group of volunteers to a lead who fields their questions."
+    i18n-hint
   >
-    <pc-icon name="add-group" class="text-base-content/30" [size]="10"></pc-icon>
-    <h2 class="text-base font-semibold text-base-content/80" i18n>No teams yet</h2>
-    <p class="text-sm text-base-content/55" i18n>
-      Teams let you hand a group of volunteers to a lead who fields their questions.
-    </p>
     <a routerLink="add" class="btn btn-primary btn-sm mt-1 gap-2">
       <pc-icon name="add-group" [size]="4"></pc-icon>
       <span i18n>New team</span>
     </a>
-  </div>
+  </pc-empty-state>
   } @else {
   <!-- Team cards (Fig 17) -->
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     @for (team of teams(); track team.id) {
     <a
       [routerLink]="[team.id]"
-      class="group flex flex-col gap-4 rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm transition-all duration-200 hover:border-primary/30 hover:shadow-md"
+      class="group flex flex-col gap-4 pc-panel p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md"
     >
       <!-- Title + volunteer count -->
       <div class="flex items-start justify-between gap-3">
@@ -70,7 +70,7 @@
           {{ initialsOf(lead) }}
         </span>
         <div class="min-w-0">
-          <p class="text-[10px] font-semibold uppercase tracking-wider text-base-content/45" i18n>Lead</p>
+          <p class="pc-eyebrow" i18n>Lead</p>
           <p class="truncate text-sm font-medium text-base-content">{{ lead }}</p>
         </div>
       </div>

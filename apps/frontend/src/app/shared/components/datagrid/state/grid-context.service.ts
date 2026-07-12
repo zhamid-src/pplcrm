@@ -1,9 +1,10 @@
-import { Injectable, computed } from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
 import { GridStoreService } from '../services/grid-store.service';
 
 @Injectable({ providedIn: 'root' })
 export class GridContextService {
-  constructor(public readonly store: GridStoreService) {}
+  // Injected first: the derived fields below read this.store at initialization.
+  public readonly store = inject(GridStoreService);
 
   // Common derived state used across controllers/directives
   readonly displayedCount = this.store.displayedCount;

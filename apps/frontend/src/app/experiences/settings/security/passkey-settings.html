@@ -30,7 +30,7 @@
   } @else {
   <ul class="space-y-3">
     @for (pk of passkeys(); track pk.id) {
-    <li class="flex items-center gap-4 rounded-xl border border-base-200 bg-base-100 p-4">
+    <li class="flex items-center gap-4 pc-panel p-4">
       <pc-icon name="lock-closed" [size]="6" class="shrink-0 text-primary/70"></pc-icon>
       <div class="flex-1 min-w-0">
         @if (pk.editingName) {

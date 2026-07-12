@@ -18,10 +18,12 @@ import { TasksService } from '../../tasks/services/tasks-service';
 import { TeamsService } from '../services/teams-service';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 @Component({
   selector: 'pc-team-view',
   imports: [
+    EmptyState,
     DatePipe,
     RouterModule,
     RecordActivities,

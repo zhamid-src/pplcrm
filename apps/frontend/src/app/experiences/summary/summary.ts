@@ -9,6 +9,7 @@ import { SlaDetails } from './sla-details';
 import { GettingStartedCard } from './getting-started-card';
 import { DemoModeCard } from './demo-mode-card';
 import { AuthService } from '../../auth/auth-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 interface UpcomingEvent {
   id: string;
@@ -25,7 +26,7 @@ interface DraftNewsletter {
 }
 
 @Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
+  imports: [EmptyState, Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })

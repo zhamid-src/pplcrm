@@ -1,9 +1,11 @@
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
 import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AuthService } from '../../auth/auth-service';
@@ -32,6 +34,71 @@ interface SectionState {
   payload: WritableSignal<Record<string, any>>;
 }
 
+/** Self-saving sections rendered outside the config-driven form flow. One entry
+ *  drives both the sidebar nav button and the content shell, so the two can
+ *  never drift apart again. */
+interface CustomSectionConfig {
+  description: string;
+  icon: PcIconNameType;
+  id: string;
+  mode: 'settings' | 'workspace';
+  title: string;
+}
+
+const CUSTOM_SECTIONS: CustomSectionConfig[] = [
+  {
+    id: 'passkeys',
+    mode: 'settings',
+    icon: 'lock-closed',
+    title: 'Passkeys',
+    description: 'Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.',
+  },
+  {
+    id: 'email-sync',
+    mode: 'workspace',
+    icon: 'envelope',
+    title: 'Email sync',
+    description:
+      'Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.',
+  },
+  {
+    id: 'domains',
+    mode: 'workspace',
+    icon: 'globe-americas',
+    title: 'Domain verification',
+    description: 'Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.',
+  },
+  {
+    id: 'donations',
+    mode: 'workspace',
+    icon: 'currency-dollar',
+    title: 'Donations',
+    description:
+      'Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe account.',
+  },
+  {
+    id: 'storage',
+    mode: 'workspace',
+    icon: 'archive-box',
+    title: 'Storage',
+    description: 'Plan quota, usage, and the files taking up the most space.',
+  },
+  {
+    id: 'billing',
+    mode: 'workspace',
+    icon: 'credit-card',
+    title: 'Billing',
+    description: 'Manage your subscription plans, view invoice details, and update payment methods.',
+  },
+  {
+    id: 'account',
+    mode: 'workspace',
+    icon: 'user-circle',
+    title: 'Account',
+    description: 'Manage your organization account — pause billing or permanently delete all data.',
+  },
+];
+
 @Component({
   selector: 'pc-settings-page',
   imports: [
@@ -46,7 +113,7 @@ interface SectionState {
     PasskeySettingsComponent,
     StorageSettingsComponent,
     DatePipe,
-    NgClass,
+    EmptyState,
   ],
   templateUrl: './settings-page.html',
 })
@@ -98,6 +165,16 @@ export class SettingsPage implements OnInit {
 
   protected trackField = (_: number, field: SectionFieldState) => field.controlName;
   protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  /** The custom (self-saving) sections visible in the current mode. */
+  protected get visibleCustomSections(): CustomSectionConfig[] {
+    return CUSTOM_SECTIONS.filter((s) => s.mode === this.currentMode);
+  }
+
+  /** Nav-button classes shared by config-driven and custom section buttons. */
+  protected navClass(id: string): string {
+    return this.isSelected(id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60';
+  }
 
   public readonly section = input<string>();
 
@@ -458,6 +535,8 @@ export class SettingsPage implements OnInit {
       }));
       this.startEmailCooldown(normalized);
       this.lastRequestedEmail.set(normalized);
+      // Clear only after success — on failure the user keeps their input to retry.
+      this.senderEmailInput.set('');
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
       );

@@ -10,6 +10,7 @@ import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
 import { DeliveriesRoutesService, type DeliveryRouteRow } from '../services/deliveries-routes-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 const ROUTE_TONE: Record<string, PcStatusType> = {
   draft: 'neutral',
@@ -23,7 +24,7 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-routes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe, Table],
+  imports: [EmptyState, RouterLink, StatusBadge, Icon, DatePipe, Table],
   templateUrl: './deliveries-routes.html',
 })
 export class DeliveriesRoutes implements OnInit {

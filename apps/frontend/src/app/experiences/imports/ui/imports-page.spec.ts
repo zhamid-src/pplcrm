@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { ImportsPage } from './imports-page';
 import { ImportsService } from '../services/imports-service';
 import { ExportsService } from '../../exports/services/exports-service';
@@ -158,17 +159,17 @@ describe('ImportsPage', () => {
 
   it('should open the delete dialog and populate pendingDelete', async () => {
     await fixture.whenStable();
-    const dialog = { showModal: vi.fn(), close: vi.fn(), open: true } as unknown as HTMLDialogElement;
+    const dialog = { show: vi.fn(), close: vi.fn() } as unknown as ModalShell;
 
     component['openDeleteDialog'](baseItem, dialog);
 
     expect(component['pendingDelete']()).toEqual(baseItem);
-    expect(dialog.showModal).toHaveBeenCalled();
+    expect(dialog.show).toHaveBeenCalled();
   });
 
   it('should reset checkbox selections when the delete dialog is closed', async () => {
     await fixture.whenStable();
-    const dialog = { showModal: vi.fn(), close: vi.fn(), open: true } as unknown as HTMLDialogElement;
+    const dialog = { show: vi.fn(), close: vi.fn() } as unknown as ModalShell;
 
     component['openDeleteDialog'](baseItem, dialog);
     component['deletePeople'].set(true);
@@ -187,7 +188,7 @@ describe('ImportsPage', () => {
 
   it('should delete the pending import with selected options and reload the list', async () => {
     await fixture.whenStable();
-    const dialog = { showModal: vi.fn(), close: vi.fn(), open: true } as unknown as HTMLDialogElement;
+    const dialog = { show: vi.fn(), close: vi.fn() } as unknown as ModalShell;
     component['openDeleteDialog'](baseItem, dialog);
     component['deletePeople'].set(true);
     component['deleteTasks'].set(true);
@@ -210,7 +211,7 @@ describe('ImportsPage', () => {
 
   it('should show an error alert and keep the dialog open when delete fails', async () => {
     await fixture.whenStable();
-    const dialog = { showModal: vi.fn(), close: vi.fn(), open: true } as unknown as HTMLDialogElement;
+    const dialog = { show: vi.fn(), close: vi.fn() } as unknown as ModalShell;
     component['openDeleteDialog'](baseItem, dialog);
     mockImportsSvc.delete.mockRejectedValue(new Error('Import in use'));
 

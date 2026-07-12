@@ -19,9 +19,7 @@ import { GettingStartedService } from './services/getting-started.service';
       <div class="animate-drop card border border-line bg-base-100 shadow-sm">
         <div class="card-body gap-3 p-5">
           <div class="flex items-center justify-between gap-3">
-            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-              Getting started · {{ doneCount() }} of {{ total() }} done
-            </div>
+            <div class="pc-eyebrow">Getting started · {{ doneCount() }} of {{ total() }} done</div>
             <button
               type="button"
               class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"

@@ -21,7 +21,7 @@
 <!-- Expanded: 236px context card -->
 <aside class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto bg-base-200 p-4">
   <div class="flex items-center justify-between">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
+    <span class="pc-eyebrow">Person context</span>
     <button
       type="button"
       class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
@@ -75,7 +75,7 @@
 
   <!-- Tags -->
   <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
+    <span class="pc-eyebrow">Tags</span>
     @if (tags().length) {
     <div class="flex flex-wrap gap-1.5">
       @for (t of tags(); track t.name) {
@@ -89,7 +89,7 @@
 
   <!-- Issues of interest -->
   <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
+    <span class="pc-eyebrow">Issues of interest</span>
     @if (issues().length) {
     <div class="flex flex-wrap gap-1.5">
       @for (t of issues(); track t.name) {

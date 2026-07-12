@@ -28,13 +28,11 @@
         <!-- Name & Status -->
         <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
         <div class="flex gap-2 mb-4">
-          <span
-            class="badge font-semibold uppercase text-xs"
-            [class.badge-success]="formRecord().status === 'active'"
-            [class.badge-warning]="formRecord().status === 'archived'"
+          <pc-status-badge
+            [type]="formRecord().status === 'active' ? 'success' : formRecord().status === 'archived' ? 'warning' : 'ghost'"
           >
             {{ formRecord().status }}
-          </span>
+          </pc-status-badge>
         </div>
 
         <!-- Details and settings list -->

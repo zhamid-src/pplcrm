@@ -8,6 +8,7 @@ import { TokenService } from '../../../services/api/token-service';
 import { environment } from '../../../../environments/environment';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 export interface TaxCreditTier {
   limit: number;
@@ -25,7 +26,7 @@ export interface DonationPeriod {
 
 @Component({
   selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon, Table],
+  imports: [FormsModule, Icon, Table, StatusBadge],
   templateUrl: './donations-settings.html',
 })
 export class DonationsSettingsComponent implements OnInit {

@@ -12,10 +12,7 @@ import { FormDetail } from '../services/forms-service';
   selector: 'pc-form-render',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div
-      class="mx-auto w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm"
-      [class.opacity-70]="closed()"
-    >
+    <div class="mx-auto w-full max-w-[440px] pc-panel p-8" [class.opacity-70]="closed()">
       <div class="mb-5 flex items-center gap-2">
         <div
           class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"

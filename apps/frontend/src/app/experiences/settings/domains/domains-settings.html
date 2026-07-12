@@ -32,30 +32,28 @@
     <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Configured Domains</h3>
 
     @if (domainsList().length === 0) {
-    <div
-      class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
-    >
-      <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
-      <p class="font-medium text-xs">No custom domains configured yet.</p>
-      <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
-    </div>
+    <pc-empty-state
+      icon="globe-americas"
+      title="No custom domains configured yet"
+      hint="Add a domain above to start verifying."
+    />
     } @else {
     <div class="space-y-3">
       @for (item of domainsList(); track item.domain) {
-      <div class="border border-base-200 rounded-xl overflow-hidden bg-base-100 shadow-sm transition-all duration-200">
+      <div class="pc-panel overflow-hidden transition-all duration-200">
         <!-- Domain Entry Row -->
         <div class="flex items-center justify-between p-4 flex-wrap gap-3 bg-base-50/30 border-b border-base-200/50">
           <div class="flex items-center gap-3">
-            <pc-icon name="globe-americas" class="text-base-content/60" [size]="20"></pc-icon>
+            <pc-icon name="globe-americas" class="text-base-content/60" [size]="5"></pc-icon>
             <span class="font-semibold text-base-content/95">{{ item.domain }}</span>
             @if (item.status === 'verified') {
-            <span class="badge badge-success text-success-content gap-1 font-semibold py-2">
-              <pc-icon name="check-circle" [size]="14"></pc-icon> Verified
-            </span>
+            <pc-status-badge type="success">
+              <pc-icon name="check-circle" [size]="4"></pc-icon> Verified
+            </pc-status-badge>
             } @else {
-            <span class="badge badge-warning text-warning-content gap-1 font-semibold py-2">
-              <span class="loading loading-spinner loading-xs scale-75"></span> Pending Verification
-            </span>
+            <pc-status-badge type="warning">
+              <span class="loading loading-spinner loading-xs scale-75"></span> Pending verification
+            </pc-status-badge>
             }
           </div>
           <div class="flex items-center gap-2">
@@ -88,19 +86,15 @@
             <!-- SPF Record -->
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                <span class="pc-eyebrow flex items-center gap-1.5">
                   SPF (Domain Sending Auth)
                   <span [class]="item.spf ? 'text-success' : 'text-warning'">
                     <pc-icon [name]="item.spf ? 'check-circle' : 'exclamation-circle'"></pc-icon>
                   </span>
                 </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.spf"
-                  [class.badge-ghost]="!item.spf"
-                >
+                <pc-status-badge [type]="item.spf ? 'success' : 'ghost'">
                   {{ item.spf ? 'Verified' : 'Pending' }}
-                </span>
+                </pc-status-badge>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                 <div>
@@ -125,19 +119,15 @@
             <!-- DKIM CNAME 1 -->
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                <span class="pc-eyebrow flex items-center gap-1.5">
                   DKIM Signature Record 1
                   <span [class]="item.dkim ? 'text-success' : 'text-warning'">
                     <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
                   </span>
                 </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dkim"
-                  [class.badge-ghost]="!item.dkim"
-                >
+                <pc-status-badge [type]="item.dkim ? 'success' : 'ghost'">
                   {{ item.dkim ? 'Verified' : 'Pending' }}
-                </span>
+                </pc-status-badge>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                 <div>
@@ -162,19 +152,15 @@
             <!-- DKIM CNAME 2 -->
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                <span class="pc-eyebrow flex items-center gap-1.5">
                   DKIM Signature Record 2
                   <span [class]="item.dkim ? 'text-success' : 'text-warning'">
                     <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
                   </span>
                 </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dkim"
-                  [class.badge-ghost]="!item.dkim"
-                >
+                <pc-status-badge [type]="item.dkim ? 'success' : 'ghost'">
                   {{ item.dkim ? 'Verified' : 'Pending' }}
-                </span>
+                </pc-status-badge>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                 <div>
@@ -199,19 +185,15 @@
             <!-- Link Branding CNAME -->
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                <span class="pc-eyebrow flex items-center gap-1.5">
                   Link Branding (URL Whitelabel)
                   <span [class]="item.linkBranded ? 'text-success' : 'text-warning'">
                     <pc-icon [name]="item.linkBranded ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
                   </span>
                 </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.linkBranded"
-                  [class.badge-ghost]="!item.linkBranded"
-                >
+                <pc-status-badge [type]="item.linkBranded ? 'success' : 'ghost'">
                   {{ item.linkBranded ? 'Verified' : 'Pending' }}
-                </span>
+                </pc-status-badge>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                 <div>
@@ -236,19 +218,15 @@
             <!-- DMARC Record -->
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                <span class="pc-eyebrow flex items-center gap-1.5">
                   DMARC Policy (Anti-Spoofing)
                   <span [class]="item.dmarc ? 'text-success' : 'text-warning'">
                     <pc-icon [name]="item.dmarc ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
                   </span>
                 </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dmarc"
-                  [class.badge-ghost]="!item.dmarc"
-                >
+                <pc-status-badge [type]="item.dmarc ? 'success' : 'ghost'">
                   {{ item.dmarc ? 'Verified' : 'Pending' }}
-                </span>
+                </pc-status-badge>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                 <div>

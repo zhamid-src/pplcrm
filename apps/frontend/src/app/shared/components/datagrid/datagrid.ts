@@ -43,6 +43,7 @@ import {
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DateFormatService } from '../../services/date-format.service';
 
@@ -114,6 +115,7 @@ import { RecordNavigationService } from '@frontend/services/record-navigation.se
     DataGridFilterDropdownComponent,
     MultiselectFilterComponent,
     SingleselectFilterComponent,
+    ModalShell,
   ],
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',

@@ -37,7 +37,7 @@
       <div>
         <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
+          <span class="loading loading-spinner loading-lg text-primary"></span>
           } @else { Continue }
         </button>
       </div>
@@ -155,7 +155,7 @@
       <div>
         <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
+          <span class="loading loading-spinner loading-lg text-primary"></span>
           } @else { SIGN IN }
         </button>
       </div>
@@ -179,7 +179,7 @@
       <div>
         <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
+          <span class="loading loading-spinner loading-lg text-primary"></span>
           } @else { VERIFY }
         </button>
       </div>

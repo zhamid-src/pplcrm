@@ -8,6 +8,18 @@
 /* Self-hosted app font — bundled from node_modules, no external font CDN */
 @import '@fontsource-variable/inter';
 
+/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
+   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
+   DaisyUI blocks below, same as --color-line. */
+@theme {
+  --color-base-50: #fbfbfc;
+}
+
+/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
+   scanner cannot see — without this safelist an icon size only works if some other
+   file happens to use the same w-/h- class literally. Covers every [size] in use. */
+@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
+
 @plugin "daisyui/theme" {
   name: 'light';
   default: true;
@@ -19,6 +31,7 @@
   --color-accent-content: #f0f0f0;
   --color-neutral: #cbd5e1;
   --color-neutral-content: #1f2937;
+  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
   --color-base-100: #ffffff;
   --color-base-200: #f8f8f8ff;
   --color-base-300: rgb(226, 226, 226);
@@ -81,6 +94,7 @@ label.input input:-webkit-autofill:active {
   --color-neutral-content: #c7d1e5; /* default text on dark */
 
   /* Surfaces */
+  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
   --color-base-100: #0b1220; /* app/page background */
   --color-base-200: #131e31; /* row alt / subtle surface */
   --color-base-300: #1a2b45; /* headers / raised surface */
@@ -409,6 +423,17 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
+/* The one panel/card shell — THE house container recipe (rounded-xl, hairline
+   base-200 border, base-100 surface, soft shadow). Pinned so the ~59 inlined
+   `rounded-* border border-base-* bg-base-100 shadow-*` copies collapse to one
+   class; pair with padding/spacing utilities only (`class="pc-panel p-5"`). */
+@utility pc-panel {
+  border-radius: 0.75rem; /* rounded-xl */
+  border: 1px solid var(--color-base-200);
+  background-color: var(--color-base-100);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-sm */
 }
 
 /* Dark mode overrides for Quill and email prose */

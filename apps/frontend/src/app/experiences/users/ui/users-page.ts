@@ -22,6 +22,7 @@ import {
   userStatus,
 } from '../user-status';
 import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 export interface UserRow {
   id: string;
@@ -46,7 +47,16 @@ export interface UserRow {
 @Component({
   selector: 'pc-users-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, StatusBadge, Table, UserAvatarComponent, InviteUserDialog, GridHeaderComponent],
+  imports: [
+    EmptyState,
+    RouterLink,
+    Icon,
+    StatusBadge,
+    Table,
+    UserAvatarComponent,
+    InviteUserDialog,
+    GridHeaderComponent,
+  ],
   templateUrl: './users-page.html',
 })
 export class UsersPageComponent implements OnInit {

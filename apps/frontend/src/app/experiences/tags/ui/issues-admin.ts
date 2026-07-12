@@ -10,6 +10,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AddIssueDialog } from './add-issue';
 import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 /**
  * §9.2 Issues admin (spec Fig. 11). Ranked table with a proportional interest bar and a trend
@@ -20,7 +21,7 @@ import { TagAdminActions, type TagAdminRow } from './tag-admin-actions';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
+  imports: [EmptyState, Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {
