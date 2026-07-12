@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -17,7 +16,7 @@ import { DeliveriesRequestsService, type DeliveryPlanPreview } from '../services
 @Component({
   selector: 'pc-deliveries-plan',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, AddressAutocomplete, StatusBadge, Icon],
+  imports: [RouterLink, AddressAutocomplete, StatusBadge, Icon],
   templateUrl: './deliveries-plan.html',
 })
 export class DeliveriesPlan implements OnInit {
@@ -42,6 +41,22 @@ export class DeliveriesPlan implements OnInit {
     void this.svc.getRouteDefaults().then((d) => {
       if (d.start_address) this.startAddress.set(d.start_address);
     });
+  }
+
+  /** Empty or zero reads as "as many as needed" (null), matching the placeholder. */
+  protected onDriversInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this.drivers.set(value ? value : null);
+  }
+
+  protected onServiceMinutesInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this.serviceMinutes.set(Number.isNaN(value) ? 0 : value);
+  }
+
+  protected onAvgSpeedInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this.avgSpeed.set(Number.isNaN(value) ? 0 : value);
   }
 
   protected async runPreview(): Promise<void> {

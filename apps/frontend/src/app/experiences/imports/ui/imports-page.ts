@@ -1,5 +1,4 @@
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 
@@ -27,7 +26,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent],
+  imports: [Icon, TabBar, Table, GridHeaderComponent],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {

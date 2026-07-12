@@ -15,7 +15,6 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Tags } from '@experiences/tags/ui/tags';
 import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
@@ -103,7 +102,6 @@ import { RecordNavigationService } from '@frontend/services/record-navigation.se
   selector: 'pc-datagrid',
   imports: [
     Icon,
-    FormsModule,
     DataGridToolbarComponent,
     DataGridFilterPanelComponent,
     Tags,
@@ -1630,6 +1628,36 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Update the editing value first so commitEdit reads the correct value
     this.editingValue.set(resolvedValue);
     await this.commitEdit(row, col);
+  }
+
+  /** Current editing value normalized for a text `[value]` binding (`null`/`undefined` → empty string). */
+  protected editingValueText(): string {
+    const v = this.editingValue();
+    return v == null ? '' : String(v);
+  }
+
+  /**
+   * Whether a single-select editor option matches the current editing value.
+   * String comparison mirrors how the native `<option [value]>` stringifies values in the DOM.
+   */
+  protected isEditorOptionSelected(value: unknown): boolean {
+    const raw = this.editingValue();
+    const current = Array.isArray(raw) ? raw[0] : raw;
+    return String(current ?? '') === String(value ?? '');
+  }
+
+  /** Whether a multi-select editor option is part of the current editing value array. */
+  protected isEditorOptionMultiSelected(value: unknown): boolean {
+    const raw = this.editingValue();
+    if (!Array.isArray(raw)) return false;
+    return raw.some((entry) => String(entry ?? '') === String(value ?? ''));
+  }
+
+  /** Multi-select editor change: editing value = the string values of all selected options. */
+  protected onMultiSelectEditorChange(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    this.editingValue.set(Array.from(target.selectedOptions).map((opt) => opt.value));
   }
 
   protected tagsAsStrings(value: unknown): string[] {

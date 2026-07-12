@@ -1,6 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormField, form, submit, validateStandardSchema } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddWorkflowObj } from '@common';
@@ -63,7 +62,6 @@ interface EnrollmentRow {
   selector: 'pc-workflow-form',
   imports: [
     RouterModule,
-    FormsModule,
     FormField,
     Icon,
     RecordActivities,

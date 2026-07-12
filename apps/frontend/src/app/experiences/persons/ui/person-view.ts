@@ -1,7 +1,6 @@
 import { DatePipe, Location } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
 import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -35,7 +34,6 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
   imports: [
     DatePipe,
     RouterModule,
-    FormsModule,
     PeopleInHousehold,
     Icon,
     RecordActivities,
@@ -378,6 +376,12 @@ export class PersonView {
   /** Refresh the activity feed after a logged interaction. */
   protected onInteractionLogged(): void {
     this.activityFeed()?.loadActivities();
+  }
+
+  /** Number input mirror for the donation modal: empty/invalid input reads as null. */
+  protected onDonationAmountInput(event: Event) {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this.donationAmount.set(Number.isNaN(value) ? null : value);
   }
 
   protected openCollectDonation() {

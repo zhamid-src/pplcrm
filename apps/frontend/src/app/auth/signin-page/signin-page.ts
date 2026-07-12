@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
@@ -392,15 +391,6 @@ export class SignInPage implements OnInit, OnDestroy {
     }, 1000);
   }
 }
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
-  };
-}
-
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

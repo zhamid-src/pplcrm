@@ -1,28 +1,32 @@
-import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
+import { Component, inject, input, output } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { merge } from 'rxjs';
+
+/**
+ * Minimal structural view of a signal-forms root (the object returned by
+ * `form()` from '@angular/forms/signals'): calling it yields the root field
+ * state. Kept structural so this shared control does not depend on the
+ * experimental signal-forms types directly.
+ */
+export type SignalFormRoot = () => {
+  dirty(): boolean;
+  invalid(): boolean;
+  reset(): void;
+};
 
 @Component({
   selector: 'pc-form-actions',
-  imports: [ReactiveFormsModule, Icon],
+  imports: [Icon],
   templateUrl: './form-actions.html',
 })
-export class FormActions implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
+export class FormActions {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly cdr = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
 
   private stay = false;
 
-  protected form?: FormGroup;
-
-  public signalForm = input<any>();
+  public signalForm = input<SignalFormRoot>();
 
   public disabled = input<boolean>(false);
 
@@ -68,49 +72,31 @@ export class FormActions implements OnInit {
     if (sigF) {
       return sigF().invalid() || !sigF().dirty();
     }
-    if (this.form) {
-      return this.form.invalid || !this.form.dirty;
-    }
+    // No form at all: plain button bar (e.g. list-view) — never gate Save.
     return false;
   }
 
-  public cancel() {
+  public cancel(): void {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  public handleDeleteClicked() {
+  public handleDeleteClicked(): void {
     this.deleteClicked.emit();
   }
 
-  public handleBtn1Clicked() {
+  public handleBtn1Clicked(): void {
     this.stay = false;
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
-  public handleBtn2Clicked() {
+  public handleBtn2Clicked(): void {
     this.stay = true;
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
-  public ngOnInit() {
-    this.form = this.rootFormGroup?.control;
-    if (this.form) {
-      merge(this.form.valueChanges, this.form.statusChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          this.cdr.markForCheck();
-        });
-    }
-  }
-
-  public stayOrCancel = () => {
+  public stayOrCancel = (): void => {
     if (this.stay) {
-      const sigF = this.signalForm();
-      if (sigF) {
-        sigF().reset();
-      } else if (this.form) {
-        this.form.reset();
-      }
+      this.signalForm()?.().reset();
     } else {
       this.cancel();
     }

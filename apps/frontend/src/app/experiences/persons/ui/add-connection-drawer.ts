@@ -1,5 +1,4 @@
 import { Component, inject, input, output, signal, computed } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -12,7 +11,7 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 
 @Component({
   selector: 'pc-add-connection-drawer',
-  imports: [SideDrawer, Icon, FormsModule],
+  imports: [SideDrawer, Icon],
   template: `
     <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
       <div class="flex flex-col gap-4">
@@ -40,8 +39,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
                 class="input input-bordered w-full pr-10 text-sm"
                 placeholder="Type a name or email..."
                 i18n-placeholder
-                [ngModel]="searchStr()"
-                (ngModelChange)="onSearchChange($event)"
+                [value]="searchStr()"
+                (input)="onSearchInput($event)"
               />
               <pc-icon
                 name="magnifying-glass"
@@ -83,8 +82,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
           <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
           <select
             class="select select-bordered w-full text-sm"
-            [ngModel]="relationType()"
-            (ngModelChange)="relationType.set($event)"
+            [value]="relationType()"
+            (change)="onRelationTypeChange($event)"
           >
             @for (type of relationTypes; track type) {
               <option [value]="type">{{ relationTypeLabels[type] }}</option>
@@ -102,8 +101,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
               placeholder="e.g. Major donor contact, Advisor..."
               i18n-placeholder
               maxlength="100"
-              [ngModel]="customLabel()"
-              (ngModelChange)="customLabel.set($event)"
+              [value]="customLabel()"
+              (input)="onCustomLabelInput($event)"
             />
           </div>
         }
@@ -117,8 +116,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
           <input
             type="checkbox"
             class="toggle toggle-sm toggle-primary"
-            [ngModel]="isMutual()"
-            (ngModelChange)="isMutual.set($event)"
+            [checked]="isMutual()"
+            (change)="onMutualChange($event)"
           />
         </div>
 
@@ -133,8 +132,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
             placeholder="Add context about this connection..."
             i18n-placeholder
             maxlength="1000"
-            [ngModel]="notes()"
-            (ngModelChange)="notes.set($event)"
+            [value]="notes()"
+            (input)="onNotesInput($event)"
           ></textarea>
         </div>
       </div>
@@ -187,6 +186,28 @@ export class AddConnectionDrawer {
 
   protected initials(p: PersonSearchResult) {
     return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
+  }
+
+  protected onSearchInput(event: Event) {
+    this.onSearchChange((event.target as HTMLInputElement).value);
+  }
+
+  protected onRelationTypeChange(event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    const match = RELATION_TYPES.find((t) => t === value);
+    if (match) this.relationType.set(match);
+  }
+
+  protected onCustomLabelInput(event: Event) {
+    this.customLabel.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onMutualChange(event: Event) {
+    this.isMutual.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onNotesInput(event: Event) {
+    this.notes.set((event.target as HTMLTextAreaElement).value);
   }
 
   protected onSearchChange(value: string) {

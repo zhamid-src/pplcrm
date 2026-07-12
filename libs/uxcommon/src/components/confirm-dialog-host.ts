@@ -10,7 +10,7 @@ import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
 export class ConfirmDialogHost {
   private readonly svc = inject(ConfirmDialogService);
 
-  public readonly promptValue = signal(''); // signal instead of ngModel
+  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
 
   private readonly stateSignal = this.svc.stateSignal;
   private readonly openSignal = this.svc.isOpenSignal;
@@ -106,6 +106,10 @@ export class ConfirmDialogHost {
         } catch {}
       }
     });
+  }
+
+  public onPromptInput(event: Event): void {
+    this.promptValue.set((event.target as HTMLInputElement).value);
   }
 
   public onBackdrop(): void {

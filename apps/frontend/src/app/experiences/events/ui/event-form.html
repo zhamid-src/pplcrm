@@ -173,9 +173,8 @@
                       type="text"
                       class="input input-bordered input-xs w-full"
                       placeholder="Ticket name *"
-                      [ngModel]="newTicket().name"
-                      (ngModelChange)="setNewTicketName($event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="newTicket().name"
+                      (input)="setNewTicketName($event)"
                     />
                   </td>
                   <td>
@@ -186,9 +185,8 @@
                       min="0"
                       step="1"
                       title="Price in cents (e.g. 2500 = $25.00)"
-                      [ngModel]="newTicket().price_cents"
-                      (ngModelChange)="setNewTicketPrice($event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="newTicket().price_cents"
+                      (input)="setNewTicketPrice($event)"
                     />
                     <span class="text-[10px] text-base-content/40 ml-1">cents</span>
                   </td>
@@ -198,9 +196,8 @@
                       class="input input-bordered input-xs w-20 font-mono"
                       placeholder="∞"
                       min="1"
-                      [ngModel]="newTicket().capacity"
-                      (ngModelChange)="setNewTicketCapacity($event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="newTicket().capacity ?? ''"
+                      (input)="setNewTicketCapacity($event)"
                     />
                   </td>
                   <td>

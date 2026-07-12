@@ -10,13 +10,13 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
 import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
-import { QuillModule } from 'ngx-quill';
+import { ContentChange, QuillModule } from 'ngx-quill';
+import type Quill from 'quill';
 
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -42,7 +42,6 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     DecimalPipe,
     SlicePipe,
     DetailLayout,
-    FormsModule,
     RouterModule,
     QuillModule,
     Icon,
@@ -237,6 +236,15 @@ export class TaskView {
   protected async saveDetails() {
     await this.update({ details: this.tempDetails() });
     this.isEditingDetails.set(false);
+  }
+
+  /** The editor is created fresh on each edit session; seed it with the buffered details. */
+  protected onDetailsEditorCreated(editor: Quill): void {
+    editor.setContents(editor.clipboard.convert({ html: this.tempDetails() }), 'silent');
+  }
+
+  protected onDetailsContentChanged(event: ContentChange): void {
+    this.tempDetails.set(event.html ?? '');
   }
 
   protected cancelEditingDetails() {

@@ -1,5 +1,4 @@
 import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
@@ -30,16 +29,7 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [
-    Icon,
-    Swap,
-    ReactiveFormsModule,
-    AnimateIfDirective,
-    RouterLink,
-    FavouriteToggle,
-    Breadcrumbs,
-    PersonalSettingsDialog,
-  ],
+  imports: [Icon, Swap, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs, PersonalSettingsDialog],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',

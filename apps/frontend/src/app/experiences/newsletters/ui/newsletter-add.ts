@@ -8,7 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormField, email, form, required } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -65,19 +65,33 @@ const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
 const COMMS_SETTINGS_LINK = '/settings/communications';
 const VERIFY_SENDER_LINK = '/settings/communications';
 
+const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
+  subject: '',
+  previewText: '',
+  fromName: '',
+  fromAddress: '',
+  htmlContent: '',
+  plainTextContent: '',
+  includeLists: [],
+  includeTags: [],
+  excludeLists: [],
+  excludeTags: [],
+  timingMode: 'now',
+  scheduledDate: '',
+  scheduledTime: '',
+};
+
 @Component({
   selector: 'pc-newsletter-add',
-  imports: [ReactiveFormsModule, RouterLink, Icon, VisualNewsletterEditorComponent],
+  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
   templateUrl: './newsletter-add.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class NewsletterAddComponent implements OnInit {
   private readonly alertSvc = inject(AlertService);
-  private readonly audienceEstimateSeed = signal(0);
   private readonly authSvc = inject(AuthService);
   private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  private readonly fb = inject(FormBuilder);
   private readonly listsSvc = inject(ListsService);
   private readonly newslettersSvc = inject(NewslettersService);
   private readonly numberFormatter = new Intl.NumberFormat();
@@ -87,12 +101,20 @@ export class NewsletterAddComponent implements OnInit {
   private readonly tagsSvc = inject(TagsService);
   private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
+  /** Raw wizard payload — the single source of truth the signal-form wraps. */
+  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
+
+  protected readonly regularForm = form(this.regularPayload, (p) => {
+    required(p.subject);
+    required(p.fromName);
+    required(p.fromAddress);
+    email(p.fromAddress);
+  });
+
   private readonly requiresScheduleDate = computed(() => {
-    const timing = this.regularForm.get('timingMode')?.value;
-    if (timing !== 'schedule') return false;
-    const date = this.regularForm.get('scheduledDate')?.value;
-    const time = this.regularForm.get('scheduledTime')?.value;
-    return !date || !time;
+    const raw = this.regularPayload();
+    if (raw.timingMode !== 'schedule') return false;
+    return !raw.scheduledDate || !raw.scheduledTime;
   });
 
   private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
@@ -102,10 +124,10 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
   protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
   protected readonly currentStep = signal<StepIndex>(1);
-  protected readonly excludeListIds = signal<string[]>([]);
-  protected readonly excludeTagsList = signal<string[]>([]);
-  protected readonly includeListIds = signal<string[]>([]);
-  protected readonly includeTagsList = signal<string[]>([]);
+  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
+  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
+  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
+  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
   protected readonly loadingLists = signal<boolean>(false);
   protected readonly loadingTags = signal<boolean>(false);
   protected readonly mode = signal<CreationMode>('options');
@@ -129,22 +151,6 @@ export class NewsletterAddComponent implements OnInit {
   /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
   protected readonly mergeFieldExample = '{{first_name}}';
 
-  protected readonly regularForm = this.fb.group({
-    subject: ['', [Validators.required]],
-    previewText: [''],
-    fromName: ['', [Validators.required]],
-    fromAddress: ['', [Validators.required, Validators.email]],
-    htmlContent: [''],
-    plainTextContent: [''],
-    includeLists: [[] as string[]],
-    includeTags: [[] as string[]],
-    excludeLists: [[] as string[]],
-    excludeTags: [[] as string[]],
-    timingMode: ['now'],
-    scheduledDate: [''],
-    scheduledTime: [''],
-  });
-
   // --- Verified senders / workspace prefill ---------------------------------
 
   protected readonly verifiedSenders = signal<string[]>([]);
@@ -157,7 +163,6 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
   protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
   protected readonly estimatedAudienceCount = computed(() => {
-    this.audienceEstimateSeed();
     const estimate =
       this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
     return estimate > 0 ? Math.round(estimate) : 0;
@@ -190,8 +195,6 @@ export class NewsletterAddComponent implements OnInit {
   );
 
   public ngOnInit(): void {
-    this.syncListSignalsFromForm();
-    this.syncTagSignalsFromForm();
     void this.loadLists();
     void this.loadTags();
     void this.loadCommsDefaults();
@@ -256,8 +259,6 @@ export class NewsletterAddComponent implements OnInit {
   protected selectRegular(): void {
     this.mode.set('regular');
     this.currentStep.set(1);
-    this.syncListSignalsFromForm();
-    this.syncTagSignalsFromForm();
     this.applyTemplate('welcome');
     // Auto-selecting the default template is not a user edit.
     this.dirty.set(false);
@@ -343,18 +344,17 @@ export class NewsletterAddComponent implements OnInit {
 
   // --- Schedule -------------------------------------------------------------
 
-  protected isInvalid(controlName: string): boolean {
-    const control = this.regularForm.get(controlName);
-    if (!control) return false;
-    return control.invalid && (control.dirty || control.touched || this.showFieldErrors());
+  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
+    const state = this.regularForm[field]();
+    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
   }
 
   protected onScheduledDateChange(event: unknown): void {
     const value = this.normalizeCalendarValue(event) ?? '';
-    const control = this.regularForm.get('scheduledDate') as FormControl<string> | null;
-    control?.setValue(value);
-    control?.markAsDirty();
-    control?.markAsTouched();
+    const state = this.regularForm.scheduledDate();
+    state.value.set(value);
+    state.markAsDirty();
+    state.markAsTouched();
     this.markDirty();
     this.showDatePicker.set(false);
   }
@@ -367,8 +367,7 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   protected scheduledDateValue(): string {
-    const value = this.regularForm.get('scheduledDate')?.value;
-    return typeof value === 'string' ? value : value ? String(value) : '';
+    return this.regularPayload().scheduledDate;
   }
 
   protected timingNeedsDate(): boolean {
@@ -383,8 +382,22 @@ export class NewsletterAddComponent implements OnInit {
     this.markDirty();
   }
 
+  protected setTimingMode(mode: TimingMode): void {
+    this.regularForm.timingMode().value.set(mode);
+    this.markDirty();
+  }
+
   protected onTimingChange(): void {
     this.markDirty();
+  }
+
+  protected onEditorHtmlChange(html: string): void {
+    this.regularForm.htmlContent().value.set(html);
+    this.markDirty();
+  }
+
+  protected onEditorTextChange(text: string): void {
+    this.regularForm.plainTextContent().value.set(text);
   }
 
   protected goToVerifySender(): void {
@@ -394,7 +407,7 @@ export class NewsletterAddComponent implements OnInit {
   // --- Test send ------------------------------------------------------------
 
   protected async sendTestEmail(): Promise<void> {
-    const raw = this.regularForm.getRawValue();
+    const raw = this.regularPayload();
     const to = this.authSvc.getUser()?.email;
     if (!to) {
       this.alertSvc.showError('We could not find your email address for the test send.');
@@ -404,11 +417,11 @@ export class NewsletterAddComponent implements OnInit {
     try {
       await this.newslettersSvc.sendTest({
         subject,
-        html: raw.htmlContent ?? '',
-        text: raw.plainTextContent ?? '',
+        html: raw.htmlContent,
+        text: raw.plainTextContent,
         to,
-        fromName: raw.fromName ?? undefined,
-        fromEmail: raw.fromAddress ?? undefined,
+        fromName: raw.fromName,
+        fromEmail: raw.fromAddress,
       });
       this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
     } catch (err) {
@@ -420,7 +433,7 @@ export class NewsletterAddComponent implements OnInit {
 
   protected async saveDraft(): Promise<void> {
     if (this.saving()) return;
-    const raw = this.regularForm.getRawValue();
+    const raw = this.regularPayload();
     const subject = raw.subject || 'Untitled draft';
     this.saving.set(true);
     try {
@@ -444,14 +457,14 @@ export class NewsletterAddComponent implements OnInit {
       return;
     }
     if (this.requiresScheduleDate()) {
-      this.regularForm.get('scheduledDate')?.markAsTouched();
-      this.regularForm.get('scheduledTime')?.markAsTouched();
+      this.regularForm.scheduledDate().markAsTouched();
+      this.regularForm.scheduledTime().markAsTouched();
       this.showFieldErrors.set(true);
       this.alertSvc.showError(this.scheduleCoach);
       return;
     }
 
-    const raw = this.regularForm.getRawValue();
+    const raw = this.regularPayload();
     const scheduled = raw.timingMode === 'schedule';
     const count = this.estimatedAudienceCount();
     const subject = raw.subject || 'Untitled newsletter';
@@ -493,8 +506,11 @@ export class NewsletterAddComponent implements OnInit {
 
   private applyTemplate(preset: TemplatePreset): void {
     this.selectedTemplate.set(preset);
-    this.regularForm.get('htmlContent')?.setValue(compileTemplateHtml(preset));
-    this.regularForm.get('plainTextContent')?.setValue(compileTemplatePlainText(preset));
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: compileTemplateHtml(preset),
+      plainTextContent: compileTemplatePlainText(preset),
+    }));
   }
 
   private validateDetails(): boolean {
@@ -509,9 +525,9 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
-    if (this.regularForm.get('subject')?.invalid) return 'subject';
-    if (this.regularForm.get('fromName')?.invalid) return 'fromName';
-    if (this.regularForm.get('fromAddress')?.invalid) return 'fromAddress';
+    if (this.regularForm.subject().invalid()) return 'subject';
+    if (this.regularForm.fromName().invalid()) return 'fromName';
+    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
     return null;
   }
 
@@ -536,7 +552,7 @@ export class NewsletterAddComponent implements OnInit {
 
   private scheduleWhenLabel(): string {
     const date = this.scheduledDateValue();
-    const time = this.regularForm.get('scheduledTime')?.value ?? '';
+    const time = this.regularPayload().scheduledTime;
     if (!date) return 'the scheduled time';
     const parsed = new Date(`${date}T${time || '00:00'}`);
     if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
@@ -546,7 +562,7 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
-    const raw = this.regularForm.getRawValue();
+    const raw = this.regularPayload();
     const scheduledAt =
       status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
         ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
@@ -558,8 +574,8 @@ export class NewsletterAddComponent implements OnInit {
       subject: raw.subject,
       preview_text: raw.previewText,
       audience_description: this.buildAudienceDescription(),
-      target_lists: JSON.stringify({ include: raw.includeLists ?? [], exclude: raw.excludeLists ?? [] }),
-      segments: JSON.stringify({ include: raw.includeTags ?? [], exclude: raw.excludeTags ?? [] }),
+      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
+      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
       html_content: raw.htmlContent,
       plain_text_content: raw.plainTextContent,
       send_date: scheduledAt,
@@ -588,9 +604,9 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   private markDetailsTouched(): void {
-    this.regularForm.get('subject')?.markAsTouched();
-    this.regularForm.get('fromName')?.markAsTouched();
-    this.regularForm.get('fromAddress')?.markAsTouched();
+    this.regularForm.subject().markAsTouched();
+    this.regularForm.fromName().markAsTouched();
+    this.regularForm.fromAddress().markAsTouched();
   }
 
   private markDirty(): void {
@@ -598,31 +614,24 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   private setIncludeLists(next: string[]): void {
-    this.includeListIds.set(next);
-    this.writeControl('includeLists', next);
+    this.writeAudience('includeLists', next);
   }
 
   private setExcludeLists(next: string[]): void {
-    this.excludeListIds.set(next);
-    this.writeControl('excludeLists', next);
+    this.writeAudience('excludeLists', next);
   }
 
   private setIncludeTags(next: string[]): void {
-    this.includeTagsList.set(next);
-    this.writeControl('includeTags', next);
+    this.writeAudience('includeTags', next);
   }
 
   private setExcludeTags(next: string[]): void {
-    this.excludeTagsList.set(next);
-    this.writeControl('excludeTags', next);
+    this.writeAudience('excludeTags', next);
   }
 
-  private writeControl(name: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
-    const control = this.regularForm.get(name) as FormControl<string[]> | null;
-    control?.setValue(next);
-    control?.markAsDirty();
+  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
+    this.regularPayload.update((p) => ({ ...p, [key]: next }));
     this.markDirty();
-    this.refreshAudienceEstimate();
   }
 
   private sumListSizes(ids: string[]): number {
@@ -651,7 +660,6 @@ export class NewsletterAddComponent implements OnInit {
               0,
           })),
       );
-      this.syncListSignalsFromForm();
     } catch (err) {
       this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
     } finally {
@@ -676,7 +684,6 @@ export class NewsletterAddComponent implements OnInit {
             usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
           })),
       );
-      this.refreshAudienceEstimate();
     } catch (err) {
       this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
     } finally {
@@ -696,12 +703,12 @@ export class NewsletterAddComponent implements OnInit {
     const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
     const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
     let applied = false;
-    if (defaultName && !this.regularForm.get('fromName')?.value) {
-      this.regularForm.get('fromName')?.setValue(defaultName);
+    if (defaultName && !this.regularPayload().fromName) {
+      this.regularForm.fromName().value.set(defaultName);
       applied = true;
     }
-    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularForm.get('fromAddress')?.value) {
-      this.regularForm.get('fromAddress')?.setValue(defaultEmail);
+    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
+      this.regularForm.fromAddress().value.set(defaultEmail);
       applied = true;
     }
     this.commsDefaultsApplied.set(applied);
@@ -734,26 +741,6 @@ export class NewsletterAddComponent implements OnInit {
     return null;
   }
 
-  private refreshAudienceEstimate(): void {
-    this.audienceEstimateSeed.update((value) => value + 1);
-  }
-
-  private syncListSignalsFromForm(): void {
-    const include = (this.regularForm.get('includeLists') as FormControl<string[]> | null)?.value ?? [];
-    const exclude = (this.regularForm.get('excludeLists') as FormControl<string[]> | null)?.value ?? [];
-    this.includeListIds.set([...include]);
-    this.excludeListIds.set([...exclude]);
-    this.refreshAudienceEstimate();
-  }
-
-  private syncTagSignalsFromForm(): void {
-    const include = (this.regularForm.get('includeTags') as FormControl<string[]> | null)?.value ?? [];
-    const exclude = (this.regularForm.get('excludeTags') as FormControl<string[]> | null)?.value ?? [];
-    this.includeTagsList.set([...include]);
-    this.excludeTagsList.set([...exclude]);
-    this.refreshAudienceEstimate();
-  }
-
   private extractId(created: unknown): string | null {
     if (created && typeof created === 'object' && 'id' in created) {
       const id = (created as Record<string, unknown>)['id'];
@@ -772,3 +759,21 @@ type CreationMode = 'options' | 'regular' | 'automated';
 type StepIndex = 1 | 2 | 3 | 4;
 
 type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
+
+type TimingMode = 'now' | 'schedule';
+
+interface RegularNewsletterPayload {
+  subject: string;
+  previewText: string;
+  fromName: string;
+  fromAddress: string;
+  htmlContent: string;
+  plainTextContent: string;
+  includeLists: string[];
+  includeTags: string[];
+  excludeLists: string[];
+  excludeTags: string[];
+  timingMode: TimingMode;
+  scheduledDate: string;
+  scheduledTime: string;
+}
