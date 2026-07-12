@@ -1,105 +1,91 @@
 <div class="flex flex-col gap-4 p-4 sm:p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <h1 class="text-[22px] font-bold text-base-content">Issues</h1>
-      @if (loaded()) {
-      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
-      }
-    </div>
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Issues" [totalSentence]="loaded() ? sentence() : null">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
       <pc-icon name="add-issue" [size]="4"></pc-icon>
       New issue
-    </a>
-  </div>
+    </button>
+  </pc-grid-header>
 
-  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-    <table class="table">
-      <thead>
-        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
-          <th class="w-10">#</th>
-          <th>Issue</th>
-          <th class="min-w-48">People interested</th>
-          <th>Trend</th>
-          <th>Top ward</th>
-          <th class="w-10"></th>
-        </tr>
-      </thead>
-      <tbody>
-        @if (loading()) { @for (i of skeletonRows; track i) {
-        <tr>
-          <td colspan="6"><div class="skeleton h-6 w-full"></div></td>
-        </tr>
-        } } @else if (ranked().length === 0) {
-        <tr>
-          <td colspan="6" class="py-12 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
-              <p class="text-sm text-base-content/60">No issues yet.</p>
-              <a routerLink="add" class="btn btn-sm btn-primary">New issue</a>
-            </div>
-          </td>
-        </tr>
-        } @else { @for (entry of ranked(); track entry.row.id) {
-        <tr>
-          <td class="tabular-nums text-base-content/50">{{ entry.rank }}</td>
-          <td>
-            <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
-          </td>
-          <td>
-            <div class="flex items-center gap-2">
-              <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
-                <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
-              </div>
-              <a
-                [routerLink]="'/people'"
-                [queryParams]="{ issue: entry.row.name }"
-                class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
-              >
-                {{ entry.row.use_count_people.toLocaleString() }}
-              </a>
-            </div>
-          </td>
-          <td
-            class="text-sm tabular-nums"
-            [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
+  <pc-table [loading]="loading()" [columns]="6">
+    <ng-container pcTableHead>
+      <th class="w-10">#</th>
+      <th>Issue</th>
+      <th class="min-w-48">People interested</th>
+      <th>Trend</th>
+      <th>Top ward</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (ranked().length === 0) {
+    <tr>
+      <td colspan="6" class="py-12 text-center">
+        <div class="flex flex-col items-center gap-2">
+          <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
+          <p class="text-xs text-base-content/60">No issues yet.</p>
+          <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (entry of ranked(); track entry.row.id) {
+    <tr>
+      <td class="tabular-nums text-base-content/50 text-xs">{{ entry.rank }}</td>
+      <td>
+        <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
+      </td>
+      <td>
+        <div class="flex items-center gap-2 text-xs">
+          <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
+            <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
+          </div>
+          <a
+            [routerLink]="'/people'"
+            [queryParams]="{ issue: entry.row.name }"
+            class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
           >
-            {{ trendLabel(entry.row) }}
-          </td>
-          <td class="text-sm text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
-          <td>
-            <div class="dropdown dropdown-end dropdown-bottom">
-              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
-                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-              </label>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
-              >
-                <li>
-                  <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
-                </li>
-                <li>
-                  <a (click)="merge(entry.row)">
-                    <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue
-                  </a>
-                </li>
-                <li><hr class="my-1 border-base-300" /></li>
-                <li>
-                  <a (click)="delete(entry.row)" class="text-error">
-                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </td>
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
+            {{ entry.row.use_count_people.toLocaleString() }}
+          </a>
+        </div>
+      </td>
+      <td
+        class="text-xs tabular-nums"
+        [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
+      >
+        {{ trendLabel(entry.row) }}
+      </td>
+      <td class="text-xs text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
+          >
+            <li>
+              <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
+            </li>
+            <li>
+              <a (click)="merge(entry.row)"> <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue </a>
+            </li>
+            <li><hr class="my-1 border-base-300" /></li>
+            <li>
+              <a (click)="delete(entry.row)" class="text-error">
+                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+  </pc-table>
 
   <p class="text-xs text-base-content/50 px-1">
     Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
     field from tags everywhere because issues power issue-based filtering and targeting.
   </p>
 </div>
+
+<pc-add-issue-dialog (saved)="onIssueSaved()" />

@@ -11,7 +11,7 @@ export class FilesRepo extends BaseRepository<'files'> {
   public override async getAllWithCounts(
     input: {
       tenant_id: string;
-      options?: QueryParams<any>;
+      options?: QueryParams<any> & { entityType?: string; entityId?: string };
     },
     trx?: Transaction<Models>,
   ) {
@@ -21,8 +21,15 @@ export class FilesRepo extends BaseRepository<'files'> {
       .leftJoin('authusers as creator', 'creator.id', 'files.uploaded_by')
       .where('files.tenant_id', '=', input.tenant_id);
 
+    if (input.options?.entityType) {
+      query = query.where('files.entity_type', '=', input.options.entityType) as any;
+    }
+    if (input.options?.entityId) {
+      query = query.where('files.entity_id', '=', input.options.entityId) as any;
+    }
+
     if (input.options) {
-      query = this.applyOptions(query as any, input.options) as any;
+      query = this.applyOptions(query as any, input.options as any) as any;
     } else {
       query = query.orderBy('files.created_at', 'desc') as any;
     }
@@ -37,6 +44,8 @@ export class FilesRepo extends BaseRepository<'files'> {
         'files.storage_key',
         'files.sha256_hex',
         'files.uploaded_by',
+        'files.entity_type',
+        'files.entity_id',
         'files.created_at',
         'creator.email as creator_email',
         'creator.first_name as creator_first_name',
@@ -55,6 +64,8 @@ export class FilesRepo extends BaseRepository<'files'> {
         storage_key: row.storage_key,
         sha256_hex: row.sha256_hex,
         uploaded_by: row.uploaded_by,
+        entity_type: row.entity_type,
+        entity_id: row.entity_id,
         created_at: row.created_at,
         updated_at: row.created_at,
         createdBy: row.uploaded_by
@@ -71,5 +82,52 @@ export class FilesRepo extends BaseRepository<'files'> {
       rows: mappedRows,
       count: mappedRows.length,
     };
+  }
+
+  public async getTotalBytes(tenantId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('files')
+      .select(this.db.fn.sum('size_bytes').as('total'))
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return Number(row?.total || 0);
+  }
+
+  public async getLargestFiles(tenantId: string, limit: number) {
+    const rows = await this.db
+      .selectFrom('files')
+      .leftJoin('newsletters', (join) =>
+        join.onRef('newsletters.id', '=', 'files.entity_id' as any).on('files.entity_type', '=', 'newsletter'),
+      )
+      .leftJoin('teams', (join) =>
+        join.onRef('teams.id', '=', 'files.entity_id' as any).on('files.entity_type', '=', 'team'),
+      )
+      .where('files.tenant_id', '=', tenantId)
+      .select([
+        'files.id',
+        'files.filename',
+        'files.size_bytes',
+        'files.entity_type',
+        'files.entity_id',
+        'newsletters.subject as newsletter_subject',
+        'teams.name as team_name',
+      ])
+      .orderBy('files.size_bytes', 'desc')
+      .limit(limit)
+      .execute();
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      filename: row.filename,
+      size_bytes: row.size_bytes,
+      entity_type: row.entity_type,
+      entity_id: row.entity_id,
+      attachedToLabel:
+        row.entity_type === 'newsletter' && row.newsletter_subject
+          ? `"${row.newsletter_subject}" newsletter`
+          : row.entity_type === 'team' && row.team_name
+            ? `the ${row.team_name} team`
+            : null,
+    }));
   }
 }

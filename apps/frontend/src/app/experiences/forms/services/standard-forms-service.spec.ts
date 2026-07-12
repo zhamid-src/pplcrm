@@ -15,6 +15,8 @@ describe('StandardFormsService', () => {
     service = Object.create(StandardFormsService.prototype) as StandardFormsService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests (§15): reads go unscoped, writes unstamped.
+    (service as any).campaignContext = { activeCampaignId: () => null };
   });
 
   it('should only return forms with no type or the "standard" type', async () => {

@@ -22,10 +22,12 @@ import { DetailHeader } from '../detail-header/detail-header';
           [statusChip]="statusChip()"
           [icon]="icon()"
           [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
           [isLoading]="isLoading()"
           [disabled]="disabled()"
           [showActions]="showActions()"
           [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
           [deleteText]="deleteText()"
           [btn1Text]="btn1Text()"
           [btn1Icon]="btn1Icon()"
@@ -39,6 +41,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           (prevRecord)="prevRecord.emit()"
           (nextRecord)="nextRecord.emit()"
         >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
           <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
           <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
           <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
@@ -76,6 +79,8 @@ export class DetailLayout {
   public statusChip = input<string | null>(null);
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
   public isLoading = input.required<boolean>();
   public error = input<string | null | undefined>();
   public hasRecord = input<boolean>(true);
@@ -83,6 +88,9 @@ export class DetailLayout {
 
   public showActions = input<boolean>(true);
   public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
   public deleteText = input<string>('Delete');
   public btn1Text = input<string>('Edit');
   public btn1Icon = input<PcIconNameType>('pencil-square');

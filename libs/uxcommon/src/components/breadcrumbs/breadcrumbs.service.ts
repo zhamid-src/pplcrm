@@ -22,11 +22,12 @@ export interface BreadcrumbTrail {
 /**
  * Hoists the breadcrumb trail out of the page body and into the navbar.
  *
- * A page (via `pc-detail-header`, or directly) `set()`s its trail on init and
- * `clear()`s it on destroy; the navbar reads `trail()` and renders it. The router
- * destroys the old routed component before creating the new one, so a page's
- * clear-on-destroy always runs before the next page's set-on-init — list/grid pages
- * that never set a trail are left with a cleared (null) strip.
+ * Every navigation gets a route-driven default trail (built from `data.breadcrumb`
+ * by the frontend's BreadcrumbDefaultsService on NavigationEnd), so the strip is
+ * never empty or stale. Pages that own a richer trail (detail views via
+ * `pc-detail-header`, tabbed pages) `set()` theirs afterwards — their effects flush
+ * after NavigationEnd, so the page's trail wins. No page needs to clear on destroy
+ * anymore; the next navigation's default replaces whatever was published.
  */
 @Injectable({ providedIn: 'root' })
 export class BreadcrumbsService {
@@ -35,6 +36,20 @@ export class BreadcrumbsService {
 
   public set(trail: BreadcrumbTrail): void {
     this._trail.set(trail);
+  }
+
+  /** Publish a plain crumb trail with no record pager — the common case. */
+  public setCrumbs(crumbs: PcBreadcrumb[]): void {
+    this._trail.set({
+      crumbs,
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
   }
 
   public clear(): void {

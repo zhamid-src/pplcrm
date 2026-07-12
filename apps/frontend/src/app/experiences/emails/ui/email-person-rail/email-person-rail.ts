@@ -1,11 +1,13 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@uxcommon/components/icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailStateStore } from '../../services/store/email-state.store';
+import { PersonsService } from '../../../persons/services/persons-service';
 import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 interface RailTag {
@@ -36,10 +38,14 @@ interface RailPerson {
 export class EmailPersonRail {
   protected readonly stateStore = inject(EmailStateStore);
   private readonly store = inject(EmailsStore);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
 
   public readonly email = input<EmailType | null>(null);
 
   protected readonly collapsed = this.stateStore.personRailCollapsed;
+
+  protected readonly addingToContacts = signal(false);
 
   protected readonly person = computed<RailPerson | null>(() => {
     const e = this.email();
@@ -80,5 +86,35 @@ export class EmailPersonRail {
 
   protected toggle(): void {
     this.stateStore.togglePersonRail();
+  }
+
+  /** Creates a person from the unmatched sender; the rail then re-resolves the match (§5). */
+  protected async addToContacts(): Promise<void> {
+    const e = this.email();
+    if (!e?.from_email || this.addingToContacts()) return;
+
+    this.addingToContacts.set(true);
+    try {
+      await this.personsSvc.add({
+        email: e.from_email,
+        first_name: e.sender_first_name ?? this.guessFirstName(e.from_name),
+        last_name: e.sender_last_name ?? this.guessLastName(e.from_name),
+      });
+      await this.store.refreshEmailHeader(e.id);
+      this.alertSvc.showSuccess(`Added ${e.from_email} to your contacts.`);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error ? err.message : 'Unable to add contact');
+    } finally {
+      this.addingToContacts.set(false);
+    }
+  }
+
+  private guessFirstName(fromName: string | undefined): string | undefined {
+    return fromName?.trim().split(/\s+/)[0];
+  }
+
+  private guessLastName(fromName: string | undefined): string | undefined {
+    const parts = fromName?.trim().split(/\s+/) ?? [];
+    return parts.length > 1 ? parts.slice(1).join(' ') : undefined;
   }
 }

@@ -278,12 +278,13 @@ describe('WorkflowsController Integration', () => {
     expect(enrollment).toBeUndefined();
   });
 
-  it('should enroll a person into the specialized new_subscriber workflow when the "subscriber" tag is added', async () => {
+  it('should enroll a person into the specialized new_subscriber workflow when they subscribe', async () => {
     const personId = await seedPerson(db, { tenantId, campaignId, householdId, userId });
     const workflowId = await seedWorkflow(db, { tenantId, userId, triggerType: 'new_subscriber', status: 'active' });
     await seedStep(db, { tenantId, workflowId });
 
-    await controller.triggerTagAdded(tenantId, personId, '123', 'Subscriber');
+    // Consent is a campaign_subscriptions write (§15), not a tag attach.
+    await controller.triggerSubscriptionChanged(tenantId, personId, 'subscribed');
 
     const enrollment = await db
       .selectFrom('workflow_enrollments')

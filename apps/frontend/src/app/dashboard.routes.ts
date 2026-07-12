@@ -13,12 +13,16 @@ export const dashboardRoutes: Routes = [
   {
     path: 'dashboard',
     loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+    // `breadcrumb` feeds BreadcrumbDefaultsService: every route publishes a navbar
+    // trail on NavigationEnd, so no page ever shows an empty or stale strip.
+    data: { breadcrumb: 'Dashboard' },
   },
   // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
   { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
 
   {
     path: 'people',
+    data: { breadcrumb: 'People' },
     children: [
       {
         path: '',
@@ -29,6 +33,7 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
         canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New person' },
       },
       {
         path: ':id',
@@ -48,6 +53,7 @@ export const dashboardRoutes: Routes = [
 
   {
     path: 'households',
+    data: { breadcrumb: 'Households' },
     children: [
       {
         path: '',
@@ -58,6 +64,7 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
         canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New household' },
       },
       {
         path: ':id',
@@ -74,6 +81,7 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'duplicates',
+    data: { breadcrumb: 'Duplicates' },
     children: [
       {
         path: '',
@@ -84,51 +92,37 @@ export const dashboardRoutes: Routes = [
         path: 'people',
         loadComponent: () =>
           import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+        data: { breadcrumb: 'People' },
       },
       {
         path: 'households',
         loadComponent: () =>
           import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+        data: { breadcrumb: 'Households' },
       },
       {
         path: 'companies',
         loadComponent: () =>
           import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+        data: { breadcrumb: 'Companies' },
       },
     ],
   },
   {
     path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-        data: { shouldReuse: true, key: 'tagsadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+    data: { shouldReuse: true, key: 'tagsadminroot', breadcrumb: 'Tags' },
   },
 
   {
     path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-        data: { shouldReuse: true, key: 'issuesadminroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
+    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+    data: { shouldReuse: true, key: 'issuesadminroot', breadcrumb: 'Issues' },
   },
 
   {
     path: 'lists',
+    data: { breadcrumb: 'Lists' },
     children: [
       {
         path: '',
@@ -138,7 +132,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
+        data: { mode: 'new', breadcrumb: 'New list' },
       },
       {
         path: ':id',
@@ -147,18 +141,18 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
+        data: { mode: 'edit', breadcrumb: 'Edit list' },
       },
     ],
   },
 
   {
     path: 'newsletters',
+    data: { breadcrumb: 'Newsletters' },
     children: [
       {
         path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
         pathMatch: 'full',
         data: { shouldReuse: true, key: 'newslettersgridroot' },
       },
@@ -167,6 +161,7 @@ export const dashboardRoutes: Routes = [
         loadComponent: () =>
           import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
         canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New newsletter' },
       },
       {
         path: ':id',
@@ -178,6 +173,7 @@ export const dashboardRoutes: Routes = [
 
   {
     path: 'automations',
+    data: { breadcrumb: 'Automations' },
     children: [
       {
         path: '',
@@ -188,6 +184,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+        data: { breadcrumb: 'New automation' },
       },
       {
         path: ':id',
@@ -202,18 +199,8 @@ export const dashboardRoutes: Routes = [
     path: 'events',
     children: [
       {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
         path: 'shifts',
         children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
           {
             path: 'add',
             loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
@@ -233,11 +220,6 @@ export const dashboardRoutes: Routes = [
       {
         path: 'pages',
         children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
           {
             path: 'add',
             loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
@@ -259,6 +241,7 @@ export const dashboardRoutes: Routes = [
 
   {
     path: 'donations',
+    data: { breadcrumb: 'Donations' },
     children: [
       {
         path: '',
@@ -268,7 +251,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'pledges',
         loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
+        data: { shouldReuse: true, key: 'pledgesgridroot', breadcrumb: 'Monthly pledges' },
       },
     ],
   },
@@ -276,9 +259,11 @@ export const dashboardRoutes: Routes = [
   {
     path: 'inbox',
     loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+    data: { breadcrumb: 'Inbox' },
   },
   {
     path: 'tasks',
+    data: { breadcrumb: 'Tasks' },
     children: [
       {
         path: '',
@@ -288,12 +273,13 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+        data: { breadcrumb: 'New task' },
       },
       // Must precede ':id' — otherwise the wildcard param route would swallow it.
       {
         path: 'board',
         loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-        data: { shouldReuse: true, key: 'tasksboardroot' },
+        data: { shouldReuse: true, key: 'tasksboardroot', breadcrumb: 'Board' },
       },
       {
         path: ':id',
@@ -307,10 +293,39 @@ export const dashboardRoutes: Routes = [
   {
     path: 'canvassing',
     loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+    data: { breadcrumb: 'Canvassing' },
+  },
+
+  {
+    path: 'campaigns',
+    data: { breadcrumb: 'Campaigns' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'new', breadcrumb: 'New campaign' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
   },
 
   {
     path: 'teams',
+    data: { breadcrumb: 'Teams' },
     children: [
       {
         path: '',
@@ -320,7 +335,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
+        data: { mode: 'new', breadcrumb: 'New team' },
         canDeactivate: [unsavedChangesGuard],
       },
       {
@@ -337,6 +352,7 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'deliveries',
+    data: { breadcrumb: 'Deliveries' },
     children: [
       {
         path: '',
@@ -347,77 +363,74 @@ export const dashboardRoutes: Routes = [
       {
         path: 'plan',
         loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
+        data: { breadcrumb: 'Plan routes' },
       },
       {
         path: 'routes',
         loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
+        data: { breadcrumb: 'Routes' },
       },
       {
         path: 'routes/:id',
         loadComponent: () =>
           import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
+        // Default until the page loads and publishes the route's name itself.
+        data: { breadcrumb: [{ label: 'Routes', route: '/deliveries/routes' }] },
       },
     ],
   },
   {
     path: 'users',
     canActivate: [roleGuard],
+    data: { breadcrumb: 'Users' },
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
         data: { shouldReuse: true, key: 'usersgridroot' },
       },
       {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
+        // View and edit merged into one page (approved 2026-07-10 design) — the
+        // unsaved-changes guard now protects the view, and old edit links redirect.
         path: ':id',
         loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
         canDeactivate: [unsavedChangesGuard],
       },
+      { path: ':id/edit', redirectTo: ':id' },
     ],
   },
   {
     path: 'forms',
     loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot' },
+    data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },
   },
   {
     path: 'donation-pages',
     children: [
       {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
         path: 'add',
         loadComponent: () =>
           import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        // Flat route that conceptually nests under Donations — pre-built trail.
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'New donation page' }] },
       },
       {
         path: ':id',
         loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
+        data: { backRoute: '/donations' },
       },
       {
         path: ':id/edit',
         loadComponent: () =>
           import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'Edit donation page' }] },
       },
     ],
   },
 
   {
     path: 'settings',
+    data: { breadcrumb: 'Settings' },
     children: [
       { path: '', redirectTo: 'notifications', pathMatch: 'full' },
       {
@@ -430,6 +443,7 @@ export const dashboardRoutes: Routes = [
   {
     path: 'workspace',
     canActivate: [roleGuard],
+    data: { breadcrumb: 'Workspace' },
     children: [
       { path: '', redirectTo: 'organization', pathMatch: 'full' },
       {
@@ -450,17 +464,29 @@ export const dashboardRoutes: Routes = [
     redirectTo: '/workspace/billing',
     pathMatch: 'full',
   },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
   {
     path: 'profile',
     loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+    data: { breadcrumb: 'Profile' },
   },
   {
     path: 'imports/new',
     loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+    // Flat route that conceptually nests under the Imports tab of the history page.
+    data: { breadcrumb: [{ label: 'Imports', route: '/imports' }, { label: 'New import' }] },
   },
   {
     path: 'imports',
     loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+    // Default matches the page's initial tab — the page publishes the tab-aware
+    // crumb ("Imports"/"Exports") itself on every tab switch.
+    data: { breadcrumb: 'Imports' },
   },
   {
     // Wave 1E (spec §17): Exports folded into the Import/export History page's
@@ -471,6 +497,7 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'companies',
+    data: { breadcrumb: 'Companies' },
     children: [
       {
         path: '',
@@ -481,6 +508,7 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
         canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New company' },
       },
       {
         path: ':id',
@@ -496,17 +524,15 @@ export const dashboardRoutes: Routes = [
     ],
   },
   {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
     path: 'activity',
     loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+    data: { breadcrumb: 'Activity' },
   },
   // Back-compat: old /activities links redirect to /activity.
   { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
   {
     path: 'help',
+    data: { breadcrumb: 'Help' },
     children: [
       {
         path: '',

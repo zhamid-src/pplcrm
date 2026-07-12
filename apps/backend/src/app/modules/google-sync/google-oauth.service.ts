@@ -36,7 +36,7 @@ export class GoogleOAuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+  public async handleCallback(code: string, connectedBy: string, tenantId: string, campaignId: string): Promise<void> {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -73,6 +73,7 @@ export class GoogleOAuthService {
 
     const insertObj: any = {
       tenant_id: tenantId,
+      campaign_id: campaignId,
       user_id: connectedBy,
       access_token: accessToken,
       expires_at: expiresAt,
@@ -87,6 +88,7 @@ export class GoogleOAuthService {
         .selectFrom('google_oauth_tokens')
         .select('refresh_token')
         .where('tenant_id', '=', tenantId)
+        .where('campaign_id', '=', campaignId)
         .executeTakeFirst();
       // Reuse the stored refresh token; decrypt it to plaintext so it is
       // re-encrypted uniformly below (avoids double-encryption).
@@ -110,7 +112,7 @@ export class GoogleOAuthService {
         .insertInto('google_oauth_tokens')
         .values(insertObj)
         .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
+          oc.columns(['tenant_id', 'campaign_id']).doUpdateSet({
             user_id: connectedBy,
             access_token: insertObj.access_token,
             refresh_token: insertObj.refresh_token,
@@ -131,7 +133,7 @@ export class GoogleOAuthService {
           tenant_id: tenantId,
           queue: 'default',
           status: 'pending',
-          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
+          payload: JSON.stringify({ type: 'google_sync', tenantId, campaignId, requestedBy: connectedBy }),
           run_at: new Date(),
           max_attempts: 3,
         })
@@ -139,15 +141,16 @@ export class GoogleOAuthService {
     });
   }
 
-  public async getValidToken(tenantId: string): Promise<string> {
+  public async getValidToken(tenantId: string, campaignId: string): Promise<string> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
       .selectAll()
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     if (!row) {
-      throw new Error('No Google account connected for this tenant');
+      throw new Error('No Google account connected for this campaign');
     }
 
     // Decrypt at the DB read boundary so the rest of this method works in plaintext.
@@ -191,12 +194,16 @@ export class GoogleOAuthService {
         updated_at: new Date(),
       })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
 
     return newAccessToken;
   }
 
-  public async getConnectionStatus(tenantId: string): Promise<{
+  public async getConnectionStatus(
+    tenantId: string,
+    campaignId: string,
+  ): Promise<{
     connected: boolean;
     googleEmail: string | null;
     syncedAt: Date | null;
@@ -207,6 +214,7 @@ export class GoogleOAuthService {
       .selectFrom('google_oauth_tokens')
       .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
 
     return {
@@ -218,11 +226,15 @@ export class GoogleOAuthService {
     };
   }
 
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  public async disconnect(tenantId: string, campaignId: string): Promise<void> {
+    await this.db
+      .deleteFrom('google_oauth_tokens')
+      .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
+      .execute();
   }
 
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+  public async saveDeltaLink(tenantId: string, campaignId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
       .set({
@@ -233,31 +245,35 @@ export class GoogleOAuthService {
         updated_at: new Date(),
       })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+  public async recordSyncError(tenantId: string, campaignId: string, error: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
       .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
+  public async getDeltaLink(tenantId: string, campaignId: string): Promise<string | null> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
       .select('delta_link')
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .executeTakeFirst();
     return row?.delta_link ?? null;
   }
 
-  public async resetDeltaLink(tenantId: string): Promise<void> {
+  public async resetDeltaLink(tenantId: string, campaignId: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
       .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
       .where('tenant_id', '=', tenantId)
+      .where('campaign_id', '=', campaignId)
       .execute();
   }
 }

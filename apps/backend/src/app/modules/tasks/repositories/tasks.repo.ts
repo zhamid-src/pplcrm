@@ -93,6 +93,8 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
     const rest = {
       ...(options || {}),
+      // team_name is a joined column (teams.name), not a real tasks column; select() below adds it.
+      columns: options?.columns?.filter((c) => String(c) !== 'team_name'),
       sortModel: options?.sortModel?.filter((s) => s.colId !== 'priority' && s.colId !== 'assigned_to'),
     } as QueryParams<'tasks'>;
 

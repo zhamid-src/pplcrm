@@ -1,7 +1,7 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { Alerts } from './alerts';
-import { AlertService } from './alert-service';
+import { AlertMessage, AlertService } from './alert-service';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 describe('Alerts Component', () => {
@@ -11,11 +11,13 @@ describe('Alerts Component', () => {
 
   beforeEach(async () => {
     mockAlertSvc = {
-      alertList: vi.fn().mockReturnValue([
-        { id: '1', type: 'success', text: 'Success!', btn1Text: 'OK' },
-        { id: '2', type: 'error', text: 'Error!' },
-      ]),
-      OKBtnCallback: vi.fn(),
+      // Newest-first, matching AlertService's internal ordering
+      alertList: vi
+        .fn()
+        .mockReturnValue([
+          new AlertMessage({ id: '1', type: 'success', text: 'Success!' }),
+          new AlertMessage({ id: '2', type: 'error', text: 'Error!' }),
+        ]),
       dismiss: vi.fn(),
     };
 
@@ -32,26 +34,22 @@ describe('Alerts Component', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should return alerts based on position', () => {
-    // Default position is bottom (normal order)
+  it('should render newest nearest the pinned edge', () => {
+    // Default position is bottom: newest-first list is reversed so the newest
+    // toast sits at the bottom of the stack (spec §2).
     fixture.detectChanges();
     let alerts = component['alerts']();
-    expect(alerts.length).toBe(2);
-    expect(alerts[0].id).toBe('1');
-    expect(alerts[1].id).toBe('2');
+    expect(alerts.map((a: AlertMessage) => a.id)).toEqual(['2', '1']);
 
-    // Change to top (reversed order)
+    // Top: newest-first order is kept so the newest stays nearest the top edge.
     fixture.componentRef.setInput('position', 'top');
     fixture.detectChanges();
     alerts = component['alerts']();
-    expect(alerts.length).toBe(2);
-    expect(alerts[0].id).toBe('2');
-    expect(alerts[1].id).toBe('1');
+    expect(alerts.map((a: AlertMessage) => a.id)).toEqual(['1', '2']);
   });
 
-  it('should call alert service on OK button click', () => {
-    component['OKBtnClick']('1');
-    expect(mockAlertSvc.OKBtnCallback).toHaveBeenCalledWith('1');
+  it('should dismiss via the alert service on card click', () => {
+    component['dismiss']('1');
     expect(mockAlertSvc.dismiss).toHaveBeenCalledWith('1');
   });
 
@@ -77,7 +75,16 @@ describe('Alerts Component', () => {
   it('should return correct icon for alert type', () => {
     expect(component['icon']('success')).toBe('check-circle');
     expect(component['icon']('warning')).toBe('exclamation-triangle');
-    expect(component['icon']('error')).toBe('x-circle');
-    expect(component['icon']('info')).toBe('exclamation-circle');
+    expect(component['icon']('error')).toBe('exclamation-circle');
+    expect(component['icon']('info')).toBe('information-circle');
+    expect(component['icon'](undefined)).toBe('information-circle');
+  });
+
+  it('should color only the icon by tone', () => {
+    expect(component['toneClass']('success')).toBe('text-success');
+    expect(component['toneClass']('warning')).toBe('text-warning');
+    expect(component['toneClass']('error')).toBe('text-error');
+    expect(component['toneClass']('info')).toBe('text-info');
+    expect(component['toneClass'](undefined)).toBe('text-info');
   });
 });

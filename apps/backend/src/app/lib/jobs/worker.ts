@@ -623,9 +623,12 @@ export class BackgroundJobWorker {
           }
         }
 
-        if (payload.type === 'ms_sync' && payload.userId) {
+        if (payload.type === 'ms_sync' && payload.tenantId && payload.campaignId) {
           const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          logger.error({ err, correlationId, userId: payload.userId }, 'MS sync permanently failed');
+          logger.error(
+            { err, correlationId, tenantId: payload.tenantId, campaignId: payload.campaignId },
+            'MS sync permanently failed',
+          );
           try {
             const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
             const { env } = await import('../../../env');
@@ -635,15 +638,22 @@ export class BackgroundJobWorker {
               tenantId: env.msTenantId ?? 'common',
               redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
             });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+            await oauthSvc.recordSyncError(
+              String(payload.tenantId),
+              String(payload.campaignId),
+              `Sync failed — support code: ${correlationId}`,
+            );
           } catch (recordErr) {
             logger.error({ err: recordErr }, 'Failed to record MS sync error on token');
           }
         }
 
-        if (payload.type === 'google_sync' && payload.userId) {
+        if (payload.type === 'google_sync' && payload.tenantId && payload.campaignId) {
           const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          logger.error({ err, correlationId, userId: payload.userId }, 'Google sync permanently failed');
+          logger.error(
+            { err, correlationId, tenantId: payload.tenantId, campaignId: payload.campaignId },
+            'Google sync permanently failed',
+          );
           try {
             const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
             const { env } = await import('../../../env');
@@ -652,7 +662,11 @@ export class BackgroundJobWorker {
               clientSecret: env.googleClientSecret ?? '',
               redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
             });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+            await oauthSvc.recordSyncError(
+              String(payload.tenantId),
+              String(payload.campaignId),
+              `Sync failed — support code: ${correlationId}`,
+            );
           } catch (recordErr) {
             logger.error({ err: recordErr }, 'Failed to record Google sync error on token');
           }

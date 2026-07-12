@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TeamsService } from '../services/teams-service';
 
@@ -17,7 +18,7 @@ interface TeamCard {
 
 @Component({
   selector: 'pc-teams-grid',
-  imports: [RouterLink, Icon],
+  imports: [RouterLink, Icon, GridHeaderComponent],
   templateUrl: './teams-grid.html',
 })
 export class TeamsGridComponent implements OnInit {

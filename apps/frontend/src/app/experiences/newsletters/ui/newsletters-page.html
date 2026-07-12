@@ -1,0 +1,145 @@
+<div class="mx-auto w-full max-w-7xl p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Newsletters" [totalSentence]="headerSentence()">
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New newsletter
+    </a>
+  </pc-grid-header>
+
+  <!-- All-time engagement stat tiles -->
+  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Sent campaigns</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().sentCount) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">All time</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Delivered</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().delivered) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Successful deliveries</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg open rate</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-success]="stats().avgOpenRate > 0"
+          [class.text-base-content]="stats().avgOpenRate === 0"
+        >
+          {{ formatPercent(stats().avgOpenRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Opens per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Avg click rate</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatPercent(stats().avgClickRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Clicks per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-warning]="stats().bounces > 0"
+          [class.text-base-content]="stats().bounces === 0"
+        >
+          {{ formatNumber(stats().bounces) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Auto-skipped on next send</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign table -->
+  <pc-table [loading]="loading.visible()" [columns]="7">
+    <ng-container pcTableHead>
+      <th>Campaign</th>
+      <th>Status</th>
+      <th>Audience</th>
+      <th>Open</th>
+      <th>Click</th>
+      <th>Date</th>
+      <th class="w-28"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="7" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="megaphone" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">No newsletters in this workspace yet.</p>
+          <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+            <pc-icon name="plus" [size]="4"></pc-icon>
+            New newsletter
+          </a>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
+      </td>
+      <td>
+        <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.total_recipients > 0) { {{ formatNumber(row.total_recipients) }} recipients } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.open_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.click_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        @if (row.send_date) { {{ row.send_date | date: (row.status === 'scheduled' ? 'MMM d, h:mm a' : 'MMM d, y') }} }
+        @else {
+        <span class="text-base-content/40">Not scheduled</span>
+        }
+      </td>
+      <td class="text-right">
+        <!-- A report only exists once a send is (or was) underway. -->
+        @if (row.status === 'draft') {
+        <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="sendBlocker(row) !== null"
+            (click)="sendDraft(row)"
+          >
+            Send…
+          </button>
+        </span>
+        } @else if (row.status !== 'scheduled') {
+        <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
+        }
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>

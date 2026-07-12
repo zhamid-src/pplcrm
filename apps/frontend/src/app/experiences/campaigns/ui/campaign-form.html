@@ -1,0 +1,58 @@
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  <ng-container i18n>Loading campaign…</ng-container>
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New campaign' : (detailName() || 'Campaign')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="An election campaign keeps its own supporter data, email consent, and outreach — separate from the office."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create campaign' : 'Save campaign'"
+    [showDelete]="false"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    (save)="save($event)"
+  ></pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input
+          id="campaign-name"
+          label="Campaign name"
+          [formField]="form.name"
+          placeholder="Riverdale 2026"
+        ></pc-input>
+
+        <pc-input id="campaign-start" label="Start date" type="date" [formField]="form.startdate"></pc-input>
+        <pc-input id="campaign-end" label="End date (election day)" type="date" [formField]="form.enddate"></pc-input>
+      </div>
+
+      <pc-textarea
+        id="campaign-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="What race is this? Who's the candidate?"
+      ></pc-textarea>
+
+      <pc-textarea id="campaign-notes" label="Notes" [rows]="3" [formField]="form.notes"></pc-textarea>
+    </pc-card>
+  </form>
+</section>
+}

@@ -1,5 +1,5 @@
 <!-- Template for persons grid -->
-<div class="flex flex-col gap-6">
+<div class="flex h-full min-h-0 flex-col gap-6">
   <pc-datagrid
     #grid
     [showToolbar]="!inline()"
@@ -13,6 +13,7 @@
     [disableImport]="false"
     [disableMerge]="false"
     [confirmDeleteOverride]="onConfirmDeleteBind"
+    (rowsDeleted)="onRowsDeleted()"
     addRoute="/people/add"
     viewRoute="/people"
     [disableView]="false"
@@ -42,7 +43,7 @@
         <pc-icon name="arrow-right-start-on-rectangle" />
         Yes
       </button>
-      <button class="btn">
+      <button class="btn btn-outline btn-accent">
         <pc-icon name="x-circle" />
         Cancel
       </button>

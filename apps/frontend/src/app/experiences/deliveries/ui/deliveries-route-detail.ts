@@ -1,10 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -35,6 +36,7 @@ export class DeliveriesRouteDetail {
 
   private readonly svc = inject(DeliveriesRoutesService);
   private readonly alerts = inject(AlertService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly confirm = inject(ConfirmDialogService);
   private readonly router = inject(Router);
   protected readonly loading = createLoadingGate();
@@ -54,6 +56,18 @@ export class DeliveriesRouteDetail {
 
   constructor() {
     void this.load();
+
+    // Navbar trail with the route's real name once loaded (until then the route's
+    // `data.breadcrumb` default — Deliveries / Routes — is showing).
+    effect(() => {
+      const d = this.detail();
+      if (!d) return;
+      this.breadcrumbs.setCrumbs([
+        { label: 'Deliveries', route: '/deliveries' },
+        { label: 'Routes', route: '/deliveries/routes' },
+        { label: d.name },
+      ]);
+    });
   }
 
   protected tone(status: string): PcStatusType {

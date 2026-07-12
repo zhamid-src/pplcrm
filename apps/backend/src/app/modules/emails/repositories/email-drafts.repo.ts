@@ -6,19 +6,21 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
     super('email_drafts');
   }
 
-  public async countByUser(tenant_id: string, user_id: string): Promise<number> {
+  public async countByUser(tenant_id: string, campaign_id: string, user_id: string): Promise<number> {
     const res = await this.getSelect()
       .select((eb) => eb.fn.count('id').as('count'))
       .where('tenant_id', '=', tenant_id)
+      .where('campaign_id', '=', campaign_id)
       .where('user_id', '=', user_id)
       .executeTakeFirst();
     return Number(res?.count ?? 0);
   }
 
-  public listByUser(tenant_id: string, user_id: string, limit?: number, offset?: number) {
+  public listByUser(tenant_id: string, campaign_id: string, user_id: string, limit?: number, offset?: number) {
     let q = this.getSelect()
       .selectAll()
       .where('tenant_id', '=', tenant_id)
+      .where('campaign_id', '=', campaign_id)
       .where('user_id', '=', user_id)
       .orderBy('updated_at', 'desc');
 
@@ -30,6 +32,7 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
 
   public async saveDraft(
     tenant_id: string,
+    campaign_id: string,
     user_id: string,
     draft: {
       id?: string;
@@ -43,6 +46,7 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
   ) {
     const row: OperationDataType<'email_drafts', 'insert'> = {
       tenant_id,
+      campaign_id,
       user_id,
       to_list: draft.to_list || [],
       cc_list: draft.cc_list || [],

@@ -28,6 +28,8 @@ export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
 export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
 
 export const AddTurfObj = z.object({
+  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
   name: nameSchema('Name', 120),
   list_id: idSchema.nullable().optional(),
   notes: notesSchema,

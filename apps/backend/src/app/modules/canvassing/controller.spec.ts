@@ -56,6 +56,7 @@ async function seed(db: Db, opts: { geocoded: number; ungeocoded: number }): Pro
     .values({
       id: listId,
       tenant_id: tenantId,
+      campaign_id: campaignId,
       name: 'Persuasion universe',
       object: 'households',
       is_dynamic: false,

@@ -15,7 +15,7 @@ export const DonationsRouter = router({
   recordDonation: authProcedure
     .input(RecordDonationObj)
     .mutation(({ ctx, input }) =>
-      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method),
+      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
     ),
 
   getPersonDonationHistory: authProcedure
@@ -147,6 +147,8 @@ export const DonationsRouter = router({
         start_date: z.string(),
         end_date: z.string().nullable().optional(),
         limit_amount: z.number().int().positive(),
+        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
+        campaign_id: z.string().optional(),
       }),
     )
     .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),

@@ -8,6 +8,7 @@ import { getAllOptions } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { HouseholdsController } from '../households/controller';
 import { PersonsController } from '../persons/controller';
 import { ListsRepo } from './repositories/lists.repo';
@@ -82,6 +83,7 @@ function toListShape(row: unknown): ListShape | null {
 }
 
 export class ListsController extends BaseController<'lists', ListsRepo> {
+  private campaignsRepo = new CampaignsRepo();
   private householdsController = new HouseholdsController();
   private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
   private mapListsPersonsRepo = new MapListsPersonsRepo();
@@ -106,6 +108,11 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       is_dynamic: payload.is_dynamic ?? false,
       definition: payload.definition ?? null,
       tenant_id: auth.tenant_id,
+      // The context this segment belongs to (§15); defaults to the office.
+      campaign_id: await this.campaignsRepo.resolveForWrite({
+        tenant_id: auth.tenant_id,
+        campaign_id: payload.campaign_id,
+      }),
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
       status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',

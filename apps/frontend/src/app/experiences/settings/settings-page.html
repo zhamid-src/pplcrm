@@ -18,7 +18,7 @@
     <div class="flex shrink-0 items-center gap-2">
       <button
         type="button"
-        class="btn btn-ghost btn-sm"
+        class="btn btn-outline btn-accent btn-sm"
         (click)="resetSection(section)"
         [disabled]="!isSectionDirty(section) || isSaving(section)"
       >
@@ -49,7 +49,7 @@
         @for (section of visibleSections; track trackSection($index, section)) {
         <button
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection(section.config.id)"
         >
@@ -74,7 +74,7 @@
         <button
           id="settings-nav-passkeys"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('passkeys')"
         >
@@ -91,7 +91,7 @@
         <button
           id="settings-nav-email-sync"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('email-sync')"
         >
@@ -108,7 +108,7 @@
         <button
           id="settings-nav-domains"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('domains')"
         >
@@ -125,7 +125,7 @@
         <button
           id="settings-nav-donations"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('donations')"
         >
@@ -138,11 +138,28 @@
           Donations
         </button>
 
+        <!-- Storage custom section -->
+        <button
+          id="settings-nav-storage"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('storage')"
+        >
+          <pc-icon
+            name="archive-box"
+            [class.text-primary]="isSelected('storage')"
+            [class.opacity-70]="!isSelected('storage')"
+            [size]="5"
+          />
+          Storage
+        </button>
+
         <!-- Billing custom section -->
         <button
           id="settings-nav-billing"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('billing')"
         >
@@ -159,7 +176,7 @@
         <button
           id="settings-nav-account"
           type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
           [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('account')"
         >
@@ -181,7 +198,7 @@
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         @if (section.config.id !== 'notifications') {
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
           <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
         </header>
         }
@@ -192,7 +209,7 @@
           <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
           <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
             <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-[13px] leading-relaxed text-base-content/80">
+            <p class="text-xs leading-relaxed text-base-content/80">
               Saving new service levels re-evaluates every currently open email and task against the updated targets —
               some may immediately count as breached (or clear) on the dashboard.
             </p>
@@ -203,14 +220,14 @@
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
+                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
                 <p class="text-xs text-base-content/50">
                   Generate a secure API key and signing secret to verify webhooks from pplcrm.
                 </p>
               </div>
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
                 (click)="generateWebhookCredentials(section)"
               >
                 Generate Credentials
@@ -223,7 +240,7 @@
             @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
             'notifications') {
             <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
                 {{ field.config.label }}
               </label>
 
@@ -243,7 +260,7 @@
                   class="toggle toggle-primary toggle-md"
                   [formField]="section.form[field.controlName]"
                 />
-                <span class="text-sm font-normal text-base-content/70">
+                <span class="text-xs font-normal text-base-content/70">
                   {{ field.config.placeholder ?? 'Enabled' }}
                 </span>
               </label>
@@ -280,6 +297,7 @@
                   class="btn btn-sm min-w-12 font-medium"
                   [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
                   [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
                   [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
                   (click)="toggleDay(section, field.controlName, day.value)"
                 >
@@ -293,14 +311,14 @@
                 <input
                   [id]="field.controlName"
                   [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
                   [attr.placeholder]="field.config.placeholder ?? ''"
                   [value]="section.form[field.controlName]().value() || ''"
                   readonly
                 />
                 <button
                   type="button"
-                  class="btn btn-square btn-outline hover:btn-primary shrink-0"
+                  class="btn btn-square btn-outline btn-secondary shrink-0"
                   (click)="copyToClipboard(section.form[field.controlName]().value())"
                   title="Copy to clipboard"
                 >
@@ -316,9 +334,9 @@
                 [formField]="section.form[field.controlName]"
               />
               } } } @if (field.config.helper) {
-              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
               } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
                 <pc-icon name="exclamation-circle"></pc-icon>
                 {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
               </p>
@@ -331,7 +349,7 @@
           @if (section.config.id === 'communications') {
           <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
             <div class="space-y-1">
-              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
               <p class="text-xs text-base-content/50">
                 Add and verify email addresses to select them as campaign defaults.
               </p>
@@ -343,7 +361,7 @@
                 <input
                   type="email"
                   placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
                   [value]="senderEmailInput()"
                   (input)="senderEmailInput.set($any($event.target).value)"
                 />
@@ -388,13 +406,13 @@
             <div class="space-y-2">
               <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
               @if (verifiedEmailsList().length === 0) {
-              <p class="text-sm text-base-content/50 italic">
+              <p class="text-xs text-base-content/50 italic">
                 No verified sender emails yet. Add one above to request verification.
               </p>
               } @else {
               <div class="flex flex-wrap gap-2">
                 @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
                   <pc-icon name="check-circle" [size]="14"></pc-icon>
                   {{ email }}
                 </span>
@@ -409,7 +427,7 @@
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
                 <p class="text-xs text-base-content/50">
                   Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
                   changed.
@@ -422,7 +440,7 @@
               </div>
               <button
                 type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
                 (click)="recomputeAddressFingerprints()"
                 [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
               >
@@ -435,8 +453,8 @@
           } @if (section.config.id === 'notifications') {
           <div class="space-y-5">
             <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-sm text-base-content/60">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
                 Customize which email and in-app notifications you would like to receive for your own account.
               </p>
             </div>
@@ -445,16 +463,16 @@
               <table class="table w-full">
                 <thead>
                   <tr class="border-b border-base-200">
-                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                    <th class="text-xs font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (group of getNotificationGroups(section); track group.emailField.controlName) {
                   <tr class="hover:bg-base-200/20">
                     <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      <div class="font-semibold text-xs text-base-content">{{ group.label }}</div>
                       @if (group.helper) {
                       <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
                       }
@@ -495,7 +513,7 @@
       @if (currentMode === 'workspace' && isSelected('email-sync')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Email sync</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
           </p>
@@ -550,7 +568,7 @@
       @if (currentMode === 'workspace' && isSelected('domains')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Domain verification</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
           </p>
@@ -563,7 +581,7 @@
       @if (currentMode === 'workspace' && isSelected('donations')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Donations</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
             account.
@@ -573,11 +591,22 @@
       </section>
       }
 
+      <!-- Storage custom section -->
+      @if (currentMode === 'workspace' && isSelected('storage')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Storage</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
+        </header>
+        <pc-storage-settings></pc-storage-settings>
+      </section>
+      }
+
       <!-- Billing custom section -->
       @if (currentMode === 'workspace' && isSelected('billing')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Billing</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your subscription plans, view invoice details, and update payment methods.
           </p>
@@ -590,7 +619,7 @@
       @if (currentMode === 'settings' && isSelected('passkeys')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Passkeys</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
           </p>
@@ -603,7 +632,7 @@
       @if (currentMode === 'workspace' && isSelected('account')) {
       <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         <header class="border-b border-base-200 pb-3">
-          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
+          <h2 class="text-xs font-semibold tracking-tight">Account</h2>
           <p class="mt-0.5 text-xs text-base-content/60">
             Manage your organization account — pause billing or permanently delete all data.
           </p>

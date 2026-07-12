@@ -27,22 +27,56 @@ Prevent (mutual exclusion with the reason: "Simple filters are active — clear 
 
 ## 4. One idiom per job — the extended contract (§4)
 
-| Job                           | The one idiom                                                                                                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Blocking decision             | ConfirmDialogService; danger variant; **safe action styled primary** ("Keep person" / "Keep editing"); body specific enough to earn the interruption (names fields/counts)           |
-| Fire-and-forget feedback      | AlertService toast: max 3 stacked, duplicates coalesce with ×N badge, 3-line clamp, one clause: "Did X — consequence"                                                                |
-| Empty state                   | icon + sentence naming cause + one action button. Never italic grey text                                                                                                             |
-| Collapsible secondary content | quiet tab row with counts (Comments 2 · Activity 6; active = primary + 600 + 2px underline; "Hide" link only while open) — or a labeled bar for panels; pick per surface, never both |
-| Multi-select filter           | checkbox picker with per-item counts; OR semantics; lands as ONE chip ("Tags: any of donor, host")                                                                                   |
-| Status                        | one chip shape everywhere: 99px pill, 600 weight, semantic tint (warning=needs attention, info=in progress, success=done/good, neutral=inert)                                        |
-| Bulk action confirm           | preflight naming list + count; confirm button repeats the number                                                                                                                     |
-| Destructive placement         | demoted to ⋯ overflow / end of bulk bar in error color, behind the danger confirm                                                                                                    |
-| Overflow actions              | ⋯ menu, labeled items with icons, dividers by group; secondary verbs (Star, Mark as unread, Print) live here, not in the first-class row                                             |
-| Related action variants       | one button + menu (Reply ▾ → Reply / Reply all / Forward), not N sibling icons                                                                                                       |
-| Panel collapse                | double-chevron ⟪⟫ at panel top; collapses to icon rail, never to nothing                                                                                                             |
-| Touch pickers                 | bottom sheet, 44px rows, confirm repeats scale                                                                                                                                       |
+| Job                           | The one idiom                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blocking decision             | ConfirmDialogService; danger variant; **safe action styled primary** ("Keep person" / "Keep editing"); body specific enough to earn the interruption (names fields/counts)                                                                                                                                                   |
+| Fire-and-forget feedback      | AlertService toast: max 3 stacked, duplicates coalesce with ×N badge, 3-line clamp, one clause: "Did X — consequence"                                                                                                                                                                                                        |
+| Empty state                   | icon + sentence naming cause + one action button. Never italic grey text                                                                                                                                                                                                                                                     |
+| Page/record section tabs      | the **pill tab bar** (`pc-tabs` with content card, or bare `pc-tab-bar`, `libs/uxcommon/.../tabs/tabs.ts`): rounded-full pills, primary-tinted active, count badges — labels only, no icons. Route-linked variants set `route` on the option. The ONLY exception is `pc-grain-tabs` on the People/Households/Companies grids |
+| Collapsible secondary content | quiet tab row with counts (Comments 2 · Activity 6; active = primary + 600 + 2px underline; "Hide" link only while open) — or a labeled bar for panels; pick per surface, never both. This is a toggle idiom, NOT page tabs — page sections use the pill tab bar above                                                       |
+| Multi-select filter           | checkbox picker with per-item counts; OR semantics; lands as ONE chip ("Tags: any of donor, host")                                                                                                                                                                                                                           |
+| Status                        | one chip shape everywhere: 99px pill, 600 weight, semantic tint (warning=needs attention, info=in progress, success=done/good, neutral=inert)                                                                                                                                                                                |
+| Bulk action confirm           | preflight naming list + count; confirm button repeats the number                                                                                                                                                                                                                                                             |
+| Destructive placement         | demoted to ⋯ overflow / end of bulk bar in error color, behind the danger confirm                                                                                                                                                                                                                                            |
+| Overflow actions              | ⋯ menu, labeled items with icons, dividers by group; secondary verbs (Star, Mark as unread, Print) live here, not in the first-class row                                                                                                                                                                                     |
+| Related action variants       | one button + menu (Reply ▾ → Reply / Reply all / Forward), not N sibling icons                                                                                                                                                                                                                                               |
+| Panel collapse                | double-chevron ⟪⟫ at panel top; collapses to icon rail, never to nothing                                                                                                                                                                                                                                                     |
+| Touch pickers                 | bottom sheet, 44px rows, confirm repeats scale                                                                                                                                                                                                                                                                               |
 
 **Copy:** sentence case always; verb + noun ("Save person", "Close conversation", never "Done"/"Submit"); numbers when acting on sets; tooltips are state-aware sentences.
+
+## 4b. Buttons — the vocabulary (one class string per role)
+
+Every action button in the app wears exactly the classes its **role** assigns. No other color/variant
+combinations, no per-button decorations (`shadow-*`, `hover:scale-*`, `font-semibold`, `hover:btn-*`),
+no `rounded-*` utilities on buttons — rounding comes from the `--radius-field` token pinned in both
+theme blocks of `styles.css`.
+
+| Role                 | Classes                                             | Rules                                                                                                                                                            |
+| -------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main action          | `btn btn-primary`                                   | ONE per surface; **right-most** in any action cluster. Create actions are labeled **"New {noun}"** ("New person", "New campaign") — never "Add"/"Add person"     |
+| Cancel / dismiss     | `btn btn-outline btn-accent`                        | Dialog cancels included. Exception: danger confirm-dialogs style the SAFE action `btn-primary` (§4) — `ConfirmDialogService` does this for you                   |
+| Secondary action     | `btn btn-outline btn-secondary`                     | Everything actionable that isn't the main action, cancel, archive, or delete. Never `btn-outline btn-accent` (that reads as Cancel) or `btn-outline btn-primary` |
+| Archive / unarchive  | `btn btn-outline btn-warning`                       | Never solid `btn-warning`                                                                                                                                        |
+| Delete / destructive | `btn btn-outline btn-error`                         | Never solid `btn-error`, never a bare `text-error` label styled as a button. Inside a ⋯ overflow menu, a plain `text-error` menu item is the idiom (§4)          |
+| Icon-only tertiary   | `btn btn-ghost btn-xs btn-circle` (or `btn-square`) | Needs a `title`/tooltip; color at rest if it means something (`text-error` for a per-row trash) — **never** hover-only color (`hover:btn-error`)                 |
+
+**Sizes:** `btn-sm` at page/toolbar level (the default); `btn-xs` in dense inline contexts (detail-header
+actions, in-grid rows); `w-full` allowed on auth pages and full-width card CTAs. No one-off `min-h-*`,
+`px-6`, `min-w-[…]` sizing.
+
+**Placement:** the main action is always the right-most button of its cluster; secondary actions sit to
+its left; destructive actions are demoted to the ⋯ overflow or the end of a bulk bar (§4). Empty states
+keep their single CTA `btn-primary` even when the same action is secondary elsewhere — it's the only
+action there (§3).
+
+**Toggle/selected states** (segmented pickers, day selectors) may bind `btn-accent`/`btn-outline`
+conditionally to show selection — that's a state, not an action role, and is exempt from the table.
+
+**Live reference implementation:** `pc-form-actions` (`libs/uxcommon/src/components/form-actions/`) —
+save/delete/cancel already wear exactly these classes. The list-page header (`pc-grid-header`,
+`libs/uxcommon/src/components/grid-header/grid-header.ts`) is the one header idiom for EVERY list page
+(datagrid pages get it automatically; custom pages project their action buttons into it).
 
 ## 5. Color: semantic tokens only (§5)
 
@@ -59,9 +93,10 @@ House vocabulary only: `animate-up/down/left/right/drop` (0.3s ease-in-out), `an
 ## 8. Typography & density
 
 - App font is **Inter**, body weight **400** — the old Roboto 300 body is retired (300 is too fragile below 14px, especially in dark mode). **Weight is hierarchy** (600–700 for headings/actives) before size or color. Monospace stays `ui-monospace` / system mono for IDs, routes, kbd hints. Inter is **self-hosted** via `@fontsource-variable/inter` (imported in `styles.css`, bundled at build) — never add a `fonts.googleapis.com` link to the SPA.
-- Micro-labels (eyebrows, section headers, column headers): 10–11.5px, weight 500–600, UPPERCASE, letter-spacing .04–.09em, base-content at 45–55%.
+- **Body/main text is `text-xs` (12px) everywhere** — detail pages, grids, settings panels, activity logs, dialogs. This is enforced globally: the `body` rule in `styles.css` sets `font-size: 0.75rem` with the matching text-xs line-height, so unsized elements default to 12px and anything larger is an explicit opt-in — never rely on an element having no text-\* class to get bigger type. One notch up (`text-sm`, 13–14px) is reserved for the field-value emphasis in `pc-detail-item` and for section headings paired with weight (`text-sm font-bold`). Never `text-base` or arbitrary `text-[13px]` for body copy. Deliberate exception: the Help Center reads like documentation and stays larger.
+- Micro-labels (eyebrows, section headers, column headers): 10–11.5px, weight 500–600, UPPERCASE, letter-spacing .04–.09em, base-content at 45–55%. Timestamps in activity logs: `text-[10px]`.
 - Sidebar: headings 10.5px/500/.09em/45%; items 13px/.03em, active 600 + primary; count badges 10.5px/600 tabular-nums pills.
-- Page titles 22px/700; card titles 15px/600; table text 13px; chips 10–12px/500–600.
+- Page titles 22px/700 (record names on detail pages); list pages use the quiet `pc-grid-header` title instead of a big h1. Card titles 15px/600; table text 12px (`text-xs`); chips 10–12px/500–600.
 - Tabular numerals on every count, range, and money value. Touch targets ≥44px.
 
 ## 9. Security is a surface property

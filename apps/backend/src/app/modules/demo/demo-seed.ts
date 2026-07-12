@@ -1,0 +1,893 @@
+import { randomUUID } from 'node:crypto';
+import type { Transaction } from 'kysely';
+import { z } from 'zod';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { hashPassword } from '../../lib/password-hash';
+import { backfillPersonPublicIds } from '../../lib/person-public-id';
+import { backfillMissingSlugs } from '../../lib/slug';
+import {
+  DEMO_CITY,
+  DEMO_COMPANIES,
+  DEMO_COUNTRY,
+  DEMO_EMAILS,
+  DEMO_HOUSEHOLDS,
+  DEMO_ISSUES,
+  DEMO_LISTS,
+  DEMO_NEWSLETTERS,
+  DEMO_PERSONS,
+  DEMO_STATE,
+  DEMO_SUBMISSIONS,
+  DEMO_TAGS,
+  DEMO_TASKS,
+  DEMO_TEAM,
+  DEMO_USERS,
+  DEMO_VOLUNTEER_EVENTS,
+} from './demo-seed-data';
+import type { DemoEngagementDef, DemoNewsletterDef } from './demo-seed-data';
+
+/**
+ * Everything `seedDemoData` created, keyed by table — stored as a `settings`
+ * row so exit-demo can delete exactly these rows (and nothing the user created
+ * meanwhile). The starter web forms are deliberately NOT here: they survive
+ * exiting demo mode.
+ */
+export const DemoSeedManifestObj = z.object({
+  version: z.literal(1),
+  companies: z.array(z.string()),
+  households: z.array(z.string()),
+  persons: z.array(z.string()),
+  /** Demo tag AND demo issue ids — both live in the tags table. */
+  tags: z.array(z.string()),
+  tasks: z.array(z.string()),
+  lists: z.array(z.string()),
+  teams: z.array(z.string()),
+  volunteer_events: z.array(z.string()),
+  newsletters: z.array(z.string()),
+  /** Demo teammates (authusers ids). */
+  users: z.array(z.string()),
+  emails: z.array(z.string()),
+});
+export type DemoSeedManifest = z.infer<typeof DemoSeedManifestObj>;
+
+export const DEMO_MANIFEST_SETTINGS_KEY = 'demo_seed_manifest';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
+const daysFromNow = (n: number) => new Date(Date.now() + n * DAY_MS);
+
+interface SeedParams {
+  tenant_id: string;
+  user_id: string;
+  campaign_id: string;
+  placeholder_household_id: string;
+  /** The starter forms created by seedStarterForms — submissions attach to two of them. */
+  forms: { id: string; slug: string }[];
+}
+
+/**
+ * Seeds the realistic demo dataset for a brand-new tenant, inside the signup
+ * transaction. Returns the manifest it also persisted to `settings`; sets
+ * `tenants.demo_mode_at` as the final step so the flag and the data are atomic.
+ *
+ * Geocoding is pre-baked (real coordinates + ward names in the dataset), so no
+ * geocode_household jobs are enqueued and no Google API calls happen at signup.
+ */
+export async function seedDemoData(params: SeedParams, trx: Transaction<Models>): Promise<DemoSeedManifest> {
+  const { tenant_id, user_id, campaign_id, placeholder_household_id } = params;
+  const audit = { tenant_id, createdby_id: user_id, updatedby_id: user_id };
+
+  // ── Demo teammates (real authusers so Users/assignment/inbox look staffed;
+  //    random unguessable password + reserved-domain email = can never sign in).
+  //    authusers.email is globally unique, so the address carries the tenant
+  //    slug: <local>@<slug>.example.com — still an RFC 2606 reserved domain.
+  const tenantRow = await trx.selectFrom('tenants').select('slug').where('id', '=', tenant_id).executeTakeFirst();
+  const demoEmailDomain = `${tenantRow?.slug ?? `tenant-${tenant_id}`}.example.com`;
+  const demoUserPassword = await hashPassword(randomUUID());
+  const userRows = await trx
+    .insertInto('authusers')
+    .values(
+      DEMO_USERS.map((u) => ({
+        ...audit,
+        email: `${u.emailLocal}@${demoEmailDomain}`,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        role: u.role,
+        password: demoUserPassword,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+        verified: true,
+        two_factor_enabled: false,
+        two_factor_code: null,
+        two_factor_expires_at: null,
+        deletion_scheduled_at: null,
+        deactivated_at: null,
+        previous_email: null,
+        previous_role: null,
+        passkey_setup_dismissed_at: null,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const userIdByKey = new Map(DEMO_USERS.map((u, i) => [u.key, String(userRows[i]?.id)]));
+  // Mirrors AuthController.createProfile: profile id == authuser id.
+  await trx
+    .insertInto('profiles')
+    .values(
+      userRows.map((u) => ({
+        id: String(u.id),
+        tenant_id,
+        auth_id: String(u.id),
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })),
+    )
+    .execute();
+
+  // ── Companies ─────────────────────────────────────────────────────────────
+  const companyRows = await trx
+    .insertInto('companies')
+    .values(
+      DEMO_COMPANIES.map((c) => ({
+        ...audit,
+        name: c.name,
+        description: c.description,
+        website: c.website,
+        email: c.email,
+        phone: c.phone,
+        industry: c.industry,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const companyIdByKey = new Map(DEMO_COMPANIES.map((c, i) => [c.key, String(companyRows[i]?.id)]));
+
+  // ── Households (geocode pre-baked: success + lat/lng + ward) ─────────────
+  const householdRows = await trx
+    .insertInto('households')
+    .values(
+      DEMO_HOUSEHOLDS.map((h) => {
+        const address = {
+          street_num: h.street_num,
+          street1: h.street1,
+          city: DEMO_CITY,
+          state: DEMO_STATE,
+          zip: h.zip,
+          country: DEMO_COUNTRY,
+        };
+        return {
+          ...audit,
+          campaign_id,
+          ...address,
+          home_phone: h.home_phone ?? null,
+          notes: h.notes ?? null,
+          lat: h.lat,
+          lng: h.lng,
+          ward: h.ward,
+          formatted_address: `${h.street_num} ${h.street1}, ${DEMO_CITY}, ${DEMO_STATE} ${h.zip}, ${DEMO_COUNTRY}`,
+          geocoding_status: 'success',
+          address_fp_street: fingerprintStreet(address),
+          address_fp_full: fingerprintFull(address),
+        };
+      }),
+    )
+    .returning('id')
+    .execute();
+  const householdIdByKey = new Map(DEMO_HOUSEHOLDS.map((h, i) => [h.key, String(householdRows[i]?.id)]));
+
+  // ── Persons (created_at staggered so the dashboard growth chart is real) ──
+  const personRows = await trx
+    .insertInto('persons')
+    .values(
+      DEMO_PERSONS.map((p) => ({
+        ...audit,
+        campaign_id,
+        household_id: p.household ? householdIdByKey.get(p.household) : placeholder_household_id,
+        company_id: p.company ? companyIdByKey.get(p.company) : null,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        email: p.email ?? null,
+        mobile: p.mobile ?? null,
+        notes: p.notes ?? null,
+        do_not_contact: p.doNotContact ?? false,
+        created_at: daysAgo(p.createdDaysAgo),
+      })),
+    )
+    .returning('id')
+    .execute();
+  const personIdByKey = new Map(DEMO_PERSONS.map((p, i) => [p.key, String(personRows[i]?.id)]));
+  const personByKey = new Map(DEMO_PERSONS.map((p) => [p.key, p]));
+
+  await backfillPersonPublicIds(trx, tenant_id);
+  await backfillMissingSlugs(trx, 'households', tenant_id);
+  await backfillMissingSlugs(trx, 'companies', tenant_id);
+
+  // ── Tags (freeform labels; system tags already exist via ensureSystemTags) ─
+  const tagRows = await trx
+    .insertInto('tags')
+    .values(
+      DEMO_TAGS.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'tag' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const demoTagIds = tagRows.map((t) => String(t.id));
+
+  const allTags = await trx.selectFrom('tags').select(['id', 'name']).where('tenant_id', '=', tenant_id).execute();
+  const tagIdByName = new Map(allTags.map((t) => [t.name, String(t.id)]));
+
+  const personTagRows = DEMO_PERSONS.flatMap((p) =>
+    (p.tags ?? []).flatMap((tagName) => {
+      const tag_id = tagIdByName.get(tagName);
+      const person_id = personIdByKey.get(p.key);
+      return tag_id && person_id ? [{ ...audit, person_id, tag_id }] : [];
+    }),
+  );
+  if (personTagRows.length > 0) {
+    await trx.insertInto('map_peoples_tags').values(personTagRows).execute();
+  }
+
+  const householdTagRows = DEMO_HOUSEHOLDS.flatMap((h) =>
+    (h.tags ?? []).flatMap((tagName) => {
+      const tag_id = tagIdByName.get(tagName);
+      const household_id = householdIdByKey.get(h.key);
+      return tag_id && household_id ? [{ ...audit, household_id, tag_id }] : [];
+    }),
+  );
+  if (householdTagRows.length > 0) {
+    await trx.insertInto('map_households_tags').values(householdTagRows).execute();
+  }
+
+  // ── Issues (tags with type 'issue') + person assignments ──────────────────
+  const issueRows = await trx
+    .insertInto('tags')
+    .values(
+      DEMO_ISSUES.map((issue) => ({
+        ...audit,
+        name: issue.name,
+        description: issue.description,
+        color: issue.color,
+        deletable: true,
+        type: 'issue' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  demoTagIds.push(...issueRows.map((t) => String(t.id)));
+  const issueAssignmentRows = DEMO_ISSUES.flatMap((issue, i) =>
+    issue.people.flatMap((personKey) => {
+      const person_id = personIdByKey.get(personKey);
+      const tag_id = issueRows[i]?.id;
+      return person_id && tag_id ? [{ ...audit, person_id, tag_id: String(tag_id) }] : [];
+    }),
+  );
+  if (issueAssignmentRows.length > 0) {
+    await trx.insertInto('map_peoples_tags').values(issueAssignmentRows).execute();
+  }
+
+  // ── Campaign-scoped facts + newsletter consent (Campaigns §15) ────────────
+  const factRows = DEMO_PERSONS.filter((p) => p.supportLevel || p.votingStatus).map((p) => ({
+    ...audit,
+    campaign_id,
+    person_id: personIdByKey.get(p.key) as string,
+    support_level: p.supportLevel ?? null,
+    support_source: p.supportLevel ? 'import' : null,
+    support_recorded_by: p.supportLevel ? user_id : null,
+    support_recorded_at: p.supportLevel ? daysAgo(p.createdDaysAgo) : null,
+    voting_status: p.votingStatus ?? null,
+    voting_source: p.votingStatus ? 'import' : null,
+    voting_recorded_by: p.votingStatus ? user_id : null,
+    voting_recorded_at: p.votingStatus ? daysAgo(Math.max(p.createdDaysAgo - 1, 0)) : null,
+  }));
+  if (factRows.length > 0) {
+    await trx.insertInto('campaign_person_facts').values(factRows).execute();
+  }
+
+  const subscriptionRows = DEMO_PERSONS.filter((p) => p.subscribed && p.email).map((p) => ({
+    ...audit,
+    campaign_id,
+    person_id: personIdByKey.get(p.key) as string,
+    email: p.email as string,
+    status: 'subscribed',
+    consent_source: 'import',
+    consent_at: daysAgo(p.createdDaysAgo),
+  }));
+  if (subscriptionRows.length > 0) {
+    await trx.insertInto('campaign_subscriptions').values(subscriptionRows).execute();
+  }
+
+  // ── Tasks ─────────────────────────────────────────────────────────────────
+  const taskRows = await trx
+    .insertInto('tasks')
+    .values(
+      DEMO_TASKS.map((t) => ({
+        ...audit,
+        name: t.name,
+        details: t.details,
+        status: t.status,
+        priority: t.priority,
+        position: t.position,
+        due_at: t.dueInDays != null ? daysFromNow(t.dueInDays) : null,
+        completed_at: t.completedDaysAgo != null ? daysAgo(t.completedDaysAgo) : null,
+        assigned_to: t.assignToOwner ? user_id : t.assignToUser ? (userIdByKey.get(t.assignToUser) ?? null) : null,
+      })),
+    )
+    .returning('id')
+    .execute();
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+  const listRows = await trx
+    .insertInto('lists')
+    .values(
+      DEMO_LISTS.map((l) => ({
+        ...audit,
+        campaign_id,
+        name: l.name,
+        description: l.description,
+        object: 'people' as const,
+        is_dynamic: false,
+        status: 'idle' as const,
+      })),
+    )
+    .returning('id')
+    .execute();
+  const listMemberRows = DEMO_LISTS.flatMap((l, i) =>
+    l.members.flatMap((personKey) => {
+      const person_id = personIdByKey.get(personKey);
+      const list_id = listRows[i]?.id;
+      return person_id && list_id ? [{ ...audit, list_id: String(list_id), person_id }] : [];
+    }),
+  );
+  if (listMemberRows.length > 0) {
+    await trx.insertInto('map_lists_persons').values(listMemberRows).execute();
+  }
+
+  // ── Team ──────────────────────────────────────────────────────────────────
+  const team = await trx
+    .insertInto('teams')
+    .values({
+      ...audit,
+      name: DEMO_TEAM.name,
+      description: DEMO_TEAM.description,
+      team_lead_user_id: user_id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  const teamMemberRows = DEMO_TEAM.members.flatMap((personKey) => {
+    const person_id = personIdByKey.get(personKey);
+    return person_id ? [{ ...audit, team_id: String(team.id), person_id }] : [];
+  });
+  if (teamMemberRows.length > 0) {
+    await trx.insertInto('map_teams_persons').values(teamMemberRows).execute();
+  }
+
+  // ── Volunteer events + shifts ─────────────────────────────────────────────
+  const eventIds: string[] = [];
+  for (const ev of DEMO_VOLUNTEER_EVENTS) {
+    const start = daysFromNow(ev.startInDays);
+    start.setHours(10, 0, 0, 0);
+    const end = new Date(start.getTime() + ev.durationHours * 60 * 60 * 1000);
+    const event = await trx
+      .insertInto('volunteer_events')
+      .values({
+        ...audit,
+        name: ev.name,
+        description: ev.description,
+        location_address: ev.location_address,
+        start_time: start,
+        end_time: end,
+        capacity: ev.capacity,
+        is_private: false,
+        send_reminder: false,
+        send_signup_confirmation: false,
+        send_volunteer_alert: false,
+        slug: ev.slug,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    eventIds.push(String(event.id));
+    const shiftRows = ev.shifts.flatMap((s) => {
+      const person_id = personIdByKey.get(s.person);
+      return person_id ? [{ ...audit, event_id: String(event.id), person_id, status: s.status }] : [];
+    });
+    if (shiftRows.length > 0) {
+      await trx.insertInto('volunteer_shifts').values(shiftRows).execute();
+    }
+  }
+
+  // ── Newsletters — aggregates DERIVED from the engagement spec ─────────────
+  const newsletterIds: string[] = [];
+  for (const nl of DEMO_NEWSLETTERS) {
+    const sendDate = nl.sentDaysAgo != null ? daysAgo(nl.sentDaysAgo) : null;
+    const stats = deriveNewsletterStats(nl);
+    const newsletter = await trx
+      .insertInto('newsletters')
+      .values({
+        ...audit,
+        campaign_id,
+        name: nl.name,
+        status: nl.status,
+        subject: nl.subject,
+        preview_text: nl.preview_text,
+        audience_description: nl.audience_description,
+        html_content: nl.html_content,
+        plain_text_content: nl.plain_text_content,
+        send_date: sendDate,
+        total_recipients: stats.totalRecipients,
+        delivered_count: stats.delivered,
+        bounce_count: stats.bounces,
+        unique_opens: stats.uniqueOpens,
+        unique_clicks: stats.uniqueClicks,
+        unsubscribe_count: stats.unsubscribes,
+        open_rate: stats.openRate,
+        click_rate: stats.clickRate,
+        top_links: JSON.stringify(stats.topLinks),
+        last_engagement_at:
+          sendDate && stats.lastEngagementHours > 0 ? hoursAfter(sendDate, stats.lastEngagementHours) : null,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    newsletterIds.push(String(newsletter.id));
+
+    if (sendDate && nl.engagement && nl.engagement.length > 0) {
+      // sg_event_id is globally unique — prefix with the tenant so every signup's
+      // seeded events coexist.
+      const eventRows = buildNewsletterEvents(`${tenant_id}-${nl.key}`, nl.engagement, sendDate).flatMap((e) => {
+        const person = personByKey.get(e.person);
+        return person?.email
+          ? [
+              {
+                tenant_id,
+                newsletter_id: String(newsletter.id),
+                email: person.email,
+                event_type: e.event_type,
+                sg_event_id: e.sg_event_id,
+                url: e.url,
+                reason: e.reason,
+                bounce_type: e.bounce_type,
+                timestamp: e.timestamp,
+              },
+            ]
+          : [];
+      });
+      if (eventRows.length > 0) {
+        await trx.insertInto('newsletter_events').values(eventRows).execute();
+      }
+    }
+  }
+
+  // ── Form submissions (against two of the starter forms) ──────────────────
+  const formIdBySlug = new Map(params.forms.map((f) => [f.slug, f.id]));
+  const submissionRows = DEMO_SUBMISSIONS.flatMap((s) => {
+    const form_id = formIdBySlug.get(s.formSlug);
+    const person_id = personIdByKey.get(s.person);
+    return form_id && person_id
+      ? [
+          {
+            tenant_id,
+            form_id,
+            person_id,
+            answers: JSON.stringify(s.answers),
+            created_at: daysAgo(s.daysAgo),
+          },
+        ]
+      : [];
+  });
+  if (submissionRows.length > 0) {
+    await trx.insertInto('form_submissions').values(submissionRows).execute();
+  }
+
+  // ── Inbox/sent emails (folder ids: '11' = Inbox, '3' = Sent) ──────────────
+  const OFFICE_EMAIL = 'office@example.org';
+  const emailIds: string[] = [];
+  for (const e of DEMO_EMAILS) {
+    const person = personByKey.get(e.person);
+    const personEmail = person?.email ?? OFFICE_EMAIL;
+    const personName = person ? `${person.first_name} ${person.last_name}` : null;
+    const isInbox = e.folder === 'inbox';
+    const assigned_to = e.assignTo === 'owner' ? user_id : e.assignTo ? (userIdByKey.get(e.assignTo) ?? null) : null;
+    const email = await trx
+      .insertInto('emails')
+      .values({
+        ...audit,
+        campaign_id,
+        folder_id: isInbox ? '11' : '3',
+        from_email: isInbox ? personEmail : OFFICE_EMAIL,
+        to_email: isInbox ? OFFICE_EMAIL : personEmail,
+        subject: e.subject,
+        preview: e.preview,
+        status: e.status,
+        assigned_to,
+        is_favourite: e.is_favourite ?? false,
+        created_at: daysAgo(e.daysAgo),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    emailIds.push(String(email.id));
+    await trx
+      .insertInto('email_bodies')
+      .values({ ...audit, email_id: String(email.id), body_html: e.body_html })
+      .execute();
+    await trx
+      .insertInto('email_recipients')
+      .values({
+        ...audit,
+        email_id: String(email.id),
+        kind: 'to' as const,
+        name: isInbox ? null : personName,
+        email: isInbox ? OFFICE_EMAIL : personEmail,
+        pos: 0,
+      })
+      .execute();
+  }
+
+  // ── Manifest + flag (atomic with the data) ────────────────────────────────
+  const manifest: DemoSeedManifest = {
+    version: 1,
+    companies: [...companyIdByKey.values()],
+    households: [...householdIdByKey.values()],
+    persons: [...personIdByKey.values()],
+    tags: demoTagIds,
+    tasks: taskRows.map((t) => String(t.id)),
+    lists: listRows.map((l) => String(l.id)),
+    teams: [String(team.id)],
+    volunteer_events: eventIds,
+    newsletters: newsletterIds,
+    users: [...userIdByKey.values()],
+    emails: emailIds,
+  };
+
+  await trx
+    .insertInto('settings')
+    .values({
+      tenant_id,
+      key: DEMO_MANIFEST_SETTINGS_KEY,
+      value: JSON.stringify(manifest),
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  await trx.updateTable('tenants').set({ demo_mode_at: new Date() }).where('id', '=', tenant_id).execute();
+
+  return manifest;
+}
+
+interface DeleteParams {
+  tenant_id: string;
+  user_id: string;
+  manifest: DemoSeedManifest;
+  placeholder_household_id: string;
+}
+
+/**
+ * Deletes everything the manifest tracks, in FK-safe order, inside the caller's
+ * transaction. Junction/child rows that would CASCADE anyway are deleted
+ * explicitly so the intent is auditable; the one FK with NO cascade
+ * (persons.household_id) is handled first by re-pointing any person the user
+ * created inside a demo household at the tenant's placeholder household.
+ * Clears the manifest settings row and the tenant's demo flag last.
+ */
+export async function deleteDemoData(params: DeleteParams, trx: Transaction<Models>): Promise<void> {
+  const { tenant_id, user_id, manifest: m, placeholder_household_id } = params;
+
+  if (m.households.length > 0) {
+    let repoint = trx
+      .updateTable('persons')
+      .set({ household_id: placeholder_household_id, updatedby_id: user_id })
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', m.households);
+    if (m.persons.length > 0) {
+      repoint = repoint.where('id', 'not in', m.persons);
+    }
+    await repoint.execute();
+  }
+
+  if (m.persons.length > 0) {
+    await trx
+      .deleteFrom('form_submissions')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('campaign_person_facts')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('campaign_subscriptions')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('map_peoples_tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+    await trx
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('person_id', 'in', m.persons)
+      .execute();
+  }
+
+  if (m.volunteer_events.length > 0) {
+    await trx
+      .deleteFrom('volunteer_shifts')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_id', 'in', m.volunteer_events)
+      .execute();
+    await trx
+      .deleteFrom('volunteer_events')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.volunteer_events)
+      .execute();
+  }
+
+  if (m.teams.length > 0) {
+    await trx
+      .deleteFrom('map_teams_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('team_id', 'in', m.teams)
+      .execute();
+    await trx.deleteFrom('teams').where('tenant_id', '=', tenant_id).where('id', 'in', m.teams).execute();
+  }
+
+  if (m.lists.length > 0) {
+    await trx
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', 'in', m.lists)
+      .execute();
+    await trx.deleteFrom('lists').where('tenant_id', '=', tenant_id).where('id', 'in', m.lists).execute();
+  }
+
+  if (m.tasks.length > 0) {
+    await trx.deleteFrom('tasks').where('tenant_id', '=', tenant_id).where('id', 'in', m.tasks).execute();
+  }
+
+  if (m.emails.length > 0) {
+    // email_bodies/recipients/headers/comments/attachments/read_states/trash all CASCADE.
+    await trx.deleteFrom('emails').where('tenant_id', '=', tenant_id).where('id', 'in', m.emails).execute();
+  }
+
+  if (m.newsletters.length > 0) {
+    await trx
+      .deleteFrom('newsletter_events')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', 'in', m.newsletters)
+      .execute();
+    await trx
+      .deleteFrom('person_newsletter_engagements')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', 'in', m.newsletters)
+      .execute();
+    await trx.deleteFrom('newsletters').where('tenant_id', '=', tenant_id).where('id', 'in', m.newsletters).execute();
+  }
+
+  if (m.persons.length > 0) {
+    await trx.deleteFrom('persons').where('tenant_id', '=', tenant_id).where('id', 'in', m.persons).execute();
+  }
+  if (m.households.length > 0) {
+    await trx
+      .deleteFrom('map_households_tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', m.households)
+      .execute();
+    await trx.deleteFrom('households').where('tenant_id', '=', tenant_id).where('id', 'in', m.households).execute();
+  }
+  if (m.companies.length > 0) {
+    await trx.deleteFrom('companies').where('tenant_id', '=', tenant_id).where('id', 'in', m.companies).execute();
+  }
+
+  // System tags are deletable=false — the guard keeps them even if a manifest
+  // were ever to contain one by mistake.
+  if (m.tags.length > 0) {
+    await trx
+      .deleteFrom('tags')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', 'in', m.tags)
+      .where('deletable', '=', true)
+      .execute();
+  }
+
+  // Demo teammates last: everything they were assigned is either deleted above
+  // or explicitly detached here (most authusers FKs have no ON DELETE action).
+  if (m.users.length > 0) {
+    const demoUserIds = m.users.filter((id) => id !== user_id);
+    if (demoUserIds.length > 0) {
+      await trx
+        .updateTable('tasks')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('persons')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('emails')
+        .set({ assigned_to: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('assigned_to', 'in', demoUserIds)
+        .execute();
+      await trx
+        .updateTable('teams')
+        .set({ team_lead_user_id: null })
+        .where('tenant_id', '=', tenant_id)
+        .where('team_lead_user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('email_read_states')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('notifications')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx
+        .deleteFrom('user_activity')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', tenant_id).where('user_id', 'in', demoUserIds).execute();
+      await trx
+        .deleteFrom('map_campaigns_users')
+        .where('tenant_id', '=', tenant_id)
+        .where('user_id', 'in', demoUserIds)
+        .execute();
+      await trx.deleteFrom('profiles').where('tenant_id', '=', tenant_id).where('auth_id', 'in', demoUserIds).execute();
+      // Never the caller, never an owner — belt and braces on top of the manifest.
+      await trx
+        .deleteFrom('authusers')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', demoUserIds)
+        .where('role', '!=', 'owner')
+        .execute();
+    }
+  }
+
+  await trx
+    .deleteFrom('settings')
+    .where('tenant_id', '=', tenant_id)
+    .where('key', '=', DEMO_MANIFEST_SETTINGS_KEY)
+    .execute();
+  await trx.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', tenant_id).execute();
+}
+
+const hoursAfter = (base: Date, hours: number) => new Date(base.getTime() + hours * 60 * 60 * 1000);
+
+interface DerivedNewsletterStats {
+  totalRecipients: number;
+  delivered: number;
+  bounces: number;
+  uniqueOpens: number;
+  uniqueClicks: number;
+  unsubscribes: number;
+  openRate: number;
+  clickRate: number;
+  topLinks: { url: string; clicks: number }[];
+  lastEngagementHours: number;
+}
+
+/**
+ * Derives the stored aggregate columns from the engagement spec so the report
+ * page numbers always reconcile with the raw newsletter_events rows.
+ */
+function deriveNewsletterStats(nl: DemoNewsletterDef): DerivedNewsletterStats {
+  const engagement = nl.engagement ?? [];
+  const totalRecipients = nl.recipients?.length ?? 0;
+  const bounces = engagement.filter((e) => e.bounce).length;
+  const delivered = Math.max(totalRecipients - bounces, 0);
+  const uniqueOpens = engagement.filter((e) => e.opens > 0).length;
+  const uniqueClicks = engagement.filter((e) => (e.clicks?.length ?? 0) > 0).length;
+  const unsubscribes = engagement.filter((e) => e.unsubscribed).length;
+  const rate = (n: number) => (delivered > 0 ? Math.round((n / delivered) * 1000) / 10 : 0);
+
+  const clicksByUrl = new Map<string, number>();
+  for (const e of engagement) {
+    for (const url of e.clicks ?? []) {
+      clicksByUrl.set(url, (clicksByUrl.get(url) ?? 0) + 1);
+    }
+  }
+  const topLinks = [...clicksByUrl.entries()]
+    .map(([url, clicks]) => ({ url, clicks }))
+    .sort((a, b) => b.clicks - a.clicks);
+
+  return {
+    totalRecipients,
+    delivered,
+    bounces,
+    uniqueOpens,
+    uniqueClicks,
+    unsubscribes,
+    openRate: rate(uniqueOpens),
+    clickRate: rate(uniqueClicks),
+    topLinks,
+    lastEngagementHours: engagement.length > 0 ? 72 : 0,
+  };
+}
+
+interface BuiltNewsletterEvent {
+  person: string;
+  event_type: 'open' | 'click' | 'bounce' | 'unsubscribe';
+  sg_event_id: string;
+  url: string | null;
+  reason: string | null;
+  bounce_type: string | null;
+  timestamp: Date;
+}
+
+/**
+ * Expands the per-person engagement spec into raw event rows with timestamps
+ * deterministically spread over the 72 hours after the send — enough variance
+ * for a believable hourly timeline without a randomness dependency.
+ */
+function buildNewsletterEvents(
+  newsletterKey: string,
+  engagement: DemoEngagementDef[],
+  sendDate: Date,
+): BuiltNewsletterEvent[] {
+  const events: BuiltNewsletterEvent[] = [];
+  engagement.forEach((entry, i) => {
+    for (let k = 0; k < entry.opens; k++) {
+      events.push({
+        person: entry.person,
+        event_type: 'open',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-open-${k}`,
+        url: null,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 5 + k * 13) % 71) + 1),
+      });
+    }
+    (entry.clicks ?? []).forEach((url, j) => {
+      events.push({
+        person: entry.person,
+        event_type: 'click',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-click-${j}`,
+        url,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 7 + j * 9 + 3) % 70) + 2),
+      });
+    });
+    if (entry.bounce) {
+      events.push({
+        person: entry.person,
+        event_type: 'bounce',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-bounce`,
+        url: null,
+        reason:
+          entry.bounce === 'hard'
+            ? '550 5.1.1 The email account does not exist'
+            : '421 4.7.0 Mailbox temporarily unavailable',
+        bounce_type: entry.bounce === 'hard' ? 'bounce' : 'blocked',
+        timestamp: hoursAfter(sendDate, 1),
+      });
+    }
+    if (entry.unsubscribed) {
+      events.push({
+        person: entry.person,
+        event_type: 'unsubscribe',
+        sg_event_id: `demo-${newsletterKey}-${entry.person}-unsub`,
+        url: null,
+        reason: null,
+        bounce_type: null,
+        timestamp: hoursAfter(sendDate, ((i * 11) % 60) + 8),
+      });
+    }
+  });
+  return events;
+}

@@ -44,7 +44,9 @@ async function cleanup(db: any, user_id: any, tenant_id: any) {
 
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('companies').where('tenant_id', '=', tenant_id).execute();
+  // Demo seed data (signUp): inbox emails reference campaigns; children cascade.
+  await db.deleteFrom('emails').where('tenant_id', '=', tenant_id).execute();
 
   const tenantUserIds = db.selectFrom('authusers').select('id').where('tenant_id', '=', tenant_id);
 
@@ -59,6 +61,8 @@ async function cleanup(db: any, user_id: any, tenant_id: any) {
   await db.deleteFrom('teams').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('volunteer_events').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('web_forms').where('tenant_id', '=', tenant_id).execute();
+  // Campaigns are referenced by newsletters/lists/web_forms/events/… (§15), so they go last.
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
 
   await db.deleteFrom('sessions').where('user_id', 'in', tenantUserIds).execute();
 
@@ -292,14 +296,19 @@ describe('AuthController Integration', () => {
       .executeTakeFirst();
 
     expect(campaign).toBeDefined();
-    expect(campaign?.name).toBe(`${orgName} Campaign`);
+    // Signup creates the tenant's permanent office context (Campaigns §15).
+    expect(campaign?.name).toBe(`${orgName} Office`);
+    expect(campaign?.kind).toBe('office');
+    expect(campaign?.status).toBe('active');
     expect(campaign?.admin_id).toBe(user.id);
     expect(campaign?.createdby_id).toBe(user.id);
 
-    // 2. Verify settings were created
+    // 2. Verify settings were created (current_campaign, notifications, and the
+    // demo-seed manifest written by the demo-mode seeder)
     const settings = await db.selectFrom('settings').selectAll().where('tenant_id', '=', user.tenant_id).execute();
 
-    expect(settings).toHaveLength(2);
+    expect(settings).toHaveLength(3);
+    expect(settings.some((s) => s.key === 'demo_seed_manifest')).toBe(true);
 
     const currentCampaignSetting = settings.find((s) => s.key === 'current_campaign');
     expect(currentCampaignSetting).toBeDefined();
@@ -610,11 +619,12 @@ describe('AuthController Integration', () => {
     // Rule: Admin cannot trigger password reset for owner
     await expect(controller.adminTriggerPasswordReset(authAdmin, owner.id)).rejects.toThrow(ForbiddenError);
 
-    // Rule: Owner leaving -> oldest remaining user becomes owner
-    // Since Owner leaves (demotes themselves to admin), and we have two other users:
-    // Admin (invited first, created earlier) and User (invited second, created later).
-    // Admin should become Owner, and Owner should become Admin.
-    await controller.updateUser(authOwner, owner.id, { role: 'admin' });
+    // Rule: nobody — not even the owner — can change their OWN role (server-side lockout guard).
+    await expect(controller.updateUser(authOwner, owner.id, { role: 'admin' })).rejects.toThrow(ForbiddenError);
+
+    // Owner handover: promote the admin to co-owner, then the new owner demotes the original.
+    await controller.updateUser(authOwner, admin.id, { role: 'owner' });
+    await controller.updateUser({ ...authAdmin, role: 'owner' }, owner.id, { role: 'admin' });
 
     const ownerAfterLeave = await db
       .selectFrom('authusers')
@@ -628,7 +638,7 @@ describe('AuthController Integration', () => {
       .executeTakeFirstOrThrow();
 
     expect(ownerAfterLeave.role).toBe('admin');
-    expect(adminAfterLeave.role).toBe('owner'); // Oldest user got promoted to owner!
+    expect(adminAfterLeave.role).toBe('owner');
 
     await cleanup(db, owner.id, owner.tenant_id);
   });

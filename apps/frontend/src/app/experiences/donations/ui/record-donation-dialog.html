@@ -135,7 +135,9 @@
       </p>
 
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-ghost" (click)="close()" [disabled]="submitting()">Cancel</button>
+        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
+          Cancel
+        </button>
         <button type="submit" class="btn btn-primary" [disabled]="submitting()">
           @if (submitting()) {
           <span class="loading loading-spinner loading-sm"></span>

@@ -6,39 +6,40 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
 @Component({
   selector: 'pc-people-in-company',
   imports: [RouterModule],
-  template: `<div>
-    <ul class="space-y-1.5">
-      @if (!peopleInCompany().length && !isLoading()) {
-        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
-      }
-      @for (person of peopleInCompany(); track person.id) {
-        <li class="flex items-center gap-2">
-          @if (person.full_name) {
-            <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
-              {{ person.full_name }}
-            </a>
-            @if (person.email) {
-              <span class="text-xs text-base-content/40">({{ person.email }})</span>
-            }
-          } @else {
-            <!-- Grouped by the employer field but never fleshed out into a named person (§7) -->
-            <span i18n class="text-sm text-base-content/50 italic">Employer field only — no person record yet</span>
-          }
-        </li>
-      }
-    </ul>
-    @if (hasMore()) {
-      <div class="mt-2">
-        <button
-          i18n
-          type="button"
-          class="btn btn-xs btn-ghost text-primary"
-          (click)="loadMore()"
-          [disabled]="isLoading()"
+  template: `<div class="flex flex-col">
+    @if (!peopleInCompany().length && !isLoading()) {
+      <p i18n class="py-2 text-sm italic text-base-content/40">No people linked to this company yet.</p>
+    }
+    @for (person of peopleInCompany(); track person.id) {
+      <a
+        routerLink="/people/{{ person.id }}"
+        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
+      >
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+          aria-hidden="true"
+          >{{ initials(person) }}</span
         >
-          - More -
-        </button>
-      </div>
+        <span class="flex min-w-0 flex-col">
+          <span class="truncate text-sm font-semibold text-base-content">{{
+            person.full_name || 'Unnamed person'
+          }}</span>
+          @if (person.email) {
+            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
+          }
+        </span>
+      </a>
+    }
+    @if (hasMore()) {
+      <button
+        i18n
+        type="button"
+        class="mt-1 self-start text-xs text-primary hover:underline"
+        (click)="loadMore()"
+        [disabled]="isLoading()"
+      >
+        Show more
+      </button>
     }
   </div>`,
 })
@@ -76,6 +77,12 @@ export class PeopleInCompany {
     });
   }
 
+  protected initials(person: Persons & { full_name: string }): string {
+    const first = person.first_name?.trim()?.[0] ?? '';
+    const last = person.last_name?.trim()?.[0] ?? '';
+    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
+  }
+
   protected async loadMore() {
     if (this.isLoading() || !this.hasMore()) {
       return;
@@ -107,6 +114,7 @@ export class PeopleInCompany {
       const people = (await this.personsSvc.getByCompanyId(id, {
         limit: this.pageSize,
         offset,
+        columns: ['first_name', 'last_name', 'email'],
       })) as Persons[];
 
       if (requestId !== this.requestSequence) {

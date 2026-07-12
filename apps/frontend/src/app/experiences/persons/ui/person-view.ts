@@ -1,11 +1,12 @@
 import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
 import { PeopleInHousehold } from './people-in-household';
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -14,27 +15,20 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { EventsService } from '../../../services/api/events-service';
 import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonCampaignFacts } from './person-campaign-facts';
 import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-}
 
 @Component({
   selector: 'pc-person-view',
@@ -45,15 +39,16 @@ interface SocialLinkDef {
     PeopleInHousehold,
     Icon,
     RecordActivities,
+    LogInteraction,
     DetailLayout,
     PcCard,
-    Tabs,
+    PcTabs,
     TabPanel,
     StatusBadge,
-    ProfileCard,
     DetailItem,
     SystemMetadata,
     Tags,
+    PersonCampaignFacts,
     PersonConnections,
   ],
   templateUrl: './person-view.html',
@@ -62,6 +57,7 @@ export class PersonView {
   readonly id = input.required<string>();
 
   protected readonly recordNav = injectRecordNavigation('person', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -140,6 +136,14 @@ export class PersonView {
     return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
 
+  /** Address plus ward for the contact row (e.g. "312 Alder Street … · Ward 3"). */
+  protected readonly addressDisplay = computed(() => {
+    const base = this.addressString();
+    if (base === 'No Address Assigned') return base;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
+  });
+
   // Contact initials and full name computation
   protected readonly initials = computed(() => {
     const first = this.person()?.first_name || '';
@@ -159,11 +163,12 @@ export class PersonView {
     { label: this.fullName() || 'Person' },
   ]);
 
-  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge
+  // outranks one-off gifts; "Donor" is DERIVED from donation history (§15), not a tag.
   protected readonly statusChip = computed<string | null>(() => {
     if (this.hasActivePledge()) return 'Monthly donor';
+    if (this.donationHistory().length > 0) return 'Donor';
     const tags = this.tags().map((t) => t.toLowerCase());
-    if (tags.includes('donor')) return 'Donor';
     if (tags.includes('volunteer')) return 'Volunteer';
     if (tags.includes('host')) return 'Host';
     return null;
@@ -183,33 +188,19 @@ export class PersonView {
     }
   });
 
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
-    return [
-      { name: 'LinkedIn', url: p.linkedin, icon: 'linkedin' },
-      { name: 'X', url: p.twitter, icon: 'x' },
-      { name: 'Facebook', url: p.facebook, icon: 'facebook' },
-      { name: 'Instagram', url: p.instagram, icon: 'instagram' },
-    ];
-  });
-
   // Active tab state
-  protected activeTab = signal<string>('activity');
+  protected activeTab = signal<string>('household');
 
-  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
+  // Seven tabs (§3): Newsletters fold into Emails; Household and Connections are distinct concepts, own tabs each.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
-    {
-      id: 'donations',
-      label: 'Donations',
-      icon: 'currency-dollar',
-      badge: this.donationHistory()?.length || undefined,
-    },
-    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
+    { id: 'household', label: 'Household' },
+    { id: 'connections', label: 'Connections', badge: this.connectionCount() || undefined },
+    { id: 'emails', label: 'Emails', badge: this.activityData()?.emails?.length || undefined },
+    { id: 'donations', label: 'Donations', badge: this.donationHistory()?.length || undefined },
+    { id: 'volunteer', label: 'Volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', badge: this.eventHistory()?.length || undefined },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity' },
   ]);
 
   /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
@@ -382,6 +373,11 @@ export class PersonView {
       end();
       this.initialized.set(true);
     }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
   }
 
   protected openCollectDonation() {

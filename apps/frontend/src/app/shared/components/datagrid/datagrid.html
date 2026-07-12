@@ -1,4 +1,11 @@
-<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle() || grainLayout()">
+<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
+     full 24px below it would just steal height from the grid. -->
+<div
+  class="flex h-full w-full flex-col"
+  [class.px-6]="displayTitle() || grainLayout()"
+  [class.pt-6]="displayTitle() || grainLayout()"
+  [class.pb-2]="displayTitle() || grainLayout()"
+>
   @if (grainLayout()) {
   <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
        (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
@@ -119,7 +126,7 @@
         <div class="flex justify-end gap-2 pt-1">
           <button
             type="button"
-            class="btn btn-ghost btn-xs"
+            class="btn btn-outline btn-accent btn-xs"
             (click)="addFilterDd.removeAttribute('open')"
             i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
           >
@@ -296,10 +303,10 @@
       (keydown.escape)="cancelBulkTag()"
       autofocus
     />
-    <button class="btn btn-primary btn-xs bg-base-100" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
       <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
     </button>
-    <button class="btn btn-xs bg-base-100" (click)="cancelBulkTag()">
+    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
       <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
     </button>
     } @else {
@@ -353,31 +360,32 @@
   }
   <div
     #scroller
-    class="flex-1 overflow-auto border border-neutral rounded relative rounded-xl"
+    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
     (scroll)="onScroll($event)"
   >
-    <table #gridTable class="table w-full">
+    <table #gridTable class="table pc-table w-full">
       <thead>
-        <tr class="bg-base-100 text-sm">
+        <tr class="bg-base-100 text-xs">
           @if (enableSelection()) {
           <th
-            class="border-r border-base-300 pl-2 selection-col"
+            class="pl-2 selection-col"
             [style.width.px]="selectionStickyWidth()"
             [style.minWidth.px]="selectionStickyWidth()"
             [style.maxWidth.px]="selectionStickyWidth()"
           >
             <input
               type="checkbox"
-              class="checkbox checkbox-sm"
+              class="checkbox checkbox-xs"
               [checked]="!allSelected() && tableAllPageSelected()"
               [indeterminate]="!allSelected() && tableSomePageSelected()"
               (change)="onHeaderCheckbox($any($event.target).checked)"
             />
           </th>
-          } @for (h of leafHeaders(); track h.id) {
+          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
           <th
             role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative text-xs uppercase font-medium"
+            class="group cursor-grab pl-2 relative"
+            [class.pl-4]="hIdx === 0 && !enableSelection()"
             [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
@@ -392,12 +400,14 @@
                 {{ h.column.columnDef.header || h.column.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              @if (showColumnMenus()) {
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
                 <label
                   tabindex="0"
-                  class="btn btn-xs"
+                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                   [class.btn-ghost]="!isColFiltered(h.column.id)"
                   [class.btn-primary]="isColFiltered(h.column.id)"
+                  [class.!opacity-100]="isColFiltered(h.column.id)"
                   title="Column options"
                   i18n-title="@@datagrid.columns.optionsTitle"
                 >
@@ -523,6 +533,7 @@
                   </li>
                 </ul>
               </div>
+              }
               <span
                 class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
                 title="Resize column"
@@ -534,7 +545,7 @@
           }
         </tr>
       </thead>
-      <tbody class="bg-base-100 text-sm">
+      <tbody class="bg-base-100">
         @if (hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
@@ -555,7 +566,7 @@
               >
               <button
                 type="button"
-                class="btn btn-outline btn-sm mt-1"
+                class="btn btn-outline btn-secondary btn-sm mt-1"
                 (click)="clearAllFilters()"
                 i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
               >
@@ -579,14 +590,14 @@
               <span
                 class="text-sm opacity-70"
                 i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
+                >Create your first record with the New button above</span
               >
             </div>
           </td>
         </tr>
         } @for (r of visibleTableRows(); let i = $index; track r.id) {
         <tr
-          class="group hover:bg-base-300"
+          class="group hover:bg-base-300/40"
           [class.cursor-pointer]="rowNavigatesToDetail()"
           (mouseover)="onCellMouseOver(r.original)"
           [attr.data-row-id]="toId(r.original)"
@@ -594,7 +605,7 @@
         >
           @if (enableSelection()) {
           <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            class="sticky left-0 z-20 pl-2"
             [style.background]="rowBgForIndex(i)"
             [style.width.px]="selectionStickyWidth()"
             [style.minWidth.px]="selectionStickyWidth()"
@@ -604,7 +615,7 @@
               @if (rowCanSelect()(r.original)) {
               <input
                 type="checkbox"
-                class="checkbox checkbox-sm"
+                class="checkbox checkbox-xs"
                 [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />
@@ -624,9 +635,9 @@
               }
             </div>
           </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
+          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
+          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
+          && ec.id === toId(r.original) && ec.field === col.field;
           <td
             [pcEditable]="editableCfg(r.original, col)"
             [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
@@ -642,7 +653,8 @@
             [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
             [class.overflow-visible]="isTagColumn(col) && isEditing"
             [class]="cellClassFor(col, r.original)"
-            class="min-w-0 px-2 border-r border-base-300 relative"
+            class="min-w-0 px-2 relative"
+            [class.pl-4]="cellIdx === 0 && !enableSelection()"
             [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
             [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
             [attr.data-col-id]="cell.column.id"
@@ -786,7 +798,8 @@
             </div>
             } @else if (col.field === 'address') {
             <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
+            <div class="py-1" [attr.title]="rawValue">
               <div
                 class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
                 [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
@@ -805,6 +818,22 @@
             } } }
           </td>
           } }
+        </tr>
+        } @if (visibleTableRows().length && !canNext()) {
+        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
+             would otherwise read as data that failed to load. -->
+        <tr class="hover:bg-transparent">
+          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
+            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
+              <span class="h-px flex-1 bg-base-300"></span>
+              <span
+                class="whitespace-nowrap tabular-nums"
+                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
+                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
+              >
+              <span class="h-px flex-1 bg-base-300"></span>
+            </div>
+          </td>
         </tr>
         }
       </tbody>
@@ -947,7 +976,7 @@
       </button>
       <div class="flex gap-2">
         <button
-          class="btn btn-ghost btn-sm"
+          class="btn btn-outline btn-accent btn-sm"
           (click)="showAdvancedFilterBuilder.set(false)"
           i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
         >

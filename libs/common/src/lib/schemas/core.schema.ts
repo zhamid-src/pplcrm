@@ -83,6 +83,8 @@ export const getAllOptions = z
     activity: z.string().optional(),
     advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
     listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
   })
   .optional();
 

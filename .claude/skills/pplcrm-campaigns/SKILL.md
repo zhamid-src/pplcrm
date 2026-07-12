@@ -1,0 +1,86 @@
+---
+name: pplcrm-campaigns
+description: How PeopleCRM's Campaigns feature (§15) works — office/election contexts, the shared-rolodex vs campaign-scoped-facts split, campaign_person_facts (support level + voting status), the three-layer email consent model (campaign_subscriptions / email_suppressions / persons.do_not_contact), domain scoping via options.campaignId, the per-user context switcher, archive read-only rules, and carry-over. USE WHEN touching anything under modules/campaigns, experiences/campaigns, the campaign switcher, campaign_person_facts / campaign_subscriptions / email_suppressions schema, support level or voting status, DNC, newsletter sendability, or a campaign_id column on any table. EXAMPLES 'add a campaign-scoped concept to a person', 'why is this person not getting the newsletter', 'which campaign does a knock update', 'copy supporters into the new campaign'.
+---
+
+# Campaigns (§15): office/election contexts
+
+## The model in one paragraph
+
+A campaign is a **context**. Every tenant permanently has one `kind='office'` campaign (created at
+signup, cannot be archived or deleted); elections are additional `kind='election'` rows created and
+later archived (`status='archived'` = read-only history; campaigns are NEVER hard-deleted — the
+controller's `delete` throws). People/households/companies/tags are ONE shared tenant-wide rolodex;
+what varies per campaign is the FACTS about people and the operational domains. The dividing rule:
+**tags are freeform multi-valued human labels; anything with a fixed enum, a single value per
+person, machine updates, or send/knock logic is a structured concept** — that rule retired the
+supporter/non-supporter/undecided/subscriber/unsubscribed/do-not-contact/donor system tags.
+
+## Tables
+
+- `campaigns` — + `kind ('office'|'election')`, `status ('active'|'archived')`. Backed by
+  `modules/campaigns/` (repo/controller/router registered as `campaigns` in `modules/trpc.ts`).
+- `campaign_person_facts` — one row per (campaign, person): `support_level`
+  (strong/leaning/neutral/leaning_against/against/undecided — **Unknown = no row/NULL, never
+  stored**), `voting_status` (will_vote/voted_advance/voted_eday/not_voting/ineligible), each with
+  source/recorded_by/recorded_at. Upserts touch only provided fields (a knock recording support
+  must not wipe voting status). Enums live in `libs/common/src/lib/schemas/campaigns.schema.ts`.
+- `campaign_subscriptions` — per-campaign email CONSENT: `status subscribed|pending|unsubscribed`;
+  express-vs-implied is `consent_source (form|import|manual|copied)`, not a status.
+- `email_suppressions` — GLOBAL address health per (tenant, email): hard_bounce / spam_complaint /
+  manual. Fed by the SendGrid webhook route.
+- `persons.do_not_contact` + `do_not_contact_channels` — global person override (null = all channels).
+- `persons.campaign_id` / `households.campaign_id` are **nullable provenance only** — never filter by them.
+
+**Sendable in campaign X** = subscribed row in X ∧ no suppression for the email ∧ not DNC(email).
+The single choke point is `NewslettersController.buildRecipientQuery` — change sendability there.
+
+## Context plumbing
+
+- No campaign in the auth token. The per-user active context lives in
+  `profiles.preferences.active_campaign_id`; `campaigns.getContext` returns list + active id
+  (falls back to the office), `setActiveCampaign` persists it.
+- Frontend: `CampaignContextService` (`services/campaign-context.service.ts`) holds the
+  `activeCampaignId` signal; the sidebar `pc-campaign-switcher` drives it. Scoped services stamp
+  `campaignId` into getAll options and `campaign_id` into add payloads.
+- Backend reads: `options.campaignId` filters generically in `BaseRepository.getAll` for tables in
+  `CAMPAIGN_SCOPED_TABLES` (base.repo.ts) — `newsletters`, `donations`, `donation_pledges`,
+  `donation_periods`, `web_forms`, `lists`, `events`, `turfs`, `delivery_requests`,
+  `delivery_routes`. The lists and forms grids apply the filter in their own custom queries.
+  Child tables (form submissions, turf households/knocks, delivery route stops, event
+  registrations) inherit context via their parent and are never scoped directly.
+- Inbox & mailboxes (per-campaign, §15): `ms_oauth_tokens` / `google_oauth_tokens` are
+  `UNIQUE (tenant_id, campaign_id)` — one Office 365 + one Gmail connection **per campaign**, not
+  per tenant. `emails` and `email_drafts` carry `campaign_id NOT NULL`. These are **not** in
+  `CAMPAIGN_SCOPED_TABLES` (the inbox uses custom queries, not `BaseRepository.getAll`): the OAuth
+  flow binds a connection to the campaign via the HMAC-signed `oauth-state` (`campaignId` field),
+  the `ms_sync`/`google_sync` job payloads carry `campaignId`, and every sync/ingest/read/send path
+  threads `campaignId` explicitly (`getValidToken`, `getConnectionStatus`, `ingestEmail`,
+  `getByFolderWithAttachmentFlag`, the `/api/emails/send` REST route's `campaignId` form field).
+  The child email tables (`email_bodies`, `email_recipients`, `email_headers`, `email_attachments`,
+  `email_read_states`, `email_comments`, `email_trash`) inherit context via `emails.id`. Switching
+  context switches both the connect UI (settings/ms-sync, settings/google-sync) and the visible mail.
+- Backend writes: `CampaignsRepo.resolveForWrite({tenant_id, campaign_id?})` — validates an
+  explicit id (exists, tenant-owned, ACTIVE) or falls back to the office. Campaign-scoped fact
+  writes go through `assertWritable` (archived → BadRequestError). One deliberate exception:
+  a double-opt-in confirmation still lands after its campaign is archived.
+
+## Lifecycle & carry-over
+
+`archive`/`unarchive` (office never archivable). `carryOver` (one transaction): copies
+`support_level` rows as `source='carryover'` without clobbering existing target rows; **voting
+status never copies**; subscriptions copy only with `copy_subscriptions: true` — the UI
+(campaign-view carry-over card) puts a compliance confirmation dialog in front of that flag, and
+copied rows get `consent_source='copied'` with the original `consent_at` preserved.
+
+## Traps
+
+- Adding a new campaign-scoped single-valued person concept = new nullable column on
+  `campaign_person_facts` (+ enum in campaigns.schema.ts), NOT a new tag and NOT a new table.
+- Spec cleanups must delete campaign-scoped tables BEFORE `campaigns` (FK), and every insert into a
+  scoped table needs `campaign_id` — the NOT NULL constraint is the net that catches misses.
+- Service specs that build services via `Object.create` must stub
+  `(service as any).campaignContext = { activeCampaignId: () => null };`.
+- "Donor" is derived from the donations table (statusChip in person-view); do not reintroduce a tag.
+- Workflow triggers: `new_subscriber`/`new_unsubscriber` fire from
+  `WorkflowsController.triggerSubscriptionChanged` on consent writes — not from tag attaches.

@@ -83,6 +83,7 @@ describe('PeopleInHousehold', () => {
     expect(mockPersonsSvc.getPeopleInHousehold).toHaveBeenLastCalledWith('h1', {
       limit: 25,
       offset: 25,
+      columns: ['email'],
     });
     const links = fixture.debugElement.queryAll(By.css('a'));
     expect(links).toHaveLength(26);
@@ -110,6 +111,10 @@ describe('PeopleInHousehold', () => {
     const links = fixture.debugElement.queryAll(By.css('a'));
     expect(links).toHaveLength(1);
     expect(links[0].nativeElement.textContent).toContain('Sam Smith');
-    expect(mockPersonsSvc.getPeopleInHousehold).toHaveBeenLastCalledWith('h2', { limit: 25, offset: 0 });
+    expect(mockPersonsSvc.getPeopleInHousehold).toHaveBeenLastCalledWith('h2', {
+      limit: 25,
+      offset: 0,
+      columns: ['email'],
+    });
   });
 });

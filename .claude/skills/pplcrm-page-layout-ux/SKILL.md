@@ -62,9 +62,11 @@ Then bind the handle straight through to the layout (`company-view.html`):
 (nextRecord)="recordNav.goToNext()"
 ```
 
-The pager renders inline with the breadcrumb trail and `J`/`K` keys
-navigate next/prev while the page is open — but **only when `positionLabel` is set** and the
-focus isn't in an input/textarea/select/contenteditable (`detail-layout.ts`). If the user
+The pager renders **inside the detail header card** (`pc-detail-header`), left of the action
+buttons — matching the design source. The navbar breadcrumb strip shows the trail only; the
+header deliberately publishes a null pager to `BreadcrumbsService` so there is no duplicate.
+`J`/`K` keys navigate next/prev while the page is open — but **only when `positionLabel` is set**
+and the focus isn't in an input/textarea/select/contenteditable (`detail-layout.ts`). If the user
 deep-linked straight to a record (no grid handoff), `positionLabel` is `null`, the pager is
 hidden, and J/K do nothing. That's intended: no fake "1 of 1".
 
@@ -73,10 +75,48 @@ entity key. Grep `injectRecordNavigation` for the current list of detail views u
 
 ## Breadcrumbs
 
-Build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention (see the `crumbs`
-computed in `company-view.ts`, `person-view.ts`, `team-view.ts`): first crumb is the list
-page with a `route`; **last crumb is the record name with NO `route`** (it renders as the current
-page). The record name also becomes the layout `title` — the crumb and the
+**Two layers.** (1) Every route in `dashboard.routes.ts` declares `data: { breadcrumb: '…' }`
+(a label, or a pre-built `PcBreadcrumb[]` for flat routes that conceptually nest, e.g.
+`/imports/new`). `BreadcrumbDefaultsService`
+(`apps/frontend/src/app/services/breadcrumb-defaults.service.ts`, started by the Dashboard
+shell) publishes that default trail to the navbar on every NavigationEnd — so the strip is
+never empty and never stale (route-reuse pages are detached, not destroyed, so per-page
+clear-on-destroy could not be trusted). (2) Pages that know more override it after: detail
+views via `pc-detail-header`'s effect, tab pages (Import/export) or record pages without the
+detail shell via `BreadcrumbsService.setCrumbs()` in an effect. Effects flush after
+NavigationEnd, so the page's richer trail always wins. **No page needs to `clear()` anymore.**
+
+**The first crumb doubles as the visible page title** — `pc-breadcrumbs` renders it
+`text-sm font-semibold text-base-content`. List pages therefore do NOT render a visible
+in-body title: `pc-grid-header`'s `title` is an `sr-only` h1 (kept for accessibility), and
+bespoke pages (canvassing, deliveries) use `<h1 class="sr-only">` the same way.
+Don't reintroduce a visible in-body page title, and don't hand-roll an in-page crumb row.
+
+**The breadcrumb is the only "back" affordance on routed pages.** The first crumb links to
+the list; do not add an in-body "Back to …" link or button — edit forms escape via the
+header's Cancel action, nothing else. The sanctioned exceptions, all cases where a crumb
+routerLink cannot do the job:
+
+- **Mode toggles** — a page whose "sub-page" is an internal mode signal, not a route
+  (the forms page's "All forms" button exits its live-edit mode; a crumb to `/forms`
+  would be a no-op on the same URL).
+- **Empty-state CTAs** — the icon + sentence + action idiom may route "back" as its
+  action (deliveries-plan's "Back to requests").
+- **End-of-flow CTAs** — a wizard's done/error screen offering "Back to import history"
+  is a forward action, not header nav.
+- **Responsive pane switches** — the email client's mobile back swaps master/detail panes.
+- **Navbar-less public pages** — tokenized routes (`/r/:token`, public events/forms)
+  have no crumb strip to lean on.
+
+**Title-suffix slot**: tone-colored badges beside the title (a `pc-status-badge`, task
+priority badges) project via `[pc-title-suffix]` — the `statusChip` input is fixed
+success-tinted and only fits "positive standing" chips. See `newsletter-detail.html`
+and `task-view.html`.
+
+For detail views, build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention
+(see the `crumbs` computed in `company-view.ts`, `person-view.ts`, `team-view.ts`): first crumb
+is the list page with a `route`; **last crumb is the record name with NO `route`** (it renders
+as the current page). The record name also becomes the layout `title` — the crumb and the
 `<h1>` say the same thing.
 
 ```ts
@@ -163,6 +203,14 @@ Every page must answer three orientation questions:
       affordances (e.g. a bookmark star on a record page that doesn't bookmark the record).
 - [ ] Sentence case, one modal idiom (the dialog service), one empty-state pattern
       (icon + plain sentence + action).
+- [ ] **Button vocabulary** (UX-GUIDELINES §4b): main action `btn-primary` right-most and one per
+      surface; cancel `btn-outline btn-accent`; secondary `btn-outline btn-secondary`; archive
+      `btn-outline btn-warning`; delete `btn-outline btn-error`; create labels are "New {noun}".
+      No `rounded-*`/decoration utilities on buttons.
+- [ ] **Body text is `text-xs`** — no `text-sm`/`text-base`/`text-[13px]` body copy
+      (UX-GUIDELINES §8; `text-sm` only for `pc-detail-item` values and weighted section headings).
+- [ ] **List pages use `pc-grid-header`** (title + count sentence + actions projected right) —
+      never a hand-rolled h1 + button row. Datagrid pages get it via the grid itself.
 
 Then run `/verify` and the quality gate (see `pplcrm-quality-gate`).
 

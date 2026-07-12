@@ -98,6 +98,17 @@ function handleRefreshFailure(
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
 
+function isUnauthorizedError(err: unknown): boolean {
+  if (!(err instanceof TRPCClientError)) return false;
+  const data = err.data as { code?: string } | null | undefined;
+  return data?.code === 'UNAUTHORIZED';
+}
+
+/** Sign-in must never be transparently retried — a failed attempt bumps rate-limit counters. */
+function isSignInPath(path: string): boolean {
+  return path === 'signIn' || path.endsWith('.signIn');
+}
+
 function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
   if (!token) return true;
 
@@ -139,8 +150,26 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
               return;
             }
 
-            // Authenticated user — forward with (possibly refreshed) token.
-            forwardOp(op, next, observer);
+            // Authenticated user — forward with (possibly refreshed) token. If the server still
+            // rejects it with UNAUTHORIZED, the session behind our access token is usually gone
+            // because another tab's silent refresh rotated it away. The shared refresh cookie is
+            // still good, so mint a fresh token and retry the call once — invisibly. Only when
+            // that refresh itself fails (real sign-out / revocation) do we clear tokens and
+            // redirect to /signin. Retrying is safe: the auth gate rejects before the resolver
+            // runs, so the original call never executed.
+            next(op).subscribe({
+              next: (value) => observer.next(value),
+              complete: () => observer.complete(),
+              error: (err) => {
+                if (!isUnauthorizedError(err) || isSignInPath(op.path)) {
+                  observer.error(err);
+                  return;
+                }
+                performRefresh(tokenSvc)
+                  .then(() => forwardOp(op, next, observer))
+                  .catch(() => handleRefreshFailure(err, tokenSvc, router, observer));
+              },
+            });
           } catch (err) {
             handleRefreshFailure(err, tokenSvc, router, observer);
           }

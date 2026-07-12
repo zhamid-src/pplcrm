@@ -38,8 +38,8 @@ export class ListView implements OnDestroy {
   protected activeTab = signal<string>('members');
 
   protected readonly listTabs = computed<PcTabOption[]>(() => [
-    { id: 'members', label: `Members (${this.memberCount()})`, icon: 'user-group' },
-    { id: 'newsletters', label: `Newsletter Campaigns (${this.stats()?.newsletters?.length || 0})`, icon: 'megaphone' },
+    { id: 'members', label: 'Members', badge: this.memberCount() },
+    { id: 'newsletters', label: 'Newsletter campaigns', badge: this.stats()?.newsletters?.length || 0 },
   ]);
 
   protected isPeople = computed(() => this.object() === 'people');

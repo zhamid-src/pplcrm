@@ -1,17 +1,18 @@
 <div class="flex flex-col gap-4 p-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h2 class="text-xl font-semibold">Tasks</h2>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Tasks</h2>
       @if (countSentence()) {
-      <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
       }
     </div>
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
         <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
         Import
       </button>
-      <button type="button" class="btn btn-outline btn-sm gap-1.5" (click)="openBoard()">
+      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
         <pc-icon name="view-kanban" [size]="4"></pc-icon>
         Open board
       </button>
@@ -22,23 +23,8 @@
     </div>
   </div>
 
-  <!-- Quiet tab row with counts (design idiom table §4) -->
-  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
-    @for (t of tabs(); track t.key) {
-    <button
-      type="button"
-      class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
-      [class.text-primary]="tab() === t.key"
-      [class.font-semibold]="tab() === t.key"
-      [class.border-primary]="tab() === t.key"
-      [class.text-base-content/70]="tab() !== t.key"
-      (click)="setTab(t.key)"
-    >
-      {{ t.label }}
-      <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
-    </button>
-    }
-  </nav>
+  <!-- Tabs with counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
 
   @if (loaded() && !filtered().length) {
   <div class="flex flex-col items-center gap-3 py-16 text-center">
@@ -74,10 +60,10 @@
         <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
       </div>
 
-      <div class="flex flex-col divide-y divide-base-200">
-        @for (t of group.rows; track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
         assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-2 px-1" [class.animate-saved-flash]="isFlashed(t.id)">
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
           <button
             type="button"
             class="btn btn-ghost btn-xs btn-circle shrink-0"
@@ -85,35 +71,31 @@
             [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
             (click)="toggleDone(t)"
           >
-            <pc-icon name="check-circle" [size]="5"></pc-icon>
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
           </button>
 
           <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
             <div
-              class="truncate text-sm font-medium"
+              class="truncate text-xs font-medium"
               [class.line-through]="t.status === 'done'"
               [class.opacity-50]="t.status === 'done'"
             >
               {{ t.name }}
             </div>
             @if (reason) {
-            <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
-              <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="truncate">{{ reason }}</span>
-            </div>
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
             }
           </div>
 
           @if (t.priority) {
           <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (pill) {
+          } @if (badge) {
           <span
             class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="pill.tone === 'error'"
-            [class.badge-warning]="pill.tone === 'warning'"
-            [class.badge-ghost]="pill.tone === 'neutral'"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
           >
-            {{ pill.text }}
+            {{ badge.text }}
           </span>
           } @if (t.due_at) {
           <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
@@ -143,14 +125,3 @@
   </div>
   }
 </div>
-
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import tasks from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
-/>

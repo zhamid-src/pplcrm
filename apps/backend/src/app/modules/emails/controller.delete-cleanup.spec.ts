@@ -15,6 +15,7 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
   let tenantId: string;
   let userId: string;
+  let campaignId: string;
   let storageDeleteSpy: ReturnType<typeof vi.spyOn>;
 
   const TRASH = '5';
@@ -22,6 +23,7 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
   beforeEach(async () => {
     tenantId = rand();
     userId = rand();
+    campaignId = rand();
     storageDeleteSpy = vi.spyOn(StorageService.prototype, 'delete').mockResolvedValue(undefined);
 
     await db.insertInto('tenants').values({ id: tenantId, name: 'Test Tenant' }).execute();
@@ -39,6 +41,17 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
         updatedby_id: userId,
       })
       .execute();
+    await db
+      .insertInto('campaigns')
+      .values({
+        id: campaignId,
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Test Campaign',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
   });
 
   afterEach(async () => {
@@ -48,6 +61,7 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
     }
     await db.deleteFrom('emails').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('files').where('tenant_id', '=', tenantId).execute();
+    await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
     await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
   });
@@ -59,6 +73,7 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
+        campaign_id: campaignId,
         folder_id: TRASH,
         from_email: `user-${userId}@example.com`,
         to_email: 'external@gmail.com',
@@ -154,6 +169,7 @@ describe('EmailsController attachment delete cleanup (integration)', () => {
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
+        campaign_id: campaignId,
         folder_id: TRASH,
         from_email: `user-${userId}@example.com`,
         to_email: 'external@gmail.com',

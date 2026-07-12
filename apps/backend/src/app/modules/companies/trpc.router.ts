@@ -40,6 +40,7 @@ export const CompaniesRouter = router({
         rows: z.array(CompanyInputSchema),
         skipped: z.number().int().nonnegative().optional(),
         file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {

@@ -1,0 +1,98 @@
+import { Component, computed, inject, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { ConfirmDialogService } from '../../services/shared-dialog.service';
+import { DemoService } from './services/demo.service';
+
+/**
+ * Demo-mode callout on the dashboard: explains what was seeded and hosts the
+ * one place to exit demo mode. Demo mode is the pre-plan test drive — the
+ * backend refuses to exit until the tenant has an active subscription, and it
+ * blocks outward-facing configuration (senders, domains, mailbox sync,
+ * newsletter sending) while the flag is set. Exiting deletes the seeded data
+ * (the six draft forms, the built-in tags, and anything the user created are
+ * kept) and refreshes the session so the shell banner disappears immediately.
+ */
+@Component({
+  selector: 'pc-demo-mode-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-info/40 bg-info/5 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-info">
+            <pc-icon name="information-circle" [size]="4"></pc-icon>
+            Demo mode
+          </div>
+
+          <p class="text-sm text-base-content/80">
+            You’re exploring PeopleCRM with realistic sample data — people and households across Ottawa, companies,
+            tags, issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a
+            full report. Everything here is safe to open, edit, and delete.
+          </p>
+          <p class="text-sm text-base-content/60">
+            Sending email and workspace configuration (sender identities, domains, mailbox sync) stay locked during the
+            demo. When you’re ready, choose a plan, then exit demo mode — your six draft forms, the built-in tags, and
+            anything you created yourself will be kept.
+          </p>
+
+          <div class="card-actions items-center gap-3">
+            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
+            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
+              @if (loading()) {
+                <span class="loading loading-spinner loading-xs"></span>
+              }
+              Exit demo mode
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+})
+export class DemoModeCard {
+  private readonly auth = inject(AuthService);
+  private readonly demoSvc = inject(DemoService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+
+  private readonly user = this.auth.getUserSignal();
+
+  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly loading = this._loading.visible;
+
+  /** Fires after the demo data is gone so the dashboard can reload its stats. */
+  public readonly exited = output<void>();
+
+  protected async exitDemo(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove all demo data?',
+      message:
+        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
+        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
+        'yourself will be kept.',
+      variant: 'danger',
+      confirmText: 'Remove demo data',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.demoSvc.exitDemo();
+      await this.auth.getCurrentUser();
+      this.alerts.showSuccess('Demo data removed — your workspace is ready for real contacts.');
+      this.exited.emit();
+    } catch (err) {
+      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
+      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+}

@@ -36,6 +36,10 @@ export class FormActions implements OnInit {
 
   public showDelete = input<boolean>(false);
 
+  /** Whether to render the Cancel button. Read/detail views turn this off — a
+   * read view has no edit to cancel; the header's action is a navigation "Edit". */
+  public showCancel = input<boolean>(true);
+
   public deleteText = input<string>('Delete');
 
   public readonly deleteClicked = output<void>();
@@ -49,6 +53,9 @@ export class FormActions implements OnInit {
   public btn2Text = input<string>('Save & add more');
 
   public buttonsToShow = input<'two' | 'three'>('three');
+
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
 
   public isLoading = input.required<boolean>();
 

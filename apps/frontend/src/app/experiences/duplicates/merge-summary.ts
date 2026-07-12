@@ -1,7 +1,8 @@
-import { Component, input, output } from '@angular/core';
+import { Component, effect, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
 @Component({
   selector: 'pc-duplicate-page-shell',
@@ -9,6 +10,8 @@ import { PcIconNameType } from '@icons/icons.index';
   templateUrl: './merge-summary.html',
 })
 export class DuplicatePageShellComponent {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
   title = input.required<string>();
   icon = input.required<PcIconNameType>();
   description = input.required<string>();
@@ -24,6 +27,16 @@ export class DuplicatePageShellComponent {
 
   next = output<void>();
   prev = output<void>();
+
+  constructor() {
+    // Navbar trail is the way back to the Duplicates hub — no in-body back link.
+    effect(() => {
+      this.breadcrumbs.setCrumbs([
+        { label: 'Duplicates', route: '/duplicates' },
+        { label: `Duplicate ${this.title().toLowerCase()}` },
+      ]);
+    });
+  }
 }
 
 @Component({

@@ -1,10 +1,12 @@
 import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { CurrencyPipe } from '@angular/common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
 import { DonationsService } from '../../../services/api/donations-service';
 import { RecordDonationDialog } from './record-donation-dialog';
@@ -21,7 +23,7 @@ const RECENT_GIFTS_LIMIT = 8;
 
 @Component({
   selector: 'pc-donations-grid',
-  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe, RecordDonationDialog],
+  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
   templateUrl: './donations-grid.html',
 })
 export class DonationsGridComponent implements OnInit {
@@ -29,6 +31,12 @@ export class DonationsGridComponent implements OnInit {
   private readonly alertSvc = inject(AlertService);
 
   private readonly recordDialog = viewChild.required(RecordDonationDialog);
+
+  /** One-time / Monthly pledges are sibling pages — route-linked pills, same bar on both. */
+  protected readonly donationTabs: PcTabOption[] = [
+    { id: 'one-time', label: 'One-time', route: '/donations', exact: true },
+    { id: 'pledges', label: 'Monthly pledges', route: '/donations/pledges' },
+  ];
 
   protected readonly donations = signal<DonationRow[]>([]);
   protected readonly pledges = signal<PledgeRow[]>([]);

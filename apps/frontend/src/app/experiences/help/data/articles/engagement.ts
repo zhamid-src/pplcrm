@@ -42,7 +42,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           {
-            title: 'Open [Fundraising](/donation-pages) and click +',
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
             detail: 'Build the giving page — your appeal, your branding.',
           },
           { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
@@ -70,14 +70,14 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. They live side by side under Field in the sidebar.',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms) — click **New form**, then choose the event or shift option instead of a standard template.',
       },
       { kind: 'h2', id: 'events', text: 'Events' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Events](/events/pages) and click +',
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
             detail: 'Set the what, when, and where, and publish the event page.',
           },
           {
@@ -94,7 +94,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
       {
         kind: 'p',
-        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+        text: 'Create shifts from [Forms](/forms) — click **New form**, then **Create a volunteer shift** — with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
       },
       {
         kind: 'callout',
@@ -136,7 +136,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Forms](/forms) and click New form',
-            detail: 'Name it and pick a starting template — it opens as a draft in edit mode.',
+            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
           },
           {
             title: 'Turn fields on and set what’s required',
@@ -247,15 +247,15 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
   {
     id: 'deliveries',
     category: 'engagement',
-    title: 'Yard-sign deliveries and volunteer routes',
+    title: 'Deliveries and volunteer routes',
     summary:
-      'Collect yard-sign requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
     keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
     related: ['events-shifts', 'teams', 'forms', 'households'],
     blocks: [
       {
         kind: 'p',
-        text: 'Deliveries turns yard-sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route.',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
       },
       { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
       {
@@ -274,7 +274,8 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Click Plan routes · N ready',
-            detail: 'Set the start address drivers leave from. It’s remembered for next time.',
+            detail:
+              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
           },
           {
             title: 'Preview routes',

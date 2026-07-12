@@ -33,11 +33,16 @@ input block in `datagrid.ts` for the full list before adding a new input; the fl
 probably exists. `provideDataGridConfig` merges per-grid copy (delete/export dialog text,
 failure messages) and `pageSize` over `DEFAULT_DATA_GRID_CONFIG` (`datagrid.tokens.ts`).
 
+**Always set `entityNoun`/`entityNounPlural` in `provideDataGridConfig`** — the toolbar's
+create button derives its label from it as **"New {noun}"** ("New person", "New household");
+without it the button says just "New" (a UX-guidelines violation, §4b). The same nouns feed
+the export menu label and bulk-action messages.
+
 Simple grid: `teams-grid.ts`. Full-featured grid (tag options, custom delete confirm, loading
-gate): `persons-grid.ts`. Its `(importCSV)` handler now just navigates to the CSV import wizard
-(`/imports/new`, spec §17) instead of opening a modal — for the in-grid modal importer pattern
-(`pc-csv-importer` from `libs/uxcommon/components/csv-import`), see `companies-grid.ts`,
-`households-grid.ts`, or `tasks-grid.ts`, which still use it (only people import got the wizard).
+gate): `persons-grid.ts`. Every grid's `(importCSV)` handler navigates to the shared CSV import
+wizard (`/imports/new?type=people|companies|households|tasks`, spec §17) — the old in-grid
+modal importer (`pc-csv-importer`) was deleted; the per-entity mapping heuristics now live in
+`experiences/imports/import-entity-config.ts`.
 
 Two Wave-0 additions: `totalSentence` (string input, e.g. "5,012 people total") replaces the
 header's default "{n} total" wording and composes with the filtered count ("43 match your
@@ -45,6 +50,24 @@ filters · 5,012 people total"); and a `[pcGridBelowHeader]` content-projection 
 between the header and the toolbar — the People grain tabs (`pc-grain-tabs` in
 `shared/components/grain-tabs/`, switching /people ↔ /households ↔ /companies) project there
 on all three People-grain grids.
+
+## Height contract: the grid scrolls, the pagination footer stays pinned
+
+The grid fills whatever height the page grants (`:host { display:block; height:100%; min-height:0 }`
+in `datagrid.css`); inside, the table scroller is `flex-1 overflow-auto`, column headers are
+sticky (`thead th` pins at `top:0`, z-30 above the z-10/z-20 pinned body cells), and the
+pagination row sits **outside** the scroller so it's always visible at the bottom. On the last
+page an "End of list · N {nouns}" divider renders under the final row so a short page reads as
+complete, not as missing data. Grain/titled grids pad themselves `px-6 pt-6 pb-2` (deliberately
+tight below the pinned footer).
+
+**A standalone grid page must pass viewport height down or the footer un-pins and the whole
+page scrolls.** The routed component needs `host: { class: 'block h-full' }` and its wrapper div
+`h-full min-h-0` (see `persons-grid`/`households-grid`/`companies-grid`). If the grid stacks
+with siblings (header above, footer copy below — see `lists-grid`), keep the wrapper `h-full
+flex-col` and give `<pc-datagrid>` itself `class="min-h-0 flex-1"`. In auto-height parents
+(list-view tabs) `height:100%` resolves to auto and the grid grows naturally with the page; in a
+definite-height box (list-form's `h-96` preview) it fills the box and scrolls internally.
 
 ## Filter entry points: the chip row, not the toolbar
 
@@ -63,7 +86,7 @@ as one removable `kind:'column'` chip; it does **not** fork a parallel filter re
 The **desktop toolbar** (`ui/datagrid-toolbar.html`) is now a single rounded/bordered button
 group — Refresh · Undo · Redo · │ · Import/Export · │ · Filter-funnel (`onToggleFilters`, tinted
 via `anyFilterActive()`) · Filter-panel (query builder) · │ · Columns · Archive — with the solid
-`+ Add {noun}` button **outside** the group. The Tags/Issues/Lists icon buttons were removed from
+`+ New {noun}` button **outside** the group, always right-most. The Tags/Issues/Lists icon buttons were removed from
 the desktop toolbar (the mobile toolbar still has its own combined filter dropdown).
 
 The All/Donors/Volunteers segmented control (`narrowTypeOptions`/`showNarrowTypeFilter`) is still
@@ -130,8 +153,22 @@ fired (it requires arriving via the grid, by design).
 
 General Vitest conventions → `pplcrm-testing`.
 
+## Shared visual contract with `pc-table`
+
+The grid's **look** (micro-caps header, cell density, shell border/radius) is not its own — it
+comes from the global `.pc-table` / `.pc-table-shell` token contract in `styles.css`, which the
+lighter `pc-table` shell also consumes so bespoke tables (Tags/Issues/Donations) stay identical.
+The grid's `<table>` carries `class="table pc-table …"`, its `<th>` deliberately omits font/size
+utilities (the shared `.pc-table thead th` rule supplies the micro-caps), and `datagrid.css`
+reads `--pc-table-cell-py` for density. The grid keeps its **zebra + `hover:bg-base-300/40`** as a
+scale adaptation that overrides the shared subtle hover — base-300 as the hue because a base-200
+tint would vanish on the base-200 zebra stripes, at 40% opacity so hovering is a wash, not a flash. If you change the grid's table
+typography/density/border, you are changing every table in the app — do it in the token contract,
+not inline. Full details in **`pplcrm-table`**.
+
 ## Non-goals
 
+- **The lighter presentational table for non-grid surfaces, and the shared token contract** → `pplcrm-table`.
 - **Detail-page composition and the pager that consumes the nav context** → `pplcrm-page-layout-ux`.
 - **Design rules the grid already embodies** (filter chips, empty state, saved-flash motion,
   semantic tokens) → `pplcrm-design-principles`; don't restyle the grid against them.

@@ -1,4 +1,4 @@
-<div class="flex text-sm bg-base-100 h-full overflow-hidden">
+<div class="flex text-sm h-full overflow-hidden">
   <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
   <div [class]="folderPanelClass()">
     <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
@@ -70,7 +70,7 @@
         </button>
       </div>
       <div class="flex-1 min-h-0">
-        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
+        <div class="h-full bg-base-100 p-3">
           <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
         </div>
       </div>

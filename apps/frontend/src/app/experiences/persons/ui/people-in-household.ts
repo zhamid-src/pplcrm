@@ -4,31 +4,50 @@ import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
 
 import { PersonsService } from '../services/persons-service';
 
+type HouseholdMember = PERSONINHOUSEHOLDTYPE & { email?: string | null };
+
 @Component({
   selector: 'pc-people-in-household',
   imports: [RouterModule],
-  template: `<div>
-    <ul>
-      @if (!peopleInHousehold().length && !isLoading()) {
-        <span i18n> No one else </span>
-      }
-      @for (person of peopleInHousehold(); track person.id) {
-        <li>
-          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline">{{ person.full_name }}</a>
-        </li>
-      }
-    </ul>
+  template: `<div class="flex flex-col">
+    @if (!peopleInHousehold().length && !isLoading()) {
+      <p i18n class="py-2 text-sm italic text-base-content/40">No one else at this address yet.</p>
+    }
+    @for (person of peopleInHousehold(); track person.id) {
+      <a
+        routerLink="/people/{{ person.id }}"
+        class="flex items-center gap-3 rounded-lg px-2 py-2.5 no-underline transition-colors hover:bg-base-200/60"
+      >
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+          aria-hidden="true"
+          >{{ initials(person) }}</span
+        >
+        <span class="flex min-w-0 flex-col">
+          <span class="truncate text-sm font-semibold text-base-content">{{ person.full_name }}</span>
+          @if (person.email) {
+            <span class="truncate text-xs text-base-content/50">{{ person.email }}</span>
+          }
+        </span>
+      </a>
+    }
     @if (hasMore()) {
-      <div class="mt-2">
-        <button i18n type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
-      </div>
+      <button
+        i18n
+        type="button"
+        class="mt-1 self-start text-xs text-primary hover:underline"
+        (click)="loadMore()"
+        [disabled]="isLoading()"
+      >
+        Show more
+      </button>
     }
   </div>`,
 })
 export class PeopleInHousehold {
   private personsSvc = inject(PersonsService);
 
-  protected peopleInHousehold = signal<PERSONINHOUSEHOLDTYPE[]>([]);
+  protected peopleInHousehold = signal<HouseholdMember[]>([]);
   protected isLoading = signal(false);
   protected hasMore = signal(false);
 
@@ -63,6 +82,12 @@ export class PeopleInHousehold {
     });
   }
 
+  protected initials(person: HouseholdMember): string {
+    const first = person.first_name?.trim()?.[0] ?? '';
+    const last = person.last_name?.trim()?.[0] ?? '';
+    return (first + last).toUpperCase() || (person.full_name?.trim()?.[0]?.toUpperCase() ?? '?');
+  }
+
   protected async loadMore() {
     if (this.isLoading() || !this.hasMore()) {
       return;
@@ -92,10 +117,11 @@ export class PeopleInHousehold {
     this.isLoading.set(true);
 
     try {
-      const people = await this.personsSvc.getPeopleInHousehold(id, {
+      const people = (await this.personsSvc.getPeopleInHousehold(id, {
         limit: this.pageSize,
         offset,
-      });
+        columns: ['email'],
+      })) as HouseholdMember[];
 
       if (requestId !== this.requestSequence) {
         return;

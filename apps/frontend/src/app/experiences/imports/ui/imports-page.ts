@@ -6,8 +6,11 @@ import { Icon } from '@icons/icon';
 import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
 
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -24,7 +27,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective],
+  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
@@ -35,8 +38,14 @@ export class ImportsPage {
   private readonly tokenSvc = inject(TokenService);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
 
   protected readonly tab = signal<HistoryTab>('imports');
+
+  protected readonly historyTabs = computed<PcTabOption[]>(() => [
+    { id: 'imports', label: 'Imports', badge: this.itemCount() },
+    { id: 'exports', label: 'Exports', badge: this.exportCount() },
+  ]);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -51,11 +60,11 @@ export class ImportsPage {
   protected readonly deleteTasks = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  // --- History sentence: "N imports this year · X people created · Y duplicates merged" ---
+  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
   protected readonly importsThisYear = computed(
     () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
   );
-  protected readonly peopleCreatedThisYear = computed(() =>
+  protected readonly recordsCreatedThisYear = computed(() =>
     this.items()
       .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
       .reduce((sum, item) => sum + item.insertedCount, 0),
@@ -65,17 +74,53 @@ export class ImportsPage {
       .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
       .reduce((sum, item) => sum + item.mergedCount, 0),
   );
+  protected readonly historySentence = computed(
+    () =>
+      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
+      `${this.duplicatesMergedThisYear()} duplicates merged`,
+  );
+
+  /** data_imports.source → the label the Type column shows. */
+  protected sourceLabel(source: string): string {
+    switch (source) {
+      case 'persons':
+        return 'People';
+      case 'companies':
+        return 'Companies';
+      case 'households':
+        return 'Households';
+      case 'tasks':
+        return 'Tasks';
+      default:
+        return source || '—';
+    }
+  }
 
   private pollInterval: ReturnType<typeof setInterval> | undefined;
 
   // --- Exports tab ---
   protected readonly exportJobs = signal<DataExportRecordType[]>([]);
   protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsThisYear = computed(
+    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly exportsSentence = computed(
+    () =>
+      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
+      `files stay downloadable for 30 days · every export lands in the Activity log`,
+  );
   protected readonly exportsLoading = createLoadingGate();
   protected readonly showNewExportInfo = signal(false);
 
   constructor() {
     void this.load();
+
+    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
+    // (overrides the route's static default; effects flush after NavigationEnd,
+    // so this wins).
+    effect(() => {
+      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
+    });
 
     // Reset checkbox when dialog closes
     effect(() => {
@@ -96,7 +141,8 @@ export class ImportsPage {
     });
   }
 
-  protected switchTab(tab: HistoryTab): void {
+  protected switchTab(tab: string): void {
+    if (tab !== 'imports' && tab !== 'exports') return;
     this.tab.set(tab);
     if (tab === 'exports') {
       void this.loadExports();
@@ -205,10 +251,6 @@ export class ImportsPage {
     );
   }
 
-  protected async refresh() {
-    await this.load();
-  }
-
   private async load() {
     if (this.isLoadActive) return;
     this.isLoadActive = true;
@@ -236,10 +278,6 @@ export class ImportsPage {
   }
 
   // --- Exports tab ---
-
-  protected refreshExports(): void {
-    void this.loadExports();
-  }
 
   protected toggleNewExportInfo(): void {
     this.showNewExportInfo.update((v) => !v);

@@ -1,45 +1,28 @@
 <div
-  class="z-50 top-0 absolute w-full left-0"
+  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
   [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
+  [class.left-0]="!isPositionRelative()"
+  [class.top-4]="isPositionTop()"
+  [class.bottom-4]="isPositionBottom()"
 >
   @for (alert of alerts(); track alert.id) {
-
   <div
-    class="alert rounded-none"
+    class="pointer-events-auto flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
     role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
+    (click)="dismiss(alert.id)"
   >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
+    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
+    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
+      {{ alert.text }}
     </div>
     @if (alert.count() > 1) {
-    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
-    }
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
+    <span
+      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
     >
-      {{ alert.OKBtn }}
-    </button>
+      ×{{ alert.count() }}
+    </span>
+    }
   </div>
   }
 </div>

@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SettingsService } from '@experiences/settings/services/settings-service';
@@ -29,15 +29,18 @@ interface ListTask {
 
 const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
   overdue: { label: 'Overdue', tone: 'error' },
-  today: { label: 'Today', tone: 'warning' },
-  upcoming: { label: 'Upcoming', tone: 'info' },
+  today: { label: 'Due Today', tone: 'warning' },
+  upcoming: { label: 'Coming Up', tone: 'info' },
   none: { label: 'No due date', tone: 'neutral' },
 };
 const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
 
 @Component({
   selector: 'pc-tasks-list',
-  imports: [Icon, CsvImportComponent],
+  imports: [Icon, TabBar],
   templateUrl: './tasks-list.html',
 })
 export class TasksList implements OnInit {
@@ -62,10 +65,6 @@ export class TasksList implements OnInit {
     unassigned: number;
   } | null>(null);
 
-  protected readonly importerOpen = signal(false);
-  protected readonly importSummary = signal<CsvImportSummary | null>(null);
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
   private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
 
   /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
@@ -86,14 +85,14 @@ export class TasksList implements OnInit {
     };
   });
 
-  /** Quiet tab row data (design idiom table §4) — typed so `tab.key` narrows to `ListTab`. */
-  protected readonly tabs = computed((): Array<{ count: number; key: ListTab; label: string }> => {
+  /** The standard pill tab bar with counts (§1 "numbers before clicks"). */
+  protected readonly tabs = computed((): PcTabOption[] => {
     const c = this.tabCounts();
     return [
-      { key: 'all', label: 'All', count: c.all },
-      { key: 'mine', label: 'Mine', count: c.mine },
-      { key: 'unassigned', label: 'Unassigned', count: c.unassigned },
-      { key: 'done', label: 'Done', count: c.done },
+      { id: 'all', label: 'All', badge: c.all },
+      { id: 'mine', label: 'Mine', badge: c.mine },
+      { id: 'unassigned', label: 'Unassigned', badge: c.unassigned },
+      { id: 'done', label: 'Done', badge: c.done },
     ];
   });
 
@@ -184,7 +183,8 @@ export class TasksList implements OnInit {
     return v.length > 10 ? v.slice(0, 10) : v;
   }
 
-  protected setTab(tab: ListTab): void {
+  protected setTab(tab: string): void {
+    if (tab !== 'all' && tab !== 'mine' && tab !== 'unassigned' && tab !== 'done') return;
     this.tab.set(tab);
   }
 
@@ -207,8 +207,9 @@ export class TasksList implements OnInit {
     return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
   }
 
-  protected slaPill(t: ListTask) {
-    return computeTaskSla({
+  /** Short scan-friendly badge for the list row; the full honest breakdown still lives on the detail page (task-view). */
+  protected slaBadge(t: ListTask): { text: string; tone: 'error' | 'warning' } | null {
+    const pill = computeTaskSla({
       status: t.status,
       createdAt: t.created_at ? new Date(t.created_at) : null,
       tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
@@ -216,11 +217,37 @@ export class TasksList implements OnInit {
       workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
       workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
     });
+    if (!pill) return null;
+    if (pill.tone === 'error') return { text: 'SLA breached', tone: 'error' };
+    if (pill.tone === 'warning') return { text: 'Due soon', tone: 'warning' };
+    return null;
   }
 
+  /** "Due 4h ago" / "Due yesterday" / "Due today, 5:00" / "Due tomorrow" / "Due Thursday" (spec §4). */
   protected dateLabel(v?: string | null): string {
     if (!v) return '';
-    return this.dateOnly(v);
+    const due = new Date(v);
+    const now = new Date();
+    const dueDay = this.dateOnly(v);
+    const today = this.dateOnly(now.toISOString());
+
+    if (dueDay < today) {
+      const hoursAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_HOUR);
+      if (hoursAgo < 24) return `Due ${hoursAgo}h ago`;
+      if (hoursAgo < 48) return 'Due yesterday';
+      const daysAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_DAY);
+      return `Due ${daysAgo}d ago`;
+    }
+
+    if (dueDay === today) {
+      const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `Due today, ${time}`;
+    }
+
+    const daysAhead = Math.round((new Date(dueDay).getTime() - new Date(today).getTime()) / MS_PER_DAY);
+    if (daysAhead === 1) return 'Due tomorrow';
+    if (daysAhead < 7) return `Due ${WEEKDAY_NAMES[due.getDay()]}`;
+    return `Due ${due.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
   }
 
   protected priorityBadgeClass(p?: string | null): string {
@@ -285,61 +312,9 @@ export class TasksList implements OnInit {
     void this.router.navigate(['/tasks/add']);
   }
 
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected openImportDialog(): void {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.svc.import(rows, skippedReported, fileName || undefined);
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`,
-      });
-      this.importerOpen.set(false);
-      await this.loadOnInit();
-    } catch (err) {
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped: skippedReported,
-        failed: true,
-        message: getUserErrorMessage(err, 'Import failed'),
-      });
-      this.importerOpen.set(false);
-    }
+  // The CSV import wizard (spec §17) replaced the old in-page import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'tasks' } });
   }
 }

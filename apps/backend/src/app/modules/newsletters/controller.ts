@@ -1,12 +1,26 @@
-import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type {
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  MarketingEmailTopLinkType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportType,
+} from '../../../../../../libs/common/src';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
+import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
 
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { ListsController } from '../lists/controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { assertNotDemoMode } from '../demo/demo-guard';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
@@ -23,6 +37,8 @@ export interface SendTestEmailInput {
 }
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
   constructor() {
     super(new NewslettersRepo());
   }
@@ -33,6 +49,15 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
    * the transition, but nothing reads it for behavior anymore).
    */
   public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    // Every newsletter belongs to a campaign (§15). Callers that predate the
+    // context switcher fall back to the tenant's office context.
+    const pending = row as Record<string, unknown>;
+    if (!pending['campaign_id']) {
+      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
+      const office = campaigns.find((c) => c.kind === 'office');
+      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
+      pending['campaign_id'] = String(office.id);
+    }
     const result = await super.add(row, trx);
     const rowObj = row as Record<string, unknown>;
     const resultObj = result as Record<string, unknown> | undefined;
@@ -213,13 +238,41 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     }
 
     const db = this.getRepo().db;
+    const campaignId = String(newsletter.campaign_id);
     let query = db
       .selectFrom('persons')
       .where('persons.tenant_id', '=', tenant_id)
       .where('persons.email', 'is not', null)
       .where('persons.email', '!=', '')
-      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
-      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
+      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
+      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
+      .where((eb) =>
+        eb.exists(
+          db
+            .selectFrom('campaign_subscriptions')
+            .select('campaign_subscriptions.person_id')
+            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
+            .where('campaign_subscriptions.campaign_id', '=', campaignId)
+            .where('campaign_subscriptions.status', '=', 'subscribed')
+            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
+        ),
+      )
+      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('email_suppressions')
+              .select('email_suppressions.id')
+              .where('email_suppressions.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`email_suppressions.email = persons.email`),
+          ),
+        ),
+      )
+      // 3. Person-level do-not-contact (null channel list = all channels).
+      .where(
+        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
+      );
 
     query = query.where((eb) => {
       const conditions = [];
@@ -290,6 +343,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    // Sending is locked during the demo test drive (no plan yet, no sender identity).
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const newsletter = (await this.getOneById({ tenant_id, id })) as any;
     if (!newsletter) {
       throw new NotFoundError('Newsletter not found');
@@ -345,6 +400,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   }
 
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
     const db = this.getRepo().db;
 
     // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
@@ -398,21 +454,166 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return { to: input.to, delivered };
   }
 
-  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
+  /**
+   * Everything the newsletter report page renders in one call.
+   *
+   * Engagement detail lives in two places: raw `newsletter_events` (recent) and
+   * the `person_newsletter_engagements` rollup (raw rows are aggregated into it
+   * and deleted by the prune job). The two are disjoint by construction, so
+   * per-email numbers are the sum of both sources.
+   */
+  public async getReport(tenant_id: string, id: string): Promise<NewsletterReportType> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
     const db = this.getRepo().db;
 
-    // 1. Fetch recent events (limit 100)
-    const activities = await db
+    // --- per-email engagement, merged from raw events + the rollup ------------
+    const rawAgg = await db
       .selectFrom('newsletter_events')
-      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
+      .select([
+        'email',
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'click')`.as('clicks'),
+        sql<number>`COUNT(DISTINCT url) FILTER (WHERE event_type = 'click' AND url IS NOT NULL)`.as('links'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as('hard_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND bounce_type = 'blocked')`.as('soft_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'dropped')`.as('dropped'),
+        sql<string | null>`MAX(reason) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounce_reason'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced_at'),
+        sql<boolean>`BOOL_OR(event_type = 'unsubscribe')`.as('unsubscribed'),
+        sql<boolean>`BOOL_OR(event_type = 'spamreport')`.as('spam_reported'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type = 'spamreport')`.as('spam_reported_at'),
+      ])
       .where('newsletter_id', '=', id)
       .where('tenant_id', '=', tenant_id)
-      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
-      .orderBy('timestamp', 'desc')
-      .limit(100)
+      .groupBy('email')
       .execute();
 
-    // 2. Fetch timeline data grouped by date/hour
+    const rollup = await db
+      .selectFrom('person_newsletter_engagements')
+      .select(['email', 'open_count', 'click_count', 'hard_bounced', 'soft_bounced', 'has_unsubscribed', 'bounced_at'])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    interface EmailEngagement {
+      opens: number;
+      clicks: number;
+      links: number;
+      hard: boolean;
+      soft: boolean;
+      dropped: boolean;
+      reason: string | null;
+      bouncedAt: Date | null;
+      unsubscribed: boolean;
+      spamReported: boolean;
+      spamReportedAt: Date | null;
+    }
+    const byEmail = new Map<string, EmailEngagement>();
+    const entryFor = (email: string): EmailEngagement => {
+      let e = byEmail.get(email);
+      if (!e) {
+        e = {
+          opens: 0,
+          clicks: 0,
+          links: 0,
+          hard: false,
+          soft: false,
+          dropped: false,
+          reason: null,
+          bouncedAt: null,
+          unsubscribed: false,
+          spamReported: false,
+          spamReportedAt: null,
+        };
+        byEmail.set(email, e);
+      }
+      return e;
+    };
+    for (const r of rollup) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.open_count);
+      e.clicks += Number(r.click_count);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.unsubscribed = e.unsubscribed || r.has_unsubscribed;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+    }
+    for (const r of rawAgg) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.opens);
+      e.clicks += Number(r.clicks);
+      e.links += Number(r.links);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.dropped = e.dropped || r.dropped;
+      e.reason = e.reason ?? r.bounce_reason;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+      e.unsubscribed = e.unsubscribed || r.unsubscribed;
+      e.spamReported = e.spamReported || r.spam_reported;
+      e.spamReportedAt =
+        e.spamReportedAt ?? (r.spam_reported_at ? new Date(r.spam_reported_at as unknown as string) : null);
+    }
+
+    const bounceKind = (e: EmailEngagement): 'hard' | 'soft' | 'dropped' | null =>
+      e.hard ? 'hard' : e.soft ? 'soft' : e.dropped ? 'dropped' : null;
+
+    // --- bounce rows, CRM-matched --------------------------------------------
+    const MAX_BOUNCE_ROWS = 500;
+    const bounceEntries = [...byEmail.entries()]
+      .map(([email, e]) => ({ email, e, kind: bounceKind(e) }))
+      .filter((b): b is { email: string; e: EmailEngagement; kind: 'hard' | 'soft' | 'dropped' } => b.kind !== null)
+      .sort((a, b) => (b.e.bouncedAt?.getTime() ?? 0) - (a.e.bouncedAt?.getTime() ?? 0));
+
+    const engagedEntries = [...byEmail.entries()]
+      .filter(([, e]) => e.opens + e.clicks > 0)
+      .sort(([, a], [, b]) => b.clicks - a.clicks || b.opens - a.opens)
+      .slice(0, 5);
+
+    const matchEmails = [
+      ...new Set(
+        [...bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => b.email), ...engagedEntries.map(([email]) => email)].map(
+          (m) => m.toLowerCase(),
+        ),
+      ),
+    ];
+    const personsByEmail = new Map<string, { id: string; public_id: string | null; name: string }>();
+    if (matchEmails.length > 0) {
+      const matches = await db
+        .selectFrom('persons')
+        .select(['id', 'public_id', 'first_name', 'last_name', 'email'])
+        .where('tenant_id', '=', tenant_id)
+        .where(sql<string>`LOWER(persons.email)`, 'in', matchEmails)
+        .execute();
+      for (const p of matches) {
+        if (!p.email) continue;
+        const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        personsByEmail.set(String(p.email).toLowerCase(), {
+          id: String(p.id),
+          public_id: p.public_id,
+          name: name || 'Unnamed person',
+        });
+      }
+    }
+    const personFor = (email: string) => personsByEmail.get(email.toLowerCase()) ?? null;
+
+    const bounceRows: NewsletterReportBounceType[] = bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => ({
+      email: b.email,
+      kind: b.kind,
+      reason: b.e.reason,
+      occurred_at: b.e.bouncedAt,
+      person: personFor(b.email),
+    }));
+
+    const mostEngaged: NewsletterReportEngagedType[] = engagedEntries.map(([email, e]) => ({
+      email,
+      opens: e.opens,
+      clicks: e.clicks,
+      links: e.links,
+      person: personFor(email),
+    }));
+
+    // --- hourly timeline (raw events only — empty once pruned) ----------------
     const timeline = await db
       .selectFrom('newsletter_events')
       .select([
@@ -426,21 +627,280 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .groupBy('time_bucket')
       .orderBy('time_bucket', 'asc')
       .execute();
+    const timelinePoints = timeline.map((t) => ({
+      time: t.time_bucket,
+      opens: Number(t.opens),
+      clicks: Number(t.clicks),
+    }));
+
+    const sendDate = newsletter['send_date'] ? new Date(newsletter['send_date'] as string) : null;
+    let opensIn24hPct: number | null = null;
+    if (sendDate && timelinePoints.length > 0) {
+      const cutoff = sendDate.getTime() + 24 * 60 * 60 * 1000;
+      let within = 0;
+      let total = 0;
+      for (const t of timelinePoints) {
+        total += t.opens;
+        // Bucket keys are Postgres-local hour strings; treat them as local time.
+        if (new Date(t.time.replace(' ', 'T')).getTime() <= cutoff) within += t.opens;
+      }
+      opensIn24hPct = total > 0 ? (within / total) * 100 : null;
+    }
+
+    // --- links: stored top_links are authoritative for clicks (they survive
+    // pruning); unique-people counts only exist while raw events do ------------
+    const linkAgg = await db
+      .selectFrom('newsletter_events')
+      .select(['url', sql<number>`COUNT(*)`.as('clicks'), sql<number>`COUNT(DISTINCT email)`.as('people')])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .where('url', 'is not', null)
+      .groupBy('url')
+      .execute();
+    const peopleByUrl = new Map(
+      linkAgg.map((l) => [String(l.url), { clicks: Number(l.clicks), people: Number(l.people) }]),
+    );
+
+    let storedLinks: MarketingEmailTopLinkType[] = [];
+    const rawTopLinks = newsletter['top_links'];
+    if (Array.isArray(rawTopLinks)) {
+      storedLinks = rawTopLinks as MarketingEmailTopLinkType[];
+    } else if (typeof rawTopLinks === 'string' && rawTopLinks) {
+      try {
+        const parsed: unknown = JSON.parse(rawTopLinks);
+        if (Array.isArray(parsed)) storedLinks = parsed as MarketingEmailTopLinkType[];
+      } catch {
+        storedLinks = [];
+      }
+    }
+    const linkUrls = new Set<string>([...storedLinks.map((l) => l.url), ...peopleByUrl.keys()]);
+    const allLinks: NewsletterReportLinkType[] = [...linkUrls]
+      .map((url) => {
+        const stored = storedLinks.find((l) => l.url === url);
+        const raw = peopleByUrl.get(url);
+        const clicks = Math.max(stored?.clicks ?? 0, raw?.clicks ?? 0);
+        // A people count from a partial event window would understate — only
+        // report it when the raw window still covers every recorded click.
+        const people = raw && raw.clicks >= clicks ? raw.people : null;
+        return { url, clicks, people };
+      })
+      .sort((a, b) => b.clicks - a.clicks);
+
+    // --- audience composition (current list membership — see report footer) ---
+    const audienceLists: { id: string; name: string; mode: 'include' | 'exclude'; members: number }[] = [];
+    let overlapRemoved = 0;
+    let suppressedSkipped = 0;
+    const listRows = await db
+      .selectFrom('map_newsletters_lists')
+      .innerJoin('lists', 'lists.id', 'map_newsletters_lists.list_id')
+      .select(['lists.id as id', 'lists.name as name', 'map_newsletters_lists.mode as mode'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.newsletter_id', '=', id)
+      .execute();
+    const includeIds = listRows.filter((l) => l.mode === 'include').map((l) => String(l.id));
+    if (listRows.length > 0) {
+      const allIds = listRows.map((l) => String(l.id));
+      const memberCounts = await db
+        .selectFrom('map_lists_persons')
+        .select(['list_id', sql<number>`COUNT(DISTINCT person_id)`.as('members')])
+        .where('tenant_id', '=', tenant_id)
+        .where('list_id', 'in', allIds)
+        .groupBy('list_id')
+        .execute();
+      const membersByList = new Map(memberCounts.map((m) => [String(m.list_id), Number(m.members)]));
+      for (const l of listRows) {
+        audienceLists.push({
+          id: String(l.id),
+          name: String(l.name),
+          mode: l.mode === 'exclude' ? 'exclude' : 'include',
+          members: membersByList.get(String(l.id)) ?? 0,
+        });
+      }
+      if (includeIds.length > 0) {
+        const distinctRow = await db
+          .selectFrom('map_lists_persons')
+          .select(sql<number>`COUNT(DISTINCT person_id)`.as('distinct_members'))
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', 'in', includeIds)
+          .executeTakeFirst();
+        const includeSum = audienceLists.filter((l) => l.mode === 'include').reduce((sum, l) => sum + l.members, 0);
+        overlapRemoved = Math.max(0, includeSum - Number(distinctRow?.distinct_members ?? 0));
+
+        const suppressedRow = await db
+          .selectFrom('map_lists_persons')
+          .innerJoin('persons', 'persons.id', 'map_lists_persons.person_id')
+          .select(sql<number>`COUNT(DISTINCT persons.id)`.as('suppressed'))
+          .where('map_lists_persons.tenant_id', '=', tenant_id)
+          .where('persons.tenant_id', '=', tenant_id)
+          .where('map_lists_persons.list_id', 'in', includeIds)
+          .where((eb) =>
+            eb.exists(
+              db
+                .selectFrom('email_suppressions')
+                .select('email_suppressions.id')
+                .where('email_suppressions.tenant_id', '=', tenant_id)
+                .where(sql<boolean>`email_suppressions.email = persons.email`),
+            ),
+          )
+          .executeTakeFirst();
+        suppressedSkipped = Number(suppressedRow?.suppressed ?? 0);
+      }
+    }
+
+    // --- the last 5 sends in this campaign, ending with this one --------------
+    let previousSends: NewsletterReportType['previous_sends'] = [];
+    if (sendDate) {
+      let prevQuery = db
+        .selectFrom('newsletters')
+        .select([
+          'id',
+          'name',
+          'send_date',
+          'open_rate',
+          'click_rate',
+          'unsubscribe_count',
+          'bounce_count',
+          'delivered_count',
+          'total_recipients',
+        ])
+        .where('tenant_id', '=', tenant_id)
+        .where('status', '=', 'sent')
+        .where('send_date', 'is not', null)
+        .where((eb) => eb.or([eb('send_date', '<', sendDate), eb('id', '=', id)]))
+        .orderBy('send_date', 'desc')
+        .limit(5);
+      const campaignId = newsletter['campaign_id'];
+      prevQuery =
+        campaignId != null
+          ? prevQuery.where('campaign_id', '=', String(campaignId))
+          : prevQuery.where('campaign_id', 'is', null);
+      const prevRows = await prevQuery.execute();
+      previousSends = prevRows.reverse().map((r) => {
+        const delivered = Number(r.delivered_count ?? 0);
+        const recipients = Number(r.total_recipients ?? 0);
+        return {
+          id: String(r.id),
+          name: String(r.name),
+          send_date: r.send_date ? new Date(r.send_date as unknown as string) : null,
+          open_rate: Number(r.open_rate ?? 0),
+          click_rate: Number(r.click_rate ?? 0),
+          unsubscribe_rate: delivered > 0 ? (Number(r.unsubscribe_count ?? 0) / delivered) * 100 : 0,
+          bounce_rate: recipients > 0 ? (Number(r.bounce_count ?? 0) / recipients) * 100 : 0,
+        };
+      });
+    }
+
+    // --- sender identity (workspace Communications settings) ------------------
+    const fromRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', ['communications.default_from_name', 'communications.default_from_email'])
+      .execute();
+    const fromMap: Record<string, string> = {};
+    for (const row of fromRows) {
+      if (typeof row.value === 'string') fromMap[row.key] = row.value;
+    }
+    const fromName = fromMap['communications.default_from_name'] ?? null;
+    const fromEmail = fromMap['communications.default_from_email'] ?? null;
+
+    // --- totals ----------------------------------------------------------------
+    const hard = bounceEntries.filter((b) => b.kind === 'hard').length;
+    const soft = bounceEntries.filter((b) => b.kind === 'soft').length;
+    const dropped = bounceEntries.filter((b) => b.kind === 'dropped').length;
+    const unsubTotal = Math.max(
+      [...byEmail.values()].filter((e) => e.unsubscribed).length,
+      Number(newsletter['unsubscribe_count'] ?? 0),
+    );
+    const spamRows = [...byEmail.entries()]
+      .filter(([, e]) => e.spamReported)
+      .map(([email, e]) => ({ email: email || null, occurred_at: e.spamReportedAt }));
+    const spamTotal = Math.max(spamRows.length, Number(newsletter['spam_complaint_count'] ?? 0));
+    const clickers = [...byEmail.values()].filter((e) => e.clicks > 0);
 
     return {
-      activities: activities.map((a) => ({
-        email: a.email,
-        event_type: a.event_type,
-        timestamp: a.timestamp,
-        url: a.url,
-        ip: a.ip,
-        user_agent: a.user_agent,
-      })),
-      timeline: timeline.map((t) => ({
-        time: t.time_bucket,
-        opens: Number(t.opens),
-        clicks: Number(t.clicks),
-      })),
+      timeline: timelinePoints,
+      opens_in_24h_pct: opensIn24hPct,
+      bounces: { total: bounceEntries.length, hard, soft, dropped, rows: bounceRows },
+      top_links: allLinks.slice(0, 6),
+      tracked_links: allLinks.length,
+      total_clicks: clickers.reduce((sum, e) => sum + e.clicks, 0),
+      unique_clickers: clickers.length,
+      most_engaged: mostEngaged,
+      unsubscribes: { total: unsubTotal, reasons: unsubTotal > 0 ? [{ reason: null, count: unsubTotal }] : [] },
+      spam_reports: { total: spamTotal, rows: spamRows },
+      audience: { lists: audienceLists, overlap_removed: overlapRemoved, suppressed_skipped: suppressedSkipped },
+      previous_sends: previousSends,
+      from: fromName || fromEmail ? { name: fromName, email: fromEmail } : null,
     };
+  }
+
+  /**
+   * "Create list of N clickers" — a static snapshot list of every CRM person
+   * whose address clicked this newsletter, so the next send can target the
+   * people who acted on this one.
+   */
+  public async createClickersList(auth: IAuthKeyPayload, id: string): Promise<CreateClickersListResultType> {
+    const tenant_id = auth.tenant_id;
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    const db = this.getRepo().db;
+
+    const rawClickers = await db
+      .selectFrom('newsletter_events')
+      .select('email')
+      .distinct()
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .execute();
+    const rolledUpClickers = await db
+      .selectFrom('person_newsletter_engagements')
+      .select('email')
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('click_count', '>', 0)
+      .execute();
+    const emails = [
+      ...new Set([...rawClickers, ...rolledUpClickers].map((r) => r.email.toLowerCase()).filter(Boolean)),
+    ];
+    if (emails.length === 0) throw new BadRequestError('No one has clicked this newsletter yet.');
+
+    const persons = await db
+      .selectFrom('persons')
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where(sql<string>`LOWER(persons.email)`, 'in', emails)
+      .execute();
+    const memberIds = [...new Set(persons.map((p) => String(p.id)))];
+    if (memberIds.length === 0) {
+      throw new BadRequestError('None of the clickers match a person in the CRM, so there is no one to add.');
+    }
+
+    const listsController = new ListsController();
+    const newsletterName = String(newsletter['name'] ?? 'newsletter');
+    // Lists cap names at 100 chars — leave room for a " (n)" de-dup suffix.
+    const baseName = `Clicked · ${newsletterName}`.slice(0, 90);
+    const description = `People who clicked "${newsletterName}" — snapshot taken ${new Date().toISOString().slice(0, 10)}.`;
+    const campaignId = newsletter['campaign_id'] != null ? String(newsletter['campaign_id']) : undefined;
+
+    const MAX_NAME_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
+      const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
+      try {
+        const list = (await listsController.addList(
+          { name, description, object: 'people', is_dynamic: false, member_ids: memberIds, campaign_id: campaignId },
+          auth,
+        )) as Record<string, unknown>;
+        return { id: String(list['id']), name, members: memberIds.length };
+      } catch (err: unknown) {
+        const isNameConflict = err instanceof TRPCError && err.code === 'CONFLICT';
+        if (!isNameConflict || attempt === MAX_NAME_ATTEMPTS - 1) throw err;
+      }
+    }
+    // Unreachable — the loop either returns or rethrows on its last attempt.
+    throw new BadRequestError('Could not find a free list name.');
   }
 }

@@ -66,16 +66,25 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
       },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against — “Unknown” just means never asked), their **voting status** during an election, their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
       { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
       {
         kind: 'list',
         items: [
-          '**Activity** — the audit trail of changes and touches on this record, newest first.',
+          '**Household** — everyone at the same address.',
+          '**Connections** — the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
           '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
           '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
           '**Volunteer** — their shift history and hours.',
           '**Events** — event registrations and attendance.',
-          '**Household** — everyone at the same address, plus this person’s connections.',
+          '**Activity** — the running history of this record: interactions you log (calls, door knocks, notes, meetings) alongside the audit trail of edits, newest first. It sits last, as it does on every record.',
         ],
       },
       { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
@@ -228,7 +237,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click Add team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
           { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
           {
             title: 'Give it work',

@@ -1,14 +1,8 @@
 <div class="mx-auto flex w-full max-w-[820px] flex-col gap-5 p-4 pb-24">
-  <div class="flex items-center gap-2 text-sm">
-    <a class="link link-hover text-base-content/60" routerLink="/deliveries">Deliveries</a>
-    <span class="text-base-content/30">/</span>
-    <span class="text-base-content/80">Plan routes</span>
-  </div>
-
+  <!-- Trail (Deliveries / Plan routes) renders in the navbar; keep an accessible heading only. -->
   <div>
-    <p class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Deliveries</p>
-    <h1 class="text-2xl font-bold tracking-tight text-base-content">Plan delivery routes</h1>
-    <p class="mt-1 text-sm text-base-content/60">
+    <h1 class="sr-only">Plan delivery routes</h1>
+    <p class="text-xs text-base-content/60">
       Preview groups approved, located requests into about-an-hour routes.
       <span class="font-medium">Preview doesn't save anything.</span>
     </p>
@@ -18,13 +12,11 @@
   <div class="flex flex-col gap-4 rounded-xl border border-base-300 bg-base-100 p-5">
     <label class="flex flex-col gap-1.5">
       <span class="text-sm font-medium text-base-content">Start address</span>
-      <input
-        class="input input-bordered w-full text-sm"
-        type="text"
+      <pc-address-autocomplete
         placeholder="Where drivers set off from"
-        [ngModel]="startAddress()"
-        (ngModelChange)="startAddress.set($event)"
-      />
+        [value]="startAddress()"
+        (textChange)="startAddress.set($event)"
+      ></pc-address-autocomplete>
       @if (preview()?.start?.address) {
       <span class="mt-1 w-fit"
         ><pc-status-badge type="success">Located · {{ preview()!.start.address }}</pc-status-badge></span

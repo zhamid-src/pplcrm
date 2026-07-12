@@ -31,6 +31,8 @@ describe('EventsFrontendService', () => {
     service = Object.create(EventsFrontendService.prototype) as EventsFrontendService;
     (service as any).api = mockApi;
     (service as any).ac = new AbortController();
+    // No active context in unit tests (§15): reads go unscoped, writes unstamped.
+    (service as any).campaignContext = { activeCampaignId: () => null };
     (service as any).refreshCount = signal(0);
     (service as any).endpointName = 'events';
   });

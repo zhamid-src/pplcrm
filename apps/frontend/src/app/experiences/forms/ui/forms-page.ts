@@ -8,14 +8,17 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import type { PcIconNameType } from '@icons/icons.index';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { Router, RouterLink } from '@angular/router';
+import { FORM_TEMPLATES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
@@ -24,20 +27,92 @@ import { SettingsService } from '@experiences/settings/services/settings-service
 import { environment } from '../../../../environments/environment';
 import { publicPageUrl } from '../../../shared/public-pages';
 
-interface TemplateOption {
+interface TemplateCard {
   type: FormType;
-  label: string;
+  icon: PcIconNameType;
+  title: string;
+  description: string;
 }
+
+/** Step-1 cards that leave the Forms flow for a dedicated builder (fundraising/event/shift). */
+interface BuilderCard {
+  icon: PcIconNameType;
+  title: string;
+  description: string;
+  cta: string;
+  route: string;
+}
+
+const DEFAULT_TEMPLATE_CARD: TemplateCard = {
+  type: 'signup',
+  icon: 'user-plus',
+  title: 'Signup',
+  description: 'Name, email, phone and availability — grow your volunteer roster.',
+};
+
+/** Step-1 cards of the New-form flow — same card idiom as the automation trigger picker. */
+const TEMPLATE_CARDS: readonly TemplateCard[] = [
+  DEFAULT_TEMPLATE_CARD,
+  {
+    type: 'pledge',
+    icon: 'banknotes',
+    title: 'Pledge',
+    description: 'Name, email and an amount — collect commitments to give.',
+  },
+  {
+    type: 'rsvp',
+    icon: 'ticket',
+    title: 'RSVP',
+    description: 'Name, email and seats — count heads before an event.',
+  },
+  {
+    type: 'request',
+    icon: 'map-pin',
+    title: 'Request',
+    description: 'Name, email, address and notes — take requests like yard signs.',
+  },
+  {
+    type: 'survey',
+    icon: 'chat-bubble-bottom-center-text',
+    title: 'Survey',
+    description: 'Name, issues and an open answer — hear what people think.',
+  },
+];
+
+const BUILDER_CARDS: readonly BuilderCard[] = [
+  {
+    icon: 'document-currency-dollar',
+    title: 'Fundraising form',
+    description: 'A public giving page with preset amounts — donations create donor records.',
+    cta: 'Create a fundraising form',
+    route: '/donation-pages/add',
+  },
+  {
+    icon: 'ticket',
+    title: 'Event page',
+    description: 'An event with its own public page — RSVPs and attendance in one place.',
+    cta: 'Create an event page',
+    route: '/events/pages/add',
+  },
+  {
+    icon: 'add-schedule',
+    title: 'Volunteer shift',
+    description: 'A signup slot with a time and place — hours land on volunteer profiles.',
+    cta: 'Create a volunteer shift',
+    route: '/events/shifts/add',
+  },
+];
 
 @Component({
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table, GridHeaderComponent],
   templateUrl: './forms-page.html',
 })
 export class FormsPageComponent implements OnInit {
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
   private readonly settings = inject(SettingsService);
   private readonly alerts = inject(AlertService);
   private readonly confirm = inject(ConfirmDialogService);
@@ -48,7 +123,7 @@ export class FormsPageComponent implements OnInit {
 
   protected readonly forms = signal<FormDetail[]>([]);
   protected readonly selectedId = signal<string | null>(null);
-  protected readonly mode = signal<'browse' | 'edit'>('browse');
+  protected readonly mode = signal<'browse' | 'edit' | 'create'>('browse');
   protected readonly tab = signal<'form' | 'responses'>('form');
   protected readonly archivedOpen = signal(false);
   protected readonly mutating = signal(false);
@@ -59,19 +134,20 @@ export class FormsPageComponent implements OnInit {
   protected readonly submissionsTotal = signal(0);
   protected readonly submissionsLoading = signal(false);
 
-  // New-form dialog state.
+  // New-form flow state (mode 'create': step 1 picks a template card, step 2 names it).
   protected readonly newFormName = signal('');
   protected readonly newFormType = signal<FormType>('signup');
+  protected readonly newFormStep = signal<1 | 2>(1);
   protected readonly newFormError = signal<string | null>(null);
   protected readonly creating = signal(false);
-  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
   private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
   private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
 
-  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
-    type,
-    label: this.templateLabel(type),
-  }));
+  protected readonly templateCards = TEMPLATE_CARDS;
+  protected readonly builderCards = BUILDER_CARDS;
+  protected readonly chosenTemplate = computed(
+    () => TEMPLATE_CARDS.find((c) => c.type === this.newFormType()) ?? DEFAULT_TEMPLATE_CARD,
+  );
 
   protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
   protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
@@ -222,17 +298,32 @@ export class FormsPageComponent implements OnInit {
     }
   }
 
-  // ── New form dialog ────────────────────────────────────────────────────
+  // ── New form flow (create mode) ────────────────────────────────────────
 
   protected openNewForm(): void {
     this.newFormName.set('');
     this.newFormType.set('signup');
+    this.newFormStep.set(1);
     this.newFormError.set(null);
-    this.newFormDialog()?.nativeElement.showModal();
+    this.mode.set('create');
   }
 
-  protected closeNewForm(): void {
-    this.newFormDialog()?.nativeElement.close();
+  protected cancelNewForm(): void {
+    this.mode.set('browse');
+  }
+
+  protected selectTemplate(type: FormType): void {
+    this.newFormType.set(type);
+    this.newFormError.set(null);
+    this.newFormStep.set(2);
+  }
+
+  protected backToTemplates(): void {
+    this.newFormStep.set(1);
+  }
+
+  protected openBuilder(card: BuilderCard): void {
+    void this.router.navigateByUrl(card.route);
   }
 
   protected async createForm(): Promise<void> {
@@ -248,11 +339,10 @@ export class FormsPageComponent implements OnInit {
       const created = await this.formsSvc.createForm({ name, type });
       this.forms.update((list) => [created, ...list]);
       this.selectedId.set(created.id);
-      this.closeNewForm();
       this.mode.set('edit');
       this.tab.set('form');
       this.alerts.showSuccess(
-        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
+        `Draft created from the ${this.chosenTemplate().title} template — adjust its fields, then publish.`,
       );
     } catch {
       this.newFormError.set('Could not create the form. Please try again.');
@@ -541,17 +631,6 @@ export class FormsPageComponent implements OnInit {
 
   private replaceForm(updated: FormDetail): void {
     this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private templateLabel(type: FormType): string {
-    const map: Record<FormType, string> = {
-      signup: 'Signup — name, email, availability',
-      pledge: 'Pledge — name, email, amount',
-      rsvp: 'RSVP — name, email, seats',
-      request: 'Request — name, email, address, notes',
-      survey: 'Survey — name, issues, open answer',
-    };
-    return map[type];
   }
 
   protected typeChip(type: FormType | null): string {

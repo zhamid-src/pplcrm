@@ -1,5 +1,12 @@
 <div class="flex gap-2 justify-center">
-  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
+  <button
+    type="button"
+    class="btn btn-primary gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn1Clicked()"
+    [disabled]="isSaveDisabled"
+  >
     @if (isLoading()) {
     <span class="loading loading-spinner loading-xs text-primary-content"></span>
     } @else {
@@ -10,7 +17,9 @@
   @if (showDelete()) {
   <button
     type="button"
-    class="btn btn-error btn-outline btn-sm gap-2"
+    class="btn btn-error btn-outline gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
     (click)="handleDeleteClicked()"
     [disabled]="isLoading()"
   >
@@ -18,15 +27,29 @@
     {{ deleteText() }}
   </button>
   } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
+  <button
+    type="button"
+    class="btn btn-primary"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn2Clicked()"
+    [disabled]="isSaveDisabled"
+  >
     @if (isLoading()) {
     <span class="loading loading-spinner loading-xs text-primary-content"></span>
     } @else { {{ btn2Text() }} }
   </button>
-  }
-
-  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
+  } @if (showCancel()) {
+  <button
+    type="button"
+    class="btn btn-outline btn-accent gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="cancel()"
+    [disabled]="isLoading()"
+  >
     <pc-icon name="x-mark" [size]="4" />
     Cancel
   </button>
+  }
 </div>

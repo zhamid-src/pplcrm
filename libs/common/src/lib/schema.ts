@@ -1,4 +1,5 @@
 export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
 export * from './schemas/auth.schema';
 export * from './schemas/tags.schema';
 export * from './schemas/lists.schema';
@@ -14,6 +15,7 @@ export * from './schemas/workflows.schema';
 export * from './schemas/companies.schema';
 export * from './schemas/events.schema';
 export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
 export * from './schemas/canvassing.schema';
 export * from './schemas/deliveries.schema';
 export * from './schemas/donations.schema';

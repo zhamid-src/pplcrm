@@ -3,7 +3,6 @@
 import {
   AfterViewInit,
   Component,
-  DestroyRef,
   ElementRef,
   OnDestroy,
   OnInit,
@@ -44,7 +43,6 @@ import {
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DateFormatService } from '../../services/date-format.service';
 
@@ -178,7 +176,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Injected Services
   public readonly alertSvc = inject(AlertService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -625,6 +622,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // viewport handled by controller
 
   public readonly importCSV = output<string>();
+  /** Fires after a delete flow completes and the grid has refreshed, so pages can re-query header counts. */
+  public readonly rowsDeleted = output<void>();
   public readonly showArchiveIcon = input<boolean>(false);
   public readonly archiveIcon = input<PcIconNameType>('archive-box');
   public readonly archiveTip = input<string>('See archived tasks');
@@ -708,6 +707,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
+  /** Per-column sort/filter/hide dropdown in the header. Off for read-only "reference table" grids. */
+  public showColumnMenus = input<boolean>(true);
   public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
 
   public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
@@ -911,30 +912,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       this.store.grid = this;
     }
 
-    // Top-level grid pages publish a first-level crumb (e.g. "People") into the navbar.
-    // Only when the toolbar is shown — embedded/inline grids sit inside a detail page
-    // that owns its own trail, so they must not overwrite it. Cleared on destroy via
-    // DestroyRef (ngOnDestroy early-returns when there's no store).
-    let publishedCrumb = false;
-    effect(() => {
-      const title = this.title();
-      if (this.showToolbar() && title) {
-        this.breadcrumbs.set({
-          crumbs: [{ label: title }],
-          positionLabel: null,
-          hasPrev: false,
-          hasNext: false,
-          prevLabel: 'Previous record',
-          nextLabel: 'Next record',
-          onPrev: () => undefined,
-          onNext: () => undefined,
-        });
-        publishedCrumb = true;
-      }
-    });
-    inject(DestroyRef).onDestroy(() => {
-      if (publishedCrumb) this.breadcrumbs.clear();
-    });
+    // Navbar crumbs for grid pages come from the route's `data.breadcrumb` via
+    // BreadcrumbDefaultsService — the grid no longer publishes its own. (Publishing
+    // here broke on route-reuse: detached grids never ran their clear-on-destroy.)
 
     effect(() => {
       const count = this.gridSvc.refreshCount();
@@ -1518,6 +1498,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       if (handled !== false) {
         this.clearAllSelection();
         await this.refresh();
+        this.rowsDeleted.emit();
         return true;
       }
     }
@@ -1534,6 +1515,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     // Always clear our select-all cache after a delete attempt
     this.clearAllSelection();
     await this.refresh();
+    this.rowsDeleted.emit();
     return true;
   }
   public doConfirmDelete() {

@@ -187,7 +187,7 @@ describe('ShiftViewComponent', () => {
       expect(mockShiftsSvc.delete).toHaveBeenCalledWith('1');
       expect(mockShiftsSvc.triggerRefresh).toHaveBeenCalled();
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Event deleted');
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/events/shifts']);
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/forms']);
     });
 
     it('should show an error alert when deletion fails', async () => {

@@ -1,6 +1,12 @@
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
+# Claude Code Automation Rules
+
+- When executing Bash commands, always append silent flags (e.g., `git status -s`, `npm install --silent`).
+- Minimize printing verbose tool execution details in your text responses.
+- Combine necessary steps into concise compound scripts to reduce terminal output spam.
+
 ## General Guidelines for working with Nx
 
 - For navigating/exploring the workspace, invoke the `nx-workspace` skill first - it has patterns for querying projects, targets, and dependencies
@@ -31,11 +37,13 @@
 Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists for your task, read it first — it already has the verified file paths, commands, and examples so you don't have to re-grep the codebase from scratch:
 
 - `pplcrm-add-entity` — scaffolding a new CRUD entity end-to-end (schema → backend module → frontend experience)
+- `pplcrm-campaigns` — the Campaigns feature (§15): office/election contexts, shared rolodex vs campaign-scoped facts (`campaign_person_facts`, `campaign_subscriptions`, `email_suppressions`, DNC flag), the context switcher, domain scoping via `options.campaignId`, archive/carry-over rules
 - `pplcrm-trpc-backend` — tRPC/Fastify/Kysely conventions, error handling, transactions, background jobs
 - `pplcrm-tenant-safety` — multi-tenant query scoping and the `local/no-unscoped-db-query` rule
 - `pplcrm-migrations` — writing/applying DB migrations, `schema.sql` baseline
 - `pplcrm-angular-components` — signals, the `form()` helper, loading gate, icons
 - `pplcrm-datagrid` — the house-built `pc-datagrid`: DI contract, columns, inline edit, selection, grid→detail handoff, test traps
+- `pplcrm-table` — the lighter `pc-table` presentational shell for bespoke (non-grid) tables, and the shared `.pc-table` token contract in `styles.css` that both it and the datagrid obey (header/density/shell). Read before hand-rolling any `<table>`
 - `pplcrm-design-principles` — the app-wide UI/UX doctrine: three orientation questions, disclosure over suppression, guide-don't-error, semantic tokens, one-idiom-per-job, DaisyUI-first/CSS-over-JS, subtle purposeful motion. **Read before designing or reviewing any UI.**
 - `pplcrm-page-layout-ux` — detail-layout/header/breadcrumbs/record-navigation/activity-log/toasts/dialogs composition
 - `pplcrm-forms` — the North Star "living funnel" Forms experience: web_forms lifecycle, `normForm()` email invariant + templates, browse/live-edit page, `form_submissions`, the cross-tenant public `/f/:slug` page, and why donation forms stay separate
@@ -202,7 +210,7 @@ This project uses Angular's experimental signal-forms API (`form`, `required`, `
 
 Read `pplcrm-migrations` before touching migrations — it owns the details. In short:
 
-- **`apps/backend/src/app/_migrations/schema.sql` is the baseline** — a `pg_dump --schema-only` that `0001_baseline.ts` executes to initialize a fresh database. As of the 2026-07-07 pre-ship squash it reflects the **current** schema and there are no dated migrations on top of it. (Older `schema_dump.sql` references in the repo are stale — this is the real filename.)
+- **`apps/backend/src/app/_migrations/schema.sql` is the baseline** — a `pg_dump --schema-only` that `0001_baseline.ts` executes to initialize a fresh database. As of the 2026-07-10 pre-ship re-squash it reflects the **current** schema and there are no dated migrations on top of it. (Older `schema_dump.sql` references in the repo are stale — this is the real filename.)
 - **New changes = new file.** For an ordinary schema change, add a new timestamped `apps/backend/src/app/_migrations/YYYY-MM-DD-description.ts` — do **not** regenerate `schema.sql`. Never modify a migration that has already been applied.
 - **Deleting applied migrations / regenerating the baseline is allowed only as a deliberate pre-ship re-squash** (regenerate the dump, delete the dated files, reset `kysely_migration`, verify a from-scratch build all in one operation). It is safe only because nothing is shipped yet; once there's a production database, migrations become forward-only history again. See `pplcrm-migrations` → "Re-squashing".
 - **Fresh databases need provisioning first** (`apps/backend/scripts/setup-db-roles.sql` as a superuser): the DB and `public` schema must be owned by `pplcrm_owner` or the baseline fails on extension creation / schema ownership.

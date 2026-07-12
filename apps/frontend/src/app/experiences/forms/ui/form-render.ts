@@ -16,7 +16,7 @@ import { FormDetail } from '../services/forms-service';
       class="mx-auto w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm"
       [class.opacity-70]="closed()"
     >
-      <div class="mb-4 flex items-center gap-2">
+      <div class="mb-5 flex items-center gap-2">
         <div
           class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
         >
@@ -26,17 +26,17 @@ import { FormDetail } from '../services/forms-service';
       </div>
 
       @if (closed()) {
-        <h2 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h2>
+        <h2 class="mb-2 text-2xl font-bold text-base-content">This form is closed</h2>
         <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
       } @else {
-        <h2 class="mb-1 text-xl font-semibold text-base-content">{{ form().name }}</h2>
+        <h2 class="mb-2 text-2xl font-bold tracking-tight text-base-content">{{ form().name }}</h2>
         @if (form().description) {
           <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form().description }}</p>
         } @else {
           <div class="mb-6"></div>
         }
 
-        <div class="flex flex-col gap-5">
+        <div class="flex flex-col gap-6">
           @for (field of enabledFields(); track field.key) {
             <div class="flex flex-col gap-2">
               <label class="text-sm font-medium text-base-content">

@@ -173,4 +173,75 @@ describe('FilesController', () => {
     const result = await controller.deleteMany(tenantId, ['111111111', '222222222'], userId);
     expect(result).toBe(false);
   });
+
+  it('links a file to an entity and filters getAllFiles by it', async () => {
+    await controller.registerFile(
+      {
+        filename: 'linked.pdf',
+        storageKey: `uploads/${tenantId}/linked.pdf`,
+        entityType: 'newsletter',
+        entityId: '123',
+      },
+      auth,
+    );
+    await controller.registerFile({ filename: 'unlinked.pdf', storageKey: `uploads/${tenantId}/unlinked.pdf` }, auth);
+
+    const scoped = await controller.getAllFiles(auth, { entityType: 'newsletter', entityId: '123' });
+    expect(scoped.count).toBe(1);
+    expect(scoped.rows[0]?.filename).toBe('linked.pdf');
+
+    const all = await controller.getAllFiles(auth, {});
+    expect(all.count).toBe(2);
+  });
+
+  it('summarizes storage usage with quota and largest files, labeling entity-linked files', async () => {
+    const campaignRow = await db
+      .insertInto('campaigns')
+      .values({
+        tenant_id: tenantId,
+        admin_id: userId,
+        name: 'Office',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const newsletter = await db
+      .insertInto('newsletters')
+      .values({
+        tenant_id: tenantId,
+        campaign_id: campaignRow.id,
+        name: 'Spring gala follow-up',
+        subject: 'Spring gala follow-up',
+        status: 'draft',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+
+    await controller.registerFile(
+      {
+        filename: 'gala-photos.zip',
+        sizeBytes: 5000,
+        storageKey: `uploads/${tenantId}/gala-photos.zip`,
+        entityType: 'newsletter',
+        entityId: String(newsletter.id),
+      },
+      auth,
+    );
+    await controller.registerFile(
+      { filename: 'small.txt', sizeBytes: 10, storageKey: `uploads/${tenantId}/small.txt` },
+      auth,
+    );
+
+    const summary = await controller.getUsageSummary(auth);
+    expect(summary.usedBytes).toBe(5010);
+    expect(summary.quotaBytes).toBeGreaterThan(0);
+    expect(summary.largestFiles[0]?.filename).toBe('gala-photos.zip');
+    expect(summary.largestFiles[0]?.attachedToLabel).toBe('"Spring gala follow-up" newsletter');
+
+    await db.deleteFrom('newsletters').where('id', '=', newsletter.id).execute();
+    await db.deleteFrom('campaigns').where('id', '=', campaignRow.id).execute();
+  });
 });

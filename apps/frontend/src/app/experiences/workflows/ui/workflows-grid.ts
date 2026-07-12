@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import type { QueryBuilderGroupNode } from '@common';
 import { WorkflowsService } from '../services/workflows-service';
@@ -32,7 +33,7 @@ interface ListRow {
 // toggle, the one-line recipe sentence, RUNS 30D and a LAST RUN that narrates failures inline.
 @Component({
   selector: 'pc-workflows-grid',
-  imports: [RouterModule, Icon],
+  imports: [RouterModule, Icon, GridHeaderComponent],
   templateUrl: './workflows-grid.html',
   providers: [WorkflowsService],
 })

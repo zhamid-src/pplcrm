@@ -26,6 +26,7 @@
       class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
       [class.btn-primary]="isRequired(field.key)"
       [class.btn-outline]="!isRequired(field.key)"
+      [class.btn-accent]="!isRequired(field.key)"
     >
       {{ isRequired(field.key) ? 'Required' : 'Optional' }}
     </button>

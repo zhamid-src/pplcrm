@@ -6,6 +6,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
 import { DeliveriesRoutesService, type DeliveryRouteRow } from '../services/deliveries-routes-service';
@@ -22,7 +23,7 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-routes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe],
+  imports: [RouterLink, StatusBadge, Icon, DatePipe, Table],
   templateUrl: './deliveries-routes.html',
 })
 export class DeliveriesRoutes implements OnInit {

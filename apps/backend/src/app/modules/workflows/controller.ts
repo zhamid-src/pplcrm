@@ -380,19 +380,25 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     tenantId: string,
     personId: string,
     tagId: string,
-    tagName: string,
+    _tagName: string,
     trx?: Transaction<Models> | Kysely<Models>,
   ) {
-    // 1. General tag_added trigger (filtered by tagId, or any tag if no filter)
+    // General tag_added trigger (filtered by tagId, or any tag if no filter).
+    // The legacy subscriber/unsubscribed tag special-cases moved to
+    // triggerSubscriptionChanged — consent is a campaign_subscriptions write
+    // now (§15), not a tag attach.
     await this.triggerWorkflow(tenantId, personId, 'tag_added', tagId, trx);
+  }
 
-    // 2. Specialized triggers based on tag name
-    const normalized = tagName.trim().toLowerCase();
-    if (normalized === 'subscriber') {
-      await this.triggerWorkflow(tenantId, personId, 'new_subscriber', null, trx);
-    } else if (normalized === 'unsubscribed') {
-      await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
-    }
+  /** New consent state → the same automations the legacy subscriber tags fired. */
+  public async triggerSubscriptionChanged(
+    tenantId: string,
+    personId: string,
+    status: 'subscribed' | 'unsubscribed',
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    const trigger = status === 'subscribed' ? 'new_subscriber' : 'new_unsubscriber';
+    await this.triggerWorkflow(tenantId, personId, trigger, null, trx);
   }
 
   // Spec §16 list — the STATUS toggle. "Pausing stops new runs immediately — nothing queues

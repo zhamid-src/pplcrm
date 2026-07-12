@@ -1,0 +1,64 @@
+<div class="space-y-8">
+  @if (!loaded()) {
+  <div class="flex items-center justify-center py-16">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
+  } @else {
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Usage</h3>
+    </div>
+
+    <div class="pt-2">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <span class="font-semibold text-base-content">
+          {{ formatBytes(usedBytes()) }} of {{ formatBytes(quotaBytes()) }} used · {{ planLabel() }}
+        </span>
+        @if (usedPct() >= 100) {
+        <span class="text-xs text-error font-medium">Newsletters pause sending attachments at 100%</span>
+        } @else if (usedPct() >= 90) {
+        <span class="text-xs text-warning font-medium">Approaching your storage limit</span>
+        }
+      </div>
+      <div class="w-full h-2 rounded-full bg-base-300 mt-2 overflow-hidden">
+        <div class="h-full rounded-full transition-all" [class]="barColorClass()" [style.width.%]="usedPct()"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Largest files</h3>
+    </div>
+
+    @if (largestFiles().length === 0) {
+    <div class="flex flex-col items-center text-center py-10">
+      <pc-icon name="archive-box" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
+      <p class="text-xs text-base-content/60">No files uploaded yet.</p>
+    </div>
+    } @else {
+    <ul class="divide-y divide-base-200">
+      @for (file of largestFiles(); track file.id) {
+      <li class="flex items-center justify-between gap-4 py-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document" class="text-primary/70 shrink-0" [size]="6"></pc-icon>
+          <div class="min-w-0">
+            <p class="font-medium text-base-content truncate">{{ file.filename }}</p>
+            @if (file.attachedToLabel) {
+            <p class="text-xs text-base-content/60 truncate">Attached to {{ file.attachedToLabel }}</p>
+            }
+          </div>
+        </div>
+        <div class="flex items-center gap-4 shrink-0">
+          <span class="text-xs text-base-content/70 tabular-nums">{{ formatBytes(file.size_bytes) }}</span>
+          <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete file" (click)="deleteFile(file)">
+            <pc-icon name="trash" [size]="4"></pc-icon>
+          </button>
+        </div>
+      </li>
+      }
+    </ul>
+    }
+  </div>
+  }
+</div>

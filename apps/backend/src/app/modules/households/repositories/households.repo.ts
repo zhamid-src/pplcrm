@@ -112,10 +112,9 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .executeTakeFirst();
   }
 
-  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
+  public async getBlankHousehold(input: { tenant_id: string }, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id)
       .where('home_phone', 'is', null)
       .where('apt', 'is', null)
       .where('street_num', 'is', null)
@@ -133,12 +132,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async findByFingerprint(
-    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
+    input: { tenant_id: string; fp_street: string | null; fp_full?: string | null },
     trx?: Transaction<Models>,
   ) {
-    const sel = this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id);
+    const sel = this.getSelect(trx).where('tenant_id', '=', input.tenant_id);
 
     if (input.fp_full) {
       const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
@@ -147,7 +144,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     if (input.fp_street) {
       return await this.getSelect(trx)
         .where('tenant_id', '=', input.tenant_id)
-        .where('campaign_id', '=', input.campaign_id)
         .where('address_fp_street', '=', input.fp_street)
         .selectAll()
         .limit(1)

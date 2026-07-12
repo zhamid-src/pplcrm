@@ -18,6 +18,7 @@
     <pc-form-actions
       [isLoading]="isLoading()"
       [signalForm]="form"
+      [saveAlwaysEnabled]="true"
       (btn1Clicked)="save($event)"
       [buttonsToShow]="'two'"
       [btn1Text]="'Save automation'"
@@ -156,7 +157,7 @@
               />
               <button
                 type="button"
-                class="btn btn-outline btn-primary btn-xs mt-2 gap-1"
+                class="btn btn-outline btn-secondary btn-xs mt-2 gap-1"
                 (click)="openEmailDesigner(i)"
               >
                 <pc-icon name="pencil-square" [size]="4"></pc-icon>
@@ -260,6 +261,7 @@
                     [checked]="payload().status === 'active'"
                     (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
                   />
+
                   <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
                 </label>
                 <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
@@ -416,7 +418,7 @@
       <div
         tabindex="0"
         role="button"
-        class="btn btn-circle btn-outline btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
+        class="btn btn-circle btn-outline btn-secondary btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
         title="Add a step"
       >
         <pc-icon name="add-schedule" [size]="4"></pc-icon>

@@ -5,14 +5,16 @@ import { Icon } from '@uxcommon/components/icons/icon';
 import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 
-import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../../environments/environment';
+import { EmailsStore } from '../../services/store/emailstore';
 
 @Component({
   selector: 'pc-email-body',
   imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
-  template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
+  template: `<div
+    class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar border border-1 border-base-300 rounded-xl"
+  >
     <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
     @if (attachments().length > 0) {
       <div class="mt-4 flex flex-wrap gap-2">

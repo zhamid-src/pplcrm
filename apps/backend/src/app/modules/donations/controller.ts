@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { DonationsRepo } from './repositories/donations.repo';
 import { DonationPeriodsRepo } from './repositories/periods.repo';
 import { DonationPledgesRepo } from './repositories/pledges.repo';
@@ -22,6 +23,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   private settingsRepo = new SettingsRepo();
   private periodsRepo = new DonationPeriodsRepo();
   private pledgesRepo = new DonationPledgesRepo();
+  private campaignsRepo = new CampaignsRepo();
 
   constructor() {
     super(new DonationsRepo());
@@ -69,12 +71,18 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   public async createDonationPeriod(
     tenantId: string,
     userId: string,
-    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number },
+    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number; campaign_id?: string },
   ) {
+    // Contribution-limit windows are per campaign (§15).
+    const campaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: payload.campaign_id,
+    });
     return this.periodsRepo.db
       .insertInto('donation_periods')
       .values({
         tenant_id: tenantId,
+        campaign_id: campaignId,
         name: payload.name,
         start_date: payload.start_date,
         end_date: payload.end_date ? (payload.end_date as any) : null,
@@ -584,6 +592,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     province: string,
     country: string,
     userId: string,
+    campaignId?: string,
   ): Promise<Selectable<Models['donation_pledges']>> {
     const existing = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
@@ -593,6 +602,13 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .executeTakeFirst();
 
     if (existing) return existing;
+
+    // Which fund the pledge belongs to (§15); Stripe-path pledges without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+    });
 
     const person = await this.pledgesRepo.db
       .selectFrom('persons')
@@ -606,6 +622,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         .insertInto('donation_pledges')
         .values({
           tenant_id: tenantId,
+          campaign_id: resolvedCampaignId,
           person_id: personId,
           stripe_subscription_id: stripeSubscriptionId,
           stripe_customer_id: stripeCustomerId,
@@ -622,58 +639,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         .returningAll()
         .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
 
-      // Ensure 'donor' tag
-      const tagName = 'donor';
-      let tag = await trx
-        .selectFrom('tags')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('name', '=', tagName)
-        .where('type', '=', 'tag')
-        .executeTakeFirst();
-
-      if (!tag) {
-        const insertTagRes = await trx
-          .insertInto('tags')
-          .values({
-            tenant_id: tenantId,
-            name: tagName,
-            type: 'tag',
-            deletable: true,
-            createdby_id: userId,
-            updatedby_id: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        tag = { id: insertTagRes.id };
-      }
-
-      const mapExists = await trx
-        .selectFrom('map_peoples_tags')
-        .select('person_id')
-        .where('tenant_id', '=', tenantId)
-        .where('person_id', '=', personId)
-        .where('tag_id', '=', tag.id)
-        .executeTakeFirst();
-
-      if (!mapExists) {
-        await trx
-          .insertInto('map_peoples_tags')
-          .values({
-            tenant_id: tenantId,
-            person_id: personId,
-            tag_id: tag.id,
-            createdby_id: userId,
-            updatedby_id: userId,
-          })
-          .execute();
-        try {
-          const wc = new WorkflowsController();
-          await wc.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger tag_added on pledge');
-        }
-      }
+      // "Donor" is derived from donations/pledges data (§15) — no tag to maintain.
 
       await trx
         .insertInto('user_activity')
@@ -704,6 +670,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     personId: string,
     amountCents: number,
     method: 'card' | 'check' | 'cash' | 'bank_transfer',
+    campaignId?: string,
   ): Promise<Selectable<Models['donations']>> {
     const person = await this.getRepo()
       .db.selectFrom('persons')
@@ -725,6 +692,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       auth.user_id,
       undefined,
       method,
+      campaignId,
     );
   }
 
@@ -738,7 +706,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     userId: string,
     pledgeId?: string,
     method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
+    campaignId?: string,
   ): Promise<Selectable<Models['donations']>> {
+    // Which fund the gift belongs to (§15); Stripe-path gifts without an
+    // explicit campaign land in the office context.
+    const resolvedCampaignId = await this.campaignsRepo.resolveForWrite({
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+    });
+
     const person = await this.getRepo()
       .db.selectFrom('persons')
       .select(['first_name', 'last_name', 'email'])
@@ -753,6 +729,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           .insertInto('donations')
           .values({
             tenant_id: tenantId,
+            campaign_id: resolvedCampaignId,
             person_id: personId,
             first_name: person?.first_name ?? null,
             last_name: person?.last_name ?? null,
@@ -769,58 +746,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           .returningAll()
           .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
 
-        const tagName = 'donor';
-        let tag = await trx
-          .selectFrom('tags')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('name', '=', tagName)
-          .where('type', '=', 'tag')
-          .executeTakeFirst();
-
-        if (!tag) {
-          const insertTagRes = await trx
-            .insertInto('tags')
-            .values({
-              tenant_id: tenantId,
-              name: tagName,
-              type: 'tag',
-              deletable: true,
-              createdby_id: userId,
-              updatedby_id: userId,
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          tag = { id: insertTagRes.id };
-        }
-
-        const mapExists = await trx
-          .selectFrom('map_peoples_tags')
-          .select('person_id')
-          .where('tenant_id', '=', tenantId)
-          .where('person_id', '=', personId)
-          .where('tag_id', '=', tag.id)
-          .executeTakeFirst();
-
-        if (!mapExists) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: tenantId,
-              person_id: personId,
-              tag_id: tag.id,
-              createdby_id: userId,
-              updatedby_id: userId,
-            })
-            .execute();
-
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger tag_added workflow in DonationsController');
-          }
-        }
+        // "Donor" is derived from donations data (§15) — no tag to maintain.
 
         try {
           await trx

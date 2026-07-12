@@ -262,7 +262,7 @@ describe('EventFormComponent', () => {
       expect(mockEventsFrontendSvc.delete).toHaveBeenCalledWith('e-1');
       expect(mockEventsFrontendSvc.triggerRefresh).toHaveBeenCalled();
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Event deleted');
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/events/pages']);
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/forms']);
     });
   });
 

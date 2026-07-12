@@ -1,59 +1,21 @@
 <div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="document-text" class="text-primary" [size]="7"></pc-icon>
-        Import / export
-      </h1>
-      @if (tab() === 'imports') {
-      <p class="text-sm text-base-content/60 mt-1">
-        {{ importsThisYear() }} imports this year · {{ peopleCreatedThisYear() }} people created · {{
-        duplicatesMergedThisYear() }} duplicates merged
-      </p>
-      }
-    </div>
-    <div class="flex gap-2 items-center">
-      @if (tab() === 'imports') {
-      <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import CSV
-      </button>
-      }
-      <button
-        type="button"
-        class="btn btn-outline btn-sm gap-2"
-        pcSpinOnClick
-        (click)="tab() === 'imports' ? refresh() : refreshExports()"
-        [disabled]="tab() === 'imports' ? loading() : exportsLoading.visible()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
+    @if (tab() === 'imports') {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
+      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+      <span>Import CSV</span>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <span>New export</span>
+    </button>
+    }
+  </pc-grid-header>
 
-  <!-- Tabs: Imports N / Exports N -->
-  <div role="tablist" class="tabs tabs-border mb-4">
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'imports'"
-      (click)="switchTab('imports')"
-    >
-      Imports {{ itemCount() }}
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      [class.tab-active]="tab() === 'exports'"
-      (click)="switchTab('exports')"
-    >
-      Exports {{ exportCount() }}
-    </button>
-  </div>
+  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
 
   <!-- ============ IMPORTS TAB ============ -->
   @if (tab() === 'imports') {
@@ -67,121 +29,122 @@
     </div>
     }
 
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Outcome</th>
-            <th>Tags applied</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (item of items(); track item.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <div class="font-mono text-sm text-base-content">{{ item.fileName }}</div>
-              <div class="text-xs text-base-content/60">
-                {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-              </div>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-            </td>
-            <td>
-              @if (item.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ item.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (item.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Pending</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <div class="text-sm text-base-content">
-                <div>{{ item.insertedCount }} imported</div>
-                @if (item.mergedCount > 0) {
-                <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-                } @if (item.skippedCount > 0) {
-                <div class="text-xs text-base-content/60 flex items-center gap-1">
-                  {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-                  <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                    download reasons
-                  </button>
-                  }
-                </div>
-                } @if (item.errorCount > 0) {
-                <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-                }
-              </div>
-              } @case ('failed') {
-              <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
-                Failed
-              </span>
-              } }
-            </td>
-            <td>
-              @if (item.tagsApplied.length > 0) {
-              <div class="flex flex-wrap gap-1">
-                @for (tag of item.tagsApplied; track tag) {
-                <span class="badge badge-outline text-xs">{{ tag }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (item.canDownloadSource) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download original file"
-                  (click)="downloadSource(item)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  (click)="openDeleteDialog(item, deleteDialog)"
-                  [disabled]="deleting()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="text-center py-12 text-base-content/50">
-              <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1 mb-3">Bring in people from a spreadsheet to get started.</p>
-              <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-                <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-                Import CSV
-              </button>
-            </td>
-          </tr>
+    <pc-table [columns]="7">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>Type</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Outcome</th>
+        <th>Tags applied</th>
+        <th class="text-right">Actions</th>
+      </ng-container>
+
+      @for (item of items(); track item.id) {
+      <tr>
+        <td>
+          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
+          <div class="text-xs text-base-content/60">
+            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+        </td>
+        <td>
+          @if (item.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
           }
-        </tbody>
-      </table>
-    </div>
+        </td>
+        <td>
+          @switch (item.status) { @case ('pending') {
+          <span class="badge badge-ghost text-xs">Pending</span>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <div class="text-xs text-base-content">
+            <div>{{ item.insertedCount }} imported</div>
+            @if (item.mergedCount > 0) {
+            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+            } @if (item.skippedCount > 0) {
+            <div class="text-xs text-base-content/60 flex items-center gap-1">
+              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                download reasons
+              </button>
+              }
+            </div>
+            } @if (item.errorCount > 0) {
+            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+            }
+          </div>
+          } @case ('failed') {
+          <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+            Failed
+          </span>
+          } }
+        </td>
+        <td>
+          @if (item.tagsApplied.length > 0) {
+          <div class="flex flex-wrap gap-1">
+            @for (tag of item.tagsApplied; track tag) {
+            <span class="badge badge-outline text-xs">{{ tag }}</span>
+            }
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (item.canDownloadSource) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download original file"
+              (click)="downloadSource(item)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              (click)="openDeleteDialog(item, deleteDialog)"
+              [disabled]="deleting()"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="7" class="text-center py-12 text-base-content/50">
+          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1 mb-3">
+            Bring in people, companies, households or tasks from a spreadsheet to get started.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import CSV
+          </button>
+        </td>
+      </tr>
+      }
+    </pc-table>
 
     <p class="text-xs text-base-content/50 mt-4">
       Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
@@ -193,9 +156,6 @@
   <!-- ============ EXPORTS TAB ============ -->
   @if (tab() === 'exports') {
   <div>
-    <div class="flex justify-end mb-3">
-      <button type="button" class="btn btn-outline btn-sm" (click)="toggleNewExportInfo()">New export</button>
-    </div>
     @if (showNewExportInfo()) {
     <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
       <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
@@ -203,102 +163,99 @@
         Exports start where the data is — filter the People grid or Donations and use Export in the toolbar. Finished
         files land on this page.
       </span>
-      <button type="button" class="btn btn-primary btn-sm" (click)="goToPeopleGrid()">Go to People</button>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
+        Go to People
+      </button>
     </div>
     } @if (exportsLoading.visible()) {
     <progress class="progress w-full text-primary mb-4"></progress>
     }
 
-    <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-      <table class="table w-full">
-        <thead>
-          <tr class="bg-base-200/50">
-            <th>File</th>
-            <th>When</th>
-            <th>By</th>
-            <th>Contents</th>
-            <th class="text-right">Download</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (job of exportJobs(); track job.id) {
-          <tr class="hover:bg-base-200/30 transition-all duration-200">
-            <td>
-              <span class="font-mono text-sm text-base-content">{{ job.file_name }}</span>
-            </td>
-            <td>
-              <span class="text-sm text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-            </td>
-            <td>
-              @if (job.createdBy) {
-              <div class="flex flex-col">
-                <span class="font-medium text-base-content text-sm">{{ job.createdBy.name || 'Unknown' }}</span>
-                <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-              </div>
-              } @else {
-              <span class="text-sm text-base-content/40">—</span>
-              }
-            </td>
-            <td>
-              @switch (job.status) { @case ('pending') {
-              <span class="badge badge-ghost text-xs">Queued</span>
-              } @case ('processing') {
-              <span class="badge badge-info text-xs gap-1">
-                <span class="loading loading-spinner loading-xs"></span>
-                Processing
-              </span>
-              } @case ('completed') {
-              <span class="text-sm text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-              } @default {
-              <span class="badge badge-error text-xs">Failed</span>
-              } }
-            </td>
-            <td class="text-right">
-              <div class="flex justify-end gap-1">
-                @if (job.status === 'completed') { @if (isExpired(job)) {
-                <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
-                } @else if (job.downloadable) {
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-primary"
-                  title="Download CSV"
-                  (click)="downloadExportJob(job)"
-                >
-                  <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-                </button>
-                } @else {
-                <span
-                  class="text-xs text-base-content/40 italic mr-2"
-                  title="Downloaded directly to your device — not stored on the server"
-                >
-                  Downloaded
-                </span>
-                } }
-                <button
-                  type="button"
-                  class="btn btn-sm btn-circle btn-ghost text-error"
-                  title="Delete export"
-                  (click)="deleteExportJob(job)"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="5" class="text-center py-12 text-base-content/50">
-              <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-              <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-              <p class="text-xs text-base-content/50 mt-1">
-                Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
-              </p>
-            </td>
-          </tr>
+    <pc-table [columns]="5">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Contents</th>
+        <th class="text-right">Download</th>
+      </ng-container>
+
+      @for (job of exportJobs(); track job.id) {
+      <tr>
+        <td>
+          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+        </td>
+        <td>
+          @if (job.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
           }
-        </tbody>
-      </table>
-    </div>
+        </td>
+        <td>
+          @switch (job.status) { @case ('pending') {
+          <span class="badge badge-ghost text-xs">Queued</span>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          } @default {
+          <span class="badge badge-error text-xs">Failed</span>
+          } }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (job.status === 'completed') { @if (isExpired(job)) {
+            <span class="text-xs text-base-content/40 italic mr-2">Expired (30d)</span>
+            } @else if (job.downloadable) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download CSV"
+              (click)="downloadExportJob(job)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            } @else {
+            <span
+              class="text-xs text-base-content/40 italic mr-2"
+              title="Downloaded directly to your device — not stored on the server"
+            >
+              Downloaded
+            </span>
+            } }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              title="Delete export"
+              (click)="deleteExportJob(job)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="5" class="text-center py-12 text-base-content/50">
+          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Exports start where the data is — filter the People grid or Donations and use Export in the toolbar.
+          </p>
+        </td>
+      </tr>
+      }
+    </pc-table>
   </div>
   }
 </div>
@@ -366,10 +323,20 @@
     }
 
     <div class="modal-action flex gap-2">
-      <button type="button" class="btn btn-ghost" (click)="closeDeleteDialog(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent"
+        (click)="closeDeleteDialog(deleteDialog)"
+        [disabled]="deleting()"
+      >
         Cancel
       </button>
-      <button type="button" class="btn btn-error gap-2" (click)="confirmDelete(deleteDialog)" [disabled]="deleting()">
+      <button
+        type="button"
+        class="btn btn-outline btn-error gap-2"
+        (click)="confirmDelete(deleteDialog)"
+        [disabled]="deleting()"
+      >
         <pc-icon name="trash" [size]="4"></pc-icon>
         Delete
       </button>

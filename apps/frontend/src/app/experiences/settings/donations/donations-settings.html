@@ -37,12 +37,12 @@
     <div class="grid gap-6 md:grid-cols-2 pt-2">
       <!-- Stripe Secret Key -->
       <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <label for="stripe_secret_key" class="text-xs font-semibold text-base-content/90"> Stripe Secret Key </label>
         <input
           id="stripe_secret_key"
           type="password"
           placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
           [value]="stripeSecretKey()"
           (input)="stripeSecretKey.set($any($event.target).value)"
         />
@@ -54,14 +54,14 @@
 
       <!-- Stripe Webhook Secret -->
       <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
+        <label for="stripe_webhook_secret" class="text-xs font-semibold text-base-content/90">
           Stripe Webhook Signing Secret
         </label>
         <input
           id="stripe_webhook_secret"
           type="password"
           placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
           [value]="stripeWebhookSecret()"
           (input)="stripeWebhookSecret.set($any($event.target).value)"
         />
@@ -75,7 +75,7 @@
     <!-- Webhook Instructions Info Card -->
     <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
       <div class="space-y-1">
-        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
+        <h4 class="text-xs font-bold text-base-content/90 flex items-center gap-1.5">
           <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
           Webhook Endpoint URL
         </h4>
@@ -96,7 +96,7 @@
           <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
             {{ webhookUrl() }}
           </div>
-          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
+          <button type="button" class="btn btn-sm btn-outline btn-secondary shrink-0" (click)="copyWebhookUrl()">
             <pc-icon name="document-duplicate" [size]="4"></pc-icon>
             Copy URL
           </button>
@@ -194,7 +194,7 @@
       <!-- Add period form -->
       @if (showAddPeriod()) {
       <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <h4 class="text-xs font-bold text-base-content/90">New Donation Period</h4>
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-semibold">Period Name</label>
           <input
@@ -242,7 +242,9 @@
           <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
             @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
           </button>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+          <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="showAddPeriod.set(false)">
+            Cancel
+          </button>
         </div>
       </div>
       }
@@ -252,12 +254,12 @@
         <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
         <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
         <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-semibold">$</span>
           <input
             id="donation_limit"
             type="number"
             min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold"
             [value]="donationLimit()"
             (input)="donationLimit.set($any($event.target).value)"
           />
@@ -286,7 +288,7 @@
             [checked]="restrictResidency()"
             (change)="restrictResidency.set($any($event.target).checked)"
           />
-          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
+          <span class="text-xs font-semibold text-base-content/90"> Enforce residency restrictions </span>
         </label>
 
         @if (restrictResidency()) {
@@ -460,43 +462,39 @@
     </p>
 
     <!-- Table of existing tiers -->
-    <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl mt-3 shadow-sm">
-      <table class="table w-full text-xs">
-        <thead>
-          <tr class="border-b border-base-200 bg-base-50">
-            <th class="font-bold text-base-content/70">Bracket Tier</th>
-            <th class="font-bold text-base-content/70">Up to Limit</th>
-            <th class="font-bold text-base-content/70">Credit Percentage</th>
-            <th class="font-bold text-base-content/70 text-right w-24">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (tier of taxCreditTiers(); track $index) {
-          <tr class="hover:bg-base-200/20 border-b border-base-200">
-            <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
-            <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
-            <td>
-              <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
-            </td>
-            <td class="text-right">
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
-                (click)="removeTier($index)"
-              >
-                Delete
-              </button>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="4" class="text-center py-6 text-base-content/50 italic">
-              No tax credit tiers defined yet. Add a tier below to set up credit calculations.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
+    <div class="mt-3">
+      <pc-table [columns]="4">
+        <ng-container pcTableHead>
+          <th>Bracket Tier</th>
+          <th>Up to Limit</th>
+          <th>Credit Percentage</th>
+          <th class="text-right w-24">Actions</th>
+        </ng-container>
+        @for (tier of taxCreditTiers(); track $index) {
+        <tr>
+          <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
+          <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
+          <td>
+            <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
+          </td>
+          <td class="text-right">
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
+              (click)="removeTier($index)"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="4" class="text-center py-6 text-base-content/50 italic">
+            No tax credit tiers defined yet. Add a tier below to set up credit calculations.
+          </td>
+        </tr>
+        }
+      </pc-table>
     </div>
 
     <!-- Progressive bracket summary -->
@@ -569,7 +567,7 @@
   <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
     <div>
       @if (isSaving()) {
-      <span class="text-sm font-medium text-base-content/60 flex items-center">
+      <span class="text-xs font-medium text-base-content/60 flex items-center">
         <span class="loading loading-spinner loading-xs mr-2"></span>
         Saving donations configuration…
       </span>
@@ -579,7 +577,7 @@
     <div class="flex items-center gap-3">
       <button
         type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-xs"
         (click)="reset()"
         [disabled]="isSaving()"
       >
@@ -587,7 +585,7 @@
       </button>
       <button
         type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-sm"
+        class="btn btn-primary min-w-[120px] font-semibold text-xs"
         (click)="save()"
         [disabled]="isSaving()"
       >

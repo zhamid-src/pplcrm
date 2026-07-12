@@ -1,5 +1,5 @@
 <!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
+<div class="navbar bg-base-100 border-b border-base-300 shadow-lg relative">
   <div class="flex-1 sm:hidden">
     <button
       type="button"
@@ -255,6 +255,15 @@
           <a routerLink="/help">
             <pc-icon name="information-circle"></pc-icon>
             <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary">
+          <a routerLink="/campaigns">
+            <pc-icon name="square-3-stack-3d"></pc-icon>
+            <ng-container i18n="Navbar|Campaigns admin menu item@@navbar.profile.menu.campaigns"
+              >Campaigns</ng-container
+            >
           </a>
         </li>
         <li class="base-neutral px-0 mx-0"></li>

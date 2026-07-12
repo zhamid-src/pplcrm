@@ -109,6 +109,10 @@ function getTenantAccountStatus() {
   return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
 }
 
+function getSeatUsage() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getSeatUsage(ctx.auth));
+}
+
 function cancelTenantDeletionByToken() {
   return publicProcedure
     .input(z.object({ tenantId: z.string(), token: z.string() }))
@@ -155,6 +159,24 @@ function adminTriggerPasswordReset() {
   return adminOrOwnerProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
+}
+
+function deactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminDeactivateUser(ctx.auth, input.id));
+}
+
+function reactivateUser() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminReactivateUser(ctx.auth, input.id));
+}
+
+function resendInvite() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminResendInvite(ctx.auth, input.id));
 }
 
 function invite() {
@@ -297,12 +319,16 @@ export const AuthRouter = router({
   cancelAccountDeletion: cancelAccountDeletion(),
   cancelEmailChange: cancelEmailChange(),
   getTenantAccountStatus: getTenantAccountStatus(),
+  getSeatUsage: getSeatUsage(),
   scheduleTenantDeletion: scheduleTenantDeletion(),
   cancelTenantDeletion: cancelTenantDeletion(),
   cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
   pauseTenant: pauseTenant(),
   resumeTenant: resumeTenant(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  deactivateUser: deactivateUser(),
+  reactivateUser: reactivateUser(),
+  resendInvite: resendInvite(),
   uploadAvatar: uploadAvatar(),
   deleteAvatar: deleteAvatar(),
   passkeyRegistrationOptions: passkeyRegistrationOptions(),

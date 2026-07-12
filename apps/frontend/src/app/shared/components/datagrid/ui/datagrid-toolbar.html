@@ -3,7 +3,7 @@
   <pc-grid-tool-btn
     [touch]="true"
     [enabled]="!!grid.addRoute()"
-    [tip]="'Add'"
+    [tip]="addLabel()"
     [icon]="grid.plusIcon()"
     (action)="onAdd()"
   />
@@ -51,9 +51,7 @@
          reverts to an anchored dropdown card on sm+ (§4 touch pickers). -->
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg
-             fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6
-             sm:static sm:w-72 sm:rounded-box sm:pb-3"
+      class="dropdown-content bg-base-100 border-base-200 z-[50] flex max-h-[80vh] flex-col gap-0 overflow-y-auto border p-3 text-left shadow-lg fixed inset-x-0 bottom-0 w-full rounded-b-none rounded-t-2xl pb-6 sm:static sm:w-72 sm:rounded-box sm:pb-3"
     >
       <!-- Grab handle — bottom-sheet affordance, touch only -->
       <div class="bg-base-300 mx-auto mb-3 h-1 w-10 shrink-0 rounded-full sm:hidden" aria-hidden="true"></div>

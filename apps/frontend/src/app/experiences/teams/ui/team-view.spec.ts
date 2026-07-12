@@ -162,9 +162,9 @@ describe('TeamViewComponent', () => {
     fixture.detectChanges();
 
     const tabs = component['teamTabs']();
-    expect(tabs.find((t) => t.id === 'volunteers')?.label).toBe('Volunteers (2)');
-    expect(tabs.find((t) => t.id === 'lists')?.label).toBe('Target Lists (1)');
-    expect(tabs.find((t) => t.id === 'tasks')?.label).toBe('Team Tasks (2)');
+    expect(tabs.find((t) => t.id === 'volunteers')?.badge).toBe(2);
+    expect(tabs.find((t) => t.id === 'lists')?.badge).toBe(1);
+    expect(tabs.find((t) => t.id === 'tasks')?.badge).toBe(2);
   });
 
   it('should resolve the team captain name from the volunteers list', async () => {

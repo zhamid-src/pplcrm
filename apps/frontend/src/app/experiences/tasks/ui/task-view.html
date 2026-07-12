@@ -1,525 +1,486 @@
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-    <!-- Top Navigation Bar & Action Buttons -->
-    <div
-      class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-base-300 pb-4 gap-4"
+<pc-detail-layout
+  [title]="pageTitle()"
+  eyebrow="Task"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading() && !task()"
+  [hasRecord]="!!task()"
+  [showActions]="false"
+  [showDelete]="!!task()"
+  deleteText="Delete task"
+  notFoundText="Task not found or failed to load."
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (delete)="deleteTask()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  <div pc-title-suffix class="flex shrink-0 items-center gap-1.5">
+    @if (task(); as t) {
+    <span class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2" [class]="getStatusBadgeClass(t.status)">
+      {{ statusLabel(t.status) }}
+    </span>
+    @if (t.priority) {
+    <span
+      class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
+      [class]="getPriorityBadgeClass(t.priority)"
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <a routerLink="/tasks" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="arrow-left" [size]="4"></pc-icon>
-          Back to List
-        </a>
-        <a routerLink="/board" class="btn btn-sm btn-ghost gap-1">
-          <pc-icon name="view-kanban" [size]="4"></pc-icon>
-          Task Board
-        </a>
-      </div>
-      <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-        @if (!isArchived()) {
-        <button (click)="archiveTask()" class="btn btn-outline btn-sm gap-2">
-          <pc-icon name="archive-box" [size]="4"></pc-icon>
-          Archive
-        </button>
-        } @else {
-        <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
-          <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
-          Unarchive
-        </button>
-        }
-        <button (click)="deleteTask()" class="btn btn-outline btn-error btn-sm gap-2">
-          <pc-icon name="trash" [size]="4"></pc-icon>
-          Delete Task
-        </button>
-      </div>
-    </div>
-
-    @if (isLoading() && !task()) {
-    <div class="flex justify-center items-center py-20">
-      <progress class="progress w-56"></progress>
-    </div>
-    } @else { @if (task(); as t) {
-    <!-- Main Content Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
-        <!-- Elegant Title & Description Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
-
-          <div class="p-6">
-            <!-- Inline Edit Task Name -->
-            <div class="group relative mb-4">
-              @if (isEditingName()) {
-              <div class="flex gap-2 items-center">
-                <input
-                  type="text"
-                  class="input input-bordered input-md font-bold text-2xl grow text-base-content"
-                  [(ngModel)]="tempName"
-                  (keydown.enter)="saveName()"
-                  (keydown.escape)="cancelEditingName()"
-                  placeholder="Task name"
-                  autofocus
-                />
-                <button (click)="saveName()" class="btn btn-primary btn-square btn-md" title="Save">
-                  <pc-icon name="save" [size]="5"></pc-icon>
-                </button>
-                <button (click)="cancelEditingName()" class="btn btn-ghost btn-square btn-md" title="Cancel">
-                  <pc-icon name="x-mark" [size]="5"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div class="flex items-start justify-between gap-4">
-                <h1
-                  (click)="startEditingName()"
-                  class="text-2xl md:text-3xl font-extrabold text-base-content leading-tight cursor-pointer hover:bg-base-200/50 px-2 py-1 -ml-2 rounded-lg transition-colors flex-grow"
-                >
-                  {{ t.name || '(No Name)' }}
-                  <span class="inline-block opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                    <pc-icon name="pencil-square" [size]="4" class="text-base-content/40 inline"></pc-icon>
-                  </span>
-                </h1>
-                <div class="flex items-center gap-1.5 flex-shrink-0">
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getStatusBadgeClass(t.status)"
-                  >
-                    {{ statusLabel(t.status) }}
-                  </span>
-                  @if (t.priority) {
-                  <span
-                    class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
-                    [class]="getPriorityBadgeClass(t.priority)"
-                  >
-                    {{ toTitleCase(t.priority) }}
-                  </span>
-                  }
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Inline Edit Description -->
-            <div class="border-t border-base-200 mt-4 pt-4">
-              <div class="flex justify-between items-center mb-2">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
-                @if (!isEditingDetails()) {
-                <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
-                  <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
-                </button>
-                }
-              </div>
-
-              @if (isEditingDetails()) {
-              <div class="grid gap-2">
-                <quill-editor
-                  [styles]="{ height: '220px' }"
-                  [(ngModel)]="tempDetails"
-                  placeholder="Describe this task..."
-                ></quill-editor>
-                <div class="flex justify-end gap-2 mt-2">
-                  <button (click)="cancelEditingDetails()" class="btn btn-sm btn-ghost">Cancel</button>
-                  <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
-                </div>
-              </div>
-              } @else {
-              <div
-                (click)="startEditingDetails()"
-                class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
-                [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
-              ></div>
-              }
-            </div>
-          </div>
-        </div>
-
-        <!-- Subtasks Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
-              Subtasks ({{ subtasks().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
-              {{ showSubtasks() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showSubtasks()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (subtasks().length > 0) {
-            <div class="grid gap-2.5">
-              @for (s of subtasks(); track s.id) {
-              <label
-                class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary checkbox-sm"
-                  [checked]="s.status === 'done'"
-                  (change)="toggleSubtask(s, $any($event.target).checked)"
-                />
-                <span
-                  class="text-sm font-medium text-base-content"
-                  [class.line-through]="s.status === 'done'"
-                  [class.opacity-50]="s.status === 'done'"
-                >
-                  {{ s.name }}
-                </span>
-              </label>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No subtasks defined. Add one below to break this task down.
-            </div>
-            }
-
-            <div class="flex gap-2 mt-2">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="Add a subtask..."
-                [(ngModel)]="subtaskName"
-                (keydown.enter)="addSubtask()"
-              />
-              <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
-                Add Subtask
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Comments / Collaboration Panel -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
-              Discussion ({{ comments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
-              {{ showComments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showComments()) {
-          <div class="p-6 flex flex-col gap-6">
-            @if (comments().length > 0) {
-            <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-              @for (c of comments(); track c.id) {
-              <div
-                class="chat"
-                [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
-                [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
-              >
-                <div class="chat-image">
-                  <pc-user-avatar
-                    [name]="userName(c.author_id || c.createdby_id)"
-                    [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
-                    [size]="8"
-                  />
-                </div>
-
-                <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
-                  <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
-                  @if (c.created_at) {
-                  <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
-                    {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
-                  </span>
-                  }
-                </div>
-
-                <div
-                  class="chat-bubble text-sm font-light shadow-sm"
-                  [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
-                  [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
-                ></div>
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">
-              No comments yet. Start the conversation!
-            </div>
-            }
-
-            <!-- Comment Composer with User Mentions -->
-            <div class="form-control relative mt-2 border-t border-base-200 pt-4">
-              <textarea
-                #taskComposer
-                [ngModel]="newComment()"
-                (ngModelChange)="newComment.set($event)"
-                placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
-                class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
-                (input)="onComposerInput($event)"
-                (keydown)="onComposerKeydown($event)"
-                (click)="onComposerClick($event)"
-              ></textarea>
-
-              <!-- Mentions Dropdown -->
-              @if (mc.open() && mc.candidates().length) {
-              <div
-                class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
-              >
-                @for (u of mc.candidates(); track u.id; let i = $index) {
-                <div
-                  class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
-                  [class.bg-base-200]="i === mc.index()"
-                  (mousedown)="selectMention(u, $event)"
-                >
-                  <div
-                    class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold"
-                  >
-                    {{ (u.first_name || u.email || '?') | slice:0:1 }}
-                  </div>
-                  <div class="truncate">
-                    <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
-                    <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
-                  </div>
-                </div>
-                }
-              </div>
-              }
-
-              <div class="mt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-ghost"
-                  (click)="newComment.set('')"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-primary px-4 gap-1.5"
-                  (click)="addComment()"
-                  [disabled]="!newComment() || isLoading()"
-                >
-                  <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
-                </button>
-              </div>
-            </div>
-          </div>
-          }
-        </div>
-
-        <!-- Attachments Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
-              Attachments ({{ attachments().length }})
-            </h3>
-            <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
-              {{ showAttachments() ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-
-          @if (showAttachments()) {
-          <div class="p-6 flex flex-col gap-4">
-            @if (attachments().length > 0) {
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              @for (a of attachments(); track a.id) {
-              <div
-                class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
-              >
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
-                  <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
-                    {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
-                  </div>
-                </div>
-                @if (a.url) {
-                <a
-                  class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
-                  [href]="a.url"
-                  target="_blank"
-                  title="Open Attachment"
-                >
-                  <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                </a>
-                }
-              </div>
-              }
-            </div>
-            } @else {
-            <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
-            }
-
-            <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="File Name (e.g. report.pdf)"
-                [(ngModel)]="attName"
-              />
-              <input
-                class="input input-bordered input-sm grow"
-                placeholder="URL (e.g. https://...)"
-                [(ngModel)]="attUrl"
-              />
-              <button class="btn btn-accent btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
-                Attach File
-              </button>
-            </div>
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
-      <div class="lg:col-span-1 flex flex-col gap-6">
-        <!-- Task Status & Detail Settings Card -->
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
-          </div>
-
-          <div class="p-6 flex flex-col gap-4">
-            <!-- Status Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.status || 'todo'"
-                (change)="onStatusChange($event)"
-              >
-                @for (s of statuses; track s) {
-                <option [value]="s">{{ statusLabels[s] }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Priority Dropdown Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="t.priority || 'medium'"
-                (change)="onPriorityChange($event)"
-              >
-                @for (p of priorities; track p) {
-                <option [value]="p">{{ toTitleCase(p) }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Due Date Calendar Picker -->
-            <div class="form-control w-full">
-              <label class="label pt-0"
-                ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
-              >
-              @if (!isEditingDueDate()) {
-              <div
-                (click)="isEditingDueDate.set(true)"
-                class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
-                  <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
-                </div>
-                <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
-              </div>
-              } @else {
-              <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
-                <calendar-date
-                  class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
-                  [value]="dateOnly(t.due_at)"
-                  (change)="onDueDateChange($event)"
-                >
-                  <calendar-month></calendar-month>
-                </calendar-date>
-                <div class="flex justify-end gap-1.5 mt-1">
-                  <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
-                </div>
-              </div>
-              }
-            </div>
-
-            <!-- Assigned User Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
-              >
-              <div class="flex gap-2">
-                <select
-                  class="select select-bordered select-sm grow font-medium"
-                  [ngModel]="assignedTo()"
-                  (ngModelChange)="onAssignedChange($event)"
-                >
-                  <option value="">Unassigned</option>
-                  @for (u of users(); track u.id) {
-                  <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </select>
-                <button (click)="assignToMe()" class="btn btn-outline btn-sm font-semibold" title="Assign to me">
-                  Me
-                </button>
-              </div>
-            </div>
-
-            <!-- Associated Team Selector -->
-            <div class="form-control w-full">
-              <label class="label"
-                ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
-              >
-              <select
-                class="select select-bordered select-sm w-full font-medium"
-                [ngModel]="teamId()"
-                (change)="onTeamChange($event)"
-              >
-                <option value="">No Team</option>
-                @for (team of teamsList(); track team.id) {
-                <option [value]="'' + team.id">{{ team.name }}</option>
-                }
-              </select>
-            </div>
-
-            <!-- Divider -->
-            <div class="divider my-1"></div>
-
-            <!-- System Information Metadata -->
-            <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
-              <div class="flex justify-between">
-                <span>Created By:</span>
-                <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Created On:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Last Updated:</span>
-                <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Task Audit Log Component -->
-        @if (id()) {
-        <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
-          <div class="p-4 border-b border-base-200 bg-base-50/50">
-            <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
-              <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
-              Activity History
-            </h3>
-          </div>
-          <div class="p-4 max-h-[350px] overflow-y-auto">
-            <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-    } @else {
-    <div class="alert alert-error">
-      <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-      <span>Task not found or failed to load.</span>
-    </div>
+      {{ toTitleCase(t.priority) }}
+    </span>
     } }
   </div>
-</div>
+  <div pc-actions-suffix class="flex items-center gap-2">
+    @if (task()) { @if (!isArchived()) {
+    <button (click)="archiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+      <pc-icon name="archive-box" [size]="4"></pc-icon>
+      Archive
+    </button>
+    } @else {
+    <button (click)="unarchiveTask()" class="btn btn-outline btn-warning btn-sm gap-2">
+      <pc-icon name="restore-from-trash" [size]="4"></pc-icon>
+      Unarchive
+    </button>
+    } }
+  </div>
+  <li pc-overflow-extra>
+    <button type="button" (click)="renameTask()">
+      <pc-icon name="pencil-square" [size]="4"></pc-icon>
+      Rename task…
+    </button>
+  </li>
+  <li pc-overflow-extra>
+    <a routerLink="/board">
+      <pc-icon name="view-kanban" [size]="4"></pc-icon>
+      Open task board
+    </a>
+  </li>
+
+  @if (task(); as t) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Title, Description, Subtasks, Comments, Attachments -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Elegant Title & Description Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="h-2 bg-gradient-to-r from-primary via-secondary to-accent"></div>
+
+        <div class="p-6">
+          <!-- Inline Edit Description -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/50">Description</h3>
+              @if (!isEditingDetails()) {
+              <button (click)="startEditingDetails()" class="btn btn-ghost btn-xs text-primary gap-1">
+                <pc-icon name="pencil-square" [size]="4"></pc-icon> Edit Description
+              </button>
+              }
+            </div>
+
+            @if (isEditingDetails()) {
+            <div class="grid gap-2">
+              <quill-editor
+                [styles]="{ height: '220px' }"
+                [(ngModel)]="tempDetails"
+                placeholder="Describe this task..."
+              ></quill-editor>
+              <div class="flex justify-end gap-2 mt-2">
+                <button (click)="cancelEditingDetails()" class="btn btn-outline btn-accent btn-sm">Cancel</button>
+                <button (click)="saveDetails()" class="btn btn-sm btn-primary">Save Description</button>
+              </div>
+            </div>
+            } @else {
+            <div
+              (click)="startEditingDetails()"
+              class="prose max-w-none text-sm text-base-content/80 font-light leading-relaxed cursor-pointer hover:bg-base-200/50 p-3 rounded-lg min-h-[60px] border border-transparent hover:border-base-300 transition-all"
+              [innerHTML]="(t.details || defaultDetails) | sanitizeHtml"
+            ></div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtasks Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="document-check" [size]="4" class="text-primary"></pc-icon>
+            Subtasks ({{ subtasks().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showSubtasks.set(!showSubtasks())">
+            {{ showSubtasks() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showSubtasks()) {
+        <div class="p-6 flex flex-col gap-4">
+          @if (subtasks().length > 0) {
+          <div class="grid gap-2.5">
+            @for (s of subtasks(); track s.id) {
+            <label
+              class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-sm"
+                [checked]="s.status === 'done'"
+                (change)="toggleSubtask(s, $any($event.target).checked)"
+              />
+              <span
+                class="text-sm font-medium text-base-content"
+                [class.line-through]="s.status === 'done'"
+                [class.opacity-50]="s.status === 'done'"
+              >
+                {{ s.name }}
+              </span>
+            </label>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">
+            No subtasks defined. Add one below to break this task down.
+          </div>
+          }
+
+          <div class="flex gap-2 mt-2">
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="Add a subtask..."
+              [(ngModel)]="subtaskName"
+              (keydown.enter)="addSubtask()"
+            />
+            <button class="btn btn-primary btn-sm" (click)="addSubtask()" [disabled]="!subtaskName() || isLoading()">
+              Add Subtask
+            </button>
+          </div>
+        </div>
+        }
+      </div>
+
+      <!-- Comments / Collaboration Panel -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="chat-bubble-bottom-center-text" [size]="4" class="text-secondary"></pc-icon>
+            Discussion ({{ comments().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showComments.set(!showComments())">
+            {{ showComments() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showComments()) {
+        <div class="p-6 flex flex-col gap-6">
+          @if (comments().length > 0) {
+          <div class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            @for (c of comments(); track c.id) {
+            <div
+              class="chat"
+              [class.chat-start]="(c.author_id || c.createdby_id) !== myUserId()"
+              [class.chat-end]="(c.author_id || c.createdby_id) === myUserId()"
+            >
+              <div class="chat-image">
+                <pc-user-avatar
+                  [name]="userName(c.author_id || c.createdby_id)"
+                  [avatarUrl]="userAvatar(c.author_id || c.createdby_id)"
+                  [size]="8"
+                />
+              </div>
+
+              <div class="chat-header text-[11px] opacity-50 flex items-center gap-1.5 mb-1 px-1">
+                <span class="font-bold">{{ userName(c.author_id || c.createdby_id) }}</span>
+                @if (c.created_at) {
+                <span class="tooltip" [attr.data-tip]="asDate(c.created_at) | date:'medium'">
+                  {{ asDate(c.created_at) | timeAgo:{ thresholdDays: 7, style: 'long' } }}
+                </span>
+                }
+              </div>
+
+              <div
+                class="chat-bubble text-sm font-light shadow-sm"
+                [class.chat-bubble-primary]="(c.author_id || c.createdby_id) === myUserId()"
+                [innerHTML]="c.comment | mentionify:users() | sanitizeHtml"
+              ></div>
+            </div>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">
+            No comments yet. Start the conversation!
+          </div>
+          }
+
+          <!-- Comment Composer with User Mentions -->
+          <div class="form-control relative mt-2 border-t border-base-200 pt-4">
+            <textarea
+              #taskComposer
+              [ngModel]="newComment()"
+              (ngModelChange)="newComment.set($event)"
+              placeholder="Write a comment... (use @ to mention colleagues, Cmd+Enter to submit)"
+              class="textarea textarea-bordered w-full text-sm font-light min-h-[80px]"
+              (input)="onComposerInput($event)"
+              (keydown)="onComposerKeydown($event)"
+              (click)="onComposerClick($event)"
+            ></textarea>
+
+            <!-- Mentions Dropdown -->
+            @if (mc.open() && mc.candidates().length) {
+            <div
+              class="absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-xl z-20"
+            >
+              @for (u of mc.candidates(); track u.id; let i = $index) {
+              <div
+                class="px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-base-200 transition-colors"
+                [class.bg-base-200]="i === mc.index()"
+                (mousedown)="selectMention(u, $event)"
+              >
+                <div class="w-6 h-6 rounded-full bg-primary/20 text-primary grid place-items-center text-xs font-bold">
+                  {{ (u.first_name || u.email || '?') | slice:0:1 }}
+                </div>
+                <div class="truncate">
+                  <div class="text-xs font-semibold">{{ userDisplay(u) }}</div>
+                  <div class="text-[10px] text-base-content/50">{{ u.email }}</div>
+                </div>
+              </div>
+              }
+            </div>
+            }
+
+            <div class="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-ghost"
+                (click)="newComment.set('')"
+                [disabled]="!newComment() || isLoading()"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary px-4 gap-1.5"
+                (click)="addComment()"
+                [disabled]="!newComment() || isLoading()"
+              >
+                <pc-icon name="paper-airplane" [size]="4"></pc-icon> Comment
+              </button>
+            </div>
+          </div>
+        </div>
+        }
+      </div>
+
+      <!-- Attachments Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50 flex justify-between items-center select-none">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="paper-clip" [size]="4" class="text-accent"></pc-icon>
+            Attachments ({{ attachments().length }})
+          </h3>
+          <button class="btn btn-ghost btn-xs text-base-content/60" (click)="showAttachments.set(!showAttachments())">
+            {{ showAttachments() ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+
+        @if (showAttachments()) {
+        <div class="p-6 flex flex-col gap-4">
+          @if (attachments().length > 0) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            @for (a of attachments(); track a.id) {
+            <div
+              class="p-3 border border-base-300 rounded-xl bg-base-50 hover:bg-base-200/30 transition-all flex items-center justify-between gap-3 shadow-sm hover:shadow-md"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-xs truncate text-base-content">{{ a.filename }}</div>
+                <div class="text-[10px] text-base-content/50 mt-0.5 truncate">
+                  {{ a.content_type || 'Unknown Type' }} • {{ a.size_bytes || 0 | number }} bytes
+                </div>
+              </div>
+              @if (a.url) {
+              <a
+                class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10"
+                [href]="a.url"
+                target="_blank"
+                title="Open Attachment"
+              >
+                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+              </a>
+              }
+            </div>
+            }
+          </div>
+          } @else {
+          <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
+          }
+
+          <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="File Name (e.g. report.pdf)"
+              [(ngModel)]="attName"
+            />
+            <input
+              class="input input-bordered input-sm grow"
+              placeholder="URL (e.g. https://...)"
+              [(ngModel)]="attUrl"
+            />
+            <button class="btn btn-primary btn-sm" (click)="addAttachment()" [disabled]="!attName() || isLoading()">
+              Attach File
+            </button>
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+
+    <!-- Right Column: Sidebar (Metadata dropdowns, Date, Assignee, Activity) -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Task Status & Detail Settings Card -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70">Task Management</h3>
+        </div>
+
+        <div class="p-6 flex flex-col gap-4">
+          <!-- Status Dropdown Selector -->
+          <div class="form-control w-full">
+            <label class="label pt-0"
+              ><span class="label-text text-xs font-semibold text-base-content/60">STATUS</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="t.status || 'todo'"
+              (change)="onStatusChange($event)"
+            >
+              @for (s of statuses; track s) {
+              <option [value]="s">{{ statusLabels[s] }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Priority Dropdown Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">PRIORITY</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="t.priority || 'medium'"
+              (change)="onPriorityChange($event)"
+            >
+              @for (p of priorities; track p) {
+              <option [value]="p">{{ toTitleCase(p) }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Due Date Calendar Picker -->
+          <div class="form-control w-full">
+            <label class="label pt-0"
+              ><span class="label-text text-xs font-semibold text-base-content/60">DUE DATE</span></label
+            >
+            @if (!isEditingDueDate()) {
+            <div
+              (click)="isEditingDueDate.set(true)"
+              class="flex items-center justify-between p-2.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer text-sm font-medium text-base-content border border-base-300"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="clock" [size]="4" class="text-teal-500"></pc-icon>
+                <span>{{ t.due_at ? (asDate(t.due_at) | date:'mediumDate') : 'No Due Date' }}</span>
+              </div>
+              <pc-icon name="pencil-square" [size]="4" class="text-base-content/40"></pc-icon>
+            </div>
+            } @else {
+            <div class="flex flex-col gap-2 p-2 border border-base-300 rounded-xl bg-base-100 shadow-inner">
+              <calendar-date
+                class="cally bg-base-100 border border-base-300 shadow-sm rounded-xl p-1 max-w-full"
+                [value]="dateOnly(t.due_at)"
+                (change)="onDueDateChange($event)"
+              >
+                <calendar-month></calendar-month>
+              </calendar-date>
+              <div class="flex justify-end gap-1.5 mt-1">
+                <button (click)="isEditingDueDate.set(false)" class="btn btn-xs btn-ghost">Close</button>
+              </div>
+            </div>
+            }
+          </div>
+
+          <!-- Assigned User Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">ASSIGNED TO</span></label
+            >
+            <div class="flex gap-2">
+              <select
+                class="select select-bordered select-sm grow font-medium"
+                [ngModel]="assignedTo()"
+                (ngModelChange)="onAssignedChange($event)"
+              >
+                <option value="">Unassigned</option>
+                @for (u of users(); track u.id) {
+                <option [value]="'' + u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                }
+              </select>
+              <button (click)="assignToMe()" class="btn btn-outline btn-secondary btn-sm" title="Assign to me">
+                Me
+              </button>
+            </div>
+          </div>
+
+          <!-- Associated Team Selector -->
+          <div class="form-control w-full">
+            <label class="label"
+              ><span class="label-text text-xs font-semibold text-base-content/60">ASSOCIATED TEAM</span></label
+            >
+            <select
+              class="select select-bordered select-sm w-full font-medium"
+              [ngModel]="teamId()"
+              (change)="onTeamChange($event)"
+            >
+              <option value="">No Team</option>
+              @for (team of teamsList(); track team.id) {
+              <option [value]="'' + team.id">{{ team.name }}</option>
+              }
+            </select>
+          </div>
+
+          <!-- Divider -->
+          <div class="divider my-1"></div>
+
+          <!-- System Information Metadata -->
+          <div class="text-[10px] text-base-content/50 flex flex-col gap-1.5 leading-snug">
+            <div class="flex justify-between">
+              <span>Created By:</span>
+              <span class="font-medium text-base-content/70">{{ userName(t.createdby_id) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Created On:</span>
+              <span class="font-medium text-base-content/70">{{ asDate(t.created_at) | date:'mediumDate' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Last Updated:</span>
+              <span class="font-medium text-base-content/70">{{ asDate(t.updated_at) | date:'mediumDate' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task Audit Log Component -->
+      @if (id()) {
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+        <div class="p-4 border-b border-base-200 bg-base-50/50">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5">
+            <pc-icon name="clock" [size]="4" class="text-info"></pc-icon>
+            Activity History
+          </h3>
+        </div>
+        <div class="p-4 max-h-[350px] overflow-y-auto">
+          <pc-record-activities #activityHistory [entity]="'tasks'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+  }
+</pc-detail-layout>

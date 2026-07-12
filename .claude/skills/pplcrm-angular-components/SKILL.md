@@ -10,7 +10,8 @@ Component-internal conventions only: state, forms, loading gates, icons. For pag
 For the Zod `AddXObj`/`UpdateXObj` triad that feeds these forms see `pplcrm-schemas-validation`.
 
 Canonical live reference for everything below:
-`apps/frontend/src/app/experiences/users/ui/user-edit.ts` and `.html`.
+`apps/frontend/src/app/experiences/users/ui/user-view.ts` and `.html` (the merged
+view+edit user page), with `experiences/profile/profile-page.ts` for `disabled()`.
 
 ## `form()` is Angular's signal-forms API, not a project helper
 
@@ -18,8 +19,9 @@ Canonical live reference for everything below:
 defined in this repo:
 
 ```ts
-// user-edit.ts
-import { form, required, email, disabled } from '@angular/forms/signals';
+// user-view.ts
+import { form, required, email } from '@angular/forms/signals';
+// profile-page.ts additionally imports `disabled` and `FormField`
 ```
 
 The same module also provides `submit`, `minLength`, `pattern`, `validate`,
@@ -27,42 +29,39 @@ The same module also provides `submit`, `minLength`, `pattern`, `validate`,
 
 ## Form pattern: signal payload → `form()` → `[formField]` → `.invalid()`
 
-Three moving parts. From `user-edit.ts`:
+Three moving parts. From `user-view.ts`:
 
 ```ts
 // 1. A plain signal holding the raw payload
-protected readonly payload = signal({
-  email: '',
-  first_name: '',
-  last_name: '',
-  role: '',
-  verified: false,
-});
+protected readonly payload = signal({ email: '', first_name: '', last_name: '' });
 
 // 2. form() wraps the signal; the schema fn wires validators per field
 protected readonly form = form(this.payload, (p) => {
   required(p.email);
   email(p.email);
   required(p.first_name);
-  disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-  disabled(p.verified, () => true);
 });
 ```
 
+Per-field `disabled()` takes a reactive predicate — from `profile-page.ts`:
+
+```ts
+disabled(p.email, () => this.isViewer() || this.saving());
+```
+
 Bind each field in the template with `[formField]` — pass the **field node** (`form.email`, no
-call parens), not the payload value. From `user-edit.html`:
+call parens), not the payload value. From `user-view.html` (same pattern for `pc-select` and
+`pc-toggle`, e.g. in `persons/ui/person-form.html`):
 
 ```html
-<pc-input label="Email" type="email" [formField]="form.email"></pc-input>
-<pc-select label="Role" [formField]="form.role"> ... </pc-select>
-<pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
+<pc-input id="email" label="Email address" type="email" [formField]="form.email"></pc-input>
 ```
 
 `pc-input`/`pc-select`/`pc-toggle` (under `libs/uxcommon/src/components/`) already render the
 field's error state — they read `formField()().invalid()` and `.errors()` internally (see
 `input.ts`), so you do not write per-field error markup yourself.
 
-Validate on submit by **calling** the form to get its root state. From `user-edit.ts`:
+Validate on submit by **calling** the form to get its root state. From `user-view.ts`:
 
 ```ts
 this.form().markAsTouched(); // force-show validation before first blur
@@ -83,7 +82,7 @@ resolve" mistake.
 300ms) and, once shown, stays at least `minDuration` (default 300ms). This is why you must use
 its begin/end contract instead of a naked boolean signal.
 
-Wire-up and call site from `user-edit.ts`:
+Wire-up and call site from `user-view.ts`:
 
 ```ts
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -107,8 +106,8 @@ private async load() {
 `end()` in `finally` is mandatory. It is idempotent (guarded by an internal `done` flag), so
 calling it twice is safe; never calling it leaves `pendingCount` above zero and the gate never
 hides. Note: `loading` gates the initial skeleton; use a separate `saving`/`resettingPassword`
-boolean signal (see `user-edit.ts`) to disable buttons during in-progress actions — don't reuse
-the gate for both.
+boolean signal (see `saving`/`resettingPassword` in `user-view.ts`) to disable buttons during
+in-progress actions — don't reuse the gate for both.
 
 ## pc-icon: required `name`, integer `[size]` only
 
@@ -125,13 +124,13 @@ fallback). A bad name silently falls back to the `unknown` icon.
 Whole integers only for `[size]`. The size renders as Tailwind classes `w-${size} h-${size}`,
 so `[size]="4"` → `w-4 h-4`. Do not pass decimals (`[size]="3.5"`) and do not put
 width/height/`size-*` utilities on `<pc-icon>` — its class-scrubber strips them. Real usage:
-`<pc-icon name="lock-closed"></pc-icon>` (`user-edit.html`).
+`<pc-icon name="lock-closed" [size]="4"></pc-icon>` (`user-view.html`).
 
 ## Signals-only state, `inject()` at the field level
 
 No `Subject`/`BehaviorSubject`/manual subscriptions for state. Use `signal()`, `computed()`,
 `effect()`, `input.required()`, `output()`. Inject dependencies as class fields with `inject()`,
-never via the constructor. From `user-edit.ts`:
+never via the constructor. From `user-view.ts`:
 
 ```ts
 readonly id = input.required<string>();                      // required input
@@ -144,7 +143,7 @@ protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
 ```
 
 Reserve the constructor for `effect()` wiring, and use `untracked()` inside an effect when the
-body should not re-subscribe to signals it reads (see the effect in `user-edit.ts`).
+body should not re-subscribe to signals it reads (see the effect in `user-view.ts`).
 
 ## Non-goals
 
