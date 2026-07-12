@@ -31,6 +31,7 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { logger } from '../../logger';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
 import { DeliveryRequestsRepo } from './repositories/delivery-requests.repo';
 import { DeliveryRouteStopsRepo } from './repositories/delivery-route-stops.repo';
 import { DeliveryRoutesRepo } from './repositories/delivery-routes.repo';
@@ -68,6 +69,7 @@ function deriveRouteName(firstAddress: string, date: Date): string {
 export class DeliveriesController {
   private readonly requestsRepo = new DeliveryRequestsRepo();
   private readonly campaignsRepo = new CampaignsRepo();
+  private readonly companionAccess = new CompanionAccessController();
   private readonly routesRepo = new DeliveryRoutesRepo();
   private readonly stopsRepo = new DeliveryRouteStopsRepo();
   private readonly userActivity = new UserActivityRepo();
@@ -559,6 +561,11 @@ export class DeliveriesController {
   public async mintShareLink(auth: IAuthKeyPayload, input: { route_id: string; regenerate?: boolean }) {
     const route = await this.routesRepo.getRouteRow(auth.tenant_id, input.route_id);
     if (!route) throw new NotFoundError('Route not found');
+    // The companion access layer verifies the volunteer BEHIND the link, so a
+    // link with nobody behind it can never pass the gate — refuse to mint one.
+    if (route.volunteer_person_id == null) {
+      throw new BadRequestError('Assign a volunteer to this route first — the link is personal.');
+    }
     const active =
       route.share_token_hash != null &&
       route.share_token_expires_at != null &&
@@ -603,10 +610,15 @@ export class DeliveriesController {
     return createHash('sha256').update(rawToken).digest('hex');
   }
 
-  /** Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload. */
-  public async getPublicRoute(rawToken: string) {
+  /**
+   * Resolve a route by token, enforce active/expiry, and return the volunteer-safe payload.
+   * The capability token says WHAT may be touched; the companion session (X-Companion-Session)
+   * proves WHO is touching it — both are required (COMPANION-APPS-PLAN.md §2).
+   */
+  public async getPublicRoute(rawToken: string, sessionToken: string | null) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
     if (!this.isTokenUsable(route)) return null;
+    await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
     const orgName = await this.publicOrgName(tenantId);
@@ -618,9 +630,12 @@ export class DeliveriesController {
     stopId: string,
     action: 'deliver' | 'skip' | 'defer' | 'undo',
     reason: string | null,
+    sessionToken: string | null,
+    opId: string | null,
   ) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
     if (!this.isTokenUsable(route)) return null;
+    await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const routeId = String(route.id);
     const actor: IAuthKeyPayload = {
@@ -629,6 +644,20 @@ export class DeliveriesController {
       session_id: 'volunteer-link',
     };
     await this.routesRepo.transaction().execute(async (trx) => {
+      // Idempotency ledger (companion_ops, scope 'deliveries'): claim the opId
+      // inside the SAME transaction as the action, so claim + apply commit or
+      // roll back together. A replayed opId conflicts, applies nothing, and
+      // falls through to return the current authoritative payload — this is
+      // what makes a retried "defer" move the stop once, not twice.
+      if (opId) {
+        const claimed = await trx
+          .insertInto('companion_ops')
+          .values({ tenant_id: tenantId, op_id: opId, scope: 'deliveries' })
+          .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+          .returning('op_id')
+          .executeTakeFirst();
+        if (!claimed) return;
+      }
       const stop = await trx
         .selectFrom('delivery_route_stops')
         .selectAll()
@@ -650,6 +679,24 @@ export class DeliveriesController {
     const fresh = await this.routesRepo.getRouteRow(tenantId, routeId);
     const orgName = await this.publicOrgName(tenantId);
     return fresh ? this.publicRoutePayload(fresh, stops, orgName) : null;
+  }
+
+  /**
+   * The volunteer-identity gate on every public data request. Throws
+   * UnauthorizedError (401 — no/invalid device session, the gate re-verifies)
+   * or ForbiddenError (403 — verified but not yet admin-approved); the route
+   * handler passes those two statuses through so the companion gate can render
+   * its verify/pending states, and keeps the uniform 404 for dead tokens.
+   */
+  private async requireCompanionSession(
+    route: { tenant_id: string } & Record<string, unknown>,
+    sessionToken: string | null,
+  ): Promise<void> {
+    const volunteerId = route['volunteer_person_id'];
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: volunteerId == null ? null : String(volunteerId),
+    });
   }
 
   // ---- Shared transition helpers ------------------------------------------
@@ -984,7 +1031,7 @@ export class DeliveriesController {
     const delivered = stops.filter((s) => s.status === 'delivered').length;
     // Data minimization (spec §4.4): first name + address only. No email/phone/notes/person_id.
     return {
-      campaign_name: orgName,
+      organization_name: orgName,
       route_name: String(route['name'] ?? 'Delivery route'),
       status: String(route['status'] ?? 'assigned'),
       start: { lat: Number(route['start_lat']), lng: Number(route['start_lng']) },
